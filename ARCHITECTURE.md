@@ -4,7 +4,8 @@
 > techniques, et des pratiques de sécurité / fiabilité / évolutivité.
 > Dernière mise à jour : 4 septembre 2026 — vue Signatures intégrée à ADBI
 > Contrats, import de contrats existants (PDF signé), mention « signé » externe,
-> mascotte 3D du hub.
+> mascotte 3D du hub, déploiement conteneurisé (Docker/Coolify + PostgreSQL)
+> comme chemin recommandé.
 
 ---
 
@@ -21,9 +22,12 @@ interne ADBI, envoi SMTP).
                         │       ADBI FACTORY  (hub, port 4000)      │
                         │  Node natif, zéro dépendance npm          │
                         │  • tuiles + rail + mascotte 3D            │
-                        │  • démarre/arrête les modules (spawn)     │
+                        │  • démarre/arrête les modules — spawn en  │
+                        │    local, ou attend le conteneur en       │
+                        │    déploiement (modules.docker.json)      │
                         │  • préchauffage au démarrage              │
                         │  • sert la charte commune (theme/)        │
+                        │  • voyant IA relayé vers la passerelle    │
                         └───────┬───────────────────────────────────┘
                                 │  iframes + surveillance des ports
       ┌────────────────┬──────────────┼─────────────┬─────────────────┐
@@ -34,8 +38,21 @@ interne ADBI, envoi SMTP).
 │  Node 4100  │ │ Node 4200  │ │ Node 4300 │ │Flask 5000 │ │              │
 │ (+ onglet ✍ │ │            │ │           │ │Python3.14 │ │              │
 │  ADBI Sign) │ │            │ │           │ │           │ │              │
-└─────────────┘ └────────────┘ └───────────┘ └───────────┘ └──────────────┘
+└──────┬──────┘ └──────┬─────┘ └───────────┘ └─────┬─────┘ └──────────────┘
+       │               │                            │
+       └───────────────┴─────────────┬──────────────┘
+                                      ▼
+                    ┌───────────────────────────────────┐
+                    │  PostgreSQL (adbi-postgres)        │  une base par service :
+                    │  adbi_contrats / adbi_cv_parser /  │  provisionnée (milestone 4),
+                    │  adbi_one_pager                    │  migration en cours service
+                    └───────────────────────────────────┘  par service — voir
+                                                             docs/postgres-inventory.md
       +  ADBI Calculator : page statique servie par la Factory elle-même
+
+      Passerelle d'inférence interne ADBI (hors plateforme, VM dédiée) : seul
+      tiers réseau autorisé pour l'IA — Parser (extraction) et voyant IA du hub
+      (`ADBI_LLM_BASE_URL`/`ADBI_LLM_API_KEY`, jamais exposée au navigateur).
 ```
 
 | Module | Produit | Port | Stack | Dossier |
@@ -336,11 +353,32 @@ un déploiement peut donc tourner sans jamais écrire de secret sur disque.
   derrière quelques fonctions (`chargerDemandes`, `persist`…).
 
 ## 12. Démarrage & exploitation
+
+### Déploiement (Coolify / tout hôte Docker) — chemin recommandé
+
 ```bash
-# Lancer la plateforme (démarre et préchauffe tout)
+git clone <dépôt> adbi-platform && cd adbi-platform
+cp .env.example .env      # renseigner les variables REQUIS
+docker compose up -d --build
+```
+
+`docker-compose.yml` construit et lance les 5 services + PostgreSQL (une base
+par service). Sous Coolify : importer comme *docker-compose resource*, un
+domaine par service, secrets posés comme variables d'environnement natives
+(jamais de fichier `.env` committé) — détail complet dans le
+[`README.md`](README.md) et la §9 ci-dessus. C'est le chemin qui remplace
+l'ancien guide `ADBI-Deploiement-Serveur.docx` (systemd, un seul hôte) pour
+tout nouveau déploiement ; le `.docx` reste valable pour un hôte sans Docker
+mais n'est plus le chemin recommandé.
+
+### Développement local (poste de dev, sans Docker)
+
+```bash
 cd factory && node server.js
 # → http://localhost:4000   (fermer la fenêtre = tout s'arrête proprement)
 ```
 - Raccourcis bureau : « ADBI Factory », « ADBI - Contrats ».
 - Sauvegardes à faire régulièrement : les dossiers `data/` de chaque module
-  (bases, référentiels, clé du Coffre, contrats générés).
+  (bases, référentiels, clé du Coffre, contrats générés) — et, une fois la
+  migration PostgreSQL faite service par service (milestone 4), le volume
+  `postgres-data` du conteneur `postgres`.
