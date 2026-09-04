@@ -29,9 +29,9 @@ explicitement documentés : annuaire public gouv.fr, IA OVHcloud UE, envoi SMTP)
       ▼                ▼              ▼             ▼                 ▼
 ┌─────────────┐ ┌────────────┐ ┌───────────┐ ┌───────────┐ ┌──────────────┐
 │    ADBI     │ │    ADBI    │ │   ADBI    │ │   ADBI    │ │     ADBI     │
-│  Contrats   │ │  OnePager  │ │  Coffre   │ │  Parser   │ │   Gestion    │
-│  Node 4100  │ │ Node 4200  │ │ Node 4300 │ │Flask 5000 │ │ Django 4400  │
-│ (+ onglet ✍ │ │            │ │           │ │Python3.14 │ │ Python 3.13  │
+│  Contrats   │ │  OnePager  │ │  Coffre   │ │  Parser   │ │  (supprimé)  │
+│  Node 4100  │ │ Node 4200  │ │ Node 4300 │ │Flask 5000 │ │              │
+│ (+ onglet ✍ │ │            │ │           │ │Python3.14 │ │              │
 │  ADBI Sign) │ │            │ │           │ │           │ │              │
 └─────────────┘ └────────────┘ └───────────┘ └───────────┘ └──────────────┘
       +  ADBI Calculator : page statique servie par la Factory elle-même
@@ -46,7 +46,6 @@ explicitement documentés : annuaire public gouv.fr, IA OVHcloud UE, envoi SMTP)
 | Coffre | **ADBI Coffre** | 4300 | Node + Express, crypto natif | `C:\DEV\Claude\adbi-coffre` |
 | Calculatrice | **ADBI Calculator** | — (statique) | HTML/JS servie par la Factory | `adbi-factory\public\modules` |
 | CV Parser | **ADBI Parser** | 5000 | Python 3.14 + Flask + Docling | `C:\ADBI CV Parser` |
-| Gestion | **ADBI Gestion** | 4400 | Python 3.13 + Django 6 (venv) | `C:\DEV\Claude\gestion_esn` |
 
 ---
 
@@ -241,12 +240,12 @@ Protection de documents, tout en local :
 ## 7. ADBI Calculator (statique)
 Simulation TJM/CJM : marge, coût, point mort. Une page, zéro serveur.
 
-## 8. ADBI Gestion (port 4400)
-Django 6 (venv Python 3.13). Licences, collaborateurs, sourcing, missions,
-clients, actions, documents, tâches kanban, KPI de rémunération (sourcing 400 €/
-profil, pointages mensuels TJM/CJM, licences 10 %, augmentations ×10).
-**Code d'accès exigé à chaque connexion** (`data/code_acces.txt`, session close
-avec le navigateur + verrou d'inactivité 30 min).
+## 8. ADBI Gestion — SUPPRIMÉ
+
+Le module de pilotage ESN (Django, port 4400) a été retiré de la plateforme le
+4 septembre 2026 puis **supprimé définitivement du poste** le même jour, sur
+confirmation explicite de l'utilisateur. Il n'a jamais été déployé.
+
 
 ---
 
