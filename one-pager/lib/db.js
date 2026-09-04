@@ -1,6 +1,11 @@
 /**
  * Stockage local (SQLite via sql.js / WebAssembly, sans compilation native).
  *
+ * DEPUIS LA BASCULE POSTGRESQL (issue #16, PR B) : server.js n'importe plus ce
+ * module, seulement scripts/migrer-vers-postgres.js (lecture de l'ancien
+ * cvs.sqlite pour la migration ponctuelle) — voir lib/db.pg.js pour le
+ * stockage reellement utilise en production.
+ *
  * On conserve DEUX choses par CV : le « cv_master » complet issu de
  * l'extraction, et les options de generation. Le one-pager, lui, n'est jamais
  * stocke : il est recalcule a la demande, ce qui permet de changer de gabarit

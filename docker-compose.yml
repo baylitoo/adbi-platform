@@ -5,14 +5,12 @@
 #   → Factory sur http://localhost:4000
 #
 # PostgreSQL est provisionné ci-dessous (une base par service, voir
-# infra/postgres/init-databases.sh). contrats (issue #14, PR B) et cv-parser
-# (issue #15, PR B) CONSOMMENT désormais leur base — DATABASE_URL requise,
-# plus de repli SQLite/JSON pour ces deux services. one-pager garde pour
-# l'instant son stockage fichier actuel — DATABASE_URL reste câblée pour que
-# sa migration (issue #16) n'ait qu'à la lire, sans retoucher ce fichier. Les
-# noms de service ci-dessous (contrats, one-pager, coffre, cv-parser) sont
-# ceux que factory/modules.docker.json utilise comme "hote" — ne pas les
-# renommer sans adapter ce fichier également.
+# infra/postgres/init-databases.sh). contrats (issue #14), cv-parser (issue
+# #15) et one-pager (issue #16) CONSOMMENT désormais leur base — DATABASE_URL
+# requise, plus de repli SQLite/JSON pour ces trois services. Les noms de
+# service ci-dessous (contrats, one-pager, coffre, cv-parser) sont ceux que
+# factory/modules.docker.json utilise comme "hote" — ne pas les renommer sans
+# adapter ce fichier également.
 services:
   postgres:
     image: postgres:17-alpine
@@ -97,7 +95,6 @@ services:
         condition: service_healthy
     environment:
       PORT: 4200
-      # Pas encore consommée par le code (voir issue #16).
       DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_one_pager
     restart: unless-stopped
 
