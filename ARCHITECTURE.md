@@ -255,27 +255,57 @@ confirmation explicite de l'utilisateur. Il n'a jamais été déployé.
 | Mesure | Où |
 |---|---|
 | Tout en local, bind principal 127.0.0.1 (Factory) | hub |
-| Aucune clé/API dans le code : `data/secrets.json` (gitignoré) + variables d'env | Contrats |
+| Aucune clé/API dans le code : variables d'environnement, repli sur `data/secrets.json` (gitignoré) | Contrats |
 | Mots de passe SMTP jamais renvoyés au front (`settingsStatus` expose des booléens) | Contrats |
-| Jetons de signature aléatoires forts (`crypto.randomBytes(24)`, 48 hex) + validation stricte (`/^[a-f0-9]{48}$/`) | Sign |
+| Jetons de signature aléatoires forts (`crypto.randomBytes(24)`, 48 hex) + validation stricte (`/^[a-f0-9]{48}$/`) — flux local historique, conservé en lecture seule | Sign |
 | Anti-traversée de chemin : `path.basename` sur les téléchargements, garde `startsWith(PUBLIC)` | Contrats, Factory |
 | Entrées SQL : identifiants passés par `parseInt`, valeurs par requêtes paramétrées (`db.run(sql, [...])`) | Contrats |
 | Échappement HTML systématique côté front (`escapeHtml` sur toute donnée affichée) | tous |
 | Uploads bornés (JSON 15 Mo ; images de signature 4 Mo, re-encodées en PNG via canvas — jamais insérées telles quelles) | Contrats |
 | Chiffrement AES-256-GCM avec AAD, clé locale hors dépôt | Coffre |
-| IA : OVHcloud UE uniquement (RGPD), OCR pièces 100 % local | Parser, Contrats |
-| Frame-ancestors restreint à la Factory (à la place du clickjacking Django par défaut) | Gestion |
+| IA : OVHcloud UE uniquement (RGPD), OCR pièces 100 % local — passerelle interne à venir (milestone 2) | Parser, Contrats |
 | Erreurs jamais fatales côté serveurs (garde-fous `uncaughtException`) : rester en ligne | Contrats, Factory |
 
+### Secrets par variable d'environnement
+
+Chaque service documente ses variables dans son `<service>/.env.example`.
+Convention commune : une variable d'environnement est **toujours prioritaire**
+sur le fichier local qu'elle remplace (`data/secrets.json`, `code-parametres.txt`…) —
+un déploiement peut donc tourner sans jamais écrire de secret sur disque.
+
+| Service | Variables clé | Repli si absentes |
+|---|---|---|
+| contrats | `PAPPERS_API_KEY`, `INSEE_API_KEY`, `SMTP_*`, `YOUSIGN_*`, `ZOHO_*`, `ADBI_CODE_PARAMETRES` | `data/secrets.json` / `data/code-parametres.txt` (écran Paramètres) |
+| cv-parser | `ADBI_JWT_SECRET`, `ADBI_AUTH`, `ADBI_SUPERUSER_EMAIL`, `ADBI_SUPERUSER_PASSWORD` | `data/jwt_secret.txt` généré ; superuser par défaut `admin@adbi.fr` (dev uniquement) |
+| coffre | — (pas de clé API) | `data/cle-locale.bin`, générée au 1er lancement — **pas de repli possible, à sauvegarder** |
+| factory | `ADBI_PORT`, `ADBI_SANS_PRECHAUFFAGE` | valeurs par défaut (4000, préchauffage actif) |
+| one-pager | `PORT` | 4200 |
+
+### Injection des secrets sous Coolify
+
+- Toutes les variables ci-dessus se posent comme **variables d'environnement
+  natives Coolify** par service (pas de fichier `.env` à committer ni à copier
+  à la main).
+- `coffre/data/cle-locale.bin` n'est **pas** un secret injectable par variable
+  (généré au 1er démarrage, doit persister) : monter `coffre/data/` en volume
+  Coolify et le sauvegarder comme n'importe quelle donnée applicative — sa
+  perte rend irrécupérables tous les documents « protégés » émis.
+- `ADBI_CODE_PARAMETRES` et `ADBI_SUPERUSER_PASSWORD` sont à générer (pas de
+  valeur réutilisée d'un autre environnement) et à poser **avant** le premier
+  démarrage du service concerné — les valeurs par défaut du code ne doivent
+  jamais atteindre un environnement exposé.
+- `ADBI_AUTH=on` est **obligatoire** dès que cv-parser n'est plus derrière la
+  Factory en localhost (voir factory/README.md).
+
 ### Avant toute exposition Internet (déploiement)
-1. **Reverse proxy HTTPS** (Caddy) + **authentification** sur tout, SAUF
-   `/signer/*` et `/api/signer/*` (les co-contractants doivent y accéder).
-2. Variable `ADBI_URL_PUBLIQUE` pour construire les liens de signature sur le
-   domaine public (aujourd'hui : IP LAN détectée automatiquement).
-3. `SECRET_KEY` Django et `DEBUG=False` à régénérer/poser ; limites de débit sur
-   les routes de signature ; sauvegardes quotidiennes des dossiers `data/`.
-4. Ne déployer QUE : Contrats/Sign, OnePager, Coffre, Calculator, Parser
-   (Gestion ESN reste interne).
+1. **Reverse proxy HTTPS** devant chaque service.
+2. Tous les secrets ci-dessus posés par variable d'environnement (aucune
+   valeur par défaut du code en production).
+3. `ADBI_AUTH=on` sur cv-parser.
+4. Sauvegardes régulières des volumes `data/` (et, une fois la migration
+   faite, de l'instance PostgreSQL — milestone 4).
+5. Ne déployer que Contrats/Sign, OnePager, Coffre, Calculator, Parser
+   (ADBI Gestion n'a jamais fait partie de ce dépôt).
 
 ## 10. Fiabilité
 - **Préchauffage** : tout est prêt ~3 s après l'ouverture (90 s pour Parser).
