@@ -4,12 +4,36 @@
 #   docker compose up -d --build
 #   → Factory sur http://localhost:4000
 #
-# PostgreSQL n'est PAS encore ici : chaque service garde son stockage fichier
-# actuel (SQLite/JSON), migration prévue dans un milestone séparé. Les noms de
-# service ci-dessous (contrats, one-pager, coffre, cv-parser) sont ceux que
-# factory/modules.docker.json utilise comme "hote" — ne pas les renommer sans
-# adapter ce fichier également.
+# PostgreSQL est provisionné ci-dessous (une base par service, voir
+# infra/postgres/init-databases.sh) mais pas encore CONSOMMÉ : contrats,
+# cv-parser et one-pager gardent pour l'instant leur stockage fichier actuel
+# (SQLite/JSON) — DATABASE_URL est déjà câblée pour que la migration de
+# chaque service (issues #14/#15/#16) n'ait qu'à la lire, sans retoucher ce
+# fichier. Les noms de service ci-dessous (contrats, one-pager, coffre,
+# cv-parser) sont ceux que factory/modules.docker.json utilise comme "hote" —
+# ne pas les renommer sans adapter ce fichier également.
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: adbi-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-adbi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD est requis (voir .env.example) — jamais de mot de passe par défaut sur une base de données}
+      POSTGRES_DB: ${POSTGRES_USER:-adbi}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-adbi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Pas de port publié vers l'hôte par défaut : seuls les services du réseau
+    # compose y accèdent. Pour un accès direct (psql, débogage), décommenter :
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+    restart: unless-stopped
+
   factory:
     build: ./factory
     container_name: adbi-factory
@@ -33,8 +57,14 @@ services:
       - "4100:4100"
     volumes:
       - ./contrats/data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       PORT: 4100
+      # Pas encore consommée par le code (voir issue #14) — provisionnée pour
+      # que la migration n'ait qu'à la lire.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_contrats
       # Sans code d'accès explicite, un code par défaut connu de tout le
       # dépôt serait écrit dans data/code-parametres.txt — voir ARCHITECTURE.md.
       ADBI_CODE_PARAMETRES: ${ADBI_CODE_PARAMETRES:?ADBI_CODE_PARAMETRES est requis (voir .env.example) — jamais le défaut de développement en déploiement}
@@ -61,8 +91,13 @@ services:
       - "4200:4200"
     volumes:
       - ./one-pager/data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       PORT: 4200
+      # Pas encore consommée par le code (voir issue #16).
+      DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_one_pager
     restart: unless-stopped
 
   coffre:
@@ -88,12 +123,17 @@ services:
       - ./cv-parser/data:/app/data
       - ./cv-parser/uploads:/app/uploads
       - ./cv-parser/cv_output:/app/cv_output
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       PORT: 5000
       # Posé ICI, en dur — jamais via une variable .env optionnelle — pour
       # qu'exposer ce service via compose n'oublie jamais l'authentification
       # (voir factory/README.md § Authentification du CV Parser).
       ADBI_AUTH: "on"
+      # Pas encore consommée par le code (voir issue #15).
+      DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_cv_parser
       ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
       ADBI_SUPERUSER_EMAIL: ${ADBI_SUPERUSER_EMAIL:?ADBI_SUPERUSER_EMAIL est requis (voir .env.example) — jamais admin@adbi.fr en déploiement}
       ADBI_SUPERUSER_PASSWORD: ${ADBI_SUPERUSER_PASSWORD:?ADBI_SUPERUSER_PASSWORD est requis (voir .env.example) — jamais le défaut de développement en déploiement}
@@ -102,3 +142,6 @@ services:
       ADBI_LLM_MODEL: ${ADBI_LLM_MODEL:-}
       ADBI_LLM_MODELS: ${ADBI_LLM_MODELS:-}
     restart: unless-stopped
+
+volumes:
+  postgres-data:

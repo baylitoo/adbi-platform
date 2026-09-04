@@ -24,11 +24,13 @@ docker compose up -d --build
 ```
 
 `docker-compose.yml` construit et démarre les 5 services (`factory` utilise
-`factory/modules.docker.json`, voir `factory/README.md`). Sous Coolify,
+`factory/modules.docker.json`, voir `factory/README.md`) plus une instance
+PostgreSQL (une base par service, voir `infra/postgres/`). Sous Coolify,
 importer ce dépôt comme *docker-compose resource* : les variables
-d'environnement se posent dans l'interface, un domaine par service. PostgreSQL
-n'est pas encore dans ce compose (migration prévue, chaque service garde pour
-l'instant son stockage fichier).
+d'environnement se posent dans l'interface, un domaine par service. La base
+Postgres est provisionnée mais pas encore **consommée** : contrats, cv-parser
+et one-pager gardent pour l'instant leur stockage fichier (SQLite/JSON) —
+migration en cours, service par service.
 
 ### Serveur classique (systemd, un seul hôte)
 

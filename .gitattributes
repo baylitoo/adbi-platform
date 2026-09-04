@@ -2,6 +2,10 @@
 # déploiement cible Linux (Coolify) — un script ou Dockerfile en CRLF y échoue.
 * text=auto
 
+# Toujours LF, même check-out sur Windows : un script shebang en CRLF (\r
+# après #!/bin/sh) échoue au lancement dans un conteneur Linux.
+*.sh text eol=lf
+
 *.ico binary
 *.png binary
 *.jpg binary
