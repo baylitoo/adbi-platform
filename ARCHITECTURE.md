@@ -327,8 +327,10 @@ un déploiement peut donc tourner sans jamais écrire de secret sur disque.
 2. Tous les secrets ci-dessus posés par variable d'environnement (aucune
    valeur par défaut du code en production).
 3. `ADBI_AUTH=on` sur cv-parser.
-4. Sauvegardes régulières des volumes `data/` (et, une fois la migration
-   faite, de l'instance PostgreSQL — milestone 4).
+4. Sauvegardes régulières des volumes `data/` (fichiers générés/déposés —
+   détail par service dans `docs/deploiement-coolify.md` § volumes) ET du
+   volume `postgres-data` (Contrats et Parser y stockent déjà leurs
+   enregistrements structurés — issues #14/#15 ; OnePager suivra, issue #16).
 5. Ne déployer que Contrats/Sign, OnePager, Coffre, Calculator, Parser
    (ADBI Gestion n'a jamais fait partie de ce dépôt).
 
@@ -337,12 +339,15 @@ un déploiement peut donc tourner sans jamais écrire de secret sur disque.
 - **Journaux** par module (`adbi-factory/logs/<id>.log`) ; en cas d'échec de
   démarrage, la Factory remonte les 6 dernières lignes dans l'interface.
 - **Archivage systématique** des contrats générés (rien d'écrasé, horodatage).
-- **Contrats stocke en PostgreSQL** (`DATABASE_URL`, requise — issue #14) :
-  schéma appliqué automatiquement au démarrage (`lib/schema.sql`), transactions
-  pour toute opération multi-lignes (corbeille, suppression groupée). Les
-  autres modules restent pour l'instant sur SQLite en WASM (sql.js)/JSON
-  (aucun binaire natif, portable partout) tant que leur propre bascule
-  (issues #15/#16) n'est pas faite.
+- **Contrats et Parser stockent en PostgreSQL** (`DATABASE_URL`, requise —
+  issues #14 et #15) : schéma appliqué automatiquement au démarrage
+  (`contrats/lib/schema.sql`, `cv-parser/core/schema.sql`), transactions pour
+  toute opération multi-lignes côté Contrats (corbeille, suppression
+  groupée). Les fichiers eux-mêmes (contrats générés, CV déposés/dossiers
+  produits) restent sur disque dans les deux cas — PostgreSQL porte les
+  enregistrements structurés, pas les fichiers. OnePager reste pour l'instant
+  sur SQLite en WASM (sql.js)/JSON (aucun binaire natif, portable partout)
+  tant que sa propre bascule (issue #16) n'est pas faite.
 - Les échecs optionnels sont silencieux et n'abîment jamais le cœur : mascotte
   3D, enrichissement annuaire, envoi SMTP (repli sur mailto), fiche entreprise.
 
@@ -353,10 +358,11 @@ un déploiement peut donc tourner sans jamais écrire de secret sur disque.
 - **Personnalisation sans code** : textes des modèles (Paramètres), référentiels,
   seuils métier (Gestion : `config/settings.py`, constantes commentées).
 - Volumes : sql.js et JSON conviennent à l'échelle d'une ESN (centaines de
-  contrats) pour les modules pas encore migrés. Contrats est déjà passé à
-  PostgreSQL (issue #14) — l'accès y est isolé derrière `lib/db.pg.js`
-  (`chargerDemandes`, `sauverContrat`…), même principe pour les autres modules
-  le jour de leur bascule (issues #15/#16).
+  contrats) pour les modules pas encore migrés (OnePager, issue #16).
+  Contrats (issue #14) et Parser (issue #15) sont déjà passés à PostgreSQL —
+  l'accès y est isolé derrière `contrats/lib/db.pg.js`
+  (`chargerDemandes`, `sauverContrat`…) et `cv-parser/core/*_pg.py`
+  respectivement, même principe pour OnePager le jour de sa bascule.
 
 ## 12. Démarrage & exploitation
 
@@ -385,6 +391,7 @@ cd factory && node server.js
 ```
 - Raccourcis bureau : « ADBI Factory », « ADBI - Contrats ».
 - Sauvegardes à faire régulièrement : les dossiers `data/` de chaque module
-  (bases, référentiels, clé du Coffre, contrats générés) — et, une fois la
-  migration PostgreSQL faite service par service (milestone 4), le volume
-  `postgres-data` du conteneur `postgres`.
+  (référentiels, clé du Coffre, contrats générés, réglages cv-parser — voir
+  `docs/deploiement-coolify.md` § volumes pour le détail par service) ET le
+  volume `postgres-data` du conteneur `postgres` (Contrats et Parser y
+  stockent déjà leurs enregistrements structurés, OnePager suivra).

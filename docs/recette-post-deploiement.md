@@ -37,9 +37,12 @@ conteneurisé (`docker-compose.yml`, voir `docs/deploiement-coolify.md`).
       répond correctement — sinon voyant "non configurée", pas d'erreur
       côté navigateur (jamais d'appel direct navigateur → passerelle).
 - [ ] **Sauvegardes planifiées** : volume `postgres-data`, `coffre/data/`
-      (⚠️ `cle-locale.bin` irremplaçable), et tant que la migration
-      PostgreSQL (milestone 4) n'est pas terminée pour un service, son
-      dossier `data/` — voir `docs/deploiement-coolify.md` § volumes.
+      (⚠️ `cle-locale.bin` irremplaçable), `contrats/data/` (fichiers
+      générés — la bascule PostgreSQL ne les remplace pas),
+      `cv-parser/uploads/` + `cv-parser/cv_output/` (fichiers CV — idem),
+      et `one-pager/data/` tant que sa bascule PostgreSQL (issue #16) n'est
+      pas faite — voir `docs/deploiement-coolify.md` § volumes pour le détail
+      par service.
 - [ ] **Un utilisateur superuser cv-parser fonctionnel** : connexion possible
       avec `ADBI_SUPERUSER_EMAIL`/`ADBI_SUPERUSER_PASSWORD` posés au premier
       démarrage — pas de repli sur `admin@adbi.fr` (dev uniquement).
