@@ -2,7 +2,7 @@
 from flask import Blueprint, jsonify, request
 
 from core.auth import require_auth, get_current_user
-from core.database import (
+from core.database_pg import (
     insert_need, get_need, list_needs, update_need, delete_need,
 )
 

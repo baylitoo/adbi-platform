@@ -1,161 +1,54 @@
-"""core/auth.py — Authentification JWT avec stockage fichier JSON.
+"""core/auth.py — Authentification JWT, stockage PostgreSQL (core/auth_pg.py).
 
 Deux rôles : 'superuser' (accès total) et 'user' (accès standard).
-Tokens : access (1h) + refresh (7j) stockés dans data/tokens.json.
+Tokens : access (1h) + refresh (7j).
+
+Bascule PostgreSQL (issue #15, PR B) : la logique JWT (encodage/décodage,
+décorateurs Flask) reste ICI, inchangée — seul le stockage (utilisateurs,
+refresh tokens) est délégué à core/auth_pg.py. get_user_by_id,
+get_user_by_email, list_users, create_user, update_user, delete_user,
+verify_password, store_refresh_token, is_refresh_token_valid,
+revoke_refresh_token et revoke_all_user_tokens sont ré-exportées telles
+quelles depuis core/auth_pg : tout le reste du code (api/*.py) continue de
+faire `from core.auth import ...` sans changement.
 """
 from __future__ import annotations
 
-import json
 import os
 import uuid
-import threading
 from datetime import datetime, timezone, timedelta
 from functools import wraps
-from pathlib import Path
 
-import bcrypt
 import jwt
 from flask import g, jsonify, redirect, request
 
 from config import (
     JWT_SECRET, JWT_ALGORITHM,
     ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS,
-    USERS_FILE, TOKENS_FILE,
     DEFAULT_SUPERUSER_EMAIL, DEFAULT_SUPERUSER_PASSWORD,
 )
 
-_lock = threading.Lock()
+# ── Stockage (PostgreSQL) — voir core/auth_pg.py ──────────────────────────────
+from core.auth_pg import (
+    get_user_by_id, get_user_by_email, list_users,
+    create_user, update_user, delete_user, verify_password,
+    store_refresh_token, is_refresh_token_valid,
+    revoke_refresh_token, revoke_all_user_tokens,
+)
 
-
-# ── Utilitaires fichiers ───────────────────────────────────────────────────────
-
-def _load(path: Path, default=None):
-    if default is None:
-        default = {}
-    try:
-        if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-    return default
-
-
-def _save(path: Path, data):
-    with _lock:
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(path)
-
-
-# ── Gestion des utilisateurs ──────────────────────────────────────────────────
-
-def load_users() -> dict:
-    return _load(USERS_FILE)
-
-
-def save_users(users: dict):
-    _save(USERS_FILE, users)
-
-
-def get_user_by_id(user_id: str) -> dict | None:
-    return load_users().get(user_id)
-
-
-def get_user_by_email(email: str) -> dict | None:
-    for u in load_users().values():
-        if u.get("email", "").lower() == email.lower():
-            return u
-    return None
-
-
-def list_users() -> list[dict]:
-    return [
-        {k: v for k, v in u.items() if k != "password_hash"}
-        for u in load_users().values()
-    ]
-
-
-def create_user(
-    email: str,
-    password: str,
-    role: str = "user",
-    full_name: str = "",
-) -> dict:
-    if get_user_by_email(email):
-        raise ValueError(f"Email déjà utilisé : {email}")
-    if role not in ("user", "superuser"):
-        raise ValueError("Rôle invalide — valeurs acceptées : user, superuser")
-
-    uid = str(uuid.uuid4())
-    pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    user = {
-        "id": uid,
-        "email": email,
-        "password_hash": pw_hash,
-        "role": role,
-        "full_name": full_name or email.split("@")[0],
-        "is_active": True,
-        "created_at": _now_iso(),
-    }
-    users = load_users()
-    users[uid] = user
-    save_users(users)
-    return _public(user)
-
-
-def update_user(user_id: str, updates: dict) -> dict:
-    users = load_users()
-    if user_id not in users:
-        raise KeyError("Utilisateur introuvable")
-    allowed = {"full_name", "role", "is_active"}
-    for k, v in updates.items():
-        if k in allowed:
-            users[user_id][k] = v
-    if "password" in updates and updates["password"]:
-        users[user_id]["password_hash"] = bcrypt.hashpw(
-            updates["password"].encode(), bcrypt.gensalt()
-        ).decode()
-    save_users(users)
-    return _public(users[user_id])
-
-
-def delete_user(user_id: str):
-    users = load_users()
-    if user_id not in users:
-        raise KeyError("Utilisateur introuvable")
-    del users[user_id]
-    save_users(users)
-    revoke_all_user_tokens(user_id)
-
-
-def verify_password(password: str, pw_hash: str) -> bool:
-    try:
-        return bcrypt.checkpw(password.encode(), pw_hash.encode())
-    except Exception:
-        return False
-
-
-def _public(user: dict) -> dict:
-    return {k: v for k, v in user.items() if k != "password_hash"}
+__all__ = [
+    "get_user_by_id", "get_user_by_email", "list_users",
+    "create_user", "update_user", "delete_user", "verify_password",
+    "create_access_token", "create_refresh_token",
+    "verify_access_token", "verify_refresh_token",
+    "revoke_refresh_token", "revoke_all_user_tokens",
+    "ensure_default_superuser",
+    "require_auth", "require_superuser", "get_current_user",
+    "AUTH_ACTIVE",
+]
 
 
 # ── Gestion des tokens ────────────────────────────────────────────────────────
-
-def load_tokens() -> dict:
-    return _load(TOKENS_FILE)
-
-
-def save_tokens(tokens: dict):
-    _save(TOKENS_FILE, tokens)
-
-
-def _purge_expired(tokens: dict) -> dict:
-    now = datetime.now(timezone.utc)
-    return {
-        jti: t for jti, t in tokens.items()
-        if not t.get("revoked") and datetime.fromisoformat(t["expires_at"]) > now
-    }
-
 
 def create_access_token(user: dict) -> str:
     now = datetime.now(timezone.utc)
@@ -184,17 +77,7 @@ def create_refresh_token(user: dict) -> str:
         "type": "refresh",
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-    tokens = load_tokens()
-    tokens = _purge_expired(tokens)
-    tokens[jti] = {
-        "user_id":    user["id"],
-        "jti":        jti,
-        "expires_at": exp.isoformat(),
-        "created_at": now.isoformat(),
-        "revoked":    False,
-    }
-    save_tokens(tokens)
+    store_refresh_token(jti, user["id"], exp)
     return token
 
 
@@ -211,33 +94,17 @@ def verify_refresh_token(token: str) -> dict | None:
         p = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         if p.get("type") != "refresh":
             return None
-        stored = load_tokens().get(p.get("jti"))
-        if not stored or stored.get("revoked"):
+        if not is_refresh_token_valid(p.get("jti")):
             return None
         return p
     except jwt.PyJWTError:
         return None
 
 
-def revoke_refresh_token(jti: str):
-    tokens = load_tokens()
-    if jti in tokens:
-        tokens[jti]["revoked"] = True
-        save_tokens(tokens)
-
-
-def revoke_all_user_tokens(user_id: str):
-    tokens = load_tokens()
-    for t in tokens.values():
-        if t.get("user_id") == user_id:
-            t["revoked"] = True
-    save_tokens(tokens)
-
-
 # ── Initialisation ────────────────────────────────────────────────────────────
 
 def ensure_default_superuser():
-    if not load_users():
+    if not list_users():
         create_user(
             email=DEFAULT_SUPERUSER_EMAIL,
             password=DEFAULT_SUPERUSER_PASSWORD,
@@ -336,9 +203,3 @@ def require_superuser(f):
 
 def get_current_user() -> dict | None:
     return getattr(g, "current_user", None)
-
-
-# ── Utilitaire ────────────────────────────────────────────────────────────────
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
