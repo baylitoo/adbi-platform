@@ -6,34 +6,25 @@ expirait, si son quota était atteint ou si le service répondait mal, l'analyse
 échouait. Ici, on essaie plusieurs modèles à la suite et on renvoie la première
 réponse obtenue.
 
-L'ordre est le suivant :
+Fournisseur : la passerelle d'inférence auto-hébergée ADBI (base URL + clé
+posées par ADBI_LLM_BASE_URL / ADBI_LLM_API_KEY, voir config.py), compatible
+API OpenAI. OpenAI, OpenRouter puis OVHcloud AI Endpoints ont été utilisés
+avant elle et sont tous retirés : aucun appel ne doit repartir vers un tiers
+non identifié — un CV est une donnée personnelle.
 
-1. Le fournisseur choisi dans l'écran Paramètres, s'il a une clé.
-2. La chaîne OVHcloud — six modèles, sans clé ni inscription, hébergés en UE.
-
-Le deuxième point mérite une explication : le quota d'OVHcloud se compte PAR
-MODÈLE. Un modèle bloqué ne dit donc rien des cinq autres, et passer au suivant
-débloque immédiatement. C'est ce qui rend la chaîne efficace plutôt que
-redondante.
-
-L'ordre des modèles vient d'un banc d'essai (extraction d'un CV, calcul,
-rédaction) : les trois premiers ont réussi les trois épreuves sans faute, les
-suivants ont réussi l'extraction. Aucun modèle n'y figure sans avoir été mesuré.
-
-OVHcloud s'engage à ne pas utiliser les données pour entraîner ses modèles et à
-ne rien conserver, ce qui en fait le seul de nos fournisseurs défendable pour
-des CV — qui sont des données personnelles.
+La chaîne reste utile même avec un seul fournisseur : plusieurs modèles
+(ADBI_LLM_MODELS, séparés par des virgules) peuvent être essayés dans l'ordre
+si le premier échoue ou est à court de quota côté passerelle.
 """
 
 import json
+import os
 import re
 import threading
 
 import requests
 
-from config import DATA_DIR, get_active_llm
-
-OVH_URL = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions"
+from config import DATA_DIR, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, get_active_llm
 
 # Session partagée : les connexions TLS sont réutilisées entre les appels
 # (sondage puis envoi réel vers le même hôte) au lieu d'être renégociées.
@@ -54,29 +45,11 @@ _dernier = {"service": None, "ms": None, "quand": None, "sautes": 0}
 def dernier_service() -> dict:
     return dict(_dernier)
 
-# Chaîne de secours, ordonnée POUR L'EXTRACTION DE CV — le travail réel de cette
-# application. Les dix modèles mesurés ont tous extrait un CV sans erreur ; ce
-# qui les départage ici est donc, dans l'ordre : la justesse sur les nombres
-# (une extraction calcule l'ancienneté à partir des dates), la régularité du
-# temps de réponse, puis la vitesse.
-CHAINE_OVH = (
-    # Extraction 100 en 2,3 s, et le seul aussi juste sur les calculs.
-    "Mistral-Small-3.2-24B-Instruct-2506",
-    # Extraction 100 en 2,9 s, juste partout lui aussi.
-    "gpt-oss-20b",
-    # Extraction 100 en 2,6 s.
-    "Meta-Llama-3_3-70B-Instruct",
-    # Le plus rapide en extraction (1,6 s) et juste sur les calculs, mais c'est
-    # un modèle raisonneur : sur un CV touffu il peut passer à 15 s. D'où sa
-    # place ici plutôt qu'en tête. Son brouillon <think> est retiré par _nettoyer.
-    "Qwen3-32B",
-    # Extraction 100, mais 8,5 s.
-    "Qwen3.5-397B-A17B",
-    # Extraction 100 en 1,8 s — sauf qu'il s'est trompé sur le calcul de marge
-    # (12 410 € au lieu de 6 270). Sur un CV aux dates ambiguës, l'ancienneté
-    # est donc à surveiller : dernier recours seulement.
-    "Mistral-Nemo-Instruct-2407",
-)
+# L'ancienne chaîne de secours listait six modèles OVHcloud précis, mesurés sur
+# l'extraction de CV (justesse sur les nombres, régularité, vitesse). Ce banc
+# d'essai ne vaut que pour ces modèles-là : à refaire une fois la passerelle
+# interne en service, avec les modèles qu'elle sert réellement (voir issue
+# GitHub « Adapter la chaîne de secours aux modèles réellement servis »).
 
 TIMEOUT_DEFAUT = 60
 
@@ -89,26 +62,35 @@ class LLMIndisponible(RuntimeError):
 
 def chaine_defaut() -> list:
     """
-    Chaîne appliquée tant que rien n'a été configuré.
+    Chaîne appliquée tant que rien n'a été configuré : la passerelle
+    d'inférence auto-hébergée ADBI (ADBI_LLM_BASE_URL / ADBI_LLM_API_KEY, voir
+    config.py). Vide si ADBI_LLM_BASE_URL n'est pas posée : pas d'erreur au
+    démarrage, simplement pas d'IA tant que ce n'est pas configuré —
+    l'extraction locale Docling reste disponible sans elle.
 
-    Uniquement des modèles OVHcloud, dans l'ordre mesuré sur l'extraction.
-    OpenAI et OpenRouter ont été retirés : hors UE, l'un facturé, et leurs clés
-    vivaient en clair dans config.py — inacceptable pour traiter des CV, qui
-    sont des données personnelles.
+    Plusieurs modèles à essayer en cascade : ADBI_LLM_MODELS (séparés par des
+    virgules) ; à défaut, ADBI_LLM_MODEL seul.
 
     L'ordre reste modifiable depuis l'écran Paramètres ; une fois la chaîne
     enregistrée, c'est le fichier qui fait foi.
     """
+    if not LLM_BASE_URL:
+        return []
+    modeles = [m.strip() for m in os.environ.get("ADBI_LLM_MODELS", "").split(",") if m.strip()]
+    if not modeles and LLM_MODEL:
+        modeles = [LLM_MODEL]
     return [{
-        "actif": True, "nom": "OVHcloud", "url": OVH_URL,
-        "modele": m, "cle": "",
-    } for m in CHAINE_OVH]
+        "actif": True, "nom": "ADBI", "url": LLM_BASE_URL,
+        "modele": m, "cle": LLM_API_KEY,
+    } for m in modeles]
 
 
 # Hôtes définitivement écartés. Le filtre porte sur l'URL et non sur le nom :
 # une chaîne enregistrée avant leur retrait les ramènerait sinon en douce, et
-# c'est justement le fichier qui fait foi sur le défaut.
-HOTES_RETIRES = ("api.openai.com", "openrouter.ai")
+# c'est justement le fichier qui fait foi sur le défaut. OVHcloud AI Endpoints
+# a servi de fournisseur transitoire avant la passerelle interne ; retiré au
+# même titre qu'OpenAI et OpenRouter — aucun tiers non identifié.
+HOTES_RETIRES = ("api.openai.com", "openrouter.ai", "oai.endpoints.kepler.ai.cloud.ovh.net")
 
 
 def charger_chaine() -> list:

@@ -38,42 +38,36 @@ DEFAULT_SUPERUSER_PASSWORD = "Adbi2025!"
 #
 # OpenAI et OpenRouter ont été retirés le 2026-08-13 : leurs clés vivaient en
 # clair dans ce fichier, OpenAI était facturé, et aucun des deux n'est hébergé
-# en Union européenne — or un CV est une donnée personnelle. Ne pas les
-# réintroduire ici : le fichier n'est pas un coffre.
+# en Union européenne — or un CV est une donnée personnelle. OVHcloud AI
+# Endpoints (UE, sans clé) les avait remplacés ; il est à son tour retiré au
+# profit de la passerelle d'inférence auto-hébergée ADBI : mêmes garanties de
+# confidentialité, sous notre contrôle direct. Ne réintroduire aucun
+# fournisseur tiers ici — le fichier n'est pas un coffre.
 #
-# Seul reste OVHcloud AI Endpoints : hébergé en UE, sans clé ni inscription,
-# rétention zéro et aucune utilisation des données pour l'entraînement. Le
-# choix du modèle ne se fait plus ici mais dans la chaîne de secours
-# (`llm_cascade.py`, écran Paramètres) : six modèles essayés dans l'ordre.
+# Base URL + clé posées par variable d'environnement, jamais en dur. Le choix
+# du modèle ne se fait pas ici mais dans la chaîne de secours
+# (`llm_cascade.py`, écran Paramètres).
+LLM_BASE_URL = os.environ.get("ADBI_LLM_BASE_URL", "").rstrip("/")
+LLM_API_KEY  = os.environ.get("ADBI_LLM_API_KEY", "")
+LLM_MODEL    = os.environ.get("ADBI_LLM_MODEL", "")
 
-OVH_URL   = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions"
-OVH_MODEL = "Mistral-Small-3.2-24B-Instruct-2506"
-
-PROVIDERS = ("ovh",)
+PROVIDERS = ("interne",)
 
 _llm_prov_file  = DATA_DIR / "llm_provider.txt"
 _llm_model_file = DATA_DIR / "llm_model.txt"          # ancien format, migré
 _llm_model_files = {
-    "ovh": DATA_DIR / "llm_model_ovh.txt",
+    "interne": DATA_DIR / "llm_model_interne.txt",
 }
 
 _DEFAUTS = {
-    "ovh": {"url": OVH_URL, "key": "", "model": OVH_MODEL},
+    "interne": {"url": LLM_BASE_URL, "key": LLM_API_KEY, "model": LLM_MODEL},
 }
 
 
 def modele_coherent(provider: str, model: str) -> bool:
-    """
-    Le modèle appartient-il au fournisseur ?
-
-    Il ne reste qu'OVHcloud, dont les identifiants n'ont jamais de barre
-    oblique — celle-ci signalait un modèle OpenRouter (« openai/gpt-oss:free »).
-    Le contrôle empêche donc de ressaisir un ancien identifiant qui ferait
-    répondre 400 à chaque requête.
-    """
-    if not model:
-        return False
-    return "/" not in model
+    """Le modèle appartient-il au fournisseur ? Un seul fournisseur reste ;
+    seule une valeur non vide est exigée."""
+    return bool(model)
 
 
 def _ranger_anciens_fichiers():
@@ -111,13 +105,13 @@ def get_active_llm() -> dict:
     pourquoi ce n'est pas le modèle attendu qui est utilisé, au lieu de
     laisser l'utilisateur devant une erreur muette.
     """
-    provider = "ovh"
+    provider = "interne"
     if _llm_prov_file.exists():
-        provider = _llm_prov_file.read_text().strip() or "ovh"
+        provider = _llm_prov_file.read_text().strip() or "interne"
     if provider not in PROVIDERS:
         # Ancien réglage pointant vers un fournisseur retiré : on retombe sur
         # le seul restant plutôt que de lever une erreur au démarrage.
-        provider = "ovh"
+        provider = "interne"
 
     defaut = _DEFAUTS[provider]
     model = defaut["model"]
@@ -149,7 +143,7 @@ def set_active_llm(provider: str, model: str = "") -> dict:
     modèle demandé n'appartient pas au fournisseur : il n'est alors PAS
     enregistré, pour ne pas reproduire la panne d'origine.
     """
-    provider = provider if provider in PROVIDERS else "ovh"
+    provider = provider if provider in PROVIDERS else "interne"
     _llm_prov_file.write_text(provider)
 
     refus = None
@@ -157,9 +151,7 @@ def set_active_llm(provider: str, model: str = "") -> dict:
         if modele_coherent(provider, model):
             _llm_model_files[provider].write_text(model)
         else:
-            refus = (f"Le modèle « {model} » n'est pas un modèle OVHcloud : "
-                     "il en faut un sans barre oblique, "
-                     "par exemple « Mistral-Small-3.2-24B-Instruct-2506 ».")
+            refus = f"Le nom de modèle ne peut pas être vide."
 
     return {"provider": provider, "model": get_active_llm()["model"], "refus": refus}
 

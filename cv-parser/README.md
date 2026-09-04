@@ -23,11 +23,13 @@ fiche, base locale + dossiers de compétences générés (`export_dossier.py`).
 
 ## LLM
 
-`config.py` / `llm_cascade.py` pointent aujourd'hui sur **OVHcloud AI
-Endpoints** (UE, sans clé) en dur — OpenAI et OpenRouter ont été retirés le
-2026-08-13 (hors UE, clés en clair). Le passage à une passerelle
-d'inférence auto-hébergée (base URL + clé internes) est prévu en milestone
-séparé ; ne pas réintroduire de fournisseur tiers non identifié entre-temps.
+`config.py` / `llm_cascade.py` appellent la **passerelle d'inférence
+auto-hébergée ADBI** (compatible API OpenAI) via `ADBI_LLM_BASE_URL` +
+`ADBI_LLM_API_KEY` (voir [`.env.example`](.env.example)) — OpenAI, OpenRouter
+puis OVHcloud AI Endpoints ont été utilisés avant elle et sont tous retirés du
+code. Sans `ADBI_LLM_BASE_URL`, l'extraction locale Docling reste seule
+disponible (pas d'erreur, juste pas d'IA). Ne réintroduire aucun fournisseur
+tiers non identifié.
 
 ## Authentification
 
