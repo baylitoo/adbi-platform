@@ -1,0 +1,104 @@
+# Plateforme ADBI — lancement complet en une commande.
+#
+#   cp .env.example .env   # puis renseigner les valeurs obligatoires (voir plus bas)
+#   docker compose up -d --build
+#   → Factory sur http://localhost:4000
+#
+# PostgreSQL n'est PAS encore ici : chaque service garde son stockage fichier
+# actuel (SQLite/JSON), migration prévue dans un milestone séparé. Les noms de
+# service ci-dessous (contrats, one-pager, coffre, cv-parser) sont ceux que
+# factory/modules.docker.json utilise comme "hote" — ne pas les renommer sans
+# adapter ce fichier également.
+services:
+  factory:
+    build: ./factory
+    container_name: adbi-factory
+    ports:
+      - "4000:4000"
+    environment:
+      ADBI_LLM_BASE_URL: ${ADBI_LLM_BASE_URL:-}
+      ADBI_LLM_API_KEY: ${ADBI_LLM_API_KEY:-}
+      ADBI_LLM_MODELS: ${ADBI_LLM_MODELS:-}
+    depends_on:
+      - contrats
+      - one-pager
+      - coffre
+      - cv-parser
+    restart: unless-stopped
+
+  contrats:
+    build: ./contrats
+    container_name: adbi-contrats
+    ports:
+      - "4100:4100"
+    volumes:
+      - ./contrats/data:/app/data
+    environment:
+      PORT: 4100
+      # Sans code d'accès explicite, un code par défaut connu de tout le
+      # dépôt serait écrit dans data/code-parametres.txt — voir ARCHITECTURE.md.
+      ADBI_CODE_PARAMETRES: ${ADBI_CODE_PARAMETRES:?ADBI_CODE_PARAMETRES est requis (voir .env.example) — jamais le défaut de développement en déploiement}
+      PAPPERS_API_KEY: ${PAPPERS_API_KEY:-}
+      INSEE_API_KEY: ${INSEE_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      YOUSIGN_API_KEY: ${YOUSIGN_API_KEY:-}
+      YOUSIGN_MODE: ${YOUSIGN_MODE:-sandbox}
+      YOUSIGN_WEBHOOK_SECRET: ${YOUSIGN_WEBHOOK_SECRET:-}
+      ZOHO_CLIENT_ID: ${ZOHO_CLIENT_ID:-}
+      ZOHO_CLIENT_SECRET: ${ZOHO_CLIENT_SECRET:-}
+      ZOHO_REFRESH_TOKEN: ${ZOHO_REFRESH_TOKEN:-}
+      ZOHO_REGION: ${ZOHO_REGION:-eu}
+    restart: unless-stopped
+
+  one-pager:
+    build: ./one-pager
+    container_name: adbi-onepager
+    ports:
+      - "4200:4200"
+    volumes:
+      - ./one-pager/data:/app/data
+    environment:
+      PORT: 4200
+    restart: unless-stopped
+
+  coffre:
+    build: ./coffre
+    container_name: adbi-coffre
+    ports:
+      - "4300:4300"
+    volumes:
+      # data/cle-locale.bin vit ici — SA PERTE REND IRRÉCUPÉRABLES tous les
+      # documents "protégés" émis (voir coffre/README.md). Sauvegarder ce
+      # volume comme n'importe quelle donnée applicative critique.
+      - ./coffre/data:/app/data
+    environment:
+      ADBI_COFFRE_PORT: 4300
+    restart: unless-stopped
+
+  cv-parser:
+    build: ./cv-parser
+    container_name: adbi-cv-parser
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./cv-parser/data:/app/data
+      - ./cv-parser/uploads:/app/uploads
+      - ./cv-parser/cv_output:/app/cv_output
+    environment:
+      PORT: 5000
+      # Posé ICI, en dur — jamais via une variable .env optionnelle — pour
+      # qu'exposer ce service via compose n'oublie jamais l'authentification
+      # (voir factory/README.md § Authentification du CV Parser).
+      ADBI_AUTH: "on"
+      ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
+      ADBI_SUPERUSER_EMAIL: ${ADBI_SUPERUSER_EMAIL:?ADBI_SUPERUSER_EMAIL est requis (voir .env.example) — jamais admin@adbi.fr en déploiement}
+      ADBI_SUPERUSER_PASSWORD: ${ADBI_SUPERUSER_PASSWORD:?ADBI_SUPERUSER_PASSWORD est requis (voir .env.example) — jamais le défaut de développement en déploiement}
+      ADBI_LLM_BASE_URL: ${ADBI_LLM_BASE_URL:-}
+      ADBI_LLM_API_KEY: ${ADBI_LLM_API_KEY:-}
+      ADBI_LLM_MODEL: ${ADBI_LLM_MODEL:-}
+      ADBI_LLM_MODELS: ${ADBI_LLM_MODELS:-}
+    restart: unless-stopped

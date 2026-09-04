@@ -14,6 +14,24 @@ Le module **ADBI Gestion n'est pas dans ce dépôt** (outil interne, non déploy
 
 ## Déployer
 
+### Docker (recommandé — Coolify ou tout hôte Docker)
+
+```bash
+git clone <URL_DE_CE_DEPOT> adbi-platform && cd adbi-platform
+cp .env.example .env      # renseigner les variables REQUIS (voir le fichier)
+docker compose up -d --build
+# → Factory sur http://localhost:4000
+```
+
+`docker-compose.yml` construit et démarre les 5 services (`factory` utilise
+`factory/modules.docker.json`, voir `factory/README.md`). Sous Coolify,
+importer ce dépôt comme *docker-compose resource* : les variables
+d'environnement se posent dans l'interface, un domaine par service. PostgreSQL
+n'est pas encore dans ce compose (migration prévue, chaque service garde pour
+l'instant son stockage fichier).
+
+### Serveur classique (systemd, un seul hôte)
+
 **Suivre le guide : [`ADBI-Deploiement-Serveur.docx`](ADBI-Deploiement-Serveur.docx)**
 (prérequis, installation, Caddy/HTTPS, systemd, pare-feu, sauvegardes, recette).
 
@@ -57,8 +75,9 @@ cd /opt/adbi && sudo -u adbi git pull && sudo systemctl restart adbi-factory
 - `ARCHITECTURE.md` — architecture interne, sécurité, évolutivité
 - `contrats/docs/INTEGRATION-SIGNATURE.md` — connecteurs de signature (Yousign / Zoho), conformité RGPD/eIDAS
 
-> Dépôt privé. Un passage à un déploiement par conteneurs (Docker/Coolify),
-> secrets en variables d'environnement et base PostgreSQL est en préparation
-> — ce README et `ARCHITECTURE.md` seront mis à jour à mesure.
+> Dépôt privé. Déploiement par conteneurs (Docker/Coolify) et secrets en
+> variables d'environnement disponibles ci-dessus ; migration vers une base
+> PostgreSQL partagée encore en préparation (chaque service garde pour
+> l'instant son stockage fichier).
 
 Contact fonctionnel : Amine OUKLI (ADBI).
