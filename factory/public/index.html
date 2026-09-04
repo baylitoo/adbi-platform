@@ -56,8 +56,8 @@
 <script src="/vendor/three.min.js" defer></script>
 <script src="/vendor/GLTFLoader.js" defer></script>
 <script src="/mascotte.js" defer></script>
-<!-- Voyant des services d'IA. llm.js doit précéder etat-ia.js, qui s'en sert. -->
-<script src="/llm.js"></script>
+<!-- Voyant des services d'IA. Parle uniquement à /api/llm/* (Factory) : la clé
+     de la passerelle interne reste côté serveur, jamais dans ce script. -->
 <script src="/etat-ia.js"></script>
 </body>
 </html>

@@ -261,6 +261,50 @@ function repondreJson(rep, code, donnees) {
   rep.end(corps);
 }
 
+// ── Voyant IA (widget du hub) ────────────────────────────────────────────────
+//
+// Le hub affichait autrefois un indicateur qui appelait OVHcloud et Mistral AI
+// DEPUIS LE NAVIGATEUR (public/llm.js, retiré). Avec la passerelle interne
+// ADBI, ce n'est plus possible sans exposer ADBI_LLM_API_KEY dans le JS servi
+// à chaque visiteur : la clé reste donc ici, côté serveur, et le navigateur ne
+// parle qu'à ces deux routes.
+const LLM_BASE_URL = (process.env.ADBI_LLM_BASE_URL || "").replace(/\/+$/, "");
+const LLM_API_KEY = process.env.ADBI_LLM_API_KEY || "";
+const LLM_MODELES = (process.env.ADBI_LLM_MODELS || process.env.ADBI_LLM_MODEL || "")
+  .split(",").map((s) => s.trim()).filter(Boolean);
+
+async function testerModeleLlm(modele) {
+  const entetes = { "Content-Type": "application/json" };
+  if (LLM_API_KEY) entetes.Authorization = "Bearer " + LLM_API_KEY;
+  const debut = Date.now();
+  const rep = await fetch(LLM_BASE_URL + "/chat/completions", {
+    method: "POST",
+    headers: entetes,
+    body: JSON.stringify({
+      model: modele,
+      messages: [{ role: "user", content: "ping" }],
+      max_tokens: 8,
+      temperature: 0,
+    }),
+  });
+  const ms = Date.now() - debut;
+  if (!rep.ok) {
+    const texte = await rep.text().catch(() => "");
+    throw new Error(`HTTP ${rep.status}` + (texte ? " — " + texte.slice(0, 200) : ""));
+  }
+  return ms;
+}
+
+async function lireCorpsJson(req) {
+  let brut = "";
+  for await (const bloc of req) brut += bloc;
+  try {
+    return JSON.parse(brut || "{}");
+  } catch (e) {
+    return {};
+  }
+}
+
 function servirFichier(rep, chemin) {
   fs.readFile(chemin, (err, contenu) => {
     if (err) {
@@ -313,6 +357,26 @@ const serveur = http.createServer(async (req, rep) => {
       url: urlModule(m),
       ...resultat,
     });
+  }
+
+  if (chemin === "/api/llm/chaine" && req.method === "GET") {
+    return repondreJson(rep, 200, {
+      configure: !!LLM_BASE_URL && LLM_MODELES.length > 0,
+      modeles: LLM_MODELES,
+    });
+  }
+
+  if (chemin === "/api/llm/tester" && req.method === "POST") {
+    if (!LLM_BASE_URL) return repondreJson(rep, 200, { ok: false, erreur: "Passerelle non configurée (ADBI_LLM_BASE_URL)." });
+    const corps = await lireCorpsJson(req);
+    const modele = (corps.modele || LLM_MODELES[0] || "").trim();
+    if (!modele) return repondreJson(rep, 200, { ok: false, erreur: "Aucun modèle à tester." });
+    try {
+      const ms = await testerModeleLlm(modele);
+      return repondreJson(rep, 200, { ok: true, modele, ms });
+    } catch (e) {
+      return repondreJson(rep, 200, { ok: false, modele, erreur: e.message });
+    }
   }
 
   if (chemin.startsWith("/api/")) return repondreJson(rep, 404, { erreur: "Route inconnue" });

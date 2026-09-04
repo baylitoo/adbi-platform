@@ -13,7 +13,8 @@
 La plateforme est une **suite d'outils internes ADBI**, chacun étant une application
 web autonome, orchestrée par un hub central (**ADBI Factory**). Tout tourne **en
 local** sur le poste : aucune donnée métier ne quitte la machine (sauf appels
-explicitement documentés : annuaire public gouv.fr, IA OVHcloud UE, envoi SMTP).
+explicitement documentés : annuaire public gouv.fr, passerelle d'inférence
+interne ADBI, envoi SMTP).
 
 ```
                         ┌───────────────────────────────────────────┐
@@ -60,6 +61,9 @@ explicitement documentés : annuaire public gouv.fr, IA OVHcloud UE, envoi SMTP)
   échelonnés (800 ms), les plus rapides d'abord — au premier clic, tout est prêt.
   Désactivable : `ADBI_SANS_PRECHAUFFAGE=1` ou `"prechauffage": false`.
 - Sert la **charte commune** (`theme/adbi-theme.css|js`) et ses polices.
+- **Voyant IA** (`/api/llm/chaine`, `/api/llm/tester`) : relaie les tests vers
+  la passerelle d'inférence interne ADBI pour le compte du navigateur — la clé
+  (`ADBI_LLM_API_KEY`) reste côté serveur, jamais servie en JS.
 
 ### Registre des modules — `modules.json`
 Quatre types d'entrées :
@@ -217,9 +221,10 @@ dépôt CV ──► empreinte SHA-256 ── déjà connue ? ──► fiche re
                 │ oui → fiche servie sans IA
                 │ non
                 ▼
-        IA OVHcloud UE UNIQUEMENT (choix RGPD documenté dans llm_cascade.py —
-        ne jamais réintroduire OpenAI/OpenRouter) : sondage par vagues de 3,
-        budget temps global, progression réelle par jeton (plus de faux 88 %)
+        Passerelle d'inférence interne ADBI UNIQUEMENT (choix documenté dans
+        llm_cascade.py — ne jamais réintroduire OpenAI/OpenRouter/OVHcloud) :
+        sondage par vagues de 3, budget temps global, progression réelle par
+        jeton (plus de faux 88 %)
 ```
 - Import par lot : 2 envois parallèles. Bouton « Relancer l'analyse » par fiche.
 - Base locale + dossiers de compétences générés.
@@ -263,7 +268,8 @@ confirmation explicite de l'utilisateur. Il n'a jamais été déployé.
 | Échappement HTML systématique côté front (`escapeHtml` sur toute donnée affichée) | tous |
 | Uploads bornés (JSON 15 Mo ; images de signature 4 Mo, re-encodées en PNG via canvas — jamais insérées telles quelles) | Contrats |
 | Chiffrement AES-256-GCM avec AAD, clé locale hors dépôt | Coffre |
-| IA : OVHcloud UE uniquement (RGPD), OCR pièces 100 % local | Parser, Contrats |
+| IA : passerelle d'inférence interne ADBI uniquement (aucun tiers), OCR pièces 100 % local | Parser, Contrats |
+| Voyant IA du hub : appels à la passerelle relayés côté serveur (`/api/llm/*`), clé jamais exposée au navigateur | Factory |
 | Frame-ancestors restreint à la Factory (à la place du clickjacking Django par défaut) | Gestion |
 | Erreurs jamais fatales côté serveurs (garde-fous `uncaughtException`) : rester en ligne | Contrats, Factory |
 

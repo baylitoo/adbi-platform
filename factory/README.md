@@ -87,6 +87,16 @@ court-circuité.
 > ⚠️ **À réactiver avant toute exposition Internet** : variable
 > d'environnement `ADBI_AUTH=on` (lue dans `cv-parser/core/auth.py`).
 
+## Voyant IA
+
+Le hub affiche un indicateur (chaîne de secours de la passerelle
+d'inférence interne ADBI). `server.js` relaie les tests vers la passerelle
+via `ADBI_LLM_BASE_URL` / `ADBI_LLM_API_KEY` / `ADBI_LLM_MODELS` (voir
+[`.env.example`](.env.example)) : le navigateur ne parle qu'à `/api/llm/chaine`
+et `/api/llm/tester`, jamais directement à la passerelle — la clé ne quitte
+jamais le serveur. Sans ces variables, le voyant affiche « non configurée »
+sans erreur.
+
 ## En cas de problème
 
 - « Le module n'a pas démarré » → `logs/<module>.log` contient la sortie de

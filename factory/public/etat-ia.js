@@ -1,20 +1,18 @@
 /* ADBI Factory — voyant des services d'intelligence artificielle.
  *
- * Un seul indicateur dans l'en-tête : vert si un modèle répond, rouge si aucun.
- * Derrière, une chaîne de six modèles est essayée dans l'ordre. Comme le quota
- * d'OVHcloud se compte PAR MODÈLE, un modèle bloqué ne dit rien des autres :
- * c'est ce qui rend la cascade efficace plutôt que redondante.
- *
- * Au chargement, on s'arrête au premier modèle qui répond — inutile de
- * consommer le quota des cinq autres pour afficher un voyant. Le détail complet
- * n'est mesuré que si l'utilisateur ouvre le panneau et le demande. */
+ * Un seul indicateur dans l'en-tête : vert si un modèle de la passerelle
+ * interne répond, rouge sinon. Les appels passent par la Factory elle-même
+ * (/api/llm/chaine, /api/llm/tester) — la clé de la passerelle
+ * (ADBI_LLM_API_KEY) reste côté serveur, jamais exposée au navigateur.
+ * Avant : appels directs du navigateur vers OVHcloud et Mistral AI
+ * (public/llm.js, retiré) — impossible à reproduire sans faire fuiter la clé
+ * de la passerelle interne à quiconque ouvre les outils de développement. */
 
 (() => {
-  const USAGE = 'redaction';          // chaîne servant de référence pour le voyant
   const CACHE = 'factory.ia.etat';    // évite de retester à chaque navigation
 
   const hero = document.querySelector('.hero');
-  if (!hero || typeof LLM === 'undefined') return;
+  if (!hero) return;
 
   const zone = document.createElement('div');
   zone.className = 'ia-zone';
@@ -35,7 +33,7 @@
   else hero.appendChild(zone);
 
   const $ = id => document.getElementById(id);
-  const chaine = LLM.CASCADE[USAGE] || [];
+  let chaine = [];
 
   function poser(etat, libelle) {
     $('puce-ia').className = 'puce-ia ' + etat;
@@ -58,48 +56,71 @@
     l.querySelector('[data-detail]').textContent = detail;
   }
 
-  /* Voyant : on descend la chaîne et on s'arrête au premier qui répond. */
-  async function verifier() {
-    poser('test', 'IA — test…');
-    const r = await LLM.premierDisponible(USAGE);
-
-    if (r.ok) {
-      poser('ok', r.indisponibles ? `IA — secours ${r.indisponibles + 1}/${chaine.length}` : 'IA — en marche');
-      $('ia-pied').textContent = r.indisponibles
-        ? `${r.modele} répond en ${r.ms} ms. Les ${r.indisponibles} modèles précédents étaient ` +
-          'indisponibles : la cascade a basculé toute seule.'
-        : `${r.modele} répond en ${r.ms} ms.`;
-    } else {
-      poser('ko', 'IA — indisponible');
-      $('ia-pied').textContent = `Aucun des ${chaine.length} modèles n'a répondu. ` +
-        'Vérifiez la connexion au réseau.';
+  async function tester(modele) {
+    try {
+      const r = await fetch('/api/llm/tester', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modele }),
+      });
+      return await r.json();
+    } catch (e) {
+      return { ok: false, modele, erreur: e.message };
     }
-
-    for (const j of r.journal) majLigne(j.modele, 'ko', j.erreur.includes('quota') ? 'quota' : 'panne');
-    if (r.ok) majLigne(r.modele, 'ok', r.ms + ' ms');
-
-    try { sessionStorage.setItem(CACHE, JSON.stringify({ ok: r.ok, modele: r.modele, rang: r.indisponibles })); } catch {}
-    return r;
   }
 
-  /* Détail : chaque modèle est mesuré, un par un pour ne pas se faire limiter
-     en rafale. C'est plus lent, donc réservé à une demande explicite. */
+  /* Voyant : on descend la chaîne et on s'arrête au premier qui répond. Les
+     modèles sont testés un par un (pas de sondage parallèle côté navigateur
+     ici) : la chaîne configurée reste courte en pratique, et la simplicité du
+     relais serveur prime sur la vitesse d'un voyant d'en-tête. */
+  async function verifier() {
+    poser('test', 'IA — test…');
+    let config;
+    try {
+      config = await fetch('/api/llm/chaine').then(r => r.json());
+    } catch (e) {
+      config = { configure: false, modeles: [] };
+    }
+    chaine = config.modeles || [];
+    lignes();
+
+    if (!config.configure) {
+      poser('ko', 'IA — non configurée');
+      $('ia-pied').textContent = 'Passerelle d’inférence interne non configurée côté serveur (ADBI_LLM_BASE_URL / ADBI_LLM_MODELS).';
+      return;
+    }
+
+    for (let i = 0; i < chaine.length; i++) {
+      majLigne(chaine[i], 'test', '…');
+      const r = await tester(chaine[i]);
+      if (r.ok) {
+        majLigne(chaine[i], 'ok', r.ms + ' ms');
+        poser('ok', i ? `IA — secours ${i + 1}/${chaine.length}` : 'IA — en marche');
+        $('ia-pied').textContent = i
+          ? `${chaine[i]} répond en ${r.ms} ms. ${i} modèle(s) précédent(s) indisponible(s).`
+          : `${chaine[i]} répond en ${r.ms} ms.`;
+        try { sessionStorage.setItem(CACHE, JSON.stringify({ ok: true, modele: chaine[i], rang: i })); } catch {}
+        return;
+      }
+      majLigne(chaine[i], 'ko', (r.erreur || '').toLowerCase().includes('quota') ? 'quota' : 'panne');
+    }
+
+    poser('ko', 'IA — indisponible');
+    $('ia-pied').textContent = chaine.length
+      ? `Aucun des ${chaine.length} modèle(s) n'a répondu.`
+      : 'Aucun modèle configuré (ADBI_LLM_MODELS).';
+    try { sessionStorage.setItem(CACHE, JSON.stringify({ ok: false })); } catch {}
+  }
+
+  /* Détail : chaque modèle est mesuré, un par un, réservé à une demande explicite. */
   async function toutTester() {
     $('ia-tout').disabled = true;
     for (const m of chaine) {
       majLigne(m, 'test', '…');
-      const debut = performance.now();
-      try {
-        await LLM.repondre({ modele: m, essais: 1, temperature: 0, max_tokens: 8,
-                             messages: [{ role: 'user', content: 'ping' }] });
-        majLigne(m, 'ok', Math.round(performance.now() - debut) + ' ms');
-      } catch (e) {
-        majLigne(m, 'ko', e.message.includes('quota') ? 'quota' : 'panne');
-      }
+      const r = await tester(m);
+      majLigne(m, r.ok ? 'ok' : 'ko', r.ok ? r.ms + ' ms' : ((r.erreur || '').toLowerCase().includes('quota') ? 'quota' : 'panne'));
     }
     const vivants = $('ia-lignes').querySelectorAll('.ia-ligne.ok').length;
-    $('ia-pied').textContent = `${vivants} modèle(s) disponible(s) sur ${chaine.length}. ` +
-      'Un « quota » n’est pas une panne : il se compte par modèle et se réarme seul.';
+    $('ia-pied').textContent = `${vivants} modèle(s) disponible(s) sur ${chaine.length}.`;
     poser(vivants ? 'ok' : 'ko', vivants ? `IA — ${vivants}/${chaine.length} disponibles` : 'IA — indisponible');
     $('ia-tout').disabled = false;
   }
@@ -112,8 +133,6 @@
     const r = $('puce-ia').getBoundingClientRect();
     p.style.top = (r.bottom + 9) + 'px';
     p.style.left = Math.max(12, r.right - p.offsetWidth) + 'px';
-    /* Hauteur bornée à la place réellement disponible sous la puce : sur une
-       fenêtre courte, le panneau défile au lieu de sortir de l'écran. */
     p.style.maxHeight = Math.max(120, window.innerHeight - r.bottom - 22) + 'px';
   }
 
@@ -133,6 +152,5 @@
     }
   });
 
-  lignes();
   verifier();
 })();
