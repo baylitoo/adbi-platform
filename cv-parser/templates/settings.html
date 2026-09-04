@@ -339,29 +339,28 @@
 
       <div style="display:flex;gap:12px;margin-bottom:20px">
         <div style="flex:1;border:2px solid var(--blue);background:var(--blue-l);border-radius:10px;padding:16px 20px">
-          <div style="font-size:15px;font-weight:800;color:var(--navy);margin-bottom:4px">OVHcloud AI Endpoints</div>
+          <div style="font-size:15px;font-weight:800;color:var(--navy);margin-bottom:4px">Passerelle d'inférence ADBI</div>
           <div style="font-size:12px;color:var(--muted)">
-            Hébergé en Union européenne · sans clé ni inscription · rétention zéro,
-            vos données ne servent pas à entraîner les modèles.
+            Auto-hébergée par ADBI · base URL et clé posées par variable
+            d'environnement (ADBI_LLM_BASE_URL / ADBI_LLM_API_KEY) · sous notre
+            contrôle direct.
           </div>
         </div>
       </div>
 
       <div style="font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:16px">
-        <strong>OpenAI et OpenRouter ont été retirés.</strong> Leurs clés vivaient en clair
-        dans le code, OpenAI était facturé, et ni l'un ni l'autre n'est hébergé en UE —
-        or un CV est une donnée personnelle. Le choix du modèle se fait désormais dans la
+        <strong>OpenAI, OpenRouter et OVHcloud AI Endpoints ont été retirés.</strong> Leurs
+        clés vivaient en clair dans le code ou ne sont pas sous notre contrôle — or un CV
+        est une donnée personnelle. Le choix du modèle se fait désormais dans la
         chaîne de secours ci-dessous.
       </div>
 
       <!-- Model input -->
       <div class="field">
         <label>Modèle principal</label>
-        <input type="text" id="llmModel" placeholder="Mistral-Small-3.2-24B-Instruct-2506"/>
+        <input type="text" id="llmModel" placeholder="nom du modèle servi par la passerelle interne"/>
         <div style="font-size:11px;color:#9AAFC8;margin-top:4px">
-          Identifiants OVHcloud, sans barre oblique :
-          <code>Mistral-Small-3.2-24B-Instruct-2506</code>, <code>gpt-oss-20b</code>,
-          <code>Qwen3-Coder-30B-A3B-Instruct</code>
+          Identifiant du modèle tel que servi par la passerelle interne.
         </div>
       </div>
 
@@ -385,8 +384,8 @@
         L'ordre par défaut est <strong>optimisé pour l'extraction de CV</strong> : d'abord les
         modèles justes sur les nombres (l'ancienneté se calcule à partir des dates),
         ensuite les plus réguliers, enfin les plus rapides.<br>
-        Les modèles OVHcloud fonctionnent sans clé, sont hébergés en UE et ne conservent
-        aucune donnée : ce sont les seuls à qui confier un CV.
+        Tous les services de cette chaîne pointent vers la passerelle d'inférence
+        interne ADBI : c'est la seule à qui confier un CV.
       </div>
 
       <div id="chaineListe"></div>
@@ -652,9 +651,9 @@ function showToast(msg) {
 }
 
 /* ── LLM ── */
-// Un seul fournisseur depuis le retrait d'OpenAI et d'OpenRouter : il n'y a
-// plus de sélecteur, mais la variable reste lue par saveLlm().
-const _selectedProvider = 'ovh';
+// Un seul fournisseur (la passerelle interne ADBI) : il n'y a plus de
+// sélecteur, mais la variable reste lue par saveLlm().
+const _selectedProvider = 'interne';
 
 function selectProvider() { /* plus de choix : conservé pour compatibilité */ }
 
@@ -671,13 +670,13 @@ async function loadLlm() {
       <div style="margin-top:10px;padding:8px 12px;border-radius:8px;font-size:12px;
                   background:var(--adbi-attention-fond);color:var(--adbi-attention);
                   border:1px solid var(--adbi-attention-bord)">
-        Le modèle enregistré <code>${d.modele_ignore}</code> n'est pas un modèle
-        OVHcloud : il est ignoré, c'est <code>${d.model}</code> qui est utilisé.
+        Le modèle enregistré <code>${d.modele_ignore}</code> est ignoré,
+        c'est <code>${d.model}</code> qui est utilisé.
       </div>` : '';
 
     document.getElementById('llmStatus').innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <span style="font-weight:700;color:var(--navy)">OVHcloud</span>
+        <span style="font-weight:700;color:var(--navy)">Passerelle interne</span>
         <span style="background:var(--blue-l);color:var(--blue);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">${d.model}</span>
         <span style="color:var(--muted);font-size:12px">${d.url}</span>
       </div>${avertIgnore}`;

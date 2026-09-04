@@ -53,9 +53,11 @@ Stocké dans `data/` (gitignoré, hors `referentiels.json`) :
 
 ## Variables d'environnement
 
-Voir [`.env.example`](.env.example). Les clés API (Pappers/INSEE) et réglages
-SMTP restent aussi configurables depuis l'écran Paramètres (écrits dans
-`data/secrets.json`) ; une variable d'environnement est prioritaire.
+Voir [`.env.example`](.env.example) — recherche société (Pappers/INSEE), SMTP
+et signature électronique (Yousign/Zoho) sont toutes configurables par
+variable d'environnement. Sans elles, les mêmes réglages restent saisissables
+depuis l'écran Paramètres (écrits dans `data/secrets.json`, hors git) ; une
+variable d'environnement est toujours prioritaire.
 
 ## Démarrage
 

@@ -101,8 +101,9 @@ def handle_llm_indisponible(e):
     """
     Tous les services de la chaîne ont échoué.
 
-    Ce n'est pas une erreur du serveur : le plus souvent, le palier gratuit
-    d'OVHcloud est momentanément saturé. Un « 500 Erreur interne » laissait
+    Ce n'est pas forcément une erreur du serveur : la passerelle interne peut
+    être momentanément saturée ou hors ligne, ou n'être simplement pas encore
+    configurée (ADBI_LLM_BASE_URL absente). Un « 500 Erreur interne » laissait
     croire à une panne de l'application et envoyait chercher le problème au
     mauvais endroit ; un 503 avec le motif exact évite ce détour.
     """
@@ -110,9 +111,8 @@ def handle_llm_indisponible(e):
     return jsonify({
         "error": "Tous les services de langage sont momentanément indisponibles.",
         "detail": str(e),
-        "conseil": ("Le palier gratuit d'OVHcloud autorise 2 requêtes par minute et par "
-                    "modèle. Réessayez dans une minute, ou renseignez une clé OVHcloud "
-                    "pour passer à 400 par minute."),
+        "conseil": ("Vérifiez que la passerelle d'inférence interne (ADBI_LLM_BASE_URL) "
+                    "est configurée et joignable, ou réessayez dans quelques instants."),
     }), 503
 
 
@@ -1522,17 +1522,16 @@ def api_status():
     """
     Le service de langage répond-il ?
 
-    La question porte sur la CHAÎNE, pas sur un fournisseur unique : depuis le
-    passage à OVHcloud, il n'y a plus de clé à vérifier, et l'ancienne version
-    répondait « Aucune clé API configurée » — donc KO — alors que trois modèles
-    sur six répondaient parfaitement. On interroge donc la chaîne, en s'arrêtant
-    au premier service disponible.
+    La question porte sur la CHAÎNE, pas sur un fournisseur unique : un modèle
+    de la passerelle interne à court de quota ou en panne ne dit rien des
+    autres. On interroge donc la chaîne, en s'arrêtant au premier service
+    disponible.
     """
     etat = llm_cascade.etat()
     if etat.get("ok"):
         return jsonify({
             "api_ok": True,
-            "provider": "ovh",
+            "provider": "interne",
             "model": (etat.get("service") or "").split("/")[-1],
             "service": etat.get("service"),
             "rang": etat.get("rang"),
@@ -1540,12 +1539,12 @@ def api_status():
         })
     return jsonify({
         "api_ok": False,
-        "provider": "ovh",
+        "provider": "interne",
         "model": "",
         "total": etat.get("total"),
         "error": f"Aucun des {etat.get('total')} services de la chaîne ne répond",
-        "conseil": ("Le palier gratuit d'OVHcloud autorise 2 requêtes par minute et par "
-                    "modèle. Réessayez dans une minute, ou renseignez une clé OVHcloud."),
+        "conseil": ("Vérifiez que la passerelle d'inférence interne (ADBI_LLM_BASE_URL) "
+                    "est configurée et joignable."),
     })
 
 
@@ -2974,6 +2973,10 @@ if __name__ == "__main__":
     # ── Initialisation au démarrage ───────────────────────────────────────────
     init_db()                    # Crée les tables SQLite si absentes
     ensure_default_superuser()   # Crée admin@adbi.fr si aucun utilisateur
+
+    if not AUTH_ACTIVE:
+        print("[AUTH] ⚠ Authentification DÉSACTIVÉE (ADBI_AUTH != on) — "
+              "à réserver au poste local, jamais à un déploiement exposé.")
 
     # Rechargement automatique DÉSACTIVÉ par défaut. Le veilleur de Werkzeug
     # surveillait aussi site-packages : torch, torchvision et jusqu'aux modules
