@@ -1,0 +1,11 @@
+# Normalise les fins de ligne : le poste de dév est Windows (CRLF), le
+# déploiement cible Linux (Coolify) — un script ou Dockerfile en CRLF y échoue.
+* text=auto
+
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.glb binary
+*.woff binary
+*.woff2 binary

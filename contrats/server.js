@@ -18,7 +18,7 @@ const signatures = require("./lib/signatures");
 const templatesPerso = require("./lib/templates-perso");
 const fournisseurs = require("./lib/fournisseurs");
 
-const PORT = 4100;
+const PORT = Number(process.env.PORT) || 4100;
 const DB_PATH = path.join(__dirname, "data", "contrats.sqlite");
 // Lieu de stockage : un dossier par contrat généré (data/contrats-generes/<base>/),
 // alimenté à chaque export et par le flux de signature.

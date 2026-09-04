@@ -39,13 +39,13 @@ explicitement documentés : annuaire public gouv.fr, IA OVHcloud UE, envoi SMTP)
 
 | Module | Produit | Port | Stack | Dossier |
 |---|---|---|---|---|
-| Hub | **ADBI Factory** | 4000 | Node natif (http, net, child_process) | `C:\DEV\Claude\adbi-factory` |
-| Contrats | **ADBI Contrats** | 4100 | Node + Express, pdfkit, docx, sql.js, nodemailer | `C:\DEV\Claude\adbi-contrats` |
+| Hub | **ADBI Factory** | 4000 | Node natif (http, net, child_process) | `factory/` |
+| Contrats | **ADBI Contrats** | 4100 | Node + Express, pdfkit, docx, sql.js, nodemailer | `contrats/` |
 | Signature | **ADBI Sign** | — | onglet « ✍ Signatures » d'ADBI Contrats (pas de tuile Factory) | — |
-| One pager | **ADBI OnePager** | 4200 | Node + Express | `C:\DEV\Claude\one-pager` |
-| Coffre | **ADBI Coffre** | 4300 | Node + Express, crypto natif | `C:\DEV\Claude\adbi-coffre` |
-| Calculatrice | **ADBI Calculator** | — (statique) | HTML/JS servie par la Factory | `adbi-factory\public\modules` |
-| CV Parser | **ADBI Parser** | 5000 | Python 3.14 + Flask + Docling | `C:\ADBI CV Parser` |
+| One pager | **ADBI OnePager** | 4200 | Node + Express | `one-pager/` |
+| Coffre | **ADBI Coffre** | 4300 | Node + Express, crypto natif | `coffre/` |
+| Calculatrice | **ADBI Calculator** | — (statique) | HTML/JS servie par la Factory | `factory/public/modules` |
+| CV Parser | **ADBI Parser** | 5000 | Python 3.14 + Flask + Docling | `cv-parser/` |
 
 ---
 
@@ -301,7 +301,7 @@ confirmation explicite de l'utilisateur. Il n'a jamais été déployé.
 ## 12. Démarrage & exploitation
 ```bash
 # Lancer la plateforme (démarre et préchauffe tout)
-cd C:\DEV\Claude\adbi-factory && node server.js
+cd factory && node server.js
 # → http://localhost:4000   (fermer la fenêtre = tout s'arrête proprement)
 ```
 - Raccourcis bureau : « ADBI Factory », « ADBI - Contrats ».

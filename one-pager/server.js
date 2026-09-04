@@ -21,7 +21,7 @@ const { build, GABARIT, cheminBadge } = require("./lib/onepager");
 const { buildPptx, buildLivret } = require("./lib/render-pptx");
 const db = require("./lib/db");
 
-const PORT = 4200;
+const PORT = Number(process.env.PORT) || 4200;
 
 /**
  * Une erreur inattendue est journalisee sans couper le serveur : en pleine

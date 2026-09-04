@@ -2,13 +2,13 @@
 
 Suite d'outils internes ADBI, orchestrée par **ADBI Factory** :
 
-| Dossier | Module | Port |
-|---|---|---|
-| `factory/` | ADBI Factory — hub, tuiles, cycle de vie des modules | 4000 |
-| `contrats/` | ADBI Contrats + ADBI Sign — génération de contrats, signature par connecteurs API (Yousign / Zoho Sign) | 4100 |
-| `one-pager/` | ADBI OnePager — CV → dossier de compétences | 4200 |
-| `coffre/` | ADBI Coffre — protection / anonymisation de documents | 4300 |
-| `cv-parser/` | ADBI Parser — extraction structurée de CV (Python/Flask) | 5000 |
+| Dossier | Module | Port | README |
+|---|---|---|---|
+| `factory/` | ADBI Factory — hub, tuiles, cycle de vie des modules | 4000 | [factory/README.md](factory/README.md) |
+| `contrats/` | ADBI Contrats + ADBI Sign — génération de contrats, signature par connecteurs API (Yousign / Zoho Sign) | 4100 | [contrats/README.md](contrats/README.md) |
+| `one-pager/` | ADBI OnePager — CV → dossier de compétences | 4200 | [one-pager/README.md](one-pager/README.md) |
+| `coffre/` | ADBI Coffre — protection / anonymisation de documents | 4300 | [coffre/README.md](coffre/README.md) |
+| `cv-parser/` | ADBI Parser — extraction structurée de CV (Python/Flask) | 5000 | [cv-parser/README.md](cv-parser/README.md) |
 
 Le module **ADBI Gestion n'est pas dans ce dépôt** (outil interne, non déployé).
 
@@ -26,7 +26,7 @@ cd /opt/adbi
 # puis dérouler le guide à partir de la section 5 :
 #  - npm ci dans contrats/, one-pager/, coffre/  (factory : aucune dépendance)
 #  - venv + pip install -r cv-parser/requirements.txt
-#  - factory/modules.json.serveur-exemple → adapter le domaine → renommer en modules.json
+#  - factory/modules.example.json → adapter le domaine → renommer en modules.json
 #  - Caddyfile (section 7), systemd (section 8), UFW (section 9)
 ```
 
@@ -50,9 +50,12 @@ cd /opt/adbi && sudo -u adbi git pull && sudo systemctl restart adbi-factory
 
 ## Documents
 
-- `ADBI-Deploiement-Serveur.docx` — le guide de déploiement pas à pas
+- `ADBI-Deploiement-Serveur.docx` — le guide de déploiement pas à pas (systemd)
 - `ARCHITECTURE.md` — architecture interne, sécurité, évolutivité
 - `contrats/docs/INTEGRATION-SIGNATURE.md` — connecteurs de signature (Yousign / Zoho), conformité RGPD/eIDAS
-- `LISEZMOI.txt` — contenu du paquet et rappels
+
+> Dépôt privé. Un passage à un déploiement par conteneurs (Docker/Coolify),
+> secrets en variables d'environnement et base PostgreSQL est en préparation
+> — ce README et `ARCHITECTURE.md` seront mis à jour à mesure.
 
 Contact fonctionnel : Amine OUKLI (ADBI).

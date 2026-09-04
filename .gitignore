@@ -9,6 +9,11 @@ factory/logs/
 *.log
 
 # ── SECRETS & DONNÉES LOCALES — ne doivent JAMAIS entrer dans git ───────────
+.env
+.env.*
+!.env.example
+**/.claude/settings.local.json
+
 # Contrats : clés API (Yousign/Zoho/Pappers), code d'accès, base, archives PDF
 contrats/data/secrets.json
 contrats/data/code-parametres.txt
@@ -24,6 +29,12 @@ cv-parser/data/
 cv-parser/uploads/
 cv-parser/cv_output/
 cv-parser/cv_database.json
+# Factory : config du poste/serveur (chemins locaux) — voir modules.example.json
+factory/modules.json
+
+*.sqlite
+*.sqlite3
+*.db
 
 # ── Divers ──────────────────────────────────────────────────────────────────
 .DS_Store
