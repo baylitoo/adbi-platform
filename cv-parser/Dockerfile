@@ -1,0 +1,37 @@
+# ADBI Parser — image Docker
+# Build : docker build -t adbi-cv-parser .
+# Run   : docker run -p 5000:5000 -v "$(pwd)/data:/app/data" -e ADBI_AUTH=on adbi-cv-parser
+#
+# Python 3.14 : la même version que le poste où l'application est développée
+# et testée (voir factory/README.md — la 3.13 n'a pas toutes les dépendances
+# de Docling). Premier lancement long : Docling télécharge ses modèles au
+# RUNTIME, pas au build — prévoir un volume ou un temps de démarrage long au
+# premier démarrage du conteneur.
+FROM python:3.14-slim
+
+WORKDIR /app
+
+# Bibliothèques système requises par la chaîne de vision de Docling (OpenCV
+# et consorts) — non couvertes par pip sur une image "slim".
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# 0.0.0.0 : app.py ne le fait PAS par défaut (127.0.0.1, poste local) — voir
+# app.py::__main__. Indispensable pour que le port publié par Docker atteigne
+# le processus. ADBI_AUTH=on à poser explicitement au lancement (voir README) :
+# volontairement PAS ici, pour ne jamais masquer un oubli avec une valeur par
+# défaut qui semblerait sûre.
+ENV PYTHONUNBUFFERED=1
+ENV ADBI_HOTE=0.0.0.0
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','5000')+'/api/status', timeout=4)" || exit 1
+
+CMD ["python", "app.py"]

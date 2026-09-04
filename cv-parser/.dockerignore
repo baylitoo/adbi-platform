@@ -1,0 +1,11 @@
+__pycache__
+*.pyc
+.venv
+venv
+data
+uploads
+cv_output
+cv_database.json
+.git
+.gitignore
+.claude

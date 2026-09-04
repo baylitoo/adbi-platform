@@ -69,4 +69,15 @@ python app.py                # → http://localhost:5000
 
 Premier lancement : téléchargement des modèles Docling (long, normal).
 
+### Docker
+
+```bash
+docker build -t adbi-cv-parser .
+docker run -p 5000:5000 -v "$(pwd)/data:/app/data" -e ADBI_AUTH=on adbi-cv-parser
+```
+
+`ADBI_AUTH=on` n'est **pas** posé par défaut dans l'image — à fournir
+explicitement au lancement, pour ne jamais masquer un oubli (voir
+`factory/README.md`).
+
 Variables d'environnement : voir [`.env.example`](.env.example).
