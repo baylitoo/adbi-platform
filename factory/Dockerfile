@@ -14,6 +14,9 @@ COPY . .
 COPY modules.docker.json modules.json
 
 ENV NODE_ENV=production
+# Sans ca, server.js lie 127.0.0.1 (defaut poste de dev) : injoignable via le
+# port publie du conteneur malgre "-p 4000:4000" (voir server.js).
+ENV ADBI_HOTE=0.0.0.0
 EXPOSE 4000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

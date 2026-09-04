@@ -17,6 +17,12 @@ const { spawn } = require("child_process");
 // ADBI_PORT permet de lancer une seconde instance a cote (test, depannage)
 // sans couper celle qui tourne deja.
 const PORT = Number(process.env.ADBI_PORT) || 4000;
+// Local par defaut (poste de dev) ; le Dockerfile passe ADBI_HOTE=0.0.0.0 —
+// sans ca, "127.0.0.1" a l'interieur du conteneur n'est PAS atteignable via
+// le port publie ("-p 4000:4000" arrive sur l'interface externe, pas la
+// loopback), meme si le HEALTHCHECK (execute dans le meme conteneur) semble
+// fonctionner (voir le meme correctif sur one-pager, PR #38).
+const HOTE = process.env.ADBI_HOTE || "127.0.0.1";
 const RACINE = __dirname;
 const PUBLIC = path.join(RACINE, "public");
 const LOGS = path.join(RACINE, "logs");
@@ -480,9 +486,9 @@ async function prechaufferModules() {
   }
 }
 
-serveur.listen(PORT, "127.0.0.1", () => {
+serveur.listen(PORT, HOTE, () => {
   console.log("");
-  console.log("  ADBI Factory — prêt sur http://localhost:" + PORT);
+  console.log("  ADBI Factory — prêt sur http://" + HOTE + ":" + PORT);
   console.log("  Modules : " + MODULES.map((m) => m.nom).join(", "));
   console.log("  (Fermez cette fenêtre pour arrêter la plateforme.)");
   console.log("");
