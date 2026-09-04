@@ -35,9 +35,12 @@ cd /opt/adbi
 
 ## Ce que git ne contient pas (voulu — voir `.gitignore`)
 
-- **Secrets** : clés API (saisies dans l'interface après déploiement), code
-  d'accès des Paramètres (créé au premier démarrage, défaut `ADbi2027@@`,
-  modifiable dans `contrats/data/code-parametres.txt`), clé du Coffre.
+- **Secrets** : clés API, code d'accès des Paramètres de Contrats, clé du
+  Coffre — voir le `.env.example` de chaque service. **Un code/mot de passe
+  par défaut existe dans le code pour le développement local uniquement** ;
+  poser explicitement `ADBI_CODE_PARAMETRES` (contrats) et
+  `ADBI_SUPERUSER_EMAIL`/`ADBI_SUPERUSER_PASSWORD` (cv-parser) avant tout
+  déploiement accessible depuis Internet.
 - **Données de travail** : bases, CV, documents, archives de contrats — la
   plateforme démarre à vide et le serveur garde ses données hors git
   (les mises à jour par `git pull` ne toucheront jamais aux données).

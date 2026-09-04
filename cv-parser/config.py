@@ -31,8 +31,13 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # ── Premier lancement ─────────────────────────────────────────────────────────
-DEFAULT_SUPERUSER_EMAIL    = "admin@adbi.fr"
-DEFAULT_SUPERUSER_PASSWORD = "Adbi2025!"
+#
+# Identifiants du superuser créé si data/users.json est vide (voir
+# core/auth.py, ensure_default_superuser). Le mot de passe par défaut n'a de
+# sens qu'en développement local (poste, ADBI_AUTH=off) : le poser explicitement
+# via variable d'environnement avant toute exposition Internet.
+DEFAULT_SUPERUSER_EMAIL    = os.environ.get("ADBI_SUPERUSER_EMAIL") or "admin@adbi.fr"
+DEFAULT_SUPERUSER_PASSWORD = os.environ.get("ADBI_SUPERUSER_PASSWORD") or "Adbi2025!"
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
 #
