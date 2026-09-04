@@ -69,9 +69,27 @@ réseau spécifique à prévoir pour lui.
 ## 5. Volumes persistants
 
 En plus de `postgres-data` (déjà déclaré dans `docker-compose.yml`), monter
-en volume Coolify (pas dans l'image) :
+en volume Coolify (pas dans l'image) — le passage à PostgreSQL (milestone 4)
+a changé CE QUE chaque dossier contient, pas le fait qu'il faille le
+sauvegarder :
+
 - `coffre/data/` — contient `cle-locale.bin`, **irremplaçable** (voir
-  `coffre/README.md`)
-- `contrats/data/`, `one-pager/data/`, `cv-parser/data/` (+ `uploads/`,
-  `cv_output/`) — tant que leur migration PostgreSQL (milestone 4) n'est pas
-  terminée, ce sont ces dossiers qui portent les données réelles.
+  `coffre/README.md`). Coffre ne migre pas vers PostgreSQL (pas de données
+  structurées à migrer, juste ce fichier de clé).
+- `contrats/data/` — **toujours des données réelles malgré la bascule
+  PostgreSQL (issue #14)** : Postgres ne porte que les enregistrements
+  structurés (historique des contrats). Le dossier garde les fichiers
+  générés (`contrats-generes/<base>/` — chaque contrat produit, PDF/Word,
+  jamais recréables depuis la base), `code-parametres.txt` et
+  `referentiels.json`/`templates-perso.json`.
+- `cv-parser/data/` — **allégé par la bascule PostgreSQL (issue #15)** :
+  ne contient plus que `jwt_secret.txt` et les réglages LLM
+  (`llm_provider.txt`, `llm_model_interne.txt`) — perte sans gravité (secret
+  régénéré, réglages qui retombent sur leurs défauts). En revanche
+  `cv-parser/uploads/` (fichiers CV déposés) et `cv-parser/cv_output/`
+  restent des données réelles, jamais recréables depuis PostgreSQL (qui ne
+  porte que les fiches extraites, pas les fichiers d'origine) — à sauvegarder
+  comme avant.
+- `one-pager/data/` — **toujours la base de données réelle** (SQLite en WASM
+  + JSON), tant que sa propre bascule PostgreSQL (issue #16) n'est pas
+  faite.
