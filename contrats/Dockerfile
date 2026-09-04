@@ -17,8 +17,10 @@ RUN npm ci --omit=dev
 # 2) Code de l'application
 COPY . .
 
-# Les donnees (referentiel, historique SQLite, cle API) vivent dans
+# Les fichiers (referentiel, cle API, contrats generes) vivent dans
 # /app/data, monte comme volume pour persister hors du conteneur.
+# L'historique/signatures/corbeille/templates-perso vivent en PostgreSQL
+# (DATABASE_URL, requise — voir README.md).
 ENV NODE_ENV=production
 EXPOSE 4100
 

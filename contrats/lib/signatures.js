@@ -9,8 +9,9 @@
 // a été retiré en septembre 2026 ; signaturesPourPdf/certificatDe sont conservés
 // UNIQUEMENT pour relire les demandes locales signées avant la bascule.
 //
-// Les données vivent dans la table `signatures` (sql.js) gérée par server.js ;
-// ce module ne manipule que des objets JS purs, sans accès base ni HTTP.
+// Les données vivent dans la table `signatures` (PostgreSQL, colonne JSONB
+// `donnees`, voir lib/db.pg.js), lue/écrite par server.js ; ce module ne
+// manipule que des objets JS purs, sans accès base ni HTTP.
 
 function horodatageFr(d) {
   return (d || new Date()).toLocaleString("fr-FR", {
@@ -31,7 +32,12 @@ function initialesDe(nom) {
 function nouvelleDemande({ base, numero, titre, type, payload, empreinte, signataires, echeance }) {
   return {
     base, numero, titre, type,
-    payload: JSON.stringify(payload),
+    // `payload` reste un objet JS ordinaire — PAS de JSON.stringify ici (voir
+    // issue #14, PR B) : la demande entière est déjà sérialisée une seule fois
+    // par lib/db.pg.js::sauverDemande() au moment de l'écriture en JSONB. La
+    // stringifier ici en plus produisait un double-encodage (une chaîne de
+    // JSON stockée DANS le JSON), ce que corrige cette PR à la source.
+    payload,
     empreinte,
     echeance: echeance || null,  // "AAAA-MM-JJ" : date limite de signature (prolongeable)
     signataires: signataires.map((s, i) => ({

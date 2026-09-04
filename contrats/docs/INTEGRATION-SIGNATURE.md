@@ -19,7 +19,7 @@
  PDF signé, preuve)                                          SHA-256, journal, corbeille…)
                                                           3. connecteur.creerEnveloppe()
                                                                        │
-                              data/contrats.sqlite                     ▼
+                              PostgreSQL (table signatures)            ▼
                               (demandes + journal)          FOURNISSEUR DE SIGNATURE
                               data/contrats-generes/        (Yousign — api[-sandbox].yousign.app/v3)
                               (PDF pour-signature,          • invitations + relances e-mail

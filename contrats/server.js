@@ -3,7 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const archiver = require("archiver");
-const initSqlJs = require("sql.js");
+const db = require("./lib/db.pg");
 
 const { TEMPLATES } = require("./lib/template");
 const { sousTraitance: stFields, optionsSousTraitance, avenant: avFields, cds: cdsFields } = require("./lib/fields");
@@ -19,7 +19,13 @@ const templatesPerso = require("./lib/templates-perso");
 const fournisseurs = require("./lib/fournisseurs");
 
 const PORT = Number(process.env.PORT) || 4100;
-const DB_PATH = path.join(__dirname, "data", "contrats.sqlite");
+// DATABASE_URL est REQUISE (issue #14, PR B) : ce service ne sait plus parler
+// qu'à PostgreSQL — plus de repli sql.js/fichier. Échec net et explicite au
+// démarrage plutôt qu'une erreur tardive au premier appel de route.
+if (!process.env.DATABASE_URL) {
+  console.error("DATABASE_URL manquante — voir .env.example (PostgreSQL est requis depuis la PR B de l'issue #14).");
+  process.exit(1);
+}
 // Lieu de stockage : un dossier par contrat généré (data/contrats-generes/<base>/),
 // alimenté à chaque export et par le flux de signature.
 const GENERES_DIR = path.join(__dirname, "data", "contrats-generes");
@@ -36,32 +42,6 @@ app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf; },
 }));
 app.use(express.static(path.join(__dirname, "public")));
-
-// ---------- Base SQLite (sql.js / WASM, sans compilation native) ----------
-let SQL, db;
-async function initDb() {
-  SQL = await initSqlJs();
-  if (fs.existsSync(DB_PATH)) {
-    db = new SQL.Database(fs.readFileSync(DB_PATH));
-  } else {
-    db = new SQL.Database();
-    db.run(`CREATE TABLE contrats (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      numero TEXT, type TEXT, sous_traitant TEXT, client_final TEXT,
-      payload TEXT, cree_le TEXT
-    );`);
-  }
-  // Demandes de signature : tout l'objet vit en JSON (volumes minuscules, filtrage en JS).
-  db.run("CREATE TABLE IF NOT EXISTS signatures (id INTEGER PRIMARY KEY AUTOINCREMENT, donnees TEXT);");
-  // Statut de vie du contrat ("" = en cours, "clos" = clôturé) — idempotent.
-  try { db.run("ALTER TABLE contrats ADD COLUMN statut TEXT DEFAULT '';"); } catch (e) {}
-  // Signature EXTERNE (papier, autre outil) : date ISO de signature, '' sinon.
-  try { db.run("ALTER TABLE contrats ADD COLUMN signe TEXT DEFAULT '';"); } catch (e) {}
-  // CORBEILLE : toute suppression (contrat, demande de signature) passe ici et
-  // reste restaurable depuis Paramètres — rien n'est perdu sur une fausse manip.
-  db.run("CREATE TABLE IF NOT EXISTS corbeille (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, donnees TEXT, supprime_le TEXT);");
-  persist();
-}
 
 // ---------- Code d'accès aux Paramètres ----------
 // L'écran Paramètres (clés API, modèles de contrat, corbeille) est protégé par
@@ -99,15 +79,6 @@ function exigerCodeParametres(req, res, next) {
   res.status(401).json({ error: "Code d'accès aux Paramètres requis ou invalide." });
 }
 
-// Dépose un élément supprimé dans la corbeille (donnees = objet complet re-insérable).
-function mettreCorbeille(type, donnees) {
-  db.run("INSERT INTO corbeille (type, donnees, supprime_le) VALUES (?,?,?)",
-    [type, JSON.stringify(donnees), new Date().toISOString()]);
-}
-function persist() {
-  fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
-}
-
 // ---------- Stockage des contrats générés + accès signature ----------
 function dossierContrat(base) {
   const d = path.join(GENERES_DIR, base.replace(/[^a-zA-Z0-9_-]+/g, "_"));
@@ -123,41 +94,13 @@ function archiverFichier(base, nom, buf) {
   fs.writeFileSync(chemin, buf);
   return chemin;
 }
-// Demandes de signature — lecture/écriture de la table JSON.
-// (L'ancien flux de signature LOCAL — page /signer, jetons, invitations SMTP —
-// a été retiré en septembre 2026 : la signature passe exclusivement par les
-// CONNECTEURS API de lib/fournisseurs/. Les demandes locales déjà signées
-// restent lisibles : PDF et certificat se régénèrent depuis leurs données.)
-function chargerDemande(id) {
-  const r = db.exec("SELECT donnees FROM signatures WHERE id=" + parseInt(id, 10));
-  if (!r[0]) return null;
-  const d = JSON.parse(r[0].values[0][0]);
-  d.id = parseInt(id, 10);
-  return d;
-}
-function chargerDemandes() {
-  const out = [];
-  const r = db.exec("SELECT id, donnees FROM signatures ORDER BY id DESC");
-  if (r[0]) r[0].values.forEach((row) => {
-    const d = JSON.parse(row[1]);
-    d.id = row[0];
-    out.push(d);
-  });
-  return out;
-}
-function sauverDemande(d) {
-  const json = JSON.stringify(Object.assign({}, d, { id: undefined }));
-  if (d.id) {
-    db.run("UPDATE signatures SET donnees=? WHERE id=?", [json, d.id]);
-  } else {
-    db.run("INSERT INTO signatures (donnees) VALUES (?)", [json]);
-    d.id = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
-    // Recopie l'id dans le JSON (référence SIG-<id> stable dans le certificat).
-    db.run("UPDATE signatures SET donnees=? WHERE id=?", [JSON.stringify(Object.assign({}, d, { id: undefined })), d.id]);
-  }
-  persist();
-  return d;
-}
+// Demandes de signature — lecture/écriture directe via lib/db.pg.js
+// (chargerDemande/chargerDemandes/sauverDemande, table `signatures`, colonne
+// JSONB `donnees`). (L'ancien flux de signature LOCAL — page /signer, jetons,
+// invitations SMTP — a été retiré en septembre 2026 : la signature passe
+// exclusivement par les CONNECTEURS API de lib/fournisseurs/. Les demandes
+// locales déjà signées restent lisibles : PDF et certificat se régénèrent
+// depuis leurs données.)
 // Vue « suivi » d'une demande : tout sauf les images (lourdes) — les jetons restent
 // visibles car l'outil est local mono-utilisateur et ils servent aux boutons copier/mail.
 function vueDemande(d) {
@@ -353,15 +296,15 @@ app.get("/api/templates-perso/:type", (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/api/templates-perso/:type", exigerCodeParametres, (req, res) => {
-  try { res.json(templatesPerso.sauver(req.params.type, req.body || {})); }
+app.post("/api/templates-perso/:type", exigerCodeParametres, async (req, res) => {
+  try { res.json(await templatesPerso.sauver(req.params.type, req.body || {})); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // Retour complet au modèle d'origine pour ce type.
-app.delete("/api/templates-perso/:type", exigerCodeParametres, (req, res) => {
+app.delete("/api/templates-perso/:type", exigerCodeParametres, async (req, res) => {
   try {
-    templatesPerso.reinitialiser(req.params.type);
+    await templatesPerso.reinitialiser(req.params.type);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -456,14 +399,12 @@ app.post("/api/signatures", async (req, res) => {
     // Le suivi de signature vit DANS l'historique : si ce contrat n'y est pas
     // encore (jamais enregistré), on l'y ancre pour que la demande ait sa ligne.
     const col = colonnesContrat(type, values);
-    const lignes = db.exec("SELECT numero, sous_traitant FROM contrats");
-    const dejaEnregistre = lignes[0] && lignes[0].values.some((v) => v[0] === col.numero && v[1] === col.sousTraitant);
+    const dejaEnregistre = await db.contratExiste(col.numero, col.sousTraitant);
     if (!dejaEnregistre) {
-      db.run("INSERT INTO contrats (numero,type,sous_traitant,client_final,payload,cree_le,statut) VALUES (?,?,?,?,?,?,?)",
-        [col.numero, type, col.sousTraitant, col.clientFinal,
-         JSON.stringify({ type, values: req.body.values || {}, options: req.body.options || {} }),
-         new Date().toISOString(), ""]);
-      persist();
+      await db.sauverContrat({
+        numero: col.numero, type, sousTraitant: col.sousTraitant, clientFinal: col.clientFinal,
+        payload: { type, values: req.body.values || {}, options: req.body.options || {} },
+      });
     }
 
     const demande = signatures.nouvelleDemande({
@@ -506,7 +447,7 @@ app.post("/api/signatures", async (req, res) => {
       demande.fournisseur = actif;
       demande.externe = { id: env.idExterne, signataires: env.signataires || [] };
       signatures.journaliser(demande, "Enveloppe créée chez " + actif + " (réf. " + env.idExterne + ") — invitations envoyées par le fournisseur");
-      sauverDemande(demande);
+      await db.sauverDemande(demande);
       res.json({
         ok: true,
         demande: vueDemande(demande),
@@ -549,13 +490,15 @@ async function synchroniserDemandeExterne(d) {
     d.statut = "annulee";
     signatures.journaliser(d, "Demande refusée ou annulée chez le fournisseur");
   }
-  sauverDemande(d);
+  await db.sauverDemande(d);
   return d;
 }
 
 app.post("/api/signatures/:id/synchroniser", async (req, res) => {
   try {
-    const d = chargerDemande(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
+    const d = await db.chargerDemande(id);
     if (!d) return res.status(404).json({ error: "Demande introuvable" });
     if (d.fournisseur === "local") return res.json({ ok: true, demande: vueDemande(d) });
     await synchroniserDemandeExterne(d);
@@ -590,7 +533,8 @@ app.post("/webhooks/signature", async (req, res) => {
       idExterne = String(corps.requests.request_id);
     }
     if (!idExterne) return;
-    const d = chargerDemandes().find((x) => x.externe && x.externe.id === idExterne);
+    const demandes = await db.chargerDemandes();
+    const d = demandes.find((x) => x.externe && x.externe.id === idExterne);
     if (d) await synchroniserDemandeExterne(d);
   } catch (e) {
     console.error("[webhook signature]", e.message);
@@ -607,15 +551,17 @@ app.post("/api/zoho/echanger-code", exigerCodeParametres, async (req, res) => {
 // Suivi : liste des demandes (sans les images).
 // (Relances et délais sont gérés PAR LE FOURNISSEUR : rappels automatiques
 // Yousign, expiration fixée à la création de l'enveloppe.)
-app.get("/api/signatures", (req, res) => {
-  try { res.json(chargerDemandes().map(vueDemande)); }
+app.get("/api/signatures", async (req, res) => {
+  try { res.json((await db.chargerDemandes()).map(vueDemande)); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Certificat de signature — document séparé du contrat signé.
 app.get("/api/signatures/:id/certificat", async (req, res) => {
   try {
-    const d = chargerDemande(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
+    const d = await db.chargerDemande(id);
     if (!d) return res.status(404).json({ error: "Demande introuvable" });
     if (d.fournisseur && d.fournisseur !== "local") {
       return servirArchiveExterne(d, "__PREUVE-" + d.fournisseur.toUpperCase(), res,
@@ -632,68 +578,47 @@ app.get("/api/signatures/:id/certificat", async (req, res) => {
 // Suppression d'une demande : la ligne disparaît du suivi et les liens cessent
 // aussitôt de fonctionner — mais elle part dans la CORBEILLE : la restaurer
 // depuis Paramètres réactive les mêmes jetons (les liens envoyés remarchent).
-app.delete("/api/signatures/:id", (req, res) => {
+app.delete("/api/signatures/:id", async (req, res) => {
   try {
-    const d = chargerDemande(req.params.id);
-    if (d) mettreCorbeille("signature", Object.assign({}, d, { id: undefined }));
-    db.run("DELETE FROM signatures WHERE id=?", [parseInt(req.params.id, 10)]);
-    persist();
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
+    await db.supprimerDemande(id);
     res.json({ ok: true, corbeille: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ---------- Corbeille : consultation, restauration sélective, purge ----------
-app.get("/api/corbeille", (req, res) => {
+app.get("/api/corbeille", async (req, res) => {
   try {
-    const out = [];
-    const r = db.exec("SELECT id, type, donnees, supprime_le FROM corbeille ORDER BY id DESC");
-    if (r[0]) r[0].values.forEach((v) => {
-      let libelle = "";
-      try {
-        const d = JSON.parse(v[2]);
-        libelle = v[1] === "contrat"
-          ? (d.numero || "(sans n°)") + " — " + (d.sous_traitant || "") + (d.client_final ? " chez " + d.client_final : "")
-          : "Demande de signature " + (d.numero || "") + " — " + (d.titre || "");
-      } catch (e) {}
-      out.push({ id: v[0], type: v[1], libelle, supprimeLe: v[3] });
+    const lignes = await db.listerCorbeille();
+    const out = lignes.map((l) => {
+      const d = l.donnees || {};
+      const libelle = l.type === "contrat"
+        ? (d.numero || "(sans n°)") + " — " + (d.sous_traitant || "") + (d.client_final ? " chez " + d.client_final : "")
+        : "Demande de signature " + (d.numero || "") + " — " + (d.titre || "");
+      return { id: l.id, type: l.type, libelle, supprimeLe: l.supprimeLe };
     });
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Restaure la SÉLECTION : chaque élément retrouve sa table d'origine.
-app.post("/api/corbeille/restaurer", exigerCodeParametres, (req, res) => {
+app.post("/api/corbeille/restaurer", exigerCodeParametres, async (req, res) => {
   try {
     const ids = (req.body.ids || []).map((x) => parseInt(x, 10)).filter((x) => Number.isInteger(x));
     if (!ids.length) return res.status(400).json({ error: "Rien à restaurer." });
-    let restaures = 0;
-    for (const id of ids) {
-      const r = db.exec("SELECT type, donnees FROM corbeille WHERE id=" + id);
-      if (!r[0]) continue;
-      const type = r[0].values[0][0];
-      const d = JSON.parse(r[0].values[0][1]);
-      if (type === "contrat") {
-        db.run("INSERT INTO contrats (numero,type,sous_traitant,client_final,payload,cree_le,statut,signe) VALUES (?,?,?,?,?,?,?,?)",
-          [d.numero, d.type, d.sous_traitant, d.client_final, d.payload, d.cree_le, d.statut || "", d.signe || ""]);
-      } else if (type === "signature") {
-        db.run("INSERT INTO signatures (donnees) VALUES (?)", [JSON.stringify(Object.assign({}, d, { id: undefined }))]);
-      }
-      db.run("DELETE FROM corbeille WHERE id=?", [id]);
-      restaures++;
-    }
-    persist();
+    const { restaures } = await db.restaurerCorbeille(ids);
     res.json({ ok: true, restaures });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Purge DÉFINITIVE d'une sélection de la corbeille (après double confirmation côté interface).
-app.post("/api/corbeille/purger", exigerCodeParametres, (req, res) => {
+app.post("/api/corbeille/purger", exigerCodeParametres, async (req, res) => {
   try {
     const ids = (req.body.ids || []).map((x) => parseInt(x, 10)).filter((x) => Number.isInteger(x));
     if (!ids.length) return res.status(400).json({ error: "Rien à purger." });
-    db.run("DELETE FROM corbeille WHERE id IN (" + ids.join(",") + ")");
-    persist();
-    res.json({ ok: true, purges: ids.length });
+    const { purges } = await db.purgerCorbeille(ids);
+    res.json({ ok: true, purges });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -711,13 +636,18 @@ function servirArchiveExterne(d, suffixe, res, messageAbsent) {
 // PDF courant d'une demande (signatures déjà apposées + certificat si complète).
 app.get("/api/signatures/:id/pdf", async (req, res) => {
   try {
-    const d = chargerDemande(req.params.id);
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
+    const d = await db.chargerDemande(id);
     if (!d) return res.status(404).json({ error: "Demande introuvable" });
     if (d.fournisseur && d.fournisseur !== "local") {
       return servirArchiveExterne(d, "__SIGNE-" + d.fournisseur.toUpperCase(), res,
         "Le document signé n'est pas encore téléchargé — clique « Synchroniser » (ou attends la fin des signatures chez " + d.fournisseur + ").");
     }
-    const { tpl, values, options } = resolveBody(JSON.parse(d.payload));
+    // d.payload est un objet JS ordinaire (JSONB) depuis la PR B — plus de
+    // JSON.parse ici (voir lib/signatures.js::nouvelleDemande, correctif du
+    // double-encodage historique).
+    const { tpl, values, options } = resolveBody(d.payload);
     const buf = await buildPdf(tpl, values, options, signatures.signaturesPourPdf(d));
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${d.base}${d.statut === "complete" ? "__SIGNE" : ""}.pdf"`);
@@ -728,7 +658,7 @@ app.get("/api/signatures/:id/pdf", async (req, res) => {
 // (Les routes « côté signataire » — page /signer/<jeton>, API de signature
 // locale — ont été retirées : la page de signature est celle du FOURNISSEUR.)
 
-// Historique (sql.js)
+// Historique (PostgreSQL, table `contrats` — voir lib/db.pg.js)
 // Un avenant n'a pas de numeroContrat/stNom : on retombe sur ses champs propres,
 // pour que la ligne d'historique reste identifiable et regroupable par entreprise.
 function colonnesContrat(type, values) {
@@ -739,73 +669,70 @@ function colonnesContrat(type, values) {
   };
 }
 
-app.post("/api/save", (req, res) => {
+app.post("/api/save", async (req, res) => {
   try {
     const { type, values } = resolve(req);
     const c = colonnesContrat(type, values);
-    db.run("INSERT INTO contrats (numero,type,sous_traitant,client_final,payload,cree_le) VALUES (?,?,?,?,?,?)",
-      [c.numero, type, c.sousTraitant, c.clientFinal, JSON.stringify(req.body), new Date().toISOString()]);
-    // last_insert_rowid AVANT persist() : l'export sql.js remet le compteur de session à zéro.
-    const id = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
-    persist();
+    const { id } = await db.sauverContrat({
+      numero: c.numero, type, sousTraitant: c.sousTraitant, clientFinal: c.clientFinal, payload: req.body,
+    });
     res.json({ ok: true, id });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Modification d'un contrat existant (bouton « Enregistrer » en mode édition).
-app.put("/api/contracts/:id", (req, res) => {
+app.put("/api/contracts/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const r = db.exec("SELECT id FROM contrats WHERE id=" + id);
-    if (!r[0]) return res.status(404).json({ error: "Contrat introuvable" });
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
     const { type, values } = resolve(req);
     const c = colonnesContrat(type, values);
-    db.run("UPDATE contrats SET numero=?, type=?, sous_traitant=?, client_final=?, payload=? WHERE id=?",
-      [c.numero, type, c.sousTraitant, c.clientFinal, JSON.stringify(req.body), id]);
-    persist();
+    const ok = await db.mettreAJourContrat(id, {
+      numero: c.numero, type, sousTraitant: c.sousTraitant, clientFinal: c.clientFinal, payload: req.body,
+    });
+    if (!ok) return res.status(404).json({ error: "Contrat introuvable" });
     res.json({ ok: true, id });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get("/api/contracts", (req, res) => {
+app.get("/api/contracts", async (req, res) => {
   try {
-    const out = [];
-    const r = db.exec("SELECT id,numero,type,sous_traitant,client_final,cree_le,payload,statut,signe FROM contrats ORDER BY id DESC LIMIT 200");
-    if (r[0]) r[0].values.forEach((row) => {
+    const lignes = await db.listerContrats(200);
+    const out = lignes.map((c) => {
       // base = nom du dossier de stockage (mêmes règles que le nom de fichier exporté)
-      const base = fileBase({ stNom: row[3], numeroContrat: row[1] });
+      const base = fileBase({ stNom: c.sousTraitant, numeroContrat: c.numero });
       // Depuis le payload : rattachement d'avenant, date de fin de mission (alertes), SIREN (fiche entreprise).
-      let contratInitial = "", dateFin = "", stSiren = "";
-      try {
-        const v = JSON.parse(row[6]).values || {};
-        if (row[2] === "avenant") contratInitial = v.numeroContratInitial || "";
-        dateFin = v.dateFin || "";
-        stSiren = v.stSiren || "";
-      } catch (e) {}
-      out.push({
-        id: row[0], numero: row[1], type: row[2], sousTraitant: row[3], clientFinal: row[4],
-        creeLe: row[5], base, contratInitial, dateFin, stSiren, statut: row[7] || "",
-        signe: row[8] || "",
-      });
+      const v = (c.payload && c.payload.values) || {};
+      return {
+        id: c.id, numero: c.numero, type: c.type, sousTraitant: c.sousTraitant, clientFinal: c.clientFinal,
+        creeLe: c.creeLe, base,
+        contratInitial: c.type === "avenant" ? (v.numeroContratInitial || "") : "",
+        dateFin: v.dateFin || "", stSiren: v.stSiren || "",
+        statut: c.statut || "", signe: c.signe || "",
+      };
     });
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get("/api/contracts/:id", (req, res) => {
+app.get("/api/contracts/:id", async (req, res) => {
   try {
-    const r = db.exec("SELECT payload FROM contrats WHERE id=" + parseInt(req.params.id, 10));
-    if (!r[0]) return res.status(404).json({ error: "introuvable" });
-    res.json(JSON.parse(r[0].values[0][0]));
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
+    const c = await db.obtenirContrat(id);
+    if (!c) return res.status(404).json({ error: "introuvable" });
+    res.json(c.payload);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Aperçu PDF d'un contrat de l'historique (la « loupe ») : régénéré depuis le payload.
 app.get("/api/contracts/:id/pdf", async (req, res) => {
   try {
-    const r = db.exec("SELECT payload FROM contrats WHERE id=" + parseInt(req.params.id, 10));
-    if (!r[0]) return res.status(404).json({ error: "introuvable" });
-    const { tpl, values, options } = resolveBody(JSON.parse(r[0].values[0][0]));
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
+    const c = await db.obtenirContrat(id);
+    if (!c) return res.status(404).json({ error: "introuvable" });
+    const { tpl, values, options } = resolveBody(c.payload);
     if (!tpl || tpl.stub) return res.status(400).json({ error: "Modèle non disponible pour ce type." });
     const buf = await buildPdf(tpl, values, options);
     res.setHeader("Content-Type", "application/pdf");
@@ -828,29 +755,30 @@ function fichierDepuisJson(f) {
 // Signature EXTERNE : le contrat a été signé HORS application (papier, autre
 // outil) — on coche la mention « signé » (date) et on archive le PDF signé
 // fourni en pièce jointe dans le dossier du contrat.
-app.post("/api/contracts/:id/signe", (req, res) => {
+app.post("/api/contracts/:id/signe", async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const r = db.exec("SELECT numero, sous_traitant FROM contrats WHERE id=" + id);
-    if (!r[0]) return res.status(404).json({ error: "Contrat introuvable" });
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
+    const c = await db.obtenirContrat(id);
+    if (!c) return res.status(404).json({ error: "Contrat introuvable" });
     const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.date || "")) ? req.body.date : new Date().toISOString().slice(0, 10);
     let fichierArchive = "";
     const f = fichierDepuisJson(req.body.fichier);
     if (f) {
-      const base = fileBase({ stNom: r[0].values[0][1], numeroContrat: r[0].values[0][0] });
+      const base = fileBase({ stNom: c.sousTraitant, numeroContrat: c.numero });
       fichierArchive = path.basename(archiverFichier(base, base + "__SIGNE-EXTERNE.pdf", f.buf));
     }
-    db.run("UPDATE contrats SET signe=? WHERE id=?", [date, id]);
-    persist();
+    await db.marquerSigne(id, date);
     res.json({ ok: true, signe: date, fichier: fichierArchive });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // Retire la mention « signé » (le PDF déjà archivé, lui, reste dans le dossier).
-app.delete("/api/contracts/:id/signe", (req, res) => {
+app.delete("/api/contracts/:id/signe", async (req, res) => {
   try {
-    db.run("UPDATE contrats SET signe='' WHERE id=?", [parseInt(req.params.id, 10)]);
-    persist();
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
+    await db.retirerSigne(id);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -859,7 +787,7 @@ app.delete("/api/contracts/:id/signe", (req, res) => {
 // le PDF (souvent déjà signé) est archivé, et les informations clés (dates,
 // client final, consultant, TJM…) alimentent l'historique, les alertes de fin
 // et les récaps d'avenant exactement comme un contrat créé ici.
-app.post("/api/contracts/importer", (req, res) => {
+app.post("/api/contracts/importer", async (req, res) => {
   try {
     const type = ["sous-traitance", "cds", "cdi", "cdd", "avenant"].includes(req.body.type) ? req.body.type : "sous-traitance";
     const values = req.body.values && typeof req.body.values === "object" ? req.body.values : {};
@@ -868,11 +796,9 @@ app.post("/api/contracts/importer", (req, res) => {
     if (!c.sousTraitant) return res.status(400).json({ error: "Le nom du sous-traitant / co-contractant est requis." });
     const signe = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.signeLe || "")) ? req.body.signeLe : "";
     const payload = { type, values, importe: true };
-    db.run("INSERT INTO contrats (numero,type,sous_traitant,client_final,payload,cree_le,statut,signe) VALUES (?,?,?,?,?,?,?,?)",
-      [c.numero, type, c.sousTraitant, c.clientFinal, JSON.stringify(payload), new Date().toISOString(), "", signe]);
-    // last_insert_rowid AVANT persist() : l'export sql.js remet le compteur de session à zéro.
-    const id = db.exec("SELECT last_insert_rowid()")[0].values[0][0];
-    persist();
+    const { id } = await db.importerContrat({
+      numero: c.numero, type, sousTraitant: c.sousTraitant, clientFinal: c.clientFinal, payload, signe,
+    });
     let fichierArchive = "";
     const f = fichierDepuisJson(req.body.fichier);
     if (f) {
@@ -884,48 +810,48 @@ app.post("/api/contracts/importer", (req, res) => {
 });
 
 // Cycle de vie : clôturer / rouvrir un contrat (alertes de fin de mission).
-app.patch("/api/contracts/:id/statut", (req, res) => {
+app.patch("/api/contracts/:id/statut", async (req, res) => {
   try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
     const statut = req.body.statut === "clos" ? "clos" : "";
-    db.run("UPDATE contrats SET statut=? WHERE id=?", [statut, parseInt(req.params.id, 10)]);
-    persist();
+    await db.definirStatutContrat(id, statut);
     res.json({ ok: true, statut });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Suppression — unitaire et groupée (sélection dans l'historique).
-// Les lignes partent dans la CORBEILLE (restaurables depuis Paramètres).
-function contratsVersCorbeille(ids) {
-  const r = db.exec("SELECT numero,type,sous_traitant,client_final,payload,cree_le,statut,signe FROM contrats WHERE id IN (" + ids.join(",") + ")");
-  if (r[0]) r[0].values.forEach((v) => mettreCorbeille("contrat", {
-    numero: v[0], type: v[1], sous_traitant: v[2], client_final: v[3],
-    payload: v[4], cree_le: v[5], statut: v[6] || "", signe: v[7] || "",
-  }));
-  db.run("DELETE FROM contrats WHERE id IN (" + ids.join(",") + ")");
-  persist();
-}
-
-app.delete("/api/contracts/:id", (req, res) => {
+// Les lignes partent dans la CORBEILLE (restaurables depuis Paramètres) —
+// voir lib/db.pg.js::supprimerContrats (transaction : bascule en corbeille
+// PUIS suppression, tout ou rien).
+app.delete("/api/contracts/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
-    contratsVersCorbeille([id]);
+    await db.supprimerContrats([id]);
     res.json({ ok: true, corbeille: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/api/contracts/supprimer", (req, res) => {
+app.post("/api/contracts/supprimer", async (req, res) => {
   try {
     const ids = (req.body.ids || []).map((x) => parseInt(x, 10)).filter((x) => Number.isInteger(x));
     if (!ids.length) return res.status(400).json({ error: "Aucun contrat sélectionné." });
-    contratsVersCorbeille(ids);
-    res.json({ ok: true, supprimes: ids.length, corbeille: true });
+    const { supprimes } = await db.supprimerContrats(ids);
+    res.json({ ok: true, supprimes, corbeille: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-initDb().then(() => {
-  app.listen(PORT, () => {
-    console.log("\n  ADBI - Generateur de contrats");
-    console.log("  -> http://localhost:" + PORT + "\n");
-  });
-}).catch((e) => { console.error("Erreur init DB:", e); process.exit(1); });
+// ---------- Démarrage ----------
+// db.init() applique lib/schema.sql (CREATE TABLE IF NOT EXISTS, idempotent),
+// puis templatesPerso.init() charge le cache mémoire des retouches de modèles
+// (voir lib/templates-perso.js — décision de conception issue #14/PR B).
+db.init()
+  .then(() => templatesPerso.init())
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log("\n  ADBI - Generateur de contrats");
+      console.log("  -> http://localhost:" + PORT + "\n");
+    });
+  })
+  .catch((e) => { console.error("Erreur init DB:", e); process.exit(1); });

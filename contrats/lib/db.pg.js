@@ -1,22 +1,21 @@
 /**
- * Stockage PostgreSQL — memes operations que celles que server.js execute
- * aujourd'hui en ligne, en synchrone, via sql.js (voir initDb/persist/
- * chargerDemande(s)/sauverDemande/mettreCorbeille dans server.js), mais
- * asynchrone : chaque fonction retourne une Promise. Tant que server.js n'a
- * pas ete bascule dessus (voir issue #14, PR de bascule "PR B"), ce module
- * n'est pas importe — sql.js (data/contrats.sqlite) reste la base reellement
- * utilisee. Zero changement de comportement dans cette PR.
+ * Stockage PostgreSQL — memes operations que celles que server.js executait
+ * jusqu'a la PR B (issue #14) en ligne, en synchrone, via sql.js, mais
+ * asynchrone : chaque fonction retourne une Promise. Depuis la PR B,
+ * server.js est bascule dessus : c'est la base reellement utilisee (sql.js /
+ * data/contrats.sqlite est retire).
  *
  * payload/donnees : voir lib/schema.sql, gardes en JSONB tels quels.
  *
- * Piege connu (voir lib/signatures.js, nouvelleDemande) : le champ `payload`
- * d'une demande de signature est aujourd'hui double-encode — JSON.stringify
- * est applique une fois dans nouvelleDemande() PUIS une seconde fois quand
- * l'objet demande entier est serialise pour la colonne `donnees`. Tant que
- * lib/signatures.js n'est pas corrige (hors perimetre de cette PR — server.js
- * ne l'appelle pas encore), sauverDemande() normalise ici le payload recu
- * (JSON.parse si c'est encore une chaine) pour que la colonne JSONB porte
- * toujours un objet et jamais une chaine contenant du JSON.
+ * Piege historique (corrige a la source dans la PR B, voir
+ * lib/signatures.js::nouvelleDemande) : le champ `payload` d'une demande de
+ * signature etait double-encode — JSON.stringify applique une fois dans
+ * nouvelleDemande() PUIS une seconde fois quand l'objet demande entier est
+ * serialise pour la colonne `donnees`. nouvelleDemande() ne stringifie plus
+ * `payload` ; sauverDemande() ci-dessous garde neanmoins normaliserJson() en
+ * garde-fou (ceinture-bretelles) pour les lignes de corbeille/demandes
+ * anciennes deja doublement encodees (migrees depuis sql.js) qui pourraient
+ * encore transiter par ici.
  */
 
 const fs = require("fs");
@@ -198,8 +197,11 @@ async function chargerDemandes() {
 }
 
 async function sauverDemande(d) {
-  // Corrige le double-encodage historique (voir en-tete du fichier) avant
-  // d'ecrire en JSONB : payload doit etre un objet, pas une chaine de JSON.
+  // Garde-fou (voir en-tete du fichier) : payload doit etre un objet avant
+  // d'ecrire en JSONB, jamais une chaine de JSON. nouvelleDemande() ne
+  // stringifie plus payload depuis la PR B ; normaliserJson() couvre encore
+  // les objets deja doublement encodes qui viendraient d'ailleurs (donnee
+  // restauree depuis la corbeille, ligne migree depuis sql.js).
   const donnees = Object.assign({}, d, {
     id: undefined,
     payload: normaliserJson(d.payload, "signatures.donnees.payload"),
@@ -295,9 +297,12 @@ async function purgerCorbeille(ids) {
 }
 
 // ---------- Personnalisation des modeles (templates-perso) ----------
-// Remplace data/templates-perso.json (etat mutable propre a l'instance —
-// contrairement a data/referentiels.json, qui reste un fichier suivi par git
-// et NE migre PAS ici, voir issue #14).
+// Remplace l'ancien data/templates-perso.json (etat mutable propre a
+// l'instance — contrairement a data/referentiels.json, qui reste un fichier
+// suivi par git et NE migre PAS ici, voir issue #14). Depuis la PR B,
+// lib/templates-perso.js met ces lignes en cache memoire au demarrage (voir
+// templatesPerso.init()) : effectifs() reste synchrone, seuls sauver()/
+// reinitialiser() (rares, actions admin) passent par ici.
 
 async function chargerTemplatesPerso() {
   const { rows } = await pilote().query("SELECT type, donnees FROM templates_perso");
