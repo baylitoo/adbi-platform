@@ -12,6 +12,9 @@ RUN npm ci --omit=dev
 COPY . .
 
 ENV NODE_ENV=production
+# Sans ca, server.js lie 127.0.0.1 (defaut poste de dev) : injoignable via le
+# port publie du conteneur malgre "-p 4200:4200" (voir server.js).
+ENV ADBI_HOTE=0.0.0.0
 EXPOSE 4200
 
 # data/cvs.sqlite est monté en volume pour persister hors du conteneur.
