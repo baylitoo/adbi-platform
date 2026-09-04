@@ -19,9 +19,16 @@ const { segment } = require("./lib/layout");
 const { extract } = require("./lib/extract");
 const { build, GABARIT, cheminBadge } = require("./lib/onepager");
 const { buildPptx, buildLivret } = require("./lib/render-pptx");
-const db = require("./lib/db");
+const db = require("./lib/db.pg");
 
 const PORT = Number(process.env.PORT) || 4200;
+// DATABASE_URL est REQUISE (issue #16, PR B) : ce service ne sait plus parler
+// qu'à PostgreSQL — plus de repli sql.js/fichier. Échec net et explicite au
+// démarrage plutôt qu'une erreur tardive au premier appel de route.
+if (!process.env.DATABASE_URL) {
+  console.error("DATABASE_URL manquante — voir .env.example (PostgreSQL est requis depuis la PR B de l'issue #16).");
+  process.exit(1);
+}
 // Local par defaut (poste de dev) ; le Dockerfile passe ADBI_HOTE=0.0.0.0 —
 // sans ca, "127.0.0.1" a l'interieur du conteneur n'est PAS atteignable via
 // le port publie ("-p 4200:4200" arrive sur l'interface externe, pas la
@@ -94,7 +101,7 @@ app.post("/api/import", async (req, res) => {
 
     const master = extract(doc, segment(doc));
     const hash = crypto.createHash("sha256").update(buffer).digest("hex");
-    const existant = db.findByHash(hash);
+    const existant = await db.findByHash(hash);
 
     res.json({
       id: crypto.randomUUID(),
@@ -112,28 +119,45 @@ app.post("/api/import", async (req, res) => {
 
 // --------------------------------------------------------------- CRUD -----
 
-app.get("/api/cvs", (req, res) => res.json(db.search(req.query.q)));
-
-app.get("/api/cvs/:id", (req, res) => {
-  const r = db.get(req.params.id);
-  if (!r) return res.status(404).json({ error: "CV introuvable." });
-  res.json(r);
+app.get("/api/cvs", async (req, res) => {
+  try {
+    res.json(await db.search(req.query.q));
+  } catch (e) {
+    console.error("[cvs:list]", e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
-app.post("/api/cvs", (req, res) => {
+app.get("/api/cvs/:id", async (req, res) => {
+  try {
+    const r = await db.get(req.params.id);
+    if (!r) return res.status(404).json({ error: "CV introuvable." });
+    res.json(r);
+  } catch (e) {
+    console.error("[cvs:get]", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/cvs", async (req, res) => {
   try {
     const { id, hash, master, options } = req.body || {};
     if (!master || !master.identity) return res.status(400).json({ error: "Données invalides." });
-    res.json(db.save({ id: id || crypto.randomUUID(), hash, master, options }));
+    res.json(await db.save({ id: id || crypto.randomUUID(), hash, master, options }));
   } catch (e) {
     console.error("[save]", e);
     res.status(500).json({ error: e.message });
   }
 });
 
-app.delete("/api/cvs/:id", (req, res) => {
-  db.remove(req.params.id);
-  res.json({ ok: true });
+app.delete("/api/cvs/:id", async (req, res) => {
+  try {
+    await db.remove(req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[cvs:delete]", e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ---------------------------------------------------------- One-pager -----
@@ -183,8 +207,8 @@ app.post("/api/export/livret", async (req, res) => {
       return res.status(400).json({ error: "Aucun profil sélectionné." });
     }
 
-    const dossiers = ids
-      .map((id) => db.get(id))
+    const fiches = await Promise.all(ids.map((id) => db.get(id)));
+    const dossiers = fiches
       .filter(Boolean)
       // Les reglages du livret priment sur ceux memorises par dossier :
       // c'est le document assemble qui doit etre homogene.
@@ -210,13 +234,20 @@ app.post("/api/export/livret", async (req, res) => {
  * POST /api/matching  { offre }
  * Classe tout le vivier par adequation a une fiche de poste.
  */
-app.post("/api/matching", (req, res) => {
+app.post("/api/matching", async (req, res) => {
   try {
     const offre = String((req.body || {}).offre || "").trim();
     if (offre.length < 15) return res.status(400).json({ error: "Fiche de poste trop courte." });
 
     const matching = require("./lib/matching");
-    const fiches = db.list().map((r) => ({ ...r, master: db.get(r.id).master }));
+    const resumes = await db.list();
+    // Une seule lecture complete par CV (master + options) : le classement a
+    // besoin du master, l'habillage du resultat a besoin des options — les
+    // charger ensemble evite un second aller-retour base par candidat plus bas.
+    const fiches = await Promise.all(resumes.map(async (r) => {
+      const complet = await db.get(r.id);
+      return { ...r, master: complet.master, options: complet.options || {} };
+    }));
 
     // L'identifiant est glisse dans le cv_master avant classement : se fier a
     // l'identite des objets pour les retrouver ensuite serait fragile, le
@@ -231,7 +262,7 @@ app.post("/api/matching", (req, res) => {
         const meta = parId.get(r.cv && r.cv.__ref) || {};
         // Le portrait suit le profil : photo importee si elle existe, sinon
         // l'illustration choisie pour son dossier, sinon celle par defaut.
-        const opt = (db.get(meta.id) || {}).options || {};
+        const opt = meta.options || {};
         return {
           ...r,
           cv: {
@@ -420,7 +451,7 @@ db.init()
       demarre = true;
       console.log("");
       console.log("  One pager — prêt sur http://" + HOTE + ":" + PORT);
-      console.log("  Base locale : data/cvs.sqlite  (accès local uniquement)");
+      console.log("  Base : PostgreSQL (DATABASE_URL)");
       console.log("");
     });
 
