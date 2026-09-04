@@ -2986,4 +2986,15 @@ if __name__ == "__main__":
     # après une minute d'OCR).
     # Pour retrouver le rechargement pendant un développement : ADBI_RELOAD=on.
     recharger = os.environ.get("ADBI_RELOAD", "").lower() in ("1", "on", "true")
-    app.run(debug=True, port=5000, threaded=True, use_reloader=recharger)
+    # Débogueur Werkzeug DÉSACTIVÉ par défaut : en conteneur/déploiement, un
+    # débogueur interactif accessible depuis le réseau permet l'exécution de
+    # code arbitraire (CVE connues sur Werkzeug). ADBI_DEBUG=on pour le
+    # retrouver en développement local uniquement.
+    debogage = os.environ.get("ADBI_DEBUG", "").lower() in ("1", "on", "true")
+    # 127.0.0.1 par défaut (comme avant, poste local derrière la Factory) ;
+    # ADBI_HOTE=0.0.0.0 est nécessaire en conteneur, où 127.0.0.1 ne serait
+    # pas joignable depuis l'hôte via le mappage de port Docker (posé dans le
+    # Dockerfile de l'image, pas ici).
+    hote = os.environ.get("ADBI_HOTE", "127.0.0.1")
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host=hote, port=port, debug=debogage, threaded=True, use_reloader=recharger)

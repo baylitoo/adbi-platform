@@ -101,4 +101,15 @@ npm ci
 node server.js       # → http://localhost:4300
 ```
 
+### Docker
+
+```bash
+docker build -t adbi-coffre .
+docker run -p 4300:4300 -v "$(pwd)/data:/app/data" adbi-coffre
+```
+
+> `data/cle-locale.bin` (dans le volume) est générée au premier lancement —
+> à sauvegarder, sa perte rend irrécupérables tous les documents « protégés »
+> déjà émis (voir plus haut).
+
 Variables d'environnement : voir [`.env.example`](.env.example).

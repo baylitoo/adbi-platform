@@ -75,4 +75,11 @@ npm ci
 node server.js       # → http://localhost:4200
 ```
 
+### Docker
+
+```bash
+docker build -t adbi-onepager .
+docker run -p 4200:4200 -v "$(pwd)/data:/app/data" adbi-onepager
+```
+
 Variables d'environnement : voir [`.env.example`](.env.example).
