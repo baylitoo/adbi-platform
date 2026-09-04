@@ -19,6 +19,12 @@ const vm = require("vm");
 const docx = require("./docx");
 
 const PORT = Number(process.env.ADBI_COFFRE_PORT) || 4300;
+// Local par defaut (poste de dev) ; le Dockerfile passe ADBI_HOTE=0.0.0.0 —
+// sans ca, "127.0.0.1" a l'interieur du conteneur n'est PAS atteignable via
+// le port publie ("-p 4300:4300" arrive sur l'interface externe, pas la
+// loopback), meme si le HEALTHCHECK (execute dans le meme conteneur) semble
+// fonctionner (voir le meme correctif sur one-pager, PR #38).
+const HOTE = process.env.ADBI_HOTE || "127.0.0.1";
 const RACINE = __dirname;
 const PUBLIC = path.join(RACINE, "public");
 
@@ -711,9 +717,9 @@ serveur.on("error", (err) => {
   throw err;
 });
 
-serveur.listen(PORT, "127.0.0.1", () => {
+serveur.listen(PORT, HOTE, () => {
   console.log("");
-  console.log("  ADBI Coffre — prêt sur http://localhost:" + PORT);
+  console.log("  ADBI Coffre — prêt sur http://" + HOTE + ":" + PORT);
   console.log("  Chiffrement local : aucun fichier ni mot de passe n'est conservé.");
   console.log("");
 });
