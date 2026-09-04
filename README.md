@@ -28,9 +28,9 @@ docker compose up -d --build
 PostgreSQL (une base par service, voir `infra/postgres/`). Sous Coolify,
 importer ce dépôt comme *docker-compose resource* : les variables
 d'environnement se posent dans l'interface, un domaine par service. La base
-Postgres est provisionnée mais pas encore **consommée** : contrats, cv-parser
-et one-pager gardent pour l'instant leur stockage fichier (SQLite/JSON) —
-migration en cours, service par service.
+Postgres est provisionnée et **consommée par contrats** depuis sa bascule
+(issue #14) ; cv-parser et one-pager gardent pour l'instant leur stockage
+fichier (SQLite/JSON) — migration en cours, service par service.
 
 ### Serveur classique (systemd, un seul hôte)
 

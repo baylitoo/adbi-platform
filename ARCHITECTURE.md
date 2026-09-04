@@ -40,7 +40,7 @@ explicitement documentés : annuaire public gouv.fr, IA OVHcloud UE, envoi SMTP)
 | Module | Produit | Port | Stack | Dossier |
 |---|---|---|---|---|
 | Hub | **ADBI Factory** | 4000 | Node natif (http, net, child_process) | `factory/` |
-| Contrats | **ADBI Contrats** | 4100 | Node + Express, pdfkit, docx, sql.js, nodemailer | `contrats/` |
+| Contrats | **ADBI Contrats** | 4100 | Node + Express, pdfkit, docx, PostgreSQL, nodemailer | `contrats/` |
 | Signature | **ADBI Sign** | — | onglet « ✍ Signatures » d'ADBI Contrats (pas de tuile Factory) | — |
 | One pager | **ADBI OnePager** | 4200 | Node + Express | `one-pager/` |
 | Coffre | **ADBI Coffre** | 4300 | Node + Express, crypto natif | `coffre/` |
@@ -99,20 +99,21 @@ Le module le plus riche : génération de contrats **et** signature électroniqu
                        ┌──────────────────────── server.js (Express) ───────────────────────┐
                        │                                                                    │
   public/  (front)     │   lib/template.js ── source de vérité des modèles (256 blocs)      │
-  ├─ index.html        │        │  + data/templates-perso.json (retouches Paramètres)       │
-  ├─ app.js  (SPA)     │        ▼                                                           │
+  ├─ index.html        │        │  + table templates_perso (PostgreSQL, retouches Paramètres,│
+  ├─ app.js  (SPA)     │        │    mises en cache mémoire par lib/templates-perso.js)      │
   ├─ signer.html ◄─────┼─ lib/templates-perso.js → templates EFFECTIFS partout              │
   └─ styles.css        │        │                                                           │
                        │        ├─► lib/render.js      (fill {{var}}, **gras**, runs)       │
-   data/               │        ├─► public/app.js      (aperçu HTML live)                   │
-   ├─ contrats.sqlite  │        ├─► lib/render-docx.js (export Word)                        │
-   │   (sql.js WASM :  │        └─► lib/render-pdf.js  (export PDF + signatures apposées    │
-   │    contrats,      │                                + paraphes + buildCertificatPdf)    │
-   │    signatures)    │                                                                    │
-   ├─ referentiels.json│   lib/signatures.js  (demandes, jetons, ordre séquentiel, délais)  │
-   ├─ secrets.json     │   lib/mailer.js      (nodemailer + gabarits HTML brandés ADBI)     │
-   ├─ templates-perso  │   lib/integrations.js(annuaire gouv.fr / Pappers / INSEE, secrets) │
-   └─ contrats-generes/│   lib/docanalyze.js  (OCR local Kbis/URSSAF : pdf-parse+tesseract) │
+   PostgreSQL          │        ├─► public/app.js      (aperçu HTML live)                   │
+   (lib/db.pg.js) :    │        ├─► lib/render-docx.js (export Word)                        │
+   ├─ contrats         │        └─► lib/render-pdf.js  (export PDF + signatures apposées    │
+   ├─ signatures       │                                + paraphes + buildCertificatPdf)    │
+   ├─ corbeille        │                                                                    │
+   └─ templates_perso  │   lib/signatures.js  (demandes, jetons, ordre séquentiel, délais)  │
+   data/               │   lib/mailer.js      (nodemailer + gabarits HTML brandés ADBI)     │
+   ├─ referentiels.json│   lib/integrations.js(annuaire gouv.fr / Pappers / INSEE, secrets) │
+   ├─ secrets.json     │   lib/docanalyze.js  (OCR local Kbis/URSSAF : pdf-parse+tesseract) │
+   └─ contrats-generes/│                                                                    │
        └─ <contrat>/   │                                                                    │
           (archives    └────────────────────────────────────────────────────────────────────┘
            horodatées)
@@ -282,8 +283,12 @@ confirmation explicite de l'utilisateur. Il n'a jamais été déployé.
 - **Journaux** par module (`adbi-factory/logs/<id>.log`) ; en cas d'échec de
   démarrage, la Factory remonte les 6 dernières lignes dans l'interface.
 - **Archivage systématique** des contrats générés (rien d'écrasé, horodatage).
-- **SQLite en WASM** (sql.js) : aucun binaire natif, portable partout ; écriture
-  atomique par ré-export du fichier.
+- **Contrats stocke en PostgreSQL** (`DATABASE_URL`, requise — issue #14) :
+  schéma appliqué automatiquement au démarrage (`lib/schema.sql`), transactions
+  pour toute opération multi-lignes (corbeille, suppression groupée). Les
+  autres modules restent pour l'instant sur SQLite en WASM (sql.js)/JSON
+  (aucun binaire natif, portable partout) tant que leur propre bascule
+  (issues #15/#16) n'est pas faite.
 - Les échecs optionnels sont silencieux et n'abîment jamais le cœur : mascotte
   3D, enrichissement annuaire, envoi SMTP (repli sur mailto), fiche entreprise.
 
@@ -294,9 +299,10 @@ confirmation explicite de l'utilisateur. Il n'a jamais été déployé.
 - **Personnalisation sans code** : textes des modèles (Paramètres), référentiels,
   seuils métier (Gestion : `config/settings.py`, constantes commentées).
 - Volumes : sql.js et JSON conviennent à l'échelle d'une ESN (centaines de
-  contrats). Au-delà de ~10 000 lignes ou multi-utilisateurs simultanés :
-  passer à SQLite natif (better-sqlite3) ou PostgreSQL — l'accès est déjà isolé
-  derrière quelques fonctions (`chargerDemandes`, `persist`…).
+  contrats) pour les modules pas encore migrés. Contrats est déjà passé à
+  PostgreSQL (issue #14) — l'accès y est isolé derrière `lib/db.pg.js`
+  (`chargerDemandes`, `sauverContrat`…), même principe pour les autres modules
+  le jour de leur bascule (issues #15/#16).
 
 ## 12. Démarrage & exploitation
 ```bash

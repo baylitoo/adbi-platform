@@ -5,10 +5,11 @@
 #   → Factory sur http://localhost:4000
 #
 # PostgreSQL est provisionné ci-dessous (une base par service, voir
-# infra/postgres/init-databases.sh) mais pas encore CONSOMMÉ : contrats,
-# cv-parser et one-pager gardent pour l'instant leur stockage fichier actuel
-# (SQLite/JSON) — DATABASE_URL est déjà câblée pour que la migration de
-# chaque service (issues #14/#15/#16) n'ait qu'à la lire, sans retoucher ce
+# infra/postgres/init-databases.sh). contrats est bascule dessus (issue #14,
+# PR B) : DATABASE_URL est requise et reellement consommee par
+# contrats/server.js. cv-parser et one-pager gardent pour l'instant leur
+# stockage fichier actuel (SQLite/JSON) — DATABASE_URL reste cablee pour eux
+# aussi, prete pour leur propre bascule (issues #15/#16), sans retoucher ce
 # fichier. Les noms de service ci-dessous (contrats, one-pager, coffre,
 # cv-parser) sont ceux que factory/modules.docker.json utilise comme "hote" —
 # ne pas les renommer sans adapter ce fichier également.
@@ -62,8 +63,8 @@ services:
         condition: service_healthy
     environment:
       PORT: 4100
-      # Pas encore consommée par le code (voir issue #14) — provisionnée pour
-      # que la migration n'ait qu'à la lire.
+      # Requise (issue #14, PR B) — contrats/server.js refuse de démarrer sans
+      # elle depuis cette version.
       DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_contrats
       # Sans code d'accès explicite, un code par défaut connu de tout le
       # dépôt serait écrit dans data/code-parametres.txt — voir ARCHITECTURE.md.

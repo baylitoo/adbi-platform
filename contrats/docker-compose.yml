@@ -5,6 +5,13 @@
 #    docker compose down                 (arreter)
 #
 #  Puis ouvrir :  http://localhost:4100
+#
+#  DATABASE_URL est REQUISE (voir lib/schema.sql / lib/db.pg.js, issue #14) :
+#  ce compose ne provisionne PAS de PostgreSQL lui-meme, il suppose une base
+#  deja joignable (typiquement celle demarree par le docker-compose.yml
+#  RACINE du depot, qui lance postgres + tous les services ADBI ensemble —
+#  a preferer a ce fichier pour un lancement complet). Pour un lancement
+#  isole de ce seul service, exporter DATABASE_URL avant `docker compose up`.
 # =====================================================================
 services:
   adbi-contrats:
@@ -14,5 +21,7 @@ services:
     ports:
       - "4100:4100"          # host:conteneur  (changez le 1er nombre pour un autre port local)
     volumes:
-      - ./data:/app/data     # referentiel, historique et cle API conserves sur la machine hote
+      - ./data:/app/data     # referentiel, cle API et fichiers generes conserves sur la machine hote
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL est requise (connexion PostgreSQL, voir README.md)}
     restart: unless-stopped

@@ -1,8 +1,8 @@
 # ADBI Contrats + ADBI Sign
 
-Port **4100**. Node + Express, pdfkit, docx, sql.js (SQLite en WASM),
-nodemailer. Génération et export de contrats, historique, signature
-électronique par connecteurs API (Yousign / Zoho Sign).
+Port **4100**. Node + Express, pdfkit, docx, PostgreSQL (`pg`), nodemailer.
+Génération et export de contrats, historique, signature électronique par
+connecteurs API (Yousign / Zoho Sign).
 
 ## Utilisation
 
@@ -44,8 +44,14 @@ tiers — seules la recherche société optionnelle (Pappers/INSEE) et la
 signature (Yousign/Zoho) sont des appels externes, tous deux à clé et
 documentés.
 
+Stocké en **PostgreSQL** (`DATABASE_URL`, requise — voir `lib/schema.sql`) :
+historique des contrats, demandes de signature (+ journal), corbeille et
+personnalisation des modèles (`templates_perso`). Une instance déjà en place
+avec des données sql.js (`data/contrats.sqlite`) se migre avec
+`npm run migrer-vers-postgres` (voir `scripts/migrer-vers-postgres.js`) avant
+de démarrer le serveur sur cette version.
+
 Stocké dans `data/` (gitignoré, hors `referentiels.json`) :
-- `contrats.sqlite` — historique des contrats et demandes de signature
 - `referentiels.json` — clients/managers/signataires (**suivi en git**,
   référentiel partagé à l'équipe)
 - `secrets.json` — clés API et réglages SMTP saisis dans Paramètres
@@ -53,7 +59,8 @@ Stocké dans `data/` (gitignoré, hors `referentiels.json`) :
 
 ## Variables d'environnement
 
-Voir [`.env.example`](.env.example) — recherche société (Pappers/INSEE), SMTP
+Voir [`.env.example`](.env.example) — `DATABASE_URL` (connexion PostgreSQL)
+est **requise** au démarrage. Recherche société (Pappers/INSEE), SMTP
 et signature électronique (Yousign/Zoho) sont toutes configurables par
 variable d'environnement. Sans elles, les mêmes réglages restent saisissables
 depuis l'écran Paramètres (écrits dans `data/secrets.json`, hors git) ; une
@@ -63,8 +70,12 @@ variable d'environnement est toujours prioritaire.
 
 ```bash
 npm ci
-node server.js       # → http://localhost:4100
+DATABASE_URL=postgresql://... node server.js       # → http://localhost:4100
 ```
+
+Le schéma (`lib/schema.sql`) est appliqué automatiquement au démarrage
+(`CREATE TABLE IF NOT EXISTS`, idempotent) — pas de migration manuelle requise
+sur une base vierge.
 
 ### Docker
 
@@ -74,6 +85,11 @@ docker compose logs -f         # suivre les logs
 docker compose down            # arrêter
 ```
 
-`data/` est monté en volume (`./data:/app/data`) : `referentiels.json`,
-`contrats.sqlite`, `secrets.json` survivent à la reconstruction du conteneur.
-Port modifiable dans `docker-compose.yml` (`"4100:4100"` → `"8080:4100"`).
+Le `docker-compose.yml` de ce dossier lance uniquement le service `contrats` :
+il attend une base PostgreSQL déjà joignable via `DATABASE_URL` (typiquement
+celle provisionnée par le `docker-compose.yml` racine du dépôt, qui démarre
+`postgres` + tous les services ADBI ensemble — voir ce fichier plutôt que
+celui-ci pour un lancement complet). `data/` est monté en volume
+(`./data:/app/data`) : `referentiels.json`, `secrets.json` survivent à la
+reconstruction du conteneur. Port modifiable dans `docker-compose.yml`
+(`"4100:4100"` → `"8080:4100"`).
