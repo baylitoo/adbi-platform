@@ -1,0 +1,68 @@
+{
+  "_lisezmoi": "Configuration DOCKER COMPOSE des modules ADBI. 'hote' est le nom du service docker-compose (résolution DNS interne au réseau compose, utilisée par la Factory pour savoir si le module répond) ; 'url' est l'adresse PUBLIQUE donnée au navigateur — à adapter à votre domaine ou reverse proxy (Coolify gère ça nativement par service). Pour utiliser ce fichier : le copier en modules.json, ou le monter tel quel en volume à la place de modules.json (voir docker-compose.yml). ADBI Gestion est volontairement absent (module interne, non déployé).",
+  "modules": [
+    {
+      "id": "one-pager",
+      "nom": "ADBI OnePager",
+      "accroche": "CV → dossier de compétences",
+      "detail": "Import d'un CV (PDF, Word, texte), extraction 100 % locale et génération du dossier de compétences ADBI en une page.",
+      "tags": ["Avant-vente", "PowerPoint"],
+      "icone": "document",
+      "type": "service",
+      "conteneur": true,
+      "hote": "one-pager",
+      "port": 4200,
+      "url": "https://onepager.outils.adbi.fr/"
+    },
+    {
+      "id": "contrats",
+      "nom": "ADBI Contrats",
+      "accroche": "Contrats + signature électronique",
+      "detail": "Rédaction et export des contrats ADBI en PDF ou Word, signature électronique par connecteurs API (Yousign / Zoho Sign), historique par entreprise, corbeille.",
+      "tags": ["Juridique", "Signature"],
+      "icone": "contrat",
+      "type": "service",
+      "conteneur": true,
+      "hote": "contrats",
+      "port": 4100,
+      "url": "https://contrats.outils.adbi.fr/"
+    },
+    {
+      "id": "coffre",
+      "nom": "ADBI Coffre",
+      "accroche": "Protection de documents",
+      "detail": "Détection locale des informations sensibles d'un PDF ou d'un Word (noms, photos, e-mails, téléphones, IBAN…) et masquage au choix : protégé (réversible sur ce serveur) ou anonymisé (définitif). Archives ZIP à clé (AES-256).",
+      "tags": ["Sécurité", "RGPD"],
+      "icone": "coffre",
+      "type": "service",
+      "conteneur": true,
+      "hote": "coffre",
+      "port": 4300,
+      "url": "https://coffre.outils.adbi.fr/"
+    },
+    {
+      "id": "calculatrice",
+      "nom": "ADBI Calculator",
+      "accroche": "Marge, coût, point mort",
+      "detail": "Simulation de la rentabilité d'une mission : TJM de vente, coût journalier, marge et seuil de rentabilité.",
+      "tags": ["Commerce", "Simulation"],
+      "icone": "calcul",
+      "type": "statique",
+      "url": "/modules/calculatrice.html"
+    },
+    {
+      "id": "cv-parser",
+      "nom": "ADBI Parser",
+      "accroche": "Extraction structurée de CV",
+      "detail": "Moteur d'extraction Docling, base de compétences, recherche de profils et rapprochement avec les besoins.",
+      "tags": ["Sourcing", "Base CV"],
+      "icone": "parser",
+      "type": "service",
+      "conteneur": true,
+      "hote": "cv-parser",
+      "port": 5000,
+      "delai": 90,
+      "url": "https://parser.outils.adbi.fr/"
+    }
+  ]
+}

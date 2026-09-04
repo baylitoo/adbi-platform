@@ -70,7 +70,7 @@ Quatre types d'entrées :
 
 | type | comportement |
 |---|---|
-| `service` | app à part entière : `dossier`, `entree`, `port`, `commande`/`arguments` optionnels (Python…), `delai` d'attente |
+| `service` | app à part entière : `dossier`, `entree`, `port`, `commande`/`arguments` optionnels (Python…), `delai` d'attente. **Ou**, en déploiement conteneurisé, `conteneur: true` + `hote` (nom du service docker-compose) : la Factory ne lance alors jamais de processus, elle attend seulement que le module — démarré par son propre conteneur — réponde. Voir `factory/modules.docker.json` et `factory/README.md`. |
 | `statique` | page servie par la Factory (`url` relative) — ex. ADBI Calculator |
 | `lien` | **alias vers la vue d'un autre module** : `cible` + `chemin` (fragment ajouté à l'URL). État et démarrage délégués à la cible. Capacité disponible mais aucune tuile ne l'utilise actuellement (l'ex-tuile ADBI Sign a été retirée au profit de l'onglet interne) |
 | `bientot` | tuile grisée d'annonce |

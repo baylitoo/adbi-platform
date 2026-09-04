@@ -64,8 +64,13 @@ const processus = new Map();
 
 // ── Surveillance des ports ───────────────────────────────────────────────────
 
-/** Teste si un serveur écoute déjà sur le port (app lancée manuellement ou par nous). */
-function portOuvert(port, delai = 500) {
+/**
+ * Teste si un serveur écoute déjà sur le port (app lancée manuellement ou par
+ * nous). `hote` par défaut 127.0.0.1 (poste/serveur classique, où Factory et
+ * modules tournent sur la même machine) ; un module conteneurisé donne son
+ * propre nom d'hôte réseau (voir `m.hote`, ex. le nom du service compose).
+ */
+function portOuvert(port, hote = "127.0.0.1", delai = 500) {
   return new Promise((resoudre) => {
     const prise = new net.Socket();
     let termine = false;
@@ -79,7 +84,7 @@ function portOuvert(port, delai = 500) {
     prise.once("connect", () => conclure(true));
     prise.once("timeout", () => conclure(false));
     prise.once("error", () => conclure(false));
-    prise.connect(port, "127.0.0.1");
+    prise.connect(port, hote);
   });
 }
 
@@ -88,13 +93,19 @@ function attendre(ms) {
 }
 
 /** Attend que le port réponde, jusqu'à `secondes` (le démarrage d'une app peut être lent). */
-async function attendrePort(port, secondes = 40) {
+async function attendrePort(port, secondes = 40, hote = "127.0.0.1") {
   const limite = Date.now() + secondes * 1000;
   while (Date.now() < limite) {
-    if (await portOuvert(port)) return true;
+    if (await portOuvert(port, hote)) return true;
     await attendre(600);
   }
   return false;
+}
+
+/** Hôte réseau où joindre un module — 127.0.0.1 sauf pour un module
+ * conteneurisé (voir `demarrerModule`/`etatModule`), qui donne le sien. */
+function hoteModule(m) {
+  return m.hote || "127.0.0.1";
 }
 
 /**
@@ -124,6 +135,11 @@ async function etatModule(m) {
   }
   if (m.type === "statique") return "statique";
   if (m.type === "bientot") return "bientot";
+  // Module conteneurisé : démarré par docker-compose, pas par la Factory —
+  // aucun `dossier` local à vérifier, aucun processus à surveiller. "pret"
+  // ou "demarrage" (jamais "arrete"/"indisponible", trompeurs pour un
+  // conteneur que la Factory ne pilote pas).
+  if (m.conteneur) return (await portOuvert(m.port, hoteModule(m))) ? "pret" : "demarrage";
   if (!moduleInstalle(m)) return "indisponible";
   if (await portOuvert(m.port)) return "pret";
   const enfant = processus.get(m.id);
@@ -140,6 +156,17 @@ async function demarrerModule(m) {
     return demarrerModule(c);
   }
   if (m.type !== "service") return { etat: m.type, message: "Module sans serveur." };
+
+  if (m.conteneur) {
+    // Rien à lancer : le conteneur du module est démarré par docker-compose,
+    // en même temps que celui de la Factory (ou avant). On attend juste
+    // qu'il réponde, comme pour un module local qui met du temps à démarrer.
+    const hote = hoteModule(m);
+    const ok = await attendrePort(m.port, m.delai || 40, hote);
+    return ok
+      ? { etat: "pret" }
+      : { etat: "demarrage", message: `En attente de ${m.id} sur ${hote}:${m.port} (démarré par docker-compose).` };
+  }
 
   if (await portOuvert(m.port)) return { etat: "pret" };
 
@@ -429,7 +456,10 @@ async function prechaufferModules() {
     return;
   }
   const services = MODULES
-    .filter((m) => m.type === "service" && m.prechauffage !== false && moduleInstalle(m))
+    // Un module conteneurisé n'a pas de `dossier` local à vérifier (moduleInstalle
+    // renverrait toujours faux) : son propre conteneur, démarré par
+    // docker-compose, en tient lieu.
+    .filter((m) => m.type === "service" && m.prechauffage !== false && (m.conteneur || moduleInstalle(m)))
     .sort((a, b) => (a.delai || 40) - (b.delai || 40));
   if (!services.length) return;
 

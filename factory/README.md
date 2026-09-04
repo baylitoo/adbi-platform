@@ -23,23 +23,38 @@ patiente jusqu'à 90 s.
 ## Configuration — `modules.json`
 
 Fichier **non suivi en git** (chemins spécifiques au poste/serveur — voir
-`.gitignore`). Partir de [`modules.example.json`](modules.example.json) :
+`.gitignore`). Deux gabarits selon le mode de déploiement :
 
-```bash
-cp modules.example.json modules.json
-# adapter dossier/commande aux chemins réels, et le domaine pour "url"
-```
+- **Poste ou serveur classique** (systemd, un seul hôte — Factory lance
+  chaque module par `child_process.spawn`) : partir de
+  [`modules.example.json`](modules.example.json).
+  ```bash
+  cp modules.example.json modules.json
+  # adapter dossier/commande aux chemins réels, et le domaine pour "url"
+  ```
+- **Docker compose / Coolify** (chaque module est son propre conteneur,
+  déjà démarré par docker-compose) : partir de
+  [`modules.docker.json`](modules.docker.json) — copié en `modules.json` par
+  défaut dans l'image (`Dockerfile`), à écraser par bind-mount pour changer
+  domaines/noms de service sans reconstruire l'image (voir
+  `docker-compose.yml` à la racine du dépôt).
 
 | Champ | Rôle |
 |---|---|
-| `dossier` | chemin de l'application |
+| `dossier` | chemin de l'application (mode spawn uniquement) |
 | `port` | port d'écoute |
-| `type` | `service` (lancée par la Factory) / `statique` (page servie par la Factory) / `lien` (alias vers un autre module) / `bientot` (tuile grisée) |
-| `entree` | fichier principal (`server.js`, `app.py`…) |
-| `commande` | exécutable (absent = Node ; le CV Parser utilise l'interpréteur Python) |
-| `arguments` | arguments passés à la commande (absent = `[entree]`) |
+| `type` | `service` (démarrée par la Factory OU par son propre conteneur) / `statique` (page servie par la Factory) / `lien` (alias vers un autre module) / `bientot` (tuile grisée) |
+| `entree` | fichier principal (`server.js`, `app.py`…) — mode spawn uniquement |
+| `commande` | exécutable (absent = Node ; le CV Parser utilise l'interpréteur Python) — mode spawn uniquement |
+| `arguments` | arguments passés à la commande (absent = `[entree]`) — mode spawn uniquement |
 | `delai` | secondes d'attente avant d'abandonner (40 par défaut) |
-| `url` | (déploiement) adresse publique donnée au navigateur |
+| `url` | adresse **publique** donnée au navigateur (iframe) |
+| `conteneur` | `true` : la Factory ne lance JAMAIS ce module (`spawn`), elle attend seulement qu'il réponde sur `hote:port` — son propre conteneur le démarre |
+| `hote` | hôte réseau où la Factory joint le module en mode `conteneur` (nom du service docker-compose, résolu par le DNS interne du réseau compose) — 127.0.0.1 sinon |
+
+En mode `conteneur`, `url` (public, via Coolify/reverse proxy) et `hote`
+(interne, réseau compose) sont volontairement différents : le navigateur et
+la Factory n'atteignent pas un module conteneurisé par le même chemin.
 
 Après modification, relancer la Factory. Ajouter un module = un bloc dans
 `modules.json` (+ une icône SVG dans `public/factory.js` si besoin) : aucun
@@ -110,5 +125,16 @@ sans erreur.
 ```bash
 node server.js       # → http://localhost:4000
 ```
+
+### Docker
+
+```bash
+docker build -t adbi-factory .
+docker run -p 4000:4000 adbi-factory
+```
+
+Utilise `modules.docker.json` par défaut (mode `conteneur`, voir plus haut).
+Plus simple pour la plateforme complète : `docker-compose.yml` à la racine du
+dépôt, qui démarre la Factory et les 4 autres services ensemble.
 
 Variables d'environnement : voir [`.env.example`](.env.example).
