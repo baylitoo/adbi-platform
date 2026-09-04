@@ -28,17 +28,16 @@ function lireSecrets() {
   try { return JSON.parse(fs.readFileSync(SECRETS_PATH, "utf8")); } catch (e) { return {}; }
 }
 
+// Priorité : variable d'environnement, puis secrets.json.
 function config() {
   const s = lireSecrets();
-  if (!s.zohoClientId || !s.zohoClientSecret || !s.zohoRefreshToken) return null;
-  const region = DOMAINES[s.zohoRegion] ? s.zohoRegion : "eu";
-  return {
-    clientId: s.zohoClientId,
-    clientSecret: s.zohoClientSecret,
-    refreshToken: s.zohoRefreshToken,
-    region,
-    ...DOMAINES[region],
-  };
+  const clientId = process.env.ZOHO_CLIENT_ID || s.zohoClientId;
+  const clientSecret = process.env.ZOHO_CLIENT_SECRET || s.zohoClientSecret;
+  const refreshToken = process.env.ZOHO_REFRESH_TOKEN || s.zohoRefreshToken;
+  if (!clientId || !clientSecret || !refreshToken) return null;
+  const regionDemandee = process.env.ZOHO_REGION || s.zohoRegion;
+  const region = DOMAINES[regionDemandee] ? regionDemandee : "eu";
+  return { clientId, clientSecret, refreshToken, region, ...DOMAINES[region] };
 }
 
 // Cache de l'access token (1 h chez Zoho) — rafraîchi 5 min avant l'échéance.

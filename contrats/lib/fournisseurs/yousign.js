@@ -23,16 +23,18 @@ const path = require("path");
 
 const SECRETS_PATH = path.join(__dirname, "..", "..", "data", "secrets.json");
 
+// Priorité : variable d'environnement, puis secrets.json.
 function config() {
   let s = {};
   try { s = JSON.parse(fs.readFileSync(SECRETS_PATH, "utf8")); } catch (e) {}
-  if (!s.yousignCleApi) return null;
-  const mode = s.yousignMode === "production" ? "production" : "sandbox";
+  const cle = process.env.YOUSIGN_API_KEY || s.yousignCleApi;
+  if (!cle) return null;
+  const mode = (process.env.YOUSIGN_MODE || s.yousignMode) === "production" ? "production" : "sandbox";
   return {
-    cle: s.yousignCleApi,
+    cle,
     mode,
     base: mode === "production" ? "https://api.yousign.app/v3" : "https://api-sandbox.yousign.app/v3",
-    webhookSecret: s.yousignWebhookSecret || "",
+    webhookSecret: process.env.YOUSIGN_WEBHOOK_SECRET || s.yousignWebhookSecret || "",
   };
 }
 
