@@ -8,3 +8,7 @@ python-docx>=1.1.0
 PyJWT>=2.8.0
 bcrypt>=4.0.0
 pydantic>=2.0.0
+# PostgreSQL (issue #15, PR A) — v3 sync, cv-parser est un WSGI sync (Flask),
+# pas de pilote async necessaire. Variante [binary] : pas de libpq a
+# installer sur l'hote/l'image Docker.
+psycopg[binary]>=3.1
