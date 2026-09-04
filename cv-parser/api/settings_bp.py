@@ -11,7 +11,7 @@ from flask import Blueprint, request, jsonify
 
 import requests as _requests
 import llm_cascade
-from config import INVITES_FILE, DATA_DIR, get_active_llm, set_active_llm
+from config import INVITES_FILE, DATA_DIR, PROVIDERS, get_active_llm, set_active_llm
 from core.auth import (
     require_auth, require_superuser, get_current_user,
     list_users, get_user_by_id, update_user, delete_user,
@@ -262,10 +262,10 @@ def get_llm_config():
 @require_superuser
 def update_llm_config():
     data     = request.json or {}
-    provider = (data.get("provider") or "ovh").strip()
+    provider = (data.get("provider") or PROVIDERS[0]).strip()
     model    = (data.get("model") or "").strip()
-    if provider not in ("ovh",):
-        return jsonify({"error": "Fournisseur invalide : seul « ovh » reste disponible."}), 400
+    if provider not in PROVIDERS:
+        return jsonify({"error": f"Fournisseur invalide : seul « {PROVIDERS[0]} » reste disponible."}), 400
 
     resultat = set_active_llm(provider, model)
     # Un modèle qui n'est pas celui du fournisseur n'est pas enregistré : c'est
