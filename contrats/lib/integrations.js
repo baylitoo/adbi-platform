@@ -55,28 +55,33 @@ function saveSettings(body) {
   return settingsStatus();
 }
 
-// État renvoyé au front : on expose si une clé est configurée, jamais sa valeur.
+// État renvoyé au front : on expose si une clé est configurée, jamais sa
+// valeur — que la source soit une variable d'environnement ou secrets.json.
 function settingsStatus() {
   const s = loadSecrets();
+  const val = (envName, secretName) => process.env[envName] || s[secretName] || "";
   const hasPappers = !!key("pappersApiKey", "PAPPERS_API_KEY");
   const hasInsee = !!key("inseeApiKey", "INSEE_API_KEY");
   // Source effective : si la source choisie exige une clé absente, on retombe sur "gouv" (gratuit).
   let source = s.source || "gouv";
   if (source === "pappers" && !hasPappers) source = "gouv";
   if (source === "insee" && !hasInsee) source = "gouv";
+  const smtpHote = val("SMTP_HOST", "smtpHote");
+  const smtpUtilisateur = val("SMTP_USER", "smtpUtilisateur");
+  const smtpMdp = val("SMTP_PASS", "smtpMdp");
   return {
     pappers: hasPappers, insee: hasInsee, source,
-    smtp: !!(s.smtpHote && s.smtpUtilisateur && s.smtpMdp),
-    smtpHote: s.smtpHote || "", smtpPort: s.smtpPort || "",
-    smtpUtilisateur: s.smtpUtilisateur || "", smtpExpediteur: s.smtpExpediteur || "",
+    smtp: !!(smtpHote && smtpUtilisateur && smtpMdp),
+    smtpHote, smtpPort: val("SMTP_PORT", "smtpPort"),
+    smtpUtilisateur, smtpExpediteur: val("SMTP_FROM", "smtpExpediteur"),
     // Signature : le connecteur actif + l'état de configuration (jamais les clés).
     fournisseurSignature: s.fournisseurSignature === "local" ? "yousign" : (s.fournisseurSignature || "yousign"),
-    yousignMode: s.yousignMode || "sandbox",
-    yousignConfigure: !!s.yousignCleApi,
-    yousignWebhook: !!s.yousignWebhookSecret,
-    zohoRegion: s.zohoRegion || "eu",
-    zohoIdentifiants: !!(s.zohoClientId && s.zohoClientSecret),
-    zohoConfigure: !!(s.zohoClientId && s.zohoClientSecret && s.zohoRefreshToken),
+    yousignMode: (process.env.YOUSIGN_MODE || s.yousignMode) || "sandbox",
+    yousignConfigure: !!val("YOUSIGN_API_KEY", "yousignCleApi"),
+    yousignWebhook: !!val("YOUSIGN_WEBHOOK_SECRET", "yousignWebhookSecret"),
+    zohoRegion: (process.env.ZOHO_REGION || s.zohoRegion) || "eu",
+    zohoIdentifiants: !!(val("ZOHO_CLIENT_ID", "zohoClientId") && val("ZOHO_CLIENT_SECRET", "zohoClientSecret")),
+    zohoConfigure: !!(val("ZOHO_CLIENT_ID", "zohoClientId") && val("ZOHO_CLIENT_SECRET", "zohoClientSecret") && val("ZOHO_REFRESH_TOKEN", "zohoRefreshToken")),
   };
 }
 
