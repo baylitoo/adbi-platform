@@ -1,0 +1,157 @@
+============================================================
+  ADBI - Generateur de contrats
+  Outil local de generation de contrats (port 4100)
+============================================================
+
+------------------------------------------------------------
+1. DEMARRAGE RAPIDE (depuis le Bureau, avec icone)
+------------------------------------------------------------
+
+  a) Extrayez le contenu du ZIP (voir le point 5 ci-dessous,
+     IMPORTANT pour eviter le dossier en double).
+
+  b) Ouvrez le dossier "adbi-contrats".
+
+  c) Clic droit sur "Creer-Raccourci-Bureau.ps1"
+     > "Executer avec PowerShell".
+     -> Un raccourci "ADBI - Contrats" avec l'icone ADBI
+        apparait sur votre Bureau.
+
+  d) Double-cliquez sur ce raccourci.
+     -> Le serveur demarre, le navigateur s'ouvre tout seul
+        sur http://localhost:4100.
+
+  Pour arreter l'outil : fermez la fenetre noire (console).
+
+  (Vous pouvez aussi lancer directement, sans raccourci, en
+   double-cliquant sur "Demarrer-ADBI-Contrats.bat".)
+
+
+------------------------------------------------------------
+2. PRE-REQUIS
+------------------------------------------------------------
+
+  - Node.js (version LTS) installe sur le poste.
+    Telechargement : https://nodejs.org
+    Verifiez avec :  node --version
+
+  - Une connexion Internet est requise UNIQUEMENT au tout
+    premier demarrage : le lanceur telecharge alors les
+    dependances automatiquement ("npm install", 1 a 2 minutes).
+    Les demarrages suivants fonctionnent hors-ligne.
+
+  - (Facultatif) La fonction "Rediger avec l'IA" necessite une
+    cle OpenRouter, a saisir dans l'onglet "Parametres".
+    Tout le reste - generation de contrats, recherche
+    d'entreprise (gouv.fr), analyse des pieces (Kbis/URSSAF) -
+    fonctionne SANS aucune cle.
+
+
+------------------------------------------------------------
+3. UTILISATION
+------------------------------------------------------------
+
+  - Choisissez le type de contrat dans la barre de gauche.
+    (Pour l'instant seule la "Convention de sous-traitance"
+     est active ; CDI et CDD sont en attente, voir point 6.)
+
+  - Remplissez le formulaire : parties, intervenant, mission,
+    conditions financieres (TJM, delai), suivi, clauses.
+    L'APERCU a droite se met a jour en direct.
+
+  - Cochez/decochez les clauses optionnelles (exclusivite,
+    non-sollicitation, annexes anticorruption, RGPD,
+    propriete intellectuelle) : elles apparaissent ou
+    disparaissent immediatement dans l'apercu.
+
+  - Cochez la "Checklist documents" au fur et a mesure que
+    vous recevez les pieces du sous-traitant (K-bis, URSSAF,
+    assurance, RIB, CNI, etc.). Le compteur indique l'avancement.
+
+  - Boutons d'export :
+      PDF        -> le contrat en PDF
+      Word       -> le contrat en .docx (modifiable)
+      ZIP complet-> PDF + Word + la Checklist (PDF coche)
+      Enregistrer-> sauvegarde dans l'Historique (local)
+
+  - Onglet "Historique" : retrouvez et rouvrez vos contrats
+    precedents (clic sur "Ouvrir"). Les donnees sont stockees
+    localement dans data\contrats.sqlite.
+
+
+------------------------------------------------------------
+4. CONFIDENTIALITE
+------------------------------------------------------------
+
+  Tout est 100% local : aucune donnee ne sort de votre poste.
+  Le serveur n'ecoute que sur localhost (127.0.0.1:4100).
+
+
+------------------------------------------------------------
+5. EXTRACTION DU ZIP - A LIRE (evite le dossier en double)
+------------------------------------------------------------
+
+  Selon l'outil d'extraction, un ZIP peut creer un dossier
+  EN DOUBLE, du type :
+
+      adbi-contrats\adbi-contrats\server.js   (MAUVAIS)
+
+  au lieu de :
+
+      adbi-contrats\server.js                 (BON)
+
+  Verifiez apres extraction : le fichier "server.js" et le
+  fichier "Demarrer-ADBI-Contrats.bat" doivent se trouver
+  DIRECTEMENT dans le dossier "adbi-contrats", pas dans un
+  sous-dossier portant le meme nom.
+
+  Si vous voyez un dossier dans un dossier :
+    - entrez dans le sous-dossier interne,
+    - remontez son contenu d'un niveau (couper / coller),
+    - supprimez le dossier vide.
+
+  Astuce : avec l'explorateur Windows, faites un clic droit
+  sur le ZIP > "Extraire tout..." puis, dans la fenetre,
+  RETIREZ le "adbi-contrats" en trop a la fin du chemin de
+  destination propose, pour ne pas l'imbriquer deux fois.
+
+
+------------------------------------------------------------
+6. MODELES CDI / CDD (a completer)
+------------------------------------------------------------
+
+  Les types "CDI" et "CDD" sont presents mais vides (marques
+  "Modele a venir"). Pour les activer, transmettez vos contrats
+  types CDI et CDD : ils seront transcrits dans le meme moteur
+  (memes variables, apercu, export PDF/Word/ZIP, checklist).
+
+
+------------------------------------------------------------
+7. NOTE JURIDIQUE
+------------------------------------------------------------
+
+  Le modele de sous-traitance reprend votre Convention ADBI.
+  Quelques corrections evidentes (roles Client / Sous-Traitant,
+  client final transforme en variable) ont ete appliquees pour
+  rendre le document genere coherent.
+
+  >>> Faites relire le modele par votre service juridique
+      avant tout usage contractuel reel. <<<
+
+
+------------------------------------------------------------
+8. STRUCTURE DU PROJET (pour reference)
+------------------------------------------------------------
+
+  adbi-contrats\
+    server.js .................. serveur Express (port 4100)
+    package.json ............... dependances et script "start"
+    Demarrer-ADBI-Contrats.bat . lanceur Windows
+    Creer-Raccourci-Bureau.ps1 . cree le raccourci bureau
+    icone.ico .................. icone ADBI du raccourci
+    lib\ ....................... moteur (modele, rendu PDF/DOCX)
+    public\ .................... interface web (HTML/CSS/JS)
+    data\ ...................... referentiel + base locale (historique)
+    node_modules\ .............. dependances (creees au 1er lancement)
+
+============================================================

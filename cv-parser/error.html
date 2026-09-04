@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CV — Mohamed Raed AYARI DATA ENGINEER</title>
+  <style>
+    :root {
+      --navy:   #1B2D5C;
+      --blue:   #2563EB;
+      --sub:    #5B7DB1;
+      --green:  #16A34A;
+      --red:    #DC2626;
+      --orange: #D97706;
+      --bg:     #F0F4FA;
+      --card:   #FFFFFF;
+      --border: #D9E1EE;
+      --text:   #1E2A45;
+      --muted:  #64748B;
+      --r:      6px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
+
+    /* ── TOP BAR ── */
+    .topbar {
+      background: var(--navy); color: #fff;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 20px; height: 52px; flex-shrink: 0;
+      box-shadow: 0 2px 10px rgba(0,0,0,.25); gap: 12px;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 12px; }
+    .btn-back {
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22);
+      color: #fff; padding: 6px 12px; border-radius: var(--r);
+      font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
+    }
+    .btn-back:hover { background: rgba(255,255,255,.22); }
+    .topbar-name { font-size: 15px; font-weight: 700; }
+    .topbar-role { font-size: 12px; color: #93C5FD; }
+    .topbar-right { display: flex; align-items: center; gap: 8px; }
+    .topbar-right button {
+      border: none; padding: 7px 14px; border-radius: var(--r);
+      font-size: 12px; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; gap: 6px; transition: filter .15s;
+    }
+    .topbar-right button:hover { filter: brightness(1.12); }
+    .topbar-right button svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .btn-reset  { background: #475569; color: #fff; }
+    .btn-save   { background: var(--green); color: #fff; }
+    .btn-export { background: var(--blue);  color: #fff; }
+    .save-indicator { font-size: 11px; color: #86EFAC; font-weight: 600; opacity: 0; transition: opacity .3s; }
+    .save-indicator.show { opacity: 1; }
+
+    /* ── WORKSPACE ── */
+    .workspace { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── LEFT: PDF VIEWER ── */
+    .left-panel {
+      width: 44%; border-right: 2px solid var(--border);
+      display: flex; flex-direction: column; background: #fff; flex-shrink: 0;
+    }
+    .panel-label {
+      background: #F8FAFF; border-bottom: 1px solid var(--border);
+      padding: 8px 14px; font-size: 11px; font-weight: 700;
+      color: var(--muted); letter-spacing: .5px; text-transform: uppercase;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .panel-label svg { width: 13px; height: 13px; stroke: var(--muted); fill: none; stroke-width: 2; }
+
+    /* ── RIGHT: EDITABLE SECTIONS ── */
+    .right-panel { flex: 1; overflow-y: auto; background: var(--bg); padding: 14px 18px 32px; display: flex; flex-direction: column; gap: 10px; }
+    .right-panel::-webkit-scrollbar { width: 5px; }
+    .right-panel::-webkit-scrollbar-thumb { background: #B8C5D6; border-radius: 3px; }
+
+    /* Section card */
+    .cv-section { border-radius: var(--r); overflow: hidden; box-shadow: 0 1px 5px rgba(27,45,92,.1); }
+    .sec-header {
+      background: var(--navy); color: #fff;
+      padding: 10px 16px; font-size: 12px; font-weight: 800;
+      letter-spacing: .6px; text-transform: uppercase;
+      display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; user-select: none;
+    }
+    .sec-header:hover { background: #243a73; }
+    .sec-chevron { font-size: 11px; transition: transform .2s; }
+    .cv-section.collapsed .sec-chevron { transform: rotate(-180deg); }
+    .cv-section.collapsed .sec-body { display: none; }
+    .sec-body { background: var(--card); }
+
+    /* Sub-header */
+    .sub-hd {
+      background: var(--sub); color: #fff;
+      padding: 7px 16px; font-size: 11px; font-weight: 700;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .btn-rm-entry {
+      background: rgba(255,255,255,.2); border: none; color: #fff;
+      font-size: 11px; font-weight: 700; padding: 2px 8px;
+      border-radius: 4px; cursor: pointer;
+    }
+    .btn-rm-entry:hover { background: rgba(255,255,255,.35); }
+
+    /* KV table */
+    .kv-table { width: 100%; border-collapse: collapse; }
+    .kv-table tr { border-bottom: 1px solid var(--border); }
+    .kv-table tr:last-child { border-bottom: none; }
+    .kv-table td { padding: 8px 14px; font-size: 12.5px; vertical-align: top; line-height: 1.4; }
+    .kl { width: 34%; font-weight: 700; color: var(--text); white-space: nowrap; }
+
+    /* Editable cells */
+    .kv { outline: none; min-height: 20px; transition: background .15s; border-radius: 3px; }
+    .kv:focus { background: #EFF6FF; box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .kv[data-empty="true"] { color: var(--red); font-style: italic; }
+    .kv[data-empty="true"]:empty::before { content: attr(data-placeholder); color: var(--red); }
+    .kv:focus[data-empty="true"]:empty::before { display: none; }
+
+    /* Bullets */
+    .bullets-wrap { display: flex; flex-direction: column; gap: 3px; }
+    .bullet-row { display: flex; align-items: flex-start; gap: 6px; }
+    .bullet-dot { flex-shrink: 0; margin-top: 6px; width: 6px; height: 6px; background: var(--sub); border-radius: 50%; }
+    .bullet-text {
+      flex: 1; outline: none; font-size: 12.5px; line-height: 1.4;
+      border-radius: 3px; padding: 1px 4px; min-height: 18px;
+      transition: background .15s;
+    }
+    .bullet-text:focus { background: #EFF6FF; box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .bullet-text:empty::before { content: attr(data-placeholder); color: var(--red); font-style: italic; }
+    .btn-add-line {
+      margin-top: 4px; background: none; border: 1px dashed #94A3B8;
+      color: var(--muted); font-size: 11px; padding: 2px 8px;
+      border-radius: 4px; cursor: pointer; width: 100%;
+    }
+    .btn-add-line:hover { border-color: var(--blue); color: var(--blue); }
+
+    /* Tags */
+    .tags-cell { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+    .tag {
+      background: #DBEAFE; color: var(--blue);
+      border: 1px solid #BFDBFE; border-radius: 4px;
+      padding: 2px 8px; font-size: 11px; font-weight: 600;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .tag-del { background: none; border: none; color: #93C5FD; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
+    .tag-del:hover { color: var(--red); }
+    .tag-input {
+      border: 1px dashed #94A3B8; border-radius: 4px;
+      padding: 2px 8px; font-size: 11px; outline: none;
+      min-width: 80px; max-width: 140px; background: transparent;
+    }
+    .tag-input:focus { border-color: var(--blue); background: #EFF6FF; }
+
+    /* Add entry button */
+    .add-entry-wrap { padding: 8px 12px; }
+    .btn-add-entry {
+      width: 100%; background: none; border: 1px dashed #94A3B8;
+      color: var(--muted); font-size: 11px; padding: 5px 8px;
+      border-radius: 4px; cursor: pointer;
+    }
+    .btn-add-entry:hover { border-color: var(--blue); color: var(--blue); }
+
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 20px; right: 20px;
+      background: var(--navy); color: #fff;
+      padding: 10px 16px; border-radius: var(--r); font-size: 13px;
+      opacity: 0; transform: translateY(6px);
+      transition: opacity .25s, transform .25s; z-index: 500; pointer-events: none;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+  </style>
+</head>
+<body>
+
+
+
+
+
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <button class="btn-back" onclick="window.location.href='/'">← Nouveau CV</button>
+    <div>
+      <div class="topbar-name">Mohamed Raed AYARI DATA ENGINEER</div>
+      <div class="topbar-role">Mohamed Raed AYARI DATA ENGINEER</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="save-indicator" id="saveIndicator">✓ Sauvegardé</span>
+    <button class="btn-reset" onclick="confirmReset()">
+      <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9 9 9 0 00-7.4 3.9"/><path d="M3 3v6h6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Réinitialiser
+    </button>
+    <button class="btn-save" onclick="saveAll()">
+      <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      Sauvegarder
+    </button>
+    <button class="btn-export" onclick="exportCV()">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Exporter CV ADBI
+    </button>
+  </div>
+</div>
+
+<!-- WORKSPACE -->
+<div class="workspace">
+
+  <!-- LEFT: PDF -->
+  <div class="left-panel">
+    <div class="panel-label">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Document original
+    </div>
+    
+    
+      <iframe src="/api/file/5708b538-1ed5-48d2-97b3-31e6d4427a68" style="flex:1;border:none;width:100%;height:100%"></iframe>
+    
+  </div>
+
+  <!-- RIGHT: STRUCTURED DATA (company CV format) -->
+  <div class="right-panel" id="rightPanel">
+
+    <!-- 1. PRÉSENTATION -->
+    <div class="cv-section">
+      <div class="sec-header" onclick="toggle(this)">Présentation <span class="sec-chevron">▲</span></div>
+      <div class="sec-body">
+        <table class="kv-table">
+          <tr>
+            <td class="kl">Bigramme</td>
+            <td><strong>ME</strong></td>
+          </tr>
+          <tr>
+            <td class="kl">Titre du candidat</td>
+            <td><div class="kv" contenteditable="true" data-field="title"
+                     data-empty="false"
+                     data-placeholder="Non renseigné">Mohamed Raed AYARI DATA ENGINEER</div></td>
+          </tr>
+          <tr>
+            <td class="kl">Années d'expérience</td>
+            <td><div class="kv" contenteditable="true" data-field="years_experience"
+                     data-empty="true"
+                     data-placeholder="Non renseigné"></div></td>
+          </tr>
+          <tr>
+            <td class="kl">Email</td>
+            <td><div class="kv" contenteditable="true" data-section="contact" data-field="email"
+                     data-empty="false"
+                     data-placeholder="Non renseigné">mohamedraed.ayari@gmail.com</div></td>
+          </tr>
+          <tr>
+            <td class="kl">Téléphone</td>
+            <td><div class="kv" contenteditable="true" data-section="contact" data-field="phone"
+                     data-empty="false"
+                     data-placeholder="Non renseigné">+33 7 52 87 36 78</div></td>
+          </tr>
+          <tr>
+            <td class="kl">Localisation</td>
+            <td><div class="kv" contenteditable="true" data-section="contact" data-field="location"
+                     data-empty="true"
+                     data-placeholder="Non renseigné"></div></td>
+          </tr>
+          <tr>
+            <td class="kl">LinkedIn</td>
+            <td><div class="kv" contenteditable="true" data-section="contact" data-field="linkedin"
+                     data-empty="false"
+                     data-placeholder="Non renseigné">linkedin.com/in/mohamed-raed-ayari-a52252103</div></td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- 2. CARACTÉRISTIQUE (top 4 catégories de compétences) -->
+    
+    <div class="cv-section">
+      <div class="sec-header" onclick="toggle(this)">Caractéristique <span class="sec-chevron">▲</span></div>
+      <div class="sec-body">
+        
+        <div class="sub-hd">Caractéristique 1</div>
+        <table class="kv-table">
+          <tr>
+            <td class="kl">Intitulé</td>
+            <td><div class="kv" contenteditable="true" data-carac="0"
+                     data-empty="false"
+                     data-placeholder="Non renseigné">Compétences</div></td>
+          </tr>
+        </table>
+        
+      </div>
+    </div>
+    
+
+    <!-- 3. FORMATION -->
+    <div class="cv-section">
+      <div class="sec-header" onclick="toggle(this)">Formation <span class="sec-chevron">▲</span></div>
+      <div class="sec-body" id="bodyEdu">
+        
+          <p style="padding:12px 16px;color:var(--muted);font-size:12.5px;font-style:italic">Aucune formation détectée.</p>
+        
+      </div>
+    </div>
+
+    <!-- 4. COMPÉTENCES TECHNIQUES -->
+    <div class="cv-section">
+      <div class="sec-header" onclick="toggle(this)">Compétences techniques <span class="sec-chevron">▲</span></div>
+      <div class="sec-body">
+        
+        <table class="kv-table" id="skillsTable">
+          
+          <tr data-skill-idx="0">
+            <td class="kl">
+              <div class="kv" contenteditable="true" data-skill-cat="0"
+                   data-empty="false"
+                   data-placeholder="Catégorie">Compétences</div>
+            </td>
+            <td>
+              <div class="tags-cell" data-skill-items="0">
+                
+                <span class="tag">Programation<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Python<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Scala<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Java<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Cloud et Infrastructure<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">GCP(Storage<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Bigquery<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Dataproc<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Dataflow<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Composer<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Datastream<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Dataplex<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">PubSub<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">IAM)<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">AWS(EMR<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">S3)<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Azure(Azure Storage<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">HDInsights)<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Terraform<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Airflow<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Base de données<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">HDFS<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Oracle<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Microsoft SQL Server<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">MySQL<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">PostgreSQL<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Apache Software<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Apache Spark<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Apache beam<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Versionning et déploiement<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">GitLab<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">GitLab CI<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">CD<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Systèmes d&#39;exploitations<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Mac OS<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Linux<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Windows<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Organisation<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Agile SAFe<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Agile Scrum<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Kanban<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Jira<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">Confluence<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <span class="tag">&lt;!-- image --&gt;<button class="tag-del" onclick="delTag(this)">×</button></span>
+                
+                <input class="tag-input" placeholder="+ Ajouter" onkeydown="addTag(event, this)" />
+              </div>
+            </td>
+          </tr>
+          
+        </table>
+        
+      </div>
+    </div>
+
+    <!-- 5. LANGUES -->
+    <div class="cv-section">
+      <div class="sec-header" onclick="toggle(this)">Langues <span class="sec-chevron">▲</span></div>
+      <div class="sec-body">
+        
+        <table class="kv-table" id="langsTable">
+          
+          <tr>
+            <td class="kl">
+              <div class="kv" contenteditable="true" data-lang-name="0"
+                   data-empty="false"
+                   data-placeholder="Langue">Anglais</div>
+            </td>
+            <td>
+              <div class="kv" contenteditable="true" data-lang-level="0"
+                   data-empty="true"
+                   data-placeholder="Non renseigné"></div>
+            </td>
+          </tr>
+          
+          <tr>
+            <td class="kl">
+              <div class="kv" contenteditable="true" data-lang-name="1"
+                   data-empty="false"
+                   data-placeholder="Langue">Français</div>
+            </td>
+            <td>
+              <div class="kv" contenteditable="true" data-lang-level="1"
+                   data-empty="true"
+                   data-placeholder="Non renseigné"></div>
+            </td>
+          </tr>
+          
+          <tr>
+            <td class="kl">
+              <div class="kv" contenteditable="true" data-lang-name="2"
+                   data-empty="false"
+                   data-placeholder="Langue">Arabe</div>
+            </td>
+            <td>
+              <div class="kv" contenteditable="true" data-lang-level="2"
+                   data-empty="true"
+                   data-placeholder="Non renseigné"></div>
+            </td>
+          </tr>
+          
+          <tr>
+            <td class="kl">
+              <div class="kv" contenteditable="true" data-lang-name="3"
+                   data-empty="false"
+                   data-placeholder="Langue">Langue</div>
+            </td>
+            <td>
+              <div class="kv" contenteditable="true" data-lang-level="3"
+                   data-empty="false"
+                   data-placeholder="Non renseigné">maternelle</div>
+            </td>
+          </tr>
+          
+          <tr>
+            <td class="kl">
+              <div class="kv" contenteditable="true" data-lang-name="4"
+                   data-empty="false"
+                   data-placeholder="Langue">Espagnol</div>
+            </td>
+            <td>
+              <div class="kv" contenteditable="true" data-lang-level="4"
+                   data-empty="true"
+                   data-placeholder="Non renseigné"></div>
+            </td>
+          </tr>
+          
+          <tr>
+            <td class="kl">
+              <div class="kv" contenteditable="true" data-lang-name="5"
+                   data-empty="false"
+                   data-placeholder="Langue">de base</div>
+            </td>
+            <td>
+              <div class="kv" contenteditable="true" data-lang-level="5"
+                   data-empty="false"
+                   data-placeholder="Non renseigné">Notions</div>
+            </td>
+          </tr>
+          
+        </table>
+        
+      </div>
+    </div>
+
+    <!-- 6. COMPÉTENCES FONCTIONNELLES -->
+    <div class="cv-section">
+      <div class="sec-header" onclick="toggle(this)">Compétences fonctionnelles <span class="sec-chevron">▲</span></div>
+      <div class="sec-body" id="bodyFunc">
+        
+          <p style="padding:12px 16px;color:var(--muted);font-size:12.5px;font-style:italic">Aucune compétence fonctionnelle détectée.</p>
+        
+        <div class="add-entry-wrap">
+          <button class="btn-add-entry" onclick="addFuncEntry()">+ Ajouter une compétence fonctionnelle</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7. EXPÉRIENCES -->
+    <div class="cv-section">
+      <div class="sec-header" onclick="toggle(this)">Expériences <span class="sec-chevron">▲</span></div>
+      <div class="sec-body" id="bodyExp">
+        
+          
+          <div class="sub-hd">
+            Expérience 1
+            <button class="btn-rm-entry" onclick="removeEntry(this)">✕</button>
+          </div>
+          <table class="kv-table" data-section="experience" data-entry-idx="0">
+            <tr>
+              <td class="kl">Nom de l'entreprise</td>
+              <td><div class="kv" contenteditable="true" data-f="title"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">Février 2021 Septembre 2023</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Poste occupé</td>
+              <td><div class="kv" contenteditable="true" data-f="subtitle"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Période</td>
+              <td><div class="kv" contenteditable="true" data-f="period"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Contexte</td>
+              <td><div class="kv" contenteditable="true" data-f="contexte"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Objectifs</td>
+              <td><div class="kv" contenteditable="true" data-f="objectifs"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Méthodologie</td>
+              <td><div class="kv" contenteditable="true" data-f="methodologie"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Environnement technique</td>
+              <td><div class="kv" contenteditable="true" data-f="env_technique"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Description</td>
+              <td>
+                <div class="bullets-wrap" data-f="description">
+                  
+                  
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true" data-placeholder="Non renseigné"></div>
+                  </div>
+                  
+                  <button class="btn-add-line" onclick="addBullet(this)">+ Ajouter une ligne</button>
+                </div>
+              </td>
+            </tr>
+          </table>
+          
+          <div class="sub-hd">
+            Expérience 2
+            <button class="btn-rm-entry" onclick="removeEntry(this)">✕</button>
+          </div>
+          <table class="kv-table" data-section="experience" data-entry-idx="1">
+            <tr>
+              <td class="kl">Nom de l'entreprise</td>
+              <td><div class="kv" contenteditable="true" data-f="title"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">Data Engineer</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Poste occupé</td>
+              <td><div class="kv" contenteditable="true" data-f="subtitle"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">France Television, PARIS, France</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Période</td>
+              <td><div class="kv" contenteditable="true" data-f="period"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Contexte</td>
+              <td><div class="kv" contenteditable="true" data-f="contexte"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">∠ Construire et monitorer des pipelines de traitement de données dans leur intégralité sur GCP</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Objectifs</td>
+              <td><div class="kv" contenteditable="true" data-f="objectifs"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">maintenir le Data Lake de France Télévisions, mettre à disposition des nouvelles sources de données et le développement des divers cas d&#39;usages associés</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Méthodologie</td>
+              <td><div class="kv" contenteditable="true" data-f="methodologie"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Environnement technique</td>
+              <td><div class="kv" contenteditable="true" data-f="env_technique"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Description</td>
+              <td>
+                <div class="bullets-wrap" data-f="description">
+                  
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Participer à la gouvernance de données par la mise en place de processus MDM : dédoublonnage, historisation, calcul d&#39;indicateurs et d&#39;agrégats…</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Collecter des flux de données et mettre en place des contrôles de qualité et détection des anomalies</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Nettoyer et transformer des données de différentes sources non homogènes</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Optimiser les traitements de données et refactorer les codes</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Développer des nouveaux connecteurs Airflow (opérateur custom FacebookAds, GoogleAds)</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Mettre en place des traitements RGPD : anonymisation et droit à l&#39;oubli</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Industrialiser la création des tables et des vues sur BigQuery avec Dbt</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Upgrader nos outils en interne (migration vers Airflow 2 et Spark 3)</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Mettre en place d&#39;une nouvelle architecture LakeHouse (Delta lake)</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Mettre en place des jobs temps réel pour certaines sources de données (PubSub, Dataflow)</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Maintenir et s&#39;assurer de la qualité de code et promouvoir les bonnes pratiques au sein de l&#39;équipe (testing, CI/CD, code review,..)</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Mettre en place une solution de profiling (Python, Cloud Function, Airflow, Dataproc)</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Contribuer et veiller à la documentation technique des projets sur Confluence</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">Python PySpark GCP BigQuery PubSub Dataproc Cloud Composer Cloud Function Delta lake Terraform Airflow dbt Zeppelin CI/CD GitLab Scrum Jira Confluence Dataplex LakeHouse</div>
+                  </div>
+                  
+                  
+                  <button class="btn-add-line" onclick="addBullet(this)">+ Ajouter une ligne</button>
+                </div>
+              </td>
+            </tr>
+          </table>
+          
+          <div class="sub-hd">
+            Expérience 3
+            <button class="btn-rm-entry" onclick="removeEntry(this)">✕</button>
+          </div>
+          <table class="kv-table" data-section="experience" data-entry-idx="2">
+            <tr>
+              <td class="kl">Nom de l'entreprise</td>
+              <td><div class="kv" contenteditable="true" data-f="title"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">Octobre 2018 Janvier 2021</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Poste occupé</td>
+              <td><div class="kv" contenteditable="true" data-f="subtitle"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Période</td>
+              <td><div class="kv" contenteditable="true" data-f="period"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Contexte</td>
+              <td><div class="kv" contenteditable="true" data-f="contexte"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Objectifs</td>
+              <td><div class="kv" contenteditable="true" data-f="objectifs"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Méthodologie</td>
+              <td><div class="kv" contenteditable="true" data-f="methodologie"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Environnement technique</td>
+              <td><div class="kv" contenteditable="true" data-f="env_technique"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Description</td>
+              <td>
+                <div class="bullets-wrap" data-f="description">
+                  
+                  
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true" data-placeholder="Non renseigné"></div>
+                  </div>
+                  
+                  <button class="btn-add-line" onclick="addBullet(this)">+ Ajouter une ligne</button>
+                </div>
+              </td>
+            </tr>
+          </table>
+          
+          <div class="sub-hd">
+            Expérience 4
+            <button class="btn-rm-entry" onclick="removeEntry(this)">✕</button>
+          </div>
+          <table class="kv-table" data-section="experience" data-entry-idx="3">
+            <tr>
+              <td class="kl">Nom de l'entreprise</td>
+              <td><div class="kv" contenteditable="true" data-f="title"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">Avril 2018 Septembre 2018</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Poste occupé</td>
+              <td><div class="kv" contenteditable="true" data-f="subtitle"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Période</td>
+              <td><div class="kv" contenteditable="true" data-f="period"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Contexte</td>
+              <td><div class="kv" contenteditable="true" data-f="contexte"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Objectifs</td>
+              <td><div class="kv" contenteditable="true" data-f="objectifs"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Méthodologie</td>
+              <td><div class="kv" contenteditable="true" data-f="methodologie"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Environnement technique</td>
+              <td><div class="kv" contenteditable="true" data-f="env_technique"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Description</td>
+              <td>
+                <div class="bullets-wrap" data-f="description">
+                  
+                  
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true" data-placeholder="Non renseigné"></div>
+                  </div>
+                  
+                  <button class="btn-add-line" onclick="addBullet(this)">+ Ajouter une ligne</button>
+                </div>
+              </td>
+            </tr>
+          </table>
+          
+          <div class="sub-hd">
+            Expérience 5
+            <button class="btn-rm-entry" onclick="removeEntry(this)">✕</button>
+          </div>
+          <table class="kv-table" data-section="experience" data-entry-idx="4">
+            <tr>
+              <td class="kl">Nom de l'entreprise</td>
+              <td><div class="kv" contenteditable="true" data-f="title"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">Data Engineer</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Poste occupé</td>
+              <td><div class="kv" contenteditable="true" data-f="subtitle"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">Leadeal Marketing, PARIS, France</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Période</td>
+              <td><div class="kv" contenteditable="true" data-f="period"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Contexte</td>
+              <td><div class="kv" contenteditable="true" data-f="contexte"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">∠ Évolution, optimisation et ajout de nouvelles fonctionnalités sur l&#39;outil KAMINO (ETL interne de l&#39;entreprise développé en spark scala)</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Objectifs</td>
+              <td><div class="kv" contenteditable="true" data-f="objectifs"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">Faire évoluer les outils de développement en interne et mettre en place des DataLakes pour les différents clients</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Méthodologie</td>
+              <td><div class="kv" contenteditable="true" data-f="methodologie"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Environnement technique</td>
+              <td><div class="kv" contenteditable="true" data-f="env_technique"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Description</td>
+              <td>
+                <div class="bullets-wrap" data-f="description">
+                  
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Réalisation d&#39;une API pour une solution Big Data interne</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Mise en place et automatisation des pipelines de traitement de données (flux de données, Data Lake, ingestions et structuration des données, transformation et calcul d&#39;indicateurs ..)</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Traduire les besoins fonctionnels récupérés auprès de l&#39;équipe AMOA en solutions techniques adaptées aux différents projets</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Déploiement et mise en production des projets sur les environnements Cloud</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Planification et ordonnancement des workflows dans les environnements de production</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Exploitation et monitoring des traitements quotidiens, investigation et correction des anomalies</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">| Scala   | Spark Airflow Hadoop YARN Hue Zeppelin Azure AWS Cluster S3 Azure Storage Spark   |      |        | SQL   |</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">|---------|-----------------------------------------------------------------------------------|------|--------|-------|</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">| SQL     | SQL Server                                                                        | SSIS | GitLab |       |</div>
+                  </div>
+                  
+                  
+                  <button class="btn-add-line" onclick="addBullet(this)">+ Ajouter une ligne</button>
+                </div>
+              </td>
+            </tr>
+          </table>
+          
+          <div class="sub-hd">
+            Expérience 6
+            <button class="btn-rm-entry" onclick="removeEntry(this)">✕</button>
+          </div>
+          <table class="kv-table" data-section="experience" data-entry-idx="5">
+            <tr>
+              <td class="kl">Nom de l'entreprise</td>
+              <td><div class="kv" contenteditable="true" data-f="title"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">Ingénieur</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Poste occupé</td>
+              <td><div class="kv" contenteditable="true" data-f="subtitle"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">Arval BNP Paribas, PARIS, France</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Période</td>
+              <td><div class="kv" contenteditable="true" data-f="period"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Contexte</td>
+              <td><div class="kv" contenteditable="true" data-f="contexte"
+                       data-empty="false"
+                       data-placeholder="Non renseigné">∠ Développement des web services pour la gestion en temps réel des sinistres déclarés.</div></td>
+            </tr>
+            <tr>
+              <td class="kl">Objectifs</td>
+              <td><div class="kv" contenteditable="true" data-f="objectifs"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Méthodologie</td>
+              <td><div class="kv" contenteditable="true" data-f="methodologie"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Environnement technique</td>
+              <td><div class="kv" contenteditable="true" data-f="env_technique"
+                       data-empty="true"
+                       data-placeholder="Non renseigné"></div></td>
+            </tr>
+            <tr>
+              <td class="kl">Description</td>
+              <td>
+                <div class="bullets-wrap" data-f="description">
+                  
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Participation à la conception MCD pour la migration des données.</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Développement des batchs pour la gestion de flux des polices.</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">∠ Génération automatique des documents de l&#39;assurance.</div>
+                  </div>
+                  
+                  <div class="bullet-row">
+                    <div class="bullet-dot"></div>
+                    <div class="bullet-text" contenteditable="true">Java JEE Spring Hibernate Maven Web Service SoapUI Apache Tomcat SQL SQL Developer BI Publisher BIRT</div>
+                  </div>
+                  
+                  
+                  <button class="btn-add-line" onclick="addBullet(this)">+ Ajouter une ligne</button>
+                </div>
+              </td>
+            </tr>
+          </table>
+          
+        
+        <div class="add-entry-wrap">
+          <button class="btn-add-entry" onclick="addExpEntry()">+ Ajouter une expérience</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8. CERTIFICATIONS -->
+    
+    <div class="cv-section">
+      <div class="sec-header" onclick="toggle(this)">Certifications <span class="sec-chevron">▲</span></div>
+      <div class="sec-body">
+        <table class="kv-table" id="certsTable">
+          
+          <tr>
+            <td><div class="kv" contenteditable="true" data-cert-name="0"
+                     data-empty="false"
+                     data-placeholder="Non renseigné">11/2023</div></td>
+            <td style="width:80px">
+              <div class="kv" contenteditable="true" data-cert-year="0"
+                   data-empty="false"
+                   data-placeholder="Année">2023</div>
+            </td>
+          </tr>
+          
+          <tr>
+            <td><div class="kv" contenteditable="true" data-cert-name="1"
+                     data-empty="false"
+                     data-placeholder="Non renseigné">GCP Professional Data Engineer</div></td>
+            <td style="width:80px">
+              <div class="kv" contenteditable="true" data-cert-year="1"
+                   data-empty="true"
+                   data-placeholder="Année"></div>
+            </td>
+          </tr>
+          
+          <tr>
+            <td><div class="kv" contenteditable="true" data-cert-name="2"
+                     data-empty="false"
+                     data-placeholder="Non renseigné">12/2018</div></td>
+            <td style="width:80px">
+              <div class="kv" contenteditable="true" data-cert-year="2"
+                   data-empty="false"
+                   data-placeholder="Année">2018</div>
+            </td>
+          </tr>
+          
+          <tr>
+            <td><div class="kv" contenteditable="true" data-cert-name="3"
+                     data-empty="false"
+                     data-placeholder="Non renseigné">Functional Programming Principles in Scala</div></td>
+            <td style="width:80px">
+              <div class="kv" contenteditable="true" data-cert-year="3"
+                   data-empty="true"
+                   data-placeholder="Année"></div>
+            </td>
+          </tr>
+          
+          <tr>
+            <td><div class="kv" contenteditable="true" data-cert-name="4"
+                     data-empty="false"
+                     data-placeholder="Non renseigné">06/2017</div></td>
+            <td style="width:80px">
+              <div class="kv" contenteditable="true" data-cert-year="4"
+                   data-empty="false"
+                   data-placeholder="Année">2017</div>
+            </td>
+          </tr>
+          
+          <tr>
+            <td><div class="kv" contenteditable="true" data-cert-name="5"
+                     data-empty="false"
+                     data-placeholder="Non renseigné">Big Data Developer - IBM Mastery Award for Students</div></td>
+            <td style="width:80px">
+              <div class="kv" contenteditable="true" data-cert-year="5"
+                   data-empty="true"
+                   data-placeholder="Année"></div>
+            </td>
+          </tr>
+          
+        </table>
+      </div>
+    </div>
+    
+
+  </div><!-- /right-panel -->
+</div><!-- /workspace -->
+
+<div id="toast"></div>
+
+<script>
+const CV_ID = "5708b538-1ed5-48d2-97b3-31e6d4427a68";
+const LLM_ENRICHED = false;
+
+/* ── LLM POLLING — rafraîchit la page quand l'analyse IA est terminée ── */
+if (!LLM_ENRICHED) {
+  const banner = document.createElement('div');
+  banner.id = 'llm-banner';
+  banner.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1B2D5C;color:#fff;padding:9px 18px;border-radius:6px;font-size:13px;z-index:999;display:flex;align-items:center;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+  banner.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite"></span> Analyse IA en cours…';
+  document.body.appendChild(banner);
+  const style = document.createElement('style');
+  style.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+  document.head.appendChild(style);
+
+  const pollLLM = setInterval(async () => {
+    try {
+      const r = await fetch(`/api/cvs/${CV_ID}`);
+      if (!r.ok) return;
+      const data = await r.json();
+      if (data.llm_enriched) {
+        clearInterval(pollLLM);
+        banner.innerHTML = '✓ Analyse IA terminée — actualisation…';
+        banner.style.background = '#16A34A';
+        setTimeout(() => location.reload(), 900);
+      }
+    } catch (_) {}
+  }, 4000);
+}
+
+/* ── COLLAPSE ── */
+function toggle(hd) { hd.closest('.cv-section').classList.toggle('collapsed'); }
+
+/* ── EMPTY FIELD BINDING ── */
+function bindEmpty(root) {
+  (root || document).querySelectorAll('.kv[contenteditable]').forEach(el => {
+    if (el._eb) return; el._eb = true;
+    el.addEventListener('focus', () => {
+      if (el.dataset.empty === 'true') { el.textContent = ''; el.dataset.empty = 'false'; }
+    });
+    el.addEventListener('blur', () => {
+      if (!el.textContent.trim()) { el.textContent = ''; el.dataset.empty = 'true'; }
+      else { el.dataset.empty = 'false'; }
+    });
+  });
+}
+bindEmpty();
+
+/* ── TAGS ── */
+function addTag(e, input) {
+  if (e.key !== 'Enter' && e.key !== ',') return;
+  e.preventDefault();
+  const val = input.value.trim().replace(/,$/, '');
+  if (!val) return;
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+  tag.innerHTML = `${val}<button class="tag-del" onclick="delTag(this)">×</button>`;
+  input.parentNode.insertBefore(tag, input);
+  input.value = '';
+}
+function delTag(btn) { btn.parentNode.remove(); }
+
+/* ── BULLETS ── */
+function addBullet(btn) {
+  const row = document.createElement('div');
+  row.className = 'bullet-row';
+  row.innerHTML = `<div class="bullet-dot"></div><div class="bullet-text" contenteditable="true" data-placeholder="Non renseigné"></div>`;
+  btn.parentNode.insertBefore(row, btn);
+  row.querySelector('.bullet-text').focus();
+}
+
+/* ── REMOVE ENTRY ── */
+function removeEntry(btn) {
+  if (!confirm('Supprimer cette entrée ?')) return;
+  const subHd = btn.closest('.sub-hd');
+  const next = subHd.nextElementSibling;
+  subHd.remove();
+  if (next && next.tagName === 'TABLE') next.remove();
+}
+
+/* ── ADD FUNC ENTRY ── */
+function addFuncEntry() {
+  const body = document.getElementById('bodyFunc');
+  const btn  = body.querySelector('.add-entry-wrap');
+  const n    = body.querySelectorAll('.sub-hd').length + 1;
+  const idx  = Date.now();
+  const html = `
+    <div class="sub-hd">Compétence fonctionnelle ${n}</div>
+    <table class="kv-table">
+      <tr><td class="kl">Intitulé</td>
+          <td><div class="kv" contenteditable="true" data-func="${idx}" data-empty="true" data-placeholder="Non renseigné"></div></td>
+      </tr>
+    </table>`;
+  btn.insertAdjacentHTML('beforebegin', html);
+  bindEmpty(body);
+}
+
+/* ── ADD EXP ENTRY ── */
+function addExpEntry() {
+  const body = document.getElementById('bodyExp');
+  const btn  = body.querySelector('.add-entry-wrap');
+  const n    = body.querySelectorAll('.sub-hd').length + 1;
+  const idx  = Date.now();
+  const empty = (lbl, f) => `<tr><td class="kl">${lbl}</td>
+    <td><div class="kv" contenteditable="true" data-f="${f}" data-empty="true" data-placeholder="Non renseigné"></div></td></tr>`;
+  const html = `
+    <div class="sub-hd">Expérience ${n} <button class="btn-rm-entry" onclick="removeEntry(this)">✕</button></div>
+    <table class="kv-table" data-section="experience" data-entry-idx="${idx}">
+      ${empty("Nom de l'entreprise","title")}
+      ${empty("Poste occupé","subtitle")}
+      ${empty("Période","period")}
+      ${empty("Contexte","contexte")}
+      ${empty("Objectifs","objectifs")}
+      ${empty("Méthodologie","methodologie")}
+      ${empty("Environnement technique","env_technique")}
+      <tr><td class="kl">Description</td><td>
+        <div class="bullets-wrap" data-f="description">
+          <div class="bullet-row"><div class="bullet-dot"></div>
+            <div class="bullet-text" contenteditable="true" data-placeholder="Non renseigné"></div>
+          </div>
+          <button class="btn-add-line" onclick="addBullet(this)">+ Ajouter une ligne</button>
+        </div>
+      </td></tr>
+    </table>`;
+  btn.insertAdjacentHTML('beforebegin', html);
+  bindEmpty(body);
+}
+
+/* ── COLLECT DATA ── */
+function collectData() {
+  const data = {};
+
+  // Top-level & contact fields
+  document.querySelectorAll('.kv[data-field]').forEach(el => {
+    const sec = el.dataset.section;
+    const f   = el.dataset.field;
+    const v   = el.textContent.trim();
+    if (sec === 'contact') { data.contact = data.contact || {}; data.contact[f] = v; }
+    else { data[f] = v; }
+  });
+
+  // Experience
+  data.experience = [];
+  document.querySelectorAll('[data-section="experience"]').forEach(table => {
+    const entry = {};
+    table.querySelectorAll('.kv[data-f]').forEach(el => {
+      if (el.dataset.f !== 'description') entry[el.dataset.f] = el.textContent.trim();
+    });
+    const bw = table.querySelector('.bullets-wrap[data-f="description"]');
+    if (bw) {
+      const bullets = [...bw.querySelectorAll('.bullet-text')].map(b => b.textContent.trim()).filter(Boolean);
+      entry.description = bullets.join(' · ');
+    }
+    if (entry.title || entry.subtitle || entry.period) data.experience.push(entry);
+  });
+
+  // Education
+  data.education = [];
+  document.querySelectorAll('[data-section="education"]').forEach(table => {
+    const entry = {};
+    table.querySelectorAll('.kv[data-f]').forEach(el => { entry[el.dataset.f] = el.textContent.trim(); });
+    if (entry.title) data.education.push(entry);
+  });
+
+  // Skills
+  data.skills = [];
+  document.querySelectorAll('#skillsTable tr[data-skill-idx]').forEach(row => {
+    const catEl  = row.querySelector('[data-skill-cat]');
+    const tagsEl = row.querySelector('[data-skill-items]');
+    if (!catEl || !tagsEl) return;
+    const cat   = catEl.textContent.trim();
+    const items = [...tagsEl.querySelectorAll('.tag')].map(t => t.childNodes[0].textContent.trim()).filter(Boolean);
+    if (cat) data.skills.push({ category: cat, items });
+  });
+
+  // Languages
+  data.languages = [];
+  const langsTable = document.getElementById('langsTable');
+  if (langsTable) langsTable.querySelectorAll('tr').forEach(row => {
+    const nameEl  = row.querySelector('[data-lang-name]');
+    const levelEl = row.querySelector('[data-lang-level]');
+    if (nameEl && nameEl.textContent.trim())
+      data.languages.push({ language: nameEl.textContent.trim(), level: levelEl?.textContent.trim() || '' });
+  });
+
+  // Interests (functional)
+  data.interests = [];
+  document.querySelectorAll('[data-func]').forEach(el => {
+    const v = el.textContent.trim(); if (v) data.interests.push(v);
+  });
+
+  // Certifications
+  data.certifications = [];
+  const certsTable = document.getElementById('certsTable');
+  if (certsTable) certsTable.querySelectorAll('tr').forEach(row => {
+    const nameEl = row.querySelector('[data-cert-name]');
+    const yearEl = row.querySelector('[data-cert-year]');
+    if (nameEl && nameEl.textContent.trim())
+      data.certifications.push({ name: nameEl.textContent.trim(), year: yearEl?.textContent.trim() || '' });
+  });
+
+  return data;
+}
+
+/* ── SAVE ── */
+async function saveAll() {
+  const data = collectData();
+  data.id = CV_ID;
+  try {
+    const r = await fetch(`/api/cvs/${CV_ID}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    const resp = await r.json();
+    if (resp.success) {
+      document.getElementById('saveIndicator').classList.add('show');
+      setTimeout(() => document.getElementById('saveIndicator').classList.remove('show'), 2500);
+      showToast('✅ Modifications enregistrées');
+    }
+  } catch { showToast('❌ Erreur de sauvegarde'); }
+}
+
+/* ── RESET ── */
+function confirmReset() {
+  if (confirm('Réinitialiser tous les champs avec les données extraites originales ?')) location.reload();
+}
+
+/* ── EXPORT ── */
+async function exportCV() {
+  await saveAll();
+  window.open(`/api/cvs/${CV_ID}/export`, '_blank');
+}
+
+/* ── AUTO-SAVE (debounced 3s) ── */
+let autoSaveTimer;
+document.getElementById('rightPanel').addEventListener('input', () => {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(saveAll, 3000);
+});
+
+/* ── TOAST ── */
+let _tt;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(_tt); _tt = setTimeout(() => t.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+========================================================================
+  ONE PAGER — INSTALLATION SUR VOTRE POSTE
+========================================================================
+
+Cet outil transforme un CV (PDF, Word ou texte) en dossier de
+compétences ADBI sur une seule page.
+
+Il fonctionne ENTIÈREMENT hors ligne : aucun CV n'est envoyé sur
+Internet, tout reste sur votre ordinateur.
+
+
+INSTALLATION — 2 ÉTAPES
+------------------------
+
+1. Décompressez ce ZIP dans un dossier de votre choix.
+   Conseil : C:\One-pager
+   ÉVITEZ le Bureau, OneDrive ou un lecteur réseau : la
+   synchronisation ralentirait beaucoup l'outil.
+
+2. Double-cliquez sur « Installer.bat ».
+
+C'est tout. L'installeur passe une liste de contrôle à l'écran :
+
+   [OK]  Windows 64 bits
+   [OK]  Espace disque disponible
+   [OK]  Node embarqué (aucune installation requise)
+   [OK]  Fichiers du programme
+   [OK]  Bibliothèques
+   [OK]  Pastilles dégradées
+   [OK]  Dossier des données
+   [OK]  Port 4200 libre
+   [OK]  Icône « One pager » sur le Bureau
+
+Ce qui manque est réparé automatiquement quand c'est possible, et
+signalé en clair sinon. L'outil démarre ensuite tout seul et votre
+navigateur s'ouvre.
+
+Une fenêtre noire reste ouverte : LAISSEZ-LA OUVERTE pendant que
+vous travaillez. Fermez-la pour arrêter l'outil.
+
+Les fois suivantes, l'icône « One pager » du Bureau suffit.
+
+
+AUCUN PRÉREQUIS
+---------------
+Vous n'avez RIEN à installer. Ce paquet contient déjà tout ce qu'il
+faut, y compris son propre moteur d'exécution (dossier « runtime »).
+Ni droits administrateur, ni connexion Internet ne sont nécessaires.
+
+
+VOS DONNÉES
+-----------
+Ce paquet arrive avec un historique VIDE : il ne contient aucun CV.
+
+Les CV que vous importerez seront enregistrés uniquement sur votre
+poste, dans le fichier data\cvs.sqlite. Ils ne sont partagés avec
+personne, et l'application n'est accessible que depuis votre
+ordinateur — jamais depuis le réseau.
+
+Ces fichiers contiennent des données personnelles de candidats :
+ne recopiez pas le dossier « data » vers un autre poste, et pensez à
+supprimer de l'historique les CV dont vous n'avez plus besoin
+(onglet Historique, croix en bout de ligne).
+
+
+UTILISATION
+-----------
+Voir LISEZ-MOI.txt, dans ce même dossier, pour le détail des trois
+étapes (Import, Validation, One-pager) et des réglages.
+
+
+EN CAS DE PROBLÈME
+------------------
+« Node.js est introuvable »
+    Le dossier « runtime » a été perdu à la décompression.
+    Redécompressez le ZIP en entier.
+
+Le navigateur ne s'ouvre pas
+    Ouvrez-le vous-même à l'adresse : http://localhost:4200
+
+« Le port 4200 est déjà utilisé »
+    L'outil tourne déjà dans une autre fenêtre. Fermez-la et
+    relancez.
+
+Un CV s'importe mal
+    C'est possible : les mises en page de CV sont très variées.
+    L'écran de Validation permet de tout corriger à la main avant
+    de générer le dossier. Signalez le cas, l'extraction s'améliore
+    CV après CV.
+
+
+MISE À JOUR
+-----------
+Pour installer une nouvelle version : décompressez le nouveau ZIP
+par-dessus l'ancien dossier, en conservant votre dossier « data »
+si vous voulez garder votre historique.

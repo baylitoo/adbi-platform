@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="clair">
+<head>
+  <script src="{{ url_for('static', filename='adbi-theme.js') }}"></script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>ADBI — Connexion</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy: #0F2042; --blue: #1A5CFF; --blue-l: #E8F0FF;
+      --teal: #00ECC6; --sub: #3A6FD8;
+      --bg: #F4F6F9; --border: #DDE3F0; --text: #0F2042; --muted: #64748B;
+    }
+
+    body {
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      animation: bgFade .4s ease;
+    }
+    @keyframes bgFade { from { opacity:0; } }
+
+    /* Animated gradient background */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 10% 100%, rgba(26,92,255,.07) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 90% 0%,  rgba(0,236,198,.07) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 50% at 50% 50%, rgba(26,92,255,.03) 0%, transparent 70%);
+      pointer-events: none;
+      animation: bgPulse 8s ease-in-out infinite alternate;
+    }
+    @keyframes bgPulse {
+      from { transform: scale(1); }
+      to   { transform: scale(1.04); }
+    }
+
+    .card {
+      position: relative;
+      background: #fff;
+      border-radius: 20px;
+      box-shadow: 0 8px 48px rgba(15,32,66,.10), 0 1px 3px rgba(15,32,66,.06);
+      padding: 48px 44px 44px;
+      width: 420px;
+      max-width: 95vw;
+      animation: cardIn .4s cubic-bezier(.34,1.56,.64,1);
+    }
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(24px) scale(.97); }
+    }
+
+    /* Teal accent top border */
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 32px; right: 32px;
+      height: 3px;
+      background: linear-gradient(90deg, var(--blue), var(--teal));
+      border-radius: 0 0 3px 3px;
+    }
+
+    .logo-wrap { margin-bottom: 36px; }
+    .logo-inner { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    .logo-svg { width: 36px; height: 44px; flex-shrink: 0; overflow: visible; }
+    .logo-text { font-size: 38px; font-weight: 900; font-style: italic; color: var(--navy); letter-spacing: -2px; line-height: 1; }
+    .logo-text span { color: var(--teal); font-size: 24px; font-style: normal; vertical-align: super; }
+    .logo-sub {
+      font-size: 13px; color: var(--muted); font-style: normal;
+      font-weight: 400; line-height: 1.4;
+    }
+
+    .field { margin-bottom: 20px; }
+    label {
+      display: block; font-size: 12px; font-weight: 600;
+      color: var(--muted); margin-bottom: 6px; letter-spacing: .3px;
+    }
+
+    input[type=email], input[type=password] {
+      width: 100%; padding: 12px 14px; font-size: 14px;
+      border: 1.5px solid var(--border); border-radius: 10px;
+      outline: none; transition: border-color .2s, box-shadow .2s;
+      font-family: inherit; color: var(--text); background: #fff;
+    }
+    input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(26,92,255,.10);
+    }
+
+    .btn-login {
+      width: 100%; padding: 14px;
+      background: var(--blue); color: #fff;
+      border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 700; cursor: pointer;
+      transition: background .2s, transform .1s, box-shadow .2s;
+      font-family: inherit; letter-spacing: .2px;
+      box-shadow: 0 4px 16px rgba(26,92,255,.25);
+    }
+    .btn-login:hover { background: var(--sub); box-shadow: 0 6px 20px rgba(26,92,255,.35); }
+    .btn-login:active { transform: scale(.98); }
+    .btn-login:disabled { background: #c0cfe8; box-shadow: none; cursor: default; }
+
+    .error-msg {
+      background: #FEF2F2; color: #DC2626;
+      border: 1px solid #FECACA; border-radius: 8px;
+      padding: 10px 14px; font-size: 13px;
+      margin-bottom: 18px; display: none;
+    }
+    .error-msg.show { display: block; }
+
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .footer-hint {
+      margin-top: 20px; text-align: center;
+      font-size: 12px; color: var(--muted);
+    }
+  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-theme.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-cvparser-sombre.css') }}"/>
+</head>
+<body>
+<div class="card">
+  <div class="logo-wrap">
+    <div class="logo-inner">
+      <svg class="logo-svg" viewBox="0 0 26 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="lgDocL" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#1A5CFF" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#0F2042"/>
+          </linearGradient>
+          <linearGradient id="lgScanL" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#00ECC6" stop-opacity="0"/>
+            <stop offset="50%" stop-color="#00ECC6" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#00ECC6" stop-opacity="0"/>
+          </linearGradient>
+          <clipPath id="dcL"><path d="M1,0 L19,0 L25,6 L25,32 L1,32 Z"/></clipPath>
+        </defs>
+        <path d="M1,0 L19,0 L25,6 L25,32 L1,32 Z" fill="url(#lgDocL)"/>
+        <path d="M19,0 L19,6 L25,6 Z" fill="rgba(255,255,255,0.25)"/>
+        <rect x="5" y="11" width="10" height="2" rx="1" fill="#00ECC6" opacity=".95"/>
+        <rect x="5" y="15.5" width="15" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="19" width="12" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="22.5" width="14" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="26" width="10" height="1.5" rx=".75" fill="rgba(255,255,255,.35)"/>
+        <rect x="1" y="0" width="24" height="5" fill="url(#lgScanL)" clip-path="url(#dcL)">
+          <animate attributeName="y" from="-5" to="33" dur="2.2s" repeatCount="indefinite"/>
+        </rect>
+      </svg>
+      <div class="logo-text">adbi<span>.cv</span></div>
+    </div>
+    <div class="logo-sub">Plateforme de gestion des profils &amp; matching</div>
+  </div>
+
+  <div class="error-msg" id="errMsg"></div>
+
+  <form id="loginForm" autocomplete="on">
+    <div class="field">
+      <label for="email">Adresse e-mail</label>
+      <input type="email" id="email" name="email" placeholder="admin@adbi.fr" required autofocus/>
+    </div>
+    <div class="field">
+      <label for="password">Mot de passe</label>
+      <input type="password" id="password" name="password" placeholder="••••••••" required/>
+    </div>
+    <button type="submit" class="btn-login" id="btnLogin">Se connecter</button>
+  </form>
+
+  <div class="footer-hint">Accès réservé aux membres de l'équipe ADBI</div>
+</div>
+
+<script>
+document.getElementById('loginForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('btnLogin');
+  const err = document.getElementById('errMsg');
+  err.classList.remove('show');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Connexion…';
+
+  try {
+    const resp = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email:    document.getElementById('email').value.trim(),
+        password: document.getElementById('password').value,
+      }),
+      credentials: 'include',
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      err.textContent = data.error || 'Identifiants invalides';
+      err.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = 'Se connecter';
+      return;
+    }
+    sessionStorage.setItem('adbi_user', JSON.stringify(data.user));
+    window.location.href = '/';
+  } catch(ex) {
+    err.textContent = 'Erreur réseau — réessayez';
+    err.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = 'Se connecter';
+  }
+});
+</script>
+</body>
+</html>

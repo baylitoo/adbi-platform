@@ -1,0 +1,426 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   ADBI Coffre — feuille de style de l'application.
+
+   Écrite entièrement sur les jetons de la charte (--adbi-*) : les deux thèmes,
+   clair et sombre, fonctionnent sans une ligne de plus. La charte
+   `adbi-theme.css` se charge APRÈS cette feuille et reprend la main sur les
+   éléments de base (champs, liens, fond de page).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+* { box-sizing: border-box; }
+body { margin: 0; font-size: 14.5px; line-height: 1.55; }
+
+/* ── Barre d'en-tête ────────────────────────────────────────────────────── */
+
+.barre {
+  display: flex; align-items: center; gap: 26px;
+  padding: 0 22px; height: 60px;
+  background: var(--adbi-surface);
+  border-bottom: 1px solid var(--adbi-border);
+  position: sticky; top: 0; z-index: 30;
+}
+.marque { display: flex; align-items: baseline; gap: 10px; }
+.logo { font-size: 25px; font-weight: 700; letter-spacing: -0.6px; }
+.appname { font-size: 15px; font-weight: 600; color: var(--adbi-text2); }
+
+.onglets { display: flex; gap: 4px; }
+.onglet {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 0; background: none; cursor: pointer;
+  padding: 8px 16px; border-radius: 999px;
+  font: inherit; font-weight: 500; color: var(--adbi-text2);
+}
+.onglet svg {
+  width: 16px; height: 16px; fill: none; stroke: currentColor;
+  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.onglet:hover { color: var(--adbi-text1); background: var(--adbi-surface-2); }
+.onglet.actif {
+  color: var(--adbi-accent);
+  background: var(--adbi-accent-faible);
+}
+
+.barre-fin { margin-left: auto; display: flex; align-items: center; }
+.badge-local {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 500;
+  color: var(--adbi-ok);
+  background: var(--adbi-ok-fond);
+  border: 1px solid var(--adbi-ok-bord);
+  cursor: help;
+}
+.badge-local svg {
+  width: 14px; height: 14px; fill: none; stroke: currentColor;
+  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ── Structure des vues ─────────────────────────────────────────────────── */
+
+main { max-width: 1180px; margin: 0 auto; padding: 26px 22px 40px; }
+.vue { display: none; position: relative; }
+.vue.active { display: block; }
+#vue-archiver, #vue-dechiffrer, #protege-depot, #protege-analyse { max-width: 880px; margin: 0 auto; }
+
+/* ── Zone de dépôt ──────────────────────────────────────────────────────── */
+
+.depot {
+  text-align: center;
+  padding: 40px 26px 32px;
+  border: 2px dashed var(--adbi-border-fort);
+  border-radius: var(--adbi-r-xl);
+  background: var(--adbi-surface);
+  transition: border-color 0.15s, background 0.15s;
+}
+.depot svg {
+  fill: none; stroke: var(--adbi-accent);
+  stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round;
+}
+.depot h1 { font-size: 21px; margin: 12px 0 6px; }
+.depot p { color: var(--adbi-text2); margin: 0 0 18px; }
+.depot.survol {
+  border-color: var(--adbi-accent);
+  background: var(--adbi-accent-faible);
+}
+.depot .note { margin-top: 16px; font-size: 12.5px; color: var(--adbi-textm); }
+
+/* ── Liste des fichiers choisis ─────────────────────────────────────────── */
+
+.fichiers { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; }
+.fichiers li {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  background: var(--adbi-surface);
+  border: 1px solid var(--adbi-border);
+  border-radius: var(--adbi-r-md);
+}
+.fichiers .nom { font-weight: 500; overflow-wrap: anywhere; }
+.fichiers .taille { color: var(--adbi-textm); font-size: 12.5px; white-space: nowrap; }
+.fichiers .retirer {
+  margin-left: auto;
+  border: 0; background: none; cursor: pointer;
+  color: var(--adbi-textm); font-size: 17px; line-height: 1;
+  padding: 4px 8px; border-radius: var(--adbi-r-sm);
+}
+.fichiers .retirer:hover { color: var(--adbi-erreur); background: var(--adbi-erreur-fond); }
+
+/* ── Carte mot de passe ─────────────────────────────────────────────────── */
+
+.carte {
+  margin-top: 18px;
+  padding: 22px;
+  background: var(--adbi-surface);
+  border: 1px solid var(--adbi-border);
+  border-radius: var(--adbi-r-lg);
+  box-shadow: var(--adbi-sh);
+}
+.carte h2 { font-size: 16px; margin: 0 0 14px; }
+.carte .aide { color: var(--adbi-text2); font-size: 13px; margin: 12px 0 0; }
+
+.champs-mdp { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.champ { display: grid; gap: 6px; }
+.champ > span:first-child { font-size: 13px; font-weight: 500; color: var(--adbi-text2); }
+.champ small { font-weight: 400; color: var(--adbi-textm); }
+.saisie { position: relative; display: block; }
+.saisie input {
+  width: 100%; padding: 10px 40px 10px 12px;
+  font-size: 14px;
+  font-family: Consolas, "Cascadia Mono", monospace;
+}
+.oeil {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 28px; height: 28px;
+  border: 0; background: none; cursor: pointer;
+  color: var(--adbi-textm);
+  display: grid; place-items: center; border-radius: 50%;
+}
+.oeil:hover { color: var(--adbi-accent); }
+.oeil svg { width: 16px; height: 16px; }
+
+/* ── Jauge de solidité ──────────────────────────────────────────────────── */
+
+.jauge-ligne { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.jauge {
+  flex: 1; height: 7px; border-radius: 99px;
+  background: var(--adbi-surface-3); overflow: hidden;
+}
+.jauge-barre {
+  height: 100%; width: 0; border-radius: 99px;
+  transition: width 0.2s, background 0.2s;
+}
+.jauge-barre.faible { background: var(--adbi-erreur); }
+.jauge-barre.moyen { background: var(--adbi-attention); }
+.jauge-barre.bon { background: var(--adbi-degrade); }
+.jauge-libelle { font-size: 12.5px; color: var(--adbi-textm); min-width: 130px; text-align: right; }
+
+.generer-ligne { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.copie-ok { font-size: 12.5px; color: var(--adbi-ok); }
+
+/* ── Alertes ────────────────────────────────────────────────────────────── */
+
+.alerte {
+  margin-top: 16px;
+  padding: 12px 15px;
+  border-radius: var(--adbi-r-md);
+  font-size: 13px;
+}
+.alerte.attention {
+  color: var(--adbi-attention);
+  background: var(--adbi-attention-fond);
+  border: 1px solid var(--adbi-attention-bord);
+}
+.alerte.erreur {
+  color: var(--adbi-erreur);
+  background: var(--adbi-erreur-fond);
+  border: 1px solid var(--adbi-erreur-bord);
+}
+
+/* ── Boutons ────────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 9px 16px;
+  border: 1px solid var(--adbi-border-fort);
+  border-radius: var(--adbi-r-sm);
+  background: var(--adbi-surface-2);
+  color: var(--adbi-text1);
+  font: inherit; font-weight: 500; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.btn:hover:not(:disabled) { border-color: var(--adbi-accent-bord); color: var(--adbi-accent); }
+.btn.primaire {
+  background: var(--adbi-degrade);
+  border: 0;
+  color: var(--adbi-sur-accent);
+}
+.btn.primaire:hover:not(:disabled) { filter: brightness(1.08); color: var(--adbi-sur-accent); }
+.btn.fantome { border-color: transparent; background: none; color: var(--adbi-text2); }
+.btn.fantome:hover:not(:disabled) { background: var(--adbi-surface-2); color: var(--adbi-text1); }
+.btn.grand { width: 100%; margin-top: 16px; padding: 12px 18px; font-size: 15px; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Résultats ──────────────────────────────────────────────────────────── */
+
+.resultats { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 8px; }
+.resultats li {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px;
+  background: var(--adbi-surface);
+  border: 1px solid var(--adbi-border);
+  border-radius: var(--adbi-r-md);
+}
+.resultats .nom { font-weight: 500; overflow-wrap: anywhere; }
+.resultats .etat { margin-left: auto; font-size: 12.5px; white-space: nowrap; }
+.resultats li.encours .etat { color: var(--adbi-textm); }
+.resultats li.ok { border-color: var(--adbi-ok-bord); }
+.resultats li.ok .etat { color: var(--adbi-ok); font-weight: 500; }
+.resultats li.erreur { border-color: var(--adbi-erreur-bord); }
+.resultats li.erreur .etat { color: var(--adbi-erreur); }
+.resultats .telecharger {
+  border: 1px solid var(--adbi-ok-bord);
+  background: var(--adbi-ok-fond);
+  color: var(--adbi-ok);
+  border-radius: 999px;
+  padding: 5px 13px;
+  font-size: 12.5px; font-weight: 500;
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.resultats .telecharger:hover { filter: brightness(1.1); color: var(--adbi-ok); }
+
+/* Rond d'attente pendant la dérivation de clé et le chiffrement. */
+.tourne {
+  width: 13px; height: 13px;
+  border: 2px solid var(--adbi-border-fort);
+  border-top-color: var(--adbi-accent);
+  border-radius: 50%;
+  display: inline-block; vertical-align: -2px; margin-right: 6px;
+  animation: coffre-rotation 0.8s linear infinite;
+}
+@keyframes coffre-rotation { to { transform: rotate(360deg); } }
+
+/* ── Atelier « Protéger un PDF » ────────────────────────────────────────── */
+
+.analyse-carte {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  padding: 46px 22px; margin-top: 18px;
+}
+.analyse-carte p { margin: 0; color: var(--adbi-text2); }
+.tourne.grand { width: 22px; height: 22px; border-width: 3px; margin: 0; }
+
+.atelier {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 6px;
+}
+
+.panneau {
+  position: sticky; top: 74px;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  background: var(--adbi-surface);
+  border: 1px solid var(--adbi-border);
+  border-radius: var(--adbi-r-lg);
+  padding: 16px;
+  box-shadow: var(--adbi-sh);
+}
+.panneau h2 { font-size: 15px; margin: 0; }
+.panneau .aide { color: var(--adbi-text2); font-size: 12.5px; margin: 8px 0 12px; }
+.panneau-entete { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.panneau-actions { display: flex; gap: 6px; }
+
+.groupe {
+  border: 1px solid var(--adbi-border);
+  border-radius: var(--adbi-r-md);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.groupe summary {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 12px;
+  cursor: pointer; list-style: none;
+  background: var(--adbi-surface-2);
+  font-size: 13px; font-weight: 500;
+}
+.groupe summary::-webkit-details-marker { display: none; }
+.groupe-titre { flex: 1; }
+.groupe-nombre {
+  font-size: 11.5px; font-weight: 600;
+  color: var(--adbi-accent);
+  background: var(--adbi-accent-faible);
+  border-radius: 999px; padding: 2px 8px;
+}
+.detection {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  border-top: 1px solid var(--adbi-border);
+  cursor: pointer;
+}
+.detection:hover { background: var(--adbi-surface-2); }
+.detection-valeur { flex: 1; overflow-wrap: anywhere; }
+.detection-page { color: var(--adbi-textm); font-size: 11px; white-space: nowrap; }
+
+.panneau-mdp { border-top: 1px solid var(--adbi-border); margin-top: 14px; padding-top: 14px; display: grid; gap: 10px; }
+.panneau-mdp h2 { margin-bottom: 2px; }
+.panneau-mdp .jauge-ligne, .panneau-mdp .generer-ligne { margin-top: 0; }
+.panneau-mdp .alerte { margin-top: 4px; }
+.panneau-mdp .btn.grand { margin-top: 0; }
+
+.apercu { display: grid; gap: 18px; justify-items: center; min-width: 0; }
+.page-pdf {
+  position: relative;
+  background: #fff;
+  box-shadow: var(--adbi-sh-lg);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.page-pdf canvas { display: block; }
+.page-numero {
+  position: absolute; top: 6px; right: 8px;
+  font-size: 10.5px; color: var(--adbi-textm);
+  background: var(--adbi-surface);
+  border: 1px solid var(--adbi-border);
+  border-radius: 999px; padding: 1px 8px;
+  opacity: 0.85; pointer-events: none;
+}
+
+.zone-detectee {
+  position: absolute; z-index: 3;
+  border: 1.5px solid var(--adbi-magenta);
+  background: rgba(22, 101, 193, 0.24);
+  border-radius: 3px;
+  cursor: pointer; padding: 0;
+}
+.zone-detectee:hover { background: rgba(22, 101, 193, 0.38); }
+.zone-detectee.off {
+  border: 1.5px dashed var(--adbi-border-fort);
+  background: rgba(120, 120, 140, 0.10);
+}
+.zone-detectee.off:hover { background: rgba(120, 120, 140, 0.22); }
+
+/* Couche texte pdfjs : invisible mais sélectionnable. */
+.textLayer {
+  position: absolute; inset: 0; z-index: 2;
+  overflow: hidden; line-height: 1;
+  opacity: 1; text-size-adjust: none;
+}
+.textLayer span, .textLayer br {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  transform-origin: 0 0;
+  cursor: text;
+}
+.textLayer ::selection { background: rgba(139, 26, 126, 0.35); color: transparent; }
+
+.btn.flottant {
+  position: absolute; z-index: 40;
+  transform: translateX(-50%);
+  box-shadow: var(--adbi-sh-lg);
+}
+
+/* Choix du mode de sortie : protégé (réversible) / anonymisé (définitif). */
+.choix-mode { display: flex; gap: 8px; margin-bottom: 10px; }
+.choix-mode .mode {
+  flex: 1; flex-direction: column; gap: 1px; padding: 8px 10px;
+}
+.choix-mode .mode small { font-size: 10.5px; font-weight: 400; color: var(--adbi-textm); }
+.choix-mode .mode.actif {
+  border-color: var(--adbi-accent-bord);
+  background: var(--adbi-accent-faible);
+  color: var(--adbi-accent);
+}
+.choix-mode .mode.actif small { color: var(--adbi-accent); opacity: 0.75; }
+
+.depot-boutons { display: flex; gap: 10px; justify-content: center; }
+
+/* Pastilles des formats acceptés dans la zone de dépôt. */
+.formats { display: flex; gap: 8px; justify-content: center; margin: 0 0 16px; }
+.formats span {
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0.4px;
+  color: var(--adbi-text2);
+  background: var(--adbi-surface-2);
+  border: 1px solid var(--adbi-border);
+  border-radius: 999px; padding: 3px 10px;
+}
+
+/* ── Atelier Word : liste des détections + actions ──────────────────────── */
+
+.atelier-docx {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  align-items: start;
+  max-width: 1020px;
+  margin: 6px auto 0;
+}
+.atelier-docx .panneau-mdp { border-top: 0; margin-top: 0; padding-top: 0; }
+.docx-nom { color: var(--adbi-accent); overflow-wrap: anywhere; }
+
+@media (max-width: 900px) {
+  .atelier-docx { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+  .atelier { grid-template-columns: 1fr; }
+  .panneau { position: static; max-height: none; }
+}
+
+/* ── Pied de page ───────────────────────────────────────────────────────── */
+
+.pied {
+  max-width: 880px; margin: 0 auto; padding: 0 22px 28px;
+  font-size: 12px; color: var(--adbi-textm); text-align: center;
+}
+.pied code { font-size: 11.5px; padding: 1px 5px; }
+
+/* ── Écrans étroits ─────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .barre { gap: 14px; }
+  .badge-local span { display: none; }
+  .champs-mdp { grid-template-columns: 1fr; }
+  .jauge-libelle { min-width: 0; }
+}

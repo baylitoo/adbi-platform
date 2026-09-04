@@ -1,0 +1,278 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   ADBI Contrats — surcharge de thème (sombre ET clair).
+
+   Cette feuille se charge EN DERNIER, après styles.css puis adbi-theme.css.
+   Elle ne fait (presque) qu'une chose : redéfinir les variables de couleur de
+   styles.css en les branchant sur les jetons de la charte ADBI. Aucune
+   dimension, aucun sélecteur de mise en page n'est touché.
+
+   DEUX THÈMES. La charte définit les mêmes jetons `--adbi-*` avec deux jeux de
+   valeurs : sombre par défaut, clair sous `<html data-theme="clair">` (attribut
+   posé par adbi-theme.js, chargé dans le <head> avant les styles). Le bloc
+   `:root` ci-dessous est donc AGNOSTIQUE : il remappe les ~74 variables de
+   styles.css vers des jetons, et suit automatiquement le thème actif.
+   Seul le bloc `:root[data-theme="clair"]`, plus bas, traite ce qui ne peut pas
+   s'exprimer par un jeton commun (fond de page, ombres, pastilles « encre »).
+
+   Deux jetons à ne jamais contourner :
+     --adbi-sur-etat   encre à poser SUR une pastille ok / attention / erreur
+                       (foncée en sombre, claire en clair) ;
+     --adbi-sur-accent encre à poser sur le magenta ou le dégradé ADBI.
+   N'écrivez donc jamais `#fff` ni `var(--adbi-bg)` comme couleur de texte sur
+   un aplat d'état : le rendu s'inverserait dans l'autre thème.
+
+   Ne modifiez pas adbi-theme.css ni adbi-theme.js : ce sont des copies
+   synchronisées depuis la Factory, elles seraient écrasées. Tout ajustement
+   propre à l'application se fait ici. Le nom du fichier reste historique.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* ── La police reste Poppins (fichiers locaux dans /vendor/fonts) ────────
+     adbi-theme.css applique `font-family: var(--adbi-police)` au body ; on
+     redéfinit le token plutôt que de lutter à coups de !important. ──────── */
+  --adbi-police:'Poppins','Segoe UI',system-ui,sans-serif;
+
+  /* ── Palette de base ──────────────────────────────────────────────────
+     --navy servait de « couleur de titre/libellé » : sur fond sombre il
+     devient tout simplement le texte principal. ─────────────────────────── */
+  --navy:var(--adbi-text1);
+  --navy2:var(--adbi-text2);
+  --accent:var(--adbi-magenta);
+  --accent2:var(--adbi-orange);
+  --ink:var(--adbi-text1);
+  /* Pastilles « actives » (nav, étapes de l'assistant). En sombre, un aplat
+     noir disparaîtrait : on prend la surface la plus élevée. En clair on
+     revient à une vraie pastille d'encre foncée (voir le bloc clair). */
+  --ink-bg:var(--adbi-surface-3);
+  --on-accent:var(--adbi-sur-accent); /* encre sur dégradé / pastille foncée */
+  --bg:var(--adbi-bg);
+  --card:var(--adbi-surface);
+  --line:var(--adbi-border);
+  --text:var(--adbi-text1);
+  --text-2:var(--adbi-text2);
+  --muted:var(--adbi-text2);
+  --muted-2:var(--adbi-textm);
+  --faint:var(--adbi-textm);
+  --ok:var(--adbi-ok);
+  --radius:var(--adbi-r-xl);
+  --shadow:var(--adbi-sh-lg);
+  --degrade:var(--adbi-degrade);
+
+  /* ── Fond de page : le dégradé d'origine devient une nuit teintée ADBI ──
+     Les deux voiles radiaux (violet puis magenta) sont la signature ADBI ; on
+     les garde dans les deux thèmes, mais très dilués en clair. La version
+     claire est dans `:root[data-theme="clair"]`. ────────────────────────── */
+  --body-fond:
+    radial-gradient(900px 520px at 78% -10%,rgba(139,26,126,.30),rgba(139,26,126,0) 70%),
+    radial-gradient(760px 460px at 4% 2%,rgba(22, 101, 193,.14),rgba(22, 101, 193,0) 65%),
+    linear-gradient(180deg,#0d0d13,#08080b);
+
+  /* ── Surfaces secondaires ── */
+  --soft:var(--adbi-surface-2);
+  --soft-2:var(--adbi-surface-2);
+  --soft-2-hover:var(--adbi-surface-3);
+  --chip:var(--adbi-surface-3);
+  --track:var(--adbi-surface-3);
+  --preview-bg:var(--adbi-surface-2);
+
+  /* ── Barre latérale ── */
+  --side-bg:var(--adbi-surface);
+  --side-text:var(--adbi-text2);
+  --nav-hover:var(--adbi-surface-2);
+  --side-foot:var(--adbi-textm);
+
+  /* ── Champs de saisie ── */
+  --input-bg:var(--adbi-surface-2);
+  --input-line:var(--adbi-border-fort);
+  --input-line-hover:var(--adbi-accent-bord);
+  /* Pastille « i » : un aplat neutre qui porte un « i » en --on-accent. Il doit
+     donc rester FONCÉ dans les deux thèmes (redéfini plus bas en clair). */
+  --info-bg:var(--adbi-border-fort);
+
+  /* ── Accent en fond léger : translucide, jamais pastel ── */
+  --accent-faible:var(--adbi-accent-faible);
+  --accent-faible-2:rgba(22, 101, 193,.10);
+  /* Posé sur le dégradé ADBI, qui est identique dans les deux thèmes : ce rose
+     très clair reste donc valable en clair comme en sombre. */
+  --accent-tag:#ffd0e6;
+  --lookup-bg:var(--adbi-surface-2);
+
+  /* ── États ────────────────────────────────────────────────────────────
+     Sur fond sombre les fonds pastel rendraient le texte illisible : on
+     utilise des voiles translucides + un texte clair et saturé. Pas de
+     vert : la charte ADBI porte le succès en rose. ──────────────────────── */
+  --ok-text:var(--adbi-ok);
+  --ok-bg:var(--adbi-ok-fond);
+  --ok-line:var(--adbi-ok-bord);
+  --ok-bg-2:var(--adbi-ok-fond);
+  --ok-bg-3:var(--adbi-ok-fond);
+  --ok-line-2:var(--adbi-ok-bord);
+
+  --warn:var(--adbi-attention);
+  --warn-bg:var(--adbi-attention-fond);
+  --warn-line:var(--adbi-attention-bord);
+  --warn-2:var(--adbi-attention);
+  --warn-bg-2:var(--adbi-attention-fond);
+
+  --err:var(--adbi-erreur);
+  --err-bg:var(--adbi-erreur-fond);
+  --err-line:var(--adbi-erreur-bord);
+  --err-bg-2:var(--adbi-erreur-fond);
+  --err-bg-2-hover:rgba(255,84,112,.24); /* teinte du rouge SOMBRE : reprise en clair */
+  --err-bg-3:var(--adbi-erreur-fond);
+  --err-fort:var(--adbi-erreur);
+  --err-bg-4:var(--adbi-erreur-fond);
+
+  /* ── Ombres et anneaux de focus ───────────────────────────────────────
+     Les ombres bleutées d'origine sont invisibles sur du noir : on repasse en
+     ombres profondes, et les « élévations » des éléments actifs deviennent des
+     liserés internes accentués. Tout ce bloc suppose un fond sombre, il est
+     donc entièrement repris dans `:root[data-theme="clair"]`. ───────────── */
+  --ring:0 0 0 3px var(--adbi-accent-faible);
+  --ring-err:0 0 0 3px var(--adbi-erreur-fond);
+  --sh-input:var(--adbi-sh);
+  --sh-field:0 6px 18px rgba(0,0,0,.45);
+  --sh-btn:0 4px 14px rgba(0,0,0,.45);
+  --sh-accent:0 8px 22px rgba(22, 101, 193,.30);
+  --sh-ink:inset 0 0 0 1px var(--adbi-accent-bord);
+  --sh-ink-2:inset 0 0 0 1px var(--adbi-accent-bord);
+  --sh-lookup:0 10px 26px rgba(0,0,0,.38);
+  --sh-lookup-focus:0 12px 30px rgba(22, 101, 193,.20);
+  --sh-track:inset 0 1px 2px rgba(0,0,0,.55);
+  --sh-page:0 10px 34px rgba(0,0,0,.55);
+
+  /* Les variables --doc-* ne sont volontairement PAS redéfinies : l'aperçu
+     doit continuer à montrer la feuille telle qu'elle sortira en PDF/Word,
+     c'est-à-dire une page blanche à encre noire. Vrai dans les DEUX thèmes :
+     l'aperçu est un document, pas une surface d'interface. */
+}
+
+/* ══ Thème clair ══════════════════════════════════════════════════════════
+   Le bloc `:root` ci-dessus suit déjà le thème par les jetons `--adbi-*`. On
+   ne reprend ici que ce qui présuppose explicitement un fond sombre : le fond
+   de page, les ombres, et les deux aplats « encre » (pastille active, pastille
+   d'information) qui doivent rester FONCÉS alors que leur jeton d'origine
+   s'éclaircit. ───────────────────────────────────────────────────────────── */
+
+:root[data-theme="clair"]{
+  /* Le magenta pur ne tient que 4,35:1 sur blanc : sous le seuil AA pour les
+     petits libellés (sur-titres de groupe, états). On reprend le magenta
+     assombri que la charte utilise elle-même en clair (--adbi-ok). Le dégradé,
+     lui, ne bouge pas : c'est la signature ADBI. */
+  --accent:#145aa8;
+
+  /* Pastille active : on revient au principe d'origine de l'application, une
+     pastille d'encre foncée à texte blanc. En clair, --adbi-surface-3 est un
+     gris pâle : le texte --on-accent (blanc) y serait illisible. */
+  --ink-bg:var(--adbi-text1);
+  --info-bg:var(--adbi-text2);
+
+  /* Fond de page : mêmes voiles ADBI, très dilués pour rester sous les cartes
+     blanches, et une base gris-lavande pour que les panneaux se détachent. */
+  --body-fond:
+    radial-gradient(900px 520px at 78% -10%,rgba(139,26,126,.10),rgba(139,26,126,0) 70%),
+    radial-gradient(760px 460px at 4% 2%,rgba(22, 101, 193,.07),rgba(22, 101, 193,0) 65%),
+    linear-gradient(180deg,#f7f7fb,#ebebf3);
+
+  /* Plan de travail de l'aperçu : la feuille est blanche, il faut donc une
+     surface plus soutenue que --adbi-surface-2 pour qu'elle se détache. */
+  --preview-bg:var(--adbi-surface-3);
+
+  /* Survol du bouton de suppression : la teinte doit suivre le rouge CLAIR. */
+  --err-bg-2-hover:rgba(200,16,46,.18);
+
+  /* Ambre assombri. --adbi-attention (#a06400) est lisible sur blanc pur, mais
+     les libellés « attention » sont toujours posés sur le voile ambré
+     --adbi-attention-fond : mesuré à 4,41:1 sur la bannière d'alertes et 3,93:1
+     sur la pastille EI, donc sous le seuil AA. Deux crans plus foncé suffisent
+     (5,6:1 et 5,0:1). À supprimer si la charte assombrit le jeton. */
+  --warn:#8a5600;
+  --warn-2:#8a5600;
+
+  /* Ombres : sur fond clair, du noir à 45 % devient une salissure. On repasse
+     à des ombres bleu-nuit très diluées, et les élévations redeviennent de
+     vraies ombres portées plutôt que des liserés internes. */
+  --sh-field:0 6px 18px rgba(20,20,40,.10);
+  --sh-btn:0 4px 14px rgba(20,20,40,.08);
+  --sh-accent:0 8px 20px rgba(22, 101, 193,.22);
+  --sh-ink:0 6px 16px rgba(18,18,26,.18);
+  --sh-ink-2:0 10px 22px rgba(18,18,26,.22);
+  --sh-lookup:0 10px 26px rgba(20,20,40,.09);
+  --sh-lookup-focus:0 12px 30px rgba(22, 101, 193,.16);
+  --sh-track:inset 0 1px 2px rgba(20,20,40,.14);
+  --sh-page:0 4px 18px rgba(20,20,40,.14);
+}
+
+/* ══ Fond de page ═════════════════════════════════════════════════════════
+   adbi-theme.css impose `background: var(--adbi-bg) !important` sur body : on
+   reprend la main pour conserver le dégradé. --body-fond porte déjà la bonne
+   version selon le thème, la règle est donc commune aux deux. */
+html{background:var(--adbi-bg)}
+body{
+  background:var(--body-fond)!important;
+  background-attachment:fixed;
+  color:var(--text);
+}
+
+/* ══ Rattrapages ponctuels ════════════════════════════════════════════════ */
+
+/* La barre latérale se détache du fond par une surface légèrement élevée. */
+.sidebar{background:var(--adbi-surface);border-right:1px solid var(--adbi-border)}
+
+/* Onglet / étape actif — SOMBRE UNIQUEMENT. Ici la pastille est une surface
+   élevée (--ink-bg = --adbi-surface-3) : le blanc de --on-accent y serait trop
+   dur, on lui préfère le texte principal. En CLAIR la pastille redevient un
+   aplat d'encre foncée : styles.css y pose déjà --on-accent (blanc), et cette
+   règle donnerait du #12121a sur #12121a — d'où la restriction au sombre. */
+:root:not([data-theme="clair"]) .nav-item.active,
+:root:not([data-theme="clair"]) .wiz-step.active,
+:root:not([data-theme="clair"]) .wiz-step.done.active{color:var(--adbi-text1)}
+
+/* Le rail pointillé de la recherche société reste lisible. */
+.lookup{border-color:var(--adbi-border-fort)}
+
+/* Pastille « étape terminée ». L'encre du ✓ ne peut pas être écrite en dur :
+   le fond de la pastille est --ok, clair en sombre et foncé en clair. C'est
+   exactement le rôle de --adbi-sur-etat, qui s'inverse avec le thème. */
+.wiz-chk{color:var(--adbi-sur-etat)}
+.wiz-step.done.active .wiz-chk{background:var(--adbi-ok);color:var(--adbi-sur-etat)}
+
+/* La charte pose `::selection{color:#fff}` : sur le voile magenta très dilué du
+   thème clair, du texte blanc disparaît. On repasse à l'encre du thème (en
+   sombre --adbi-text1 vaut déjà un blanc cassé : aucun changement visible). */
+::selection{background:var(--adbi-accent-faible);color:var(--adbi-text1)}
+
+/* ══ Aperçu du document ═══════════════════════════════════════════════════
+   La feuille reste blanche dans les deux thèmes : c'est le rendu fidèle du
+   PDF/Word généré côté serveur. On neutralise seulement les règles génériques
+   de la charte qui déteindraient dessus (tableaux, liens, sélection). */
+
+/* Rétablissement des neutres « papier » — SOMBRE UNIQUEMENT.
+   En sombre, tout ce qui est peint avec --muted, --line ou --card à l'intérieur
+   de la page hérite de valeurs claires par nature et devient illisible sur
+   blanc (constaté sur les marqueurs de saut de page, gris pâle sur blanc).
+   En CLAIR ces rétablissements sont au mieux redondants — les neutres du thème
+   sont déjà des encres foncées sur fond clair — au pire nuisibles : ils
+   figeraient des gris « papier » qui ne suivraient plus la charte. On laisse
+   donc la page hériter du thème, et seules les variables --doc-* (jamais
+   redéfinies) décrivent la feuille. */
+:root:not([data-theme="clair"]) .page{
+  --text:var(--doc-encre);
+  --text-2:#4a4f60;
+  --navy:var(--doc-titre);
+  --navy2:#4a4f60;
+  --muted:#6b7180;
+  --muted-2:#8a90a6;
+  --faint:#9aa0ad;
+  --line:#d9dce6;
+  --card:#ffffff;
+  --soft:#f6f7fb;
+  --soft-2:#f6f7fb;
+}
+
+.page{color:var(--doc-encre)}
+.page a{color:var(--doc-titre)}
+.page th{color:var(--doc-titre)}
+.page td{color:var(--doc-encre)}
+.page code,.page pre{background:transparent;color:var(--doc-encre)}
+.page ::selection{background:rgba(200,30,120,.20);color:var(--doc-encre)}

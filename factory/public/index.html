@@ -1,0 +1,63 @@
+<!doctype html>
+<!-- data-theme="clair" : le clair est le thème par défaut de la plateforme.
+     L'attribut est posé ici pour qu'il s'applique même si adbi-theme.js ne se
+     charge pas ; le script le retire si l'utilisateur a choisi le sombre.
+     data-theme-bouton="non" : la bascule vit dans le rail, pas besoin du
+     bouton flottant qu'adbi-theme.js ajoute aux applications lancées seules. -->
+<html lang="fr" data-theme="clair" data-theme-bouton="non">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADBI Factory</title>
+<link rel="icon" href="/logo-adbi.png">
+<!-- Avant les feuilles de style : pose le thème avant le premier affichage. -->
+<script src="/adbi-theme.js"></script>
+<link rel="stylesheet" href="/adbi-theme.css">
+<link rel="stylesheet" href="/factory.css">
+</head>
+<body>
+
+<div class="app">
+
+  <aside class="rail" id="rail"></aside>
+
+  <div class="contenu">
+    <div class="page">
+
+      <header class="hero">
+        <img class="logo" src="/logo-adbi.png" alt="ADBI">
+        <div class="sep"></div>
+        <div>
+          <h1>ADBI Factory</h1>
+          <p>Les outils internes ADBI, au même endroit</p>
+        </div>
+        <!-- Mascotte 3D animée (three.js local, voir mascotte.js) -->
+        <div id="mascotte" class="mascotte" aria-hidden="true"></div>
+        <span class="puce-local"><span class="point"></span>Tout tourne en local</span>
+      </header>
+
+      <h2 class="section-titre">Modules</h2>
+      <div class="grille" id="grille-actifs"></div>
+
+      <h2 class="section-titre" id="titre-bientot" hidden>Bientôt disponible</h2>
+      <div class="grille" id="grille-bientot"></div>
+
+      <p class="pied-page">Plateforme locale — aucune donnée ne quitte votre poste.</p>
+
+    </div>
+  </div>
+
+</div>
+
+<script src="/rail.js"></script>
+<script src="/factory.js"></script>
+<!-- Mascotte 3D : bibliothèques locales (vendor/) chargées en différé pour ne
+     jamais retarder l'affichage des tuiles ; échec = simplement pas de mascotte. -->
+<script src="/vendor/three.min.js" defer></script>
+<script src="/vendor/GLTFLoader.js" defer></script>
+<script src="/mascotte.js" defer></script>
+<!-- Voyant des services d'IA. llm.js doit précéder etat-ia.js, qui s'en sert. -->
+<script src="/llm.js"></script>
+<script src="/etat-ia.js"></script>
+</body>
+</html>

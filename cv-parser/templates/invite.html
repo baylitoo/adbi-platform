@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="clair">
+<head>
+  <script src="{{ url_for('static', filename='adbi-theme.js') }}"></script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>ADBI — Créer mon compte</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy: #0F2042; --blue: #1A5CFF; --teal: #00ECC6; --sub: #3A6FD8;
+      --bg: #F4F6F9; --border: #DDE3F0; --text: #0F2042; --muted: #64748B;
+    }
+    body {
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg); min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+    body::before {
+      content: ''; position: fixed; inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 10% 100%, rgba(26,92,255,.06) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 90% 0%, rgba(0,236,198,.06) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .card {
+      position: relative; background: #fff; border-radius: 20px;
+      box-shadow: 0 8px 48px rgba(15,32,66,.10), 0 1px 3px rgba(15,32,66,.06);
+      padding: 48px 44px 44px; width: 440px; max-width: 95vw;
+    }
+    .card::before {
+      content: ''; position: absolute; top: 0; left: 32px; right: 32px; height: 3px;
+      background: linear-gradient(90deg, var(--blue), var(--teal));
+      border-radius: 0 0 3px 3px;
+    }
+    .logo-wrap { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .logo-svg { width: 32px; height: 40px; flex-shrink: 0; overflow: visible; }
+    .logo-text { font-size: 34px; font-weight: 900; font-style: italic; color: var(--navy); letter-spacing: -2px; }
+    .logo-text span { color: var(--teal); font-size: 20px; vertical-align: super; }
+    .invite-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #E0F7F2; color: #007A65; border: 1px solid rgba(0,236,198,.3);
+      border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 700;
+      margin: 12px 0 6px;
+    }
+    h2 { font-size: 20px; font-weight: 800; color: var(--navy); margin-bottom: 6px; }
+    .sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; line-height: 1.5; }
+    .email-display {
+      background: var(--bg); border: 1.5px solid var(--border); border-radius: 9px;
+      padding: 11px 14px; font-size: 14px; font-weight: 600; color: var(--navy);
+      margin-bottom: 20px;
+    }
+    .field { margin-bottom: 18px; }
+    label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+    input {
+      width: 100%; padding: 12px 14px; font-size: 14px; border: 1.5px solid var(--border);
+      border-radius: 9px; outline: none; font-family: inherit; color: var(--navy);
+      transition: border-color .2s, box-shadow .2s;
+    }
+    input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,92,255,.10); }
+    .btn {
+      width: 100%; padding: 14px; background: var(--blue); color: #fff;
+      border: none; border-radius: 10px; font-size: 15px; font-weight: 700;
+      cursor: pointer; font-family: inherit; transition: background .2s, box-shadow .2s;
+      box-shadow: 0 4px 16px rgba(26,92,255,.25);
+    }
+    .btn:hover { background: var(--sub); }
+    .btn:disabled { background: #c0cfe8; box-shadow: none; cursor: default; }
+    .alert {
+      padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; display: none;
+    }
+    .alert.err { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
+    .alert.ok  { background: #F0FDF4; color: #16A34A; border: 1px solid #BBF7D0; }
+    .alert.show { display: block; }
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
+      border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-theme.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-cvparser-sombre.css') }}"/>
+</head>
+<body>
+<div class="card">
+  <div class="logo-wrap">
+    <svg class="logo-svg" viewBox="0 0 26 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="lgDocInv" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#1A5CFF" stop-opacity=".9"/>
+          <stop offset="100%" stop-color="#0F2042"/>
+        </linearGradient>
+        <linearGradient id="lgScanInv" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#00ECC6" stop-opacity="0"/>
+          <stop offset="50%" stop-color="#00ECC6" stop-opacity=".9"/>
+          <stop offset="100%" stop-color="#00ECC6" stop-opacity="0"/>
+        </linearGradient>
+        <clipPath id="dcInv"><path d="M1,0 L19,0 L25,6 L25,32 L1,32 Z"/></clipPath>
+      </defs>
+      <path d="M1,0 L19,0 L25,6 L25,32 L1,32 Z" fill="url(#lgDocInv)"/>
+      <path d="M19,0 L19,6 L25,6 Z" fill="rgba(255,255,255,0.25)"/>
+      <rect x="5" y="11" width="10" height="2" rx="1" fill="#00ECC6" opacity=".95"/>
+      <rect x="5" y="15.5" width="15" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+      <rect x="5" y="19" width="12" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+      <rect x="5" y="22.5" width="14" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+      <rect x="5" y="26" width="10" height="1.5" rx=".75" fill="rgba(255,255,255,.35)"/>
+      <rect x="1" y="0" width="24" height="5" fill="url(#lgScanInv)" clip-path="url(#dcInv)">
+        <animate attributeName="y" from="-5" to="33" dur="2.2s" repeatCount="indefinite"/>
+      </rect>
+    </svg>
+    <div class="logo-text">adbi<span>.cv</span></div>
+  </div>
+  <div class="invite-badge">✉️ Invitation</div>
+  <h2>Créez votre compte</h2>
+  <p class="sub">Vous avez été invité à rejoindre la plateforme ADBI. Complétez vos informations ci-dessous.</p>
+
+  <div class="alert" id="alertBox"></div>
+
+  <div class="email-display" id="emailDisplay">Chargement…</div>
+
+  <form id="form">
+    <div class="field">
+      <label>Nom complet *</label>
+      <input type="text" id="fullName" placeholder="Prénom Nom" required/>
+    </div>
+    <div class="field">
+      <label>Mot de passe *</label>
+      <input type="password" id="password" placeholder="Min. 8 caractères" required/>
+    </div>
+    <div class="field">
+      <label>Confirmer le mot de passe *</label>
+      <input type="password" id="password2" placeholder="••••••••" required/>
+    </div>
+    <button type="submit" class="btn" id="btnSubmit">Créer mon compte</button>
+  </form>
+</div>
+
+<script>
+const TOKEN = "{{ token }}";
+
+async function checkInvite() {
+  try {
+    const r = await fetch(`/api/settings/invite/${TOKEN}`);
+    const d = await r.json();
+    if (!r.ok) {
+      showAlert(d.error || 'Invitation invalide', 'err');
+      document.getElementById('form').style.display = 'none';
+      document.getElementById('emailDisplay').textContent = '—';
+      return;
+    }
+    document.getElementById('emailDisplay').textContent = d.email;
+  } catch {
+    showAlert('Erreur réseau', 'err');
+  }
+}
+
+document.getElementById('form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const name = document.getElementById('fullName').value.trim();
+  const pw   = document.getElementById('password').value;
+  const pw2  = document.getElementById('password2').value;
+
+  if (pw !== pw2) { showAlert('Les mots de passe ne correspondent pas', 'err'); return; }
+  if (pw.length < 8) { showAlert('Mot de passe trop court (8 caractères min.)', 'err'); return; }
+
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Création…';
+
+  try {
+    const r = await fetch('/api/settings/accept-invite', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: TOKEN, full_name: name, password: pw }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      showAlert(d.error || 'Erreur', 'err');
+      btn.disabled = false; btn.textContent = 'Créer mon compte';
+      return;
+    }
+    showAlert('Compte créé avec succès ! Redirection…', 'ok');
+    setTimeout(() => window.location.href = '/login', 1800);
+  } catch {
+    showAlert('Erreur réseau', 'err');
+    btn.disabled = false; btn.textContent = 'Créer mon compte';
+  }
+});
+
+function showAlert(msg, type) {
+  const el = document.getElementById('alertBox');
+  el.textContent = msg;
+  el.className = `alert ${type} show`;
+}
+
+checkInvite();
+</script>
+</body>
+</html>

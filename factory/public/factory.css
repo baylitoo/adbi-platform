@@ -1,0 +1,842 @@
+/* ADBI Factory — thème sombre.
+
+   Les couleurs ne sont PAS définies ici : elles viennent de la charte commune
+   `/adbi-theme.css` (source : theme/adbi-theme.css), chargée juste avant cette
+   feuille. On se contente de raccourcir les noms pour le reste du fichier.
+   Pour changer une couleur de la plateforme, modifiez la charte, pas ceci. */
+
+/* La 2e valeur de chaque var() est un repli : si la charte n'est pas chargée
+   (fichier absent, serveur resté sur une version antérieure), la Factory garde
+   des couleurs cohérentes au lieu de s'afficher sans style.
+   Ces replis reprennent le thème CLAIR, qui est le défaut de la plateforme. */
+:root {
+  /* Fonds, du plus clair au plus contrasté */
+  --bg: var(--adbi-bg, #f4f4f8);
+  --surface: var(--adbi-surface, #ffffff);
+  --surface-2: var(--adbi-surface-2, #f0f0f5);
+  --surface-3: var(--adbi-surface-3, #e6e6ee);
+  --border: var(--adbi-border, #e0e0ea);
+  --border-fort: var(--adbi-border-fort, #c9c9d8);
+
+  /* Texte */
+  --text1: var(--adbi-text1, #12121a);
+  --text2: var(--adbi-text2, #4d4d63);
+  --textm: var(--adbi-textm, #74748c);
+
+  /* Accents ADBI */
+  --violet: var(--adbi-violet, #0d3a8c);
+  --magenta: var(--adbi-magenta, #1665c1);
+  --orange: var(--adbi-orange, #f26522);
+  --accent: var(--adbi-accent, #1665c1);
+  --degrade: var(
+    --adbi-degrade,
+    linear-gradient(120deg, #0d3a8c 0%, #1665c1 52%, #f26522 100%)
+  );
+  --accent-faible: var(--adbi-accent-faible, rgba(22, 101, 193, 0.08));
+  --accent-bord: var(--adbi-accent-bord, rgba(22, 101, 193, 0.24));
+
+  /* États (pas de vert : « en marche » porte la couleur ADBI) */
+  --O: var(--adbi-attention, #8f5900);
+  --Ob: var(--adbi-attention-fond, rgba(242, 160, 7, 0.13));
+  --Obo: var(--adbi-attention-bord, rgba(242, 160, 7, 0.35));
+  --R: var(--adbi-erreur, #c8102e);
+  --Rb: var(--adbi-erreur-fond, rgba(204, 0, 32, 0.08));
+  --Rbo: var(--adbi-erreur-bord, rgba(204, 0, 32, 0.24));
+
+  --r-sm: var(--adbi-r-sm, 9px);
+  --r-md: var(--adbi-r-md, 13px);
+  --r-lg: var(--adbi-r-lg, 18px);
+  --r-xl: var(--adbi-r-xl, 22px);
+  --sh: var(--adbi-sh, 0 1px 3px rgba(20, 20, 40, 0.09), 0 1px 2px rgba(20, 20, 40, 0.05));
+  --sh-lg: var(
+    --adbi-sh-lg,
+    0 14px 34px rgba(20, 20, 40, 0.12), 0 2px 6px rgba(20, 20, 40, 0.07)
+  );
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* `color-scheme` n'est PAS repris ici : la charte le pose pour chacun des deux
+   thèmes. Le forcer sur « dark » depuis cette feuille donnerait des barres de
+   défilement sombres sur une page claire. */
+
+/* Les regles .bouton / .grille imposent un display : sans ceci, l'attribut
+   hidden ne masquerait plus rien (le style de classe l'emporte sur l'UA). */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  /* Poppins vient de la charte ; le repli couvre le cas où elle ne charge pas. */
+  font-family: var(
+    --adbi-police,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif
+  );
+  background: var(--bg);
+  color: var(--text1);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ══ Ossature : rail de navigation + contenu ══════════════════════════════ */
+
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+.rail {
+  width: 66px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+/* Marque = bouton « accueil » : le dégradé ADBI marque le retour au hub. */
+.rail .marque {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  background: var(--degrade);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+  opacity: 0.72;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+.rail .marque svg {
+  width: 20px;
+  height: 20px;
+}
+.rail .marque:hover,
+.rail .marque.actif {
+  opacity: 1;
+}
+.rail .marque.actif {
+  box-shadow: 0 0 0 3px rgba(22, 101, 193, 0.18);
+}
+
+.rail-bouton {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--textm);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.rail-bouton svg {
+  width: 19px;
+  height: 19px;
+}
+.rail-bouton:hover {
+  color: var(--text1);
+  background: var(--surface-2);
+}
+.rail-bouton.actif {
+  /* Le fond est un voile d'accent très dilué : en clair il est presque blanc,
+     l'icône doit donc porter l'accent et non du blanc. */
+  color: var(--accent);
+  background: var(--accent-faible);
+  border-color: var(--accent-bord);
+}
+/* Infobulle au survol : le rail n'affiche que des icônes. */
+.rail-bouton::after,
+.rail .marque::after {
+  content: attr(data-titre);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  background: var(--surface-3);
+  border: 1px solid var(--border-fort);
+  color: var(--text1);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: var(--r-sm);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s;
+  z-index: 20;
+  box-shadow: var(--sh-lg);
+}
+.rail-bouton:hover::after,
+.rail .marque:hover::after {
+  opacity: 1;
+}
+.rail .espace {
+  margin-top: auto;
+}
+
+.contenu {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ══ Hub ══════════════════════════════════════════════════════════════════ */
+
+.page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 2.5rem 2rem 4rem;
+}
+
+.hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 1.6rem 1.8rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  margin-bottom: 1.75rem;
+  overflow: hidden;
+}
+/* Halo diffus dans l'angle, comme un projecteur derrière le logo. */
+.hero::before {
+  content: "";
+  position: absolute;
+  top: -140px;
+  right: -60px;
+  width: 380px;
+  height: 320px;
+  background: radial-gradient(
+    circle,
+    rgba(22, 101, 193, 0.22) 0%,
+    rgba(242, 101, 34, 0.1) 45%,
+    transparent 72%
+  );
+  pointer-events: none;
+}
+.hero > * {
+  position: relative;
+}
+.hero .logo {
+  width: 104px;
+  height: auto;
+  flex-shrink: 0;
+}
+.hero .sep {
+  width: 1px;
+  height: 40px;
+  background: var(--border-fort);
+}
+.hero h1 {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+.hero p {
+  font-size: 13px;
+  color: var(--text2);
+  margin-top: 3px;
+}
+.puce-local {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 13px;
+  flex-shrink: 0;
+}
+.puce-local .point {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--degrade);
+}
+
+.section-titre {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--textm);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin: 2rem 0 1rem;
+}
+.section-titre:first-of-type {
+  margin-top: 0.25rem;
+}
+
+.grille {
+  display: grid;
+  /* min(292px, 100%) : sans cela la grille impose 292 px et la page
+     defile horizontalement sur une fenetre etroite. */
+  grid-template-columns: repeat(auto-fill, minmax(min(292px, 100%), 1fr));
+  gap: 16px;
+}
+
+/* Cartes façon « Mon espace » CYNOV : blanches, fine bordure colorée par
+   module, contenu centré, bouton pilule. La teinte vient de data-teinte
+   (posée par factory.js) et s'éclaircit d'elle-même en thème sombre. */
+.tuile {
+  --teinte: #6ea8f0;
+  --teinte-douce: rgba(110, 168, 240, 0.12);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 9px;
+  background: var(--surface);
+  border: 1.5px solid var(--teinte);
+  border-radius: 15px;
+  padding: 1.5rem 1.3rem 1.2rem;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: transform 0.18s, box-shadow 0.18s;
+  overflow: hidden;
+}
+[data-theme="clair"] .tuile { --teinte: #1665c1; --teinte-douce: rgba(22, 101, 193, 0.07); }
+.tuile[data-teinte="orange"] { --teinte: #f58a56; --teinte-douce: rgba(241, 89, 31, 0.12); }
+[data-theme="clair"] .tuile[data-teinte="orange"] { --teinte: #f1591f; --teinte-douce: rgba(241, 89, 31, 0.07); }
+.tuile[data-teinte="ciel"] { --teinte: #7db4f0; }
+[data-theme="clair"] .tuile[data-teinte="ciel"] { --teinte: #2f8de4; --teinte-douce: rgba(47, 141, 228, 0.07); }
+.tuile[data-teinte="nuit"] { --teinte: #8fb1e8; }
+[data-theme="clair"] .tuile[data-teinte="nuit"] { --teinte: #0d3a8c; --teinte-douce: rgba(13, 58, 140, 0.07); }
+
+.tuile:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 26px var(--teinte-douce), var(--sh-lg);
+}
+.tuile:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--teinte-douce);
+}
+
+.tuile .icone {
+  width: 54px;
+  height: 54px;
+  color: var(--teinte);
+  display: grid;
+  place-items: center;
+}
+.tuile .icone svg {
+  width: 36px;
+  height: 36px;
+  stroke-width: 1.4;
+}
+
+.tuile h2 {
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--accent);
+}
+.tuile .accroche {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+}
+.tuile .detail {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text2);
+}
+.tuile .tags {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tuile .pied {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 8px;
+}
+/* Bouton pilule à la CYNOV — visuel : c'est toute la tuile qui est cliquable. */
+.tuile .ouvrir {
+  border: 1.5px solid var(--teinte);
+  color: var(--teinte);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 6px 18px;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s;
+}
+.tuile:hover .ouvrir {
+  background: var(--teinte);
+  color: #fff;
+}
+.tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text2);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 9px;
+}
+
+.etat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 20px;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  margin-left: auto;
+}
+.etat .point {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.etat.pret {
+  color: var(--adbi-ok, #145aa8);
+  background: var(--accent-faible);
+  border-color: var(--accent-bord);
+}
+.etat.pret .point {
+  background: var(--degrade);
+}
+.etat.arrete,
+.etat.statique {
+  color: var(--textm);
+  background: var(--surface-3);
+  border-color: var(--border);
+}
+.etat.demarrage {
+  color: var(--O);
+  background: var(--Ob);
+  border-color: var(--Obo);
+}
+.etat.indisponible,
+.etat.erreur {
+  color: var(--R);
+  background: var(--Rb);
+  border-color: var(--Rbo);
+}
+
+/* Tuiles « bientôt disponible » */
+.tuile.bientot {
+  cursor: default;
+  background: transparent;
+  border-style: dashed;
+}
+.tuile.bientot:hover {
+  transform: none;
+  box-shadow: none;
+  background: transparent;
+  border-color: var(--border);
+}
+.tuile.bientot::before {
+  display: none;
+}
+.tuile.bientot .icone,
+.tuile.bientot:hover .icone {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--textm);
+}
+.tuile.bientot h2,
+.tuile.bientot .detail {
+  color: var(--textm);
+}
+.tuile.bientot .accroche {
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  color: var(--textm);
+}
+
+.pied-page {
+  margin-top: 2.75rem;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--textm);
+}
+
+/* ══ Conteneur de module ══════════════════════════════════════════════════ */
+
+body.module .app {
+  height: 100vh;
+  overflow: hidden;
+}
+body.module .contenu {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.barre-module {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  z-index: 2;
+}
+.barre-module .logo {
+  width: 70px;
+  height: auto;
+  display: block;
+}
+.barre-module .sep {
+  width: 1px;
+  height: 22px;
+  background: var(--border-fort);
+}
+.barre-module .titre {
+  font-size: 14px;
+  font-weight: 700;
+}
+.barre-module .actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bouton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 7px 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+.bouton:hover {
+  color: var(--text1);
+  border-color: var(--border-fort);
+  background: var(--surface-3);
+}
+.bouton svg {
+  width: 15px;
+  height: 15px;
+}
+.bouton.principal {
+  background: var(--degrade);
+  border-color: transparent;
+  color: #fff;
+}
+.bouton.principal:hover {
+  color: #fff;
+  filter: brightness(1.12);
+}
+
+.cadre {
+  flex: 1;
+  position: relative;
+  background: var(--bg);
+}
+.cadre iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.voile {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  background: var(--bg);
+  text-align: center;
+  padding: 2rem;
+}
+.voile.masque {
+  display: none;
+}
+.voile h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+.voile p {
+  font-size: 13px;
+  color: var(--text2);
+  max-width: 470px;
+  line-height: 1.6;
+}
+.voile .journal {
+  margin-top: 4px;
+  max-width: 620px;
+  max-height: 190px;
+  overflow: auto;
+  text-align: left;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  white-space: pre-wrap;
+}
+.voile code {
+  font-size: 11.5px;
+  color: var(--text1);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.rondelle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid var(--surface-3);
+  border-top-color: var(--magenta);
+  border-right-color: var(--orange);
+  animation: tourne 0.8s linear infinite;
+}
+@keyframes tourne {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 720px) {
+  .rail {
+    display: none;
+  }
+  .page {
+    padding: 1.5rem 1rem 3rem;
+  }
+  .hero {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+}
+
+/* ── Voyant des services d'intelligence artificielle ──────────────────────────
+   Exception assumée à la règle « pas de vert » ci-dessus : ici le vert et le
+   rouge ne décorent pas, ils signalent une disponibilité. Les états des modules
+   gardent, eux, la couleur ADBI. */
+:root {
+  --V: #15803d;
+  --Vb: rgba(21, 128, 61, 0.09);
+  --Vbo: rgba(21, 128, 61, 0.26);
+}
+:root:not([data-theme="clair"]) {
+  --V: #4ade80;
+  --Vb: rgba(74, 222, 128, 0.13);
+  --Vbo: rgba(74, 222, 128, 0.32);
+}
+
+.ia-zone {
+  position: relative;
+}
+.puce-ia {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 13px;
+  cursor: pointer;
+}
+.puce-ia:hover {
+  border-color: var(--border-fort);
+}
+.puce-ia .point {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--textm);
+  flex-shrink: 0;
+}
+.puce-ia.ok {
+  color: var(--V);
+  background: var(--Vb);
+  border-color: var(--Vbo);
+}
+.puce-ia.ok .point {
+  background: var(--V);
+}
+.puce-ia.ko {
+  color: var(--R);
+  background: var(--Rb);
+  border-color: var(--Rbo);
+}
+.puce-ia.ko .point {
+  background: var(--R);
+}
+.puce-ia.test .point {
+  animation: ia-pulse 1s infinite;
+}
+@keyframes ia-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* Position fixe, et non absolue : le .hero est en overflow:hidden pour
+   découper son halo, ce qui rognerait un panneau positionné à l'intérieur.
+   Les coordonnées sont posées à l'ouverture par etat-ia.js. */
+.ia-panneau {
+  position: fixed;
+  z-index: 40;
+  width: 355px;
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--adbi-r-md, 13px);
+  box-shadow: var(--adbi-sh-lg, 0 14px 34px rgba(20, 20, 40, 0.12));
+  padding: 13px 14px;
+}
+.ia-panneau[hidden] {
+  display: none;
+}
+.ia-tete {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.ia-tete h3 {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--textm);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+.ia-tete button {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text2);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.ia-tete button:hover {
+  border-color: var(--accent-bord);
+  color: var(--accent);
+}
+.ia-tete button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ia-ligne {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.ia-ligne:first-of-type {
+  border-top: 0;
+}
+.ia-ligne .point {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--textm);
+  flex-shrink: 0;
+}
+.ia-ligne.ok .point {
+  background: var(--V);
+}
+.ia-ligne.ko .point {
+  background: var(--R);
+}
+.ia-ligne.test .point {
+  animation: ia-pulse 1s infinite;
+}
+.ia-nom {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ia-rang {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--textm);
+  width: 14px;
+}
+.ia-detail {
+  font-size: 10.5px;
+  color: var(--textm);
+  flex-shrink: 0;
+}
+.ia-pied {
+  font-size: 10.5px;
+  color: var(--textm);
+  line-height: 1.5;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Mascotte 3D du héro ─────────────────────────────────────────────────────
+   Le canvas three.js vit dans ce conteneur ; il apparaît en fondu quand le
+   modèle est chargé (classe .visible posée par mascotte.js). */
+.mascotte{width:190px;height:190px;margin-left:auto;flex:0 0 auto;opacity:0;transform:translateY(8px);transition:opacity .6s ease,transform .6s ease;pointer-events:none}
+.mascotte.visible{opacity:1;transform:none}
+.mascotte canvas{display:block;width:100%!important;height:100%!important}
+@media (max-width:900px){.mascotte{display:none}}

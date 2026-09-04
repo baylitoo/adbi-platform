@@ -1,0 +1,322 @@
+/**
+ * Normalisation deterministe : dates, telephones, emails, niveaux de langue.
+ *
+ * Tout ce qui est ici est du code, pas du modele de langage : c'est
+ * reproductible, instantane et testable. On ne laisse a l'extraction que ce qui
+ * demande vraiment de la comprehension.
+ */
+
+const MOIS = {
+  janvier: 1, janv: 1, jan: 1, january: 1,
+  fevrier: 2, fev: 2, feb: 2, february: 2,
+  mars: 3, mar: 3, march: 3,
+  avril: 4, avr: 4, apr: 4, april: 4,
+  mai: 5, may: 5,
+  juin: 6, jun: 6, june: 6,
+  juillet: 7, juil: 7, jul: 7, july: 7,
+  aout: 8, aou: 8, aug: 8, august: 8,
+  septembre: 9, sept: 9, sep: 9, september: 9,
+  octobre: 10, oct: 10, october: 10,
+  novembre: 11, nov: 11, november: 11,
+  decembre: 12, dec: 12, december: 12,
+};
+
+const EN_COURS = /\b(aujourd.?hui|a\s+ce\s+jour|actuellement|en\s+cours|present|current|now|to\s+date|maintenant)\b/i;
+
+function deaccent(s) {
+  return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+/** « Avr 2025 », « 04/2025 », « avril 2025 », « 2019 » -> « 2025-04 » / « 2019 ». */
+function parseMonthYear(raw) {
+  const s = deaccent(raw).toLowerCase().trim();
+
+  let m = s.match(/\b(\d{1,2})[\/.-](\d{4})\b/); // 04/2025
+  if (m) return iso(Number(m[2]), Number(m[1]));
+
+  m = s.match(/\b(\d{4})[\/.-](\d{1,2})\b/); // 2025-04
+  if (m) return iso(Number(m[1]), Number(m[2]));
+
+  m = s.match(/\b(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})\b/); // 12/04/2025
+  if (m) {
+    const y = Number(m[3].length === 2 ? "20" + m[3] : m[3]);
+    return iso(y, Number(m[2]));
+  }
+
+  m = s.match(/\b([a-z]{3,10})\.?\s+(\d{4})\b/); // avril 2025
+  if (m && MOIS[m[1]]) return iso(Number(m[2]), MOIS[m[1]]);
+
+  m = s.match(/\b(\d{4})\b/); // 2019 seul
+  if (m) {
+    const y = Number(m[1]);
+    if (y >= 1950 && y <= 2100) return String(y);
+  }
+  return null;
+}
+
+function iso(year, month) {
+  if (!year || year < 1950 || year > 2100) return null;
+  if (!month || month < 1 || month > 12) return String(year);
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+/**
+ * Extrait une periode d'une ligne libre.
+ * Gere « De juin 2024 a octobre 2025 », « Avr 2025 - Juil 2026 »,
+ * « Depuis novembre 2025 », « 2015 - 2020 ».
+ * @returns {{start, end, current, matched}|null}
+ */
+function parsePeriod(text) {
+  if (!text) return null;
+  const s = String(text);
+  // On travaille sur la version sans accent : « \bà\b » ne matche jamais en
+  // regex JS (a accentue n'est pas un caractere de mot). La longueur est
+  // preservee, donc les index restent valables sur la chaine d'origine.
+  const ds = deaccent(s);
+
+  // « Février - Juin 2023 » : l'annee n'est portee que par la seconde borne,
+  // formulation courante en francais pour un stage ou une mission courte.
+  const MOIS_NOMS = Object.keys(MOIS).join("|");
+  const moisMois = ds.match(
+    new RegExp(`\\b(?:de\\s+|du\\s+)?(${MOIS_NOMS})\\.?\\s*(?:[—–\\-−]|a|au|jusqu.?au?|to)\\s*(${MOIS_NOMS})\\.?\\s+(\\d{4})\\b`, "i")
+  );
+  if (moisMois) {
+    const an = Number(moisMois[3]);
+    const debut = iso(an, MOIS[moisMois[1].toLowerCase()]);
+    const fin = iso(an, MOIS[moisMois[2].toLowerCase()]);
+    if (debut && fin) {
+      return { start: debut, end: fin, current: false, matched: s.substr(moisMois.index, moisMois[0].length).trim() };
+    }
+  }
+
+  const DATE = "(?:[a-z]{3,10}\\.?\\s+)?\\d{1,4}(?:[\\/.-]\\d{1,4})?(?:[\\/.-]\\d{2,4})?";
+  const SEP = "(?:\\s*[—–\\-−]{1,2}\\s*|\\s+(?:a|au|jusqu.?au?|to|until)\\s+)";
+  // « ce jour » figure sans son « à » : dans « du 02/2022 à ce jour », le « à »
+  // a deja ete consomme comme separateur de la periode.
+  const END = `(?:${DATE}|aujourd.?hui|(?:a\\s+)?ce\\s+jour|present|en\\s+cours|actuellement|current|now|maintenant)`;
+
+  // « Du 02/2022 à ce jour » : mission toujours en cours. Traite a part, car la
+  // regle generale doit deja arbitrer « à » comme separateur ET comme premiere
+  // lettre de la borne de fin — ambiguite qu'une seule expression gere mal.
+  const jusquAujourdhui = ds.match(
+    new RegExp(`\\b(?:de|du|depuis|from)?\\s*(${DATE})\\s*(?:[—–\\-−]{1,2}|a|au|jusqu.?\\s*au?|to)\\s+(?:ce\\s+jour|aujourd.?hui|present|actuellement|en\\s+cours|now|maintenant)\\b`, "i")
+  );
+  if (jusquAujourdhui) {
+    const debut = parseMonthYear(jusquAujourdhui[1]);
+    if (debut) {
+      return {
+        start: debut, end: null, current: true,
+        matched: s.substr(jusquAujourdhui.index, jusquAujourdhui[0].length).trim(),
+      };
+    }
+  }
+
+  const range = ds.match(new RegExp(`(?:\\b(?:de|du|from)\\s+)?(${DATE})${SEP}(${END})`, "i"));
+  if (range) {
+    const start = parseMonthYear(range[1]);
+    const current = EN_COURS.test(range[2]);
+    const end = current ? null : parseMonthYear(range[2]);
+    if (start && (end || current)) {
+      return { start, end, current, matched: s.substr(range.index, range[0].length).trim() };
+    }
+  }
+
+  // « Depuis novembre 2025 » / « Since 2020 »
+  const since = ds.match(new RegExp(`\\b(?:depuis|since|a\\s+partir\\s+d[eu])\\s+(${DATE})`, "i"));
+  if (since) {
+    const start = parseMonthYear(since[1]);
+    if (start) return { start, end: null, current: true, matched: s.substr(since.index, since[0].length).trim() };
+  }
+
+  // Une seule date, la ligne ne contenant presque rien d'autre.
+  const alone = s.trim();
+  if (alone.length <= 24) {
+    const one = parseMonthYear(alone);
+    if (one) return { start: one, end: one, current: EN_COURS.test(alone), matched: alone };
+  }
+
+  return null;
+}
+
+/** Nombre de mois entre deux dates ISO partielles. */
+function monthsBetween(start, end, current) {
+  if (!start) return null;
+  const [sy, sm] = start.split("-").map(Number);
+  const e = current || !end ? isoNow() : end;
+  const [ey, em] = e.split("-").map(Number);
+  const n = (ey - sy) * 12 + ((em || 12) - (sm || 1)) + 1;
+  return n > 0 ? n : null;
+}
+
+function isoNow() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** « Avr 2025 — Juil 2026 » -> « 04/2025 – 07/2026 » pour l'affichage. */
+function formatPeriod(start, end, current) {
+  const fr = (v) => {
+    if (!v) return "";
+    const [y, m] = v.split("-");
+    return m ? `${m}/${y}` : y;
+  };
+  if (!start) return "";
+  if (current) return `depuis ${fr(start)}`;
+  if (!end || end === start) return fr(start);
+  return `${fr(start)} – ${fr(end)}`;
+}
+
+// ------------------------------------------------------------- Contact ----
+
+const RE_EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+const RE_TEL = /(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{1,4}\)?[\s.-]?){2,5}\d{2,4}/;
+const RE_LINKEDIN = /(?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/[^\s,;|)]+/i;
+const RE_GITHUB = /(?:https?:\/\/)?(?:www\.)?github\.com\/[^\s,;|)]+/i;
+
+/** Telephone -> E.164 francais quand c'est possible, sinon forme compactee. */
+function normalizePhone(raw) {
+  if (!raw) return "";
+  const digits = String(raw).replace(/[^\d+]/g, "");
+  if (/^\+/.test(digits)) return digits;
+  if (/^0\d{9}$/.test(digits)) return "+33" + digits.slice(1);
+  if (/^33\d{9}$/.test(digits)) return "+" + digits;
+  return digits.length >= 8 ? digits : "";
+}
+
+/** Affichage lisible : +33 6 40 11 58 66. */
+function formatPhone(e164) {
+  if (!e164) return "";
+  const m = String(e164).match(/^\+33(\d)(\d{2})(\d{2})(\d{2})(\d{2})$/);
+  return m ? `+33 ${m[1]} ${m[2]} ${m[3]} ${m[4]} ${m[5]}` : e164;
+}
+
+function findEmail(text) {
+  const m = String(text || "").match(RE_EMAIL);
+  return m ? m[0].replace(/[.,;]$/, "") : "";
+}
+
+function findPhone(text) {
+  // On isole d'abord les segments plausibles pour eviter de capturer une date
+  // ou un montant (« 619M », « 2019 - 2020 »).
+  const candidates = String(text || "").match(new RegExp(RE_TEL.source, "g")) || [];
+  for (const c of candidates) {
+    const digits = c.replace(/\D/g, "");
+    if (digits.length < 9 || digits.length > 15) continue;
+    if (/^(19|20)\d{2}$/.test(digits)) continue;
+    const n = normalizePhone(c);
+    if (n) return n;
+  }
+  return "";
+}
+
+function findUrl(text, re) {
+  const m = String(text || "").match(re);
+  return m ? m[0].replace(/[.,;)]$/, "") : "";
+}
+
+// ------------------------------------------------------------- Langues ----
+
+const NIVEAUX = [
+  [/\b(c2|bilingue|langue\s+maternelle|maternelle|native|courant\s*\/?\s*bilingue)\b/i, "C2"],
+  [/\b(c1|courant|fluent|avance|professionnel\s+complet|full\s+professional)\b/i, "C1"],
+  [/\b(b2|intermediaire\s+avance|professionnel|upper[\s-]intermediate|bon\s+niveau)\b/i, "B2"],
+  [/\b(b1|intermediaire|intermediate|niveau\s+scolaire\s+solide)\b/i, "B1"],
+  [/\b(a2|elementaire|elementary|scolaire)\b/i, "A2"],
+  [/\b(a1|debutant|notions?|beginner)\b/i, "A1"],
+];
+
+/** Deduit un niveau CECRL d'un libelle libre, en tenant compte des scores de tests. */
+function languageLevel(text) {
+  const s = deaccent(text || "");
+  const levels = [];
+
+  const toeic = s.match(/toeic\D{0,8}(\d{3,4})/i);
+  if (toeic) {
+    const v = Number(toeic[1]);
+    levels.push(v >= 945 ? "C1" : v >= 785 ? "B2" : v >= 550 ? "B1" : "A2");
+  }
+  const toefl = s.match(/toefl\D{0,8}(\d{2,3})/i);
+  if (toefl) {
+    const v = Number(toefl[1]);
+    levels.push(v >= 95 ? "C1" : v >= 72 ? "B2" : "B1");
+  }
+  const tcf = s.match(/tcf\D{0,8}(\d{3})/i);
+  if (tcf) {
+    const v = Number(tcf[1]);
+    levels.push(v >= 600 ? "C1" : v >= 500 ? "B2" : v >= 400 ? "B1" : "A2");
+  }
+  for (const [re, lvl] of NIVEAUX) {
+    if (re.test(s)) { levels.push(lvl); break; }
+  }
+
+  // Un candidat qui ecrit « courant » ET « TOEIC 880 » ne doit pas etre
+  // deprecie par le bareme du test : on retient le niveau le plus favorable.
+  const ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"];
+  return levels.length ? levels.sort((a, b) => ORDER.indexOf(b) - ORDER.indexOf(a))[0] : null;
+}
+
+// --------------------------------------------------------------- Texte ----
+
+/** Coupe proprement a la limite d'un mot, sans jamais laisser de « … » orphelin. */
+function trimTo(text, max) {
+  const s = String(text || "").trim();
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const i = cut.lastIndexOf(" ");
+  return (i > max * 0.6 ? cut.slice(0, i) : cut).replace(/[\s,;:.-]+$/, "");
+}
+
+/** Majuscule initiale, sans toucher aux sigles. */
+function sentenceCase(s) {
+  const t = String(s || "").trim();
+  if (!t) return "";
+  return t[0].toUpperCase() + t.slice(1);
+}
+
+/** « MAMADOU DIALLO » -> « Mamadou DIALLO » (on garde le nom en capitales). */
+function properName(s) {
+  return String(s || "")
+    .trim()
+    .split(/\s+/)
+    .map((w, i, arr) => {
+      if (w.length <= 1) return w.toUpperCase();
+      // Convention francaise repandue : prenom capitalise, nom en majuscules.
+      const isLast = i === arr.length - 1;
+      if (isLast && arr.length > 1) return w.toUpperCase();
+      return w[0].toUpperCase() + w.slice(1).toLowerCase();
+    })
+    .join(" ");
+}
+
+/**
+ * Trigramme ADBI : initiale du prenom + deux premieres lettres du nom
+ * (Mamadou DIALLO -> MDI). C'est la convention du livret de CV, ou l'en-tete
+ * s'ecrit « MDI : Data engineer ».
+ * Sur un nom d'un seul mot, on prend ses trois premieres lettres.
+ */
+function trigram(fullName) {
+  const mots = deaccent(String(fullName || ""))
+    .replace(/[^A-Za-z\s'’-]/g, " ")
+    .split(/[\s'’-]+/)
+    .filter((w) => w.length > 1);
+  if (!mots.length) return "";
+  if (mots.length === 1) return mots[0].slice(0, 3).toUpperCase();
+  const prenom = mots[0];
+  const nom = mots[mots.length - 1];
+  return (prenom[0] + nom.slice(0, 2)).toUpperCase();
+}
+
+function initials(fullName) {
+  return String(fullName || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase())
+    .join(".") + (fullName ? "." : "");
+}
+
+module.exports = {
+  parseMonthYear, parsePeriod, monthsBetween, formatPeriod, isoNow,
+  findEmail, findPhone, findUrl, normalizePhone, formatPhone,
+  RE_LINKEDIN, RE_GITHUB, RE_EMAIL,
+  languageLevel, deaccent, trimTo, sentenceCase, properName, initials, trigram,
+};

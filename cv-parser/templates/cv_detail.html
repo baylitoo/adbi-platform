@@ -1,0 +1,1376 @@
+﻿<!DOCTYPE html>
+<html lang="fr" data-theme="clair">
+<head>
+  <script src="{{ url_for('static', filename='adbi-theme.js') }}"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CV — {{ cv.name or 'Candidat' }}</title>
+  <style>
+    :root {
+      --navy: #0F2042; --blue: #1A5CFF; --blue-l: #E8F0FF;
+      --teal: #00ECC6; --sub: #3A6FD8; --green: #00C48C;
+      --red: #DC2626; --bg: #F4F6F9; --card: #FFFFFF;
+      --border: #DDE3F0; --text: #0F2042; --muted: #64748B; --r: 10px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; overflow: hidden; }
+
+    /* TOPBAR */
+    .topbar {
+      background: var(--navy); color: #fff; height: 54px; flex-shrink: 0;
+      display: flex; align-items: center; padding: 0 20px; gap: 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.3); z-index: 100;
+    }
+    .btn-back {
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2);
+      color: #fff; border-radius: 7px; padding: 6px 12px;
+      font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
+    }
+    .btn-back:hover { background: rgba(255,255,255,.22); }
+    .topbar-info { flex: 1; min-width: 0; }
+    .topbar-info .t-name { font-size: 15px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .topbar-info .t-role { font-size: 11px; color: #93C5FD; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .topbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .save-indicator { font-size: 11px; color: #86EFAC; font-weight: 700; opacity: 0; transition: opacity .3s; }
+    .save-indicator.show { opacity: 1; }
+    .tbtn {
+      border: none; border-radius: 7px; padding: 7px 13px; font-size: 12px; font-weight: 700;
+      cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;
+      transition: filter .15s;
+    }
+    .tbtn:hover { filter: brightness(1.12); }
+    .tbtn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2.2; }
+    .tbtn-ghost { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.2); }
+    .tbtn-green { background: var(--green); color: #fff; }
+    .tbtn-blue  { background: var(--blue);  color: #fff; }
+    .api-badge {
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.18);
+      padding: 5px 11px; border-radius: 20px; font-size: 11px; font-weight: 700; color: #fff;
+    }
+    .api-dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; flex-shrink: 0; transition: background .4s; }
+    .api-dot.ok  { background: #4ade80; box-shadow: 0 0 6px #4ade8080; }
+    .api-dot.err { background: #f87171; box-shadow: 0 0 6px #f8717180; }
+    .api-dot.checking { animation: blink .9s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:.4} 50%{opacity:1} }
+
+    /* WORKSPACE */
+    .workspace { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+    /* LEFT: PDF */
+    .left-panel {
+      width: 40%; flex-shrink: 0; display: flex; flex-direction: column;
+      border-right: 2px solid var(--border); background: #fff; overflow: hidden;
+    }
+    .panel-label {
+      background: #F8FAFF; border-bottom: 1px solid var(--border);
+      padding: 8px 16px; font-size: 10px; font-weight: 800;
+      color: var(--muted); letter-spacing: 1px; text-transform: uppercase;
+      display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+    }
+
+    /* RIGHT: SECTIONS */
+    .right-panel {
+      flex: 1; overflow-y: auto; overflow-x: hidden;
+      padding: 16px 18px 60px; display: flex; flex-direction: column; gap: 10px; min-height: 0;
+    }
+    .right-panel::-webkit-scrollbar { width: 5px; }
+    .right-panel::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+
+    /* SECTION CARD */
+    .sec-card { background: var(--card); border-radius: var(--r); border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(27,45,92,.06); overflow: hidden; }
+    .sec-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 11px 16px; cursor: pointer; user-select: none;
+      border-bottom: 1px solid var(--border); background: #FAFBFF; transition: background .15s;
+    }
+    .sec-head:hover { background: #F1F5FF; }
+    .sec-head-left { display: flex; align-items: center; gap: 10px; }
+    .sec-icon {
+      width: 28px; height: 28px; border-radius: 7px;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .sec-icon svg { width: 14px; height: 14px; stroke: #fff; fill: none; stroke-width: 2.2; }
+    .sec-title { font-size: 12px; font-weight: 800; color: var(--navy); letter-spacing: .4px; text-transform: uppercase; }
+    .sec-count { font-size: 10px; background: #E8EFFF; color: var(--sub); padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+    .sec-chevron { font-size: 11px; color: var(--muted); transition: transform .2s; }
+    .sec-card.collapsed .sec-chevron { transform: rotate(-180deg); }
+    .sec-card.collapsed .sec-body { display: none; }
+
+    /* FIELD ROW */
+    .field-row { display: flex; align-items: flex-start; padding: 10px 16px; gap: 12px; border-bottom: 1px solid #F1F5FA; }
+    .field-row:last-child { border-bottom: none; }
+    .field-label { width: 130px; flex-shrink: 0; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; padding-top: 3px; }
+    .field-val {
+      flex: 1; font-size: 13px; outline: none; border-radius: 5px; padding: 2px 6px;
+      transition: background .15s, box-shadow .15s; min-height: 20px; line-height: 1.5; word-break: break-word;
+    }
+    .field-val:hover { background: #F8FAFF; }
+    .field-val:focus { background: var(--blue-l); box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .field-val[data-empty="true"]:empty::before { content: attr(data-placeholder); color: #CBD5E1; font-style: italic; font-size: 12px; }
+    .field-val:focus[data-empty="true"]:empty::before { display: none; }
+
+    /* ENTRY CARD (exp/edu) */
+    .entry-card { margin: 10px 12px; border-radius: 8px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 1px 3px rgba(27,45,92,.05); }
+    .entry-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 12px 14px; background: #F8FAFF; border-bottom: 1px solid var(--border); gap: 10px; }
+    .entry-head-left { flex: 1; min-width: 0; }
+    .entry-company { font-size: 13px; font-weight: 800; color: var(--navy); outline: none; border-radius: 4px; padding: 1px 5px; margin-left: -5px; display: block; }
+    .entry-company:hover { background: #F0F4FF; }
+    .entry-company:focus { background: var(--blue-l); box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .entry-company[data-empty="true"]:empty::before { content: attr(data-placeholder); color: #CBD5E1; font-style: italic; font-weight: 400; font-size: 12px; }
+    .entry-role { font-size: 12px; color: var(--sub); font-weight: 600; margin-top: 3px; outline: none; border-radius: 4px; padding: 1px 5px; margin-left: -5px; display: block; }
+    .entry-role:hover { background: #F0F4FF; }
+    .entry-role:focus { background: var(--blue-l); box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .entry-role[data-empty="true"]:empty::before { content: attr(data-placeholder); color: #CBD5E1; font-style: italic; font-weight: 400; font-size: 12px; }
+    .entry-head-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .period-badge {
+      background: #E0F2FE; color: #0369A1; border-radius: 6px;
+      padding: 3px 10px; font-size: 11px; font-weight: 700; outline: none; white-space: nowrap;
+    }
+    .period-badge:focus { box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .period-badge[data-empty="true"]:empty::before { content: 'Période'; color: #94a3b8; font-style: italic; font-weight: 400; }
+    .btn-rm {
+      background: none; border: 1px solid #E2E8F0; color: #94a3b8;
+      width: 24px; height: 24px; border-radius: 6px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all .15s; flex-shrink: 0;
+    }
+    .btn-rm:hover { background: #FEF2F2; color: var(--red); border-color: #FCA5A5; }
+
+    /* BULLETS */
+    .bullets-section { padding: 10px 14px 12px; }
+    .bullets-label { font-size: 10px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .bullet-item { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
+    .bullet-marker { width: 5px; height: 5px; border-radius: 50%; background: var(--blue); margin-top: 8px; flex-shrink: 0; }
+    .bullet-text { flex: 1; font-size: 12.5px; line-height: 1.5; outline: none; border-radius: 4px; padding: 2px 4px; transition: background .15s; }
+    .bullet-text:hover { background: #F8FAFF; }
+    .bullet-text:focus { background: var(--blue-l); box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .bullet-text:empty::before { content: 'Réalisation / mission…'; color: #CBD5E1; font-style: italic; font-size: 12px; }
+    .btn-add-bullet {
+      display: flex; align-items: center; gap: 5px; margin-top: 6px;
+      background: none; border: 1px dashed #CBD5E1; color: var(--muted);
+      font-size: 11px; padding: 4px 10px; border-radius: 5px; cursor: pointer; transition: all .15s;
+    }
+    .btn-add-bullet:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-l); }
+
+    /* SKILLS */
+    .skill-row { display: flex; align-items: flex-start; padding: 9px 14px; gap: 12px; border-bottom: 1px solid #F1F5FA; }
+    .skill-row:last-child { border-bottom: none; }
+    .skill-cat {
+      width: 150px; flex-shrink: 0; font-size: 11px; font-weight: 800; color: var(--navy);
+      text-transform: uppercase; letter-spacing: .3px; outline: none; border-radius: 4px;
+      padding: 4px 6px; margin-left: -6px; line-height: 1.4;
+    }
+    .skill-cat:hover { background: #F0F4FF; }
+    .skill-cat:focus { background: var(--blue-l); box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .skill-cat:empty::before { content: 'Catégorie'; color: #CBD5E1; font-style: italic; font-weight: 400; }
+    .tags-wrap { flex: 1; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; padding-top: 2px; }
+    .tag { display: flex; align-items: center; gap: 4px; background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; border-radius: 5px; padding: 3px 9px; font-size: 12px; font-weight: 600; }
+    .tag-del { background: none; border: none; color: #93C5FD; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
+    .tag-del:hover { color: var(--red); }
+    .tag-input { border: 1px dashed #CBD5E1; border-radius: 5px; padding: 3px 9px; font-size: 12px; outline: none; min-width: 80px; max-width: 140px; background: transparent; transition: all .15s; }
+    .tag-input:focus { border-color: var(--blue); background: var(--blue-l); }
+
+    /* LANGUAGES */
+    .lang-row { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #F1F5FA; }
+    .lang-row:last-child { border-bottom: none; }
+    .lang-name { font-size: 13px; font-weight: 700; flex: 1; outline: none; border-radius: 4px; padding: 2px 5px; margin-left: -5px; }
+    .lang-name:hover { background: #F0F4FF; }
+    .lang-name:focus { background: var(--blue-l); box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .lang-name[data-empty="true"]:empty::before { content: 'Langue'; color: #CBD5E1; font-style: italic; }
+    .lang-level { background: #F1F5FF; color: var(--sub); border: 1px solid #C7D9F6; border-radius: 5px; padding: 3px 12px; font-size: 11px; font-weight: 700; outline: none; white-space: nowrap; }
+    .lang-level:hover { background: #E8EFFF; }
+    .lang-level:focus { background: var(--blue-l); box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .lang-level:empty::before { content: 'Niveau'; color: #94a3b8; font-style: italic; font-weight: 400; }
+    .btn-rm-sm { background: none; border: none; color: #CBD5E1; cursor: pointer; font-size: 16px; padding: 2px; transition: color .15s; }
+    .btn-rm-sm:hover { color: var(--red); }
+
+    /* CARAC */
+    .carac-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 14px; }
+    .carac-badge {
+      background: linear-gradient(135deg, var(--navy), #2a3f7a); color: #fff;
+      border-radius: 8px; padding: 12px 16px; font-size: 12px; font-weight: 800; text-align: center;
+      outline: none; cursor: text; box-shadow: 0 2px 6px rgba(27,45,92,.2); transition: box-shadow .15s;
+    }
+    .carac-badge:focus { box-shadow: 0 0 0 2px var(--blue), 0 2px 6px rgba(27,45,92,.2); }
+    .carac-badge:empty::before { content: 'Caractéristique'; color: rgba(255,255,255,.4); font-style: italic; font-weight: 400; }
+
+    /* INTERESTS */
+    .interest-wrap { display: flex; flex-wrap: wrap; gap: 6px; padding: 14px 16px; }
+    .interest-tag { display: flex; align-items: center; gap: 5px; background: #F0FDF4; color: #15803D; border: 1px solid #BBF7D0; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; }
+    .interest-text { outline: none; min-width: 30px; }
+    .interest-del { background: none; border: none; color: #86EFAC; cursor: pointer; font-size: 14px; padding: 0; }
+    .interest-del:hover { color: var(--red); }
+    .btn-add-tag { background: none; border: 1px dashed #CBD5E1; color: var(--muted); border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; transition: all .15s; }
+    .btn-add-tag:hover { border-color: var(--green); color: var(--green); background: #F0FDF4; }
+
+    /* CERT */
+    .cert-row { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #F1F5FA; }
+    .cert-row:last-child { border-bottom: none; }
+    .cert-name { flex: 1; font-size: 13px; outline: none; border-radius: 4px; padding: 2px 5px; margin-left: -5px; }
+    .cert-name:hover { background: #F0F4FF; }
+    .cert-name:focus { background: var(--blue-l); box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .cert-name[data-empty="true"]:empty::before { content: 'Nom de la certification'; color: #CBD5E1; font-style: italic; }
+    .cert-year { width: 58px; text-align: center; background: #F8FAFF; border: 1px solid var(--border); border-radius: 5px; font-size: 12px; font-weight: 700; color: var(--sub); padding: 3px 6px; outline: none; }
+    .cert-year:focus { border-color: var(--blue); background: var(--blue-l); }
+
+    /* DRAG & DROP */
+    .entry-card[draggable="true"] { cursor: grab; }
+    .entry-card[draggable="true"]:active { cursor: grabbing; }
+    .entry-card.dragging {
+      opacity: .35;
+      outline: 2px dashed var(--blue);
+      outline-offset: 2px;
+    }
+    .entry-card.drag-target {
+      border-top: 2.5px solid var(--blue);
+    }
+    .drag-handle {
+      position: absolute; right: 44px; top: 50%; transform: translateY(-50%);
+      color: #CBD5E1; font-size: 16px; cursor: grab; line-height: 1;
+      user-select: none; padding: 0 2px;
+    }
+    .drag-handle:hover { color: var(--blue); }
+    .entry-head { position: relative; }
+
+    /* ADD BTN */
+    .btn-add-entry {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      width: calc(100% - 24px); margin: 8px 12px 10px;
+      background: none; border: 1.5px dashed #CBD5E1; color: var(--muted);
+      font-size: 12px; padding: 8px; border-radius: 7px; cursor: pointer; transition: all .15s;
+    }
+    .btn-add-entry:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-l); }
+    .add-lang-wrap { padding: 6px 14px 10px; }
+
+    /* TABS */
+    .right-col { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+    .tab-nav {
+      display: flex; gap: 0; background: #fff; border-bottom: 2px solid var(--border);
+      flex-shrink: 0; padding: 0 12px;
+    }
+    .tab-btn {
+      background: none; border: none; padding: 11px 16px; font-size: 12px; font-weight: 700;
+      color: var(--muted); cursor: pointer; border-bottom: 2.5px solid transparent;
+      margin-bottom: -2px; transition: color .15s, border-color .15s; white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--navy); }
+    .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+    .tab-panel { display: none; flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
+    /* display:block (not flex) is required for overflow-y scroll to work */
+    .tab-panel.active { display: block; }
+    #tabProfil.active   { padding: 14px 18px 60px; }
+    #tabModifier.active { padding: 14px 18px 60px; }
+    #tabPdf.active { overflow: hidden; display: flex; flex-direction: column; }
+    /* Spacing between cards (gap doesn't apply to display:block) */
+    #tabProfil.active .pv-card   { margin-bottom: 12px; }
+    #tabModifier.active .sec-card { margin-bottom: 10px; }
+
+    /* LLM / export buttons */
+    .tbtn-teal  { background: #0284C7; color: #fff; }
+    .tbtn-amber { background: #B45309; color: #fff; }
+    /* PDF: vibrant blue gradient */
+    .tbtn-pdf {
+      background: linear-gradient(135deg, #1A5CFF, #0EA5E9); color: #fff;
+      box-shadow: 0 3px 10px rgba(26,92,255,.35);
+    }
+    .tbtn-pdf:hover { filter: brightness(1.08); }
+    /* Word : dégradé turquoise, pour distinguer les deux formats d'un coup d'œil */
+    .tbtn-word {
+      background: linear-gradient(135deg, #00C48C, #00ECC6); color: #0F2042;
+      box-shadow: 0 3px 10px rgba(0,196,140,.3);
+    }
+    .tbtn-word:hover { filter: brightness(1.06); }
+    .tbtn:disabled { opacity: .65; cursor: not-allowed; filter: none !important; }
+    @keyframes _spin { to { transform: rotate(360deg); } }
+    .tbtn-loading svg { animation: _spin .7s linear infinite; }
+
+    /* PROGRESS MODAL */
+    .prog-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(15,23,42,.7); z-index: 600;
+      align-items: center; justify-content: center;
+    }
+    .prog-overlay.show { display: flex; }
+    .prog-box {
+      background: #fff; border-radius: 14px; padding: 32px 36px;
+      width: 380px; max-width: 94vw; text-align: center;
+      box-shadow: 0 24px 64px rgba(0,0,0,.35);
+    }
+    .prog-icon { font-size: 36px; margin-bottom: 12px; }
+    .prog-title { font-size: 16px; font-weight: 800; color: var(--navy); margin-bottom: 6px; }
+    .prog-sub   { font-size: 12px; color: var(--muted); margin-bottom: 24px; }
+    .prog-track {
+      height: 10px; background: #E2E8F0; border-radius: 10px;
+      overflow: hidden; margin-bottom: 10px;
+    }
+    .prog-bar {
+      height: 100%; width: 0%; border-radius: 10px;
+      background: linear-gradient(90deg, var(--blue), #06B6D4);
+      transition: width .4s ease-out;
+    }
+    .prog-pct { font-size: 28px; font-weight: 900; color: var(--navy); margin-top: 8px; }
+
+    /* PROFILE VIEW (tab Profil) */
+    .pv-card { background: #fff; border: 1px solid var(--border); border-radius: var(--r); box-shadow: 0 1px 4px rgba(27,45,92,.06); overflow: hidden; }
+    .pv-head { display: flex; align-items: center; gap: 8px; padding: 11px 16px; background: #FAFBFF; border-bottom: 1px solid var(--border); }
+    .pv-head-icon { width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+    .pv-head-icon svg { width: 13px; height: 13px; stroke: #fff; fill: none; stroke-width: 2.2; }
+    .pv-head-title { font-size: 11px; font-weight: 800; color: var(--navy); text-transform: uppercase; letter-spacing: .5px; }
+    .pv-head-count { font-size: 10px; background: #E8EFFF; color: var(--sub); padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+    /* Skills tags */
+    .pv-skill-group { padding: 10px 14px; border-bottom: 1px solid #F1F5FA; display: flex; align-items: flex-start; gap: 10px; }
+    .pv-skill-group:last-child { border-bottom: none; }
+    .pv-skill-cat { font-size: 11px; font-weight: 800; color: var(--navy); text-transform: uppercase; letter-spacing: .3px; width: 140px; flex-shrink: 0; padding-top: 4px; }
+    .pv-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+    .pv-tag { background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; border-radius: 5px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+    /* Experience cards */
+    .pv-exp { margin: 10px 12px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .pv-exp-hdr { display: flex; justify-content: space-between; align-items: flex-start; padding: 12px 14px; background: #F8FAFF; border-bottom: 1px solid var(--border); gap: 10px; }
+    .pv-exp-left { flex: 1; min-width: 0; }
+    .pv-exp-company { font-size: 14px; font-weight: 800; color: var(--navy); }
+    .pv-exp-client  { font-size: 11px; color: var(--blue); font-weight: 700; margin-top: 2px; }
+    .pv-exp-role    { font-size: 12px; color: var(--sub); font-weight: 600; margin-top: 2px; }
+    .pv-exp-period  { font-size: 11px; background: #E0F2FE; color: #0369A1; padding: 3px 10px; border-radius: 6px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+    .pv-exp-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+    .pv-field { font-size: 12.5px; line-height: 1.5; }
+    .pv-field-lbl { font-weight: 800; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .4px; display: block; margin-bottom: 2px; }
+    .pv-bullets { margin: 0; padding-left: 18px; }
+    .pv-bullets li { font-size: 12.5px; line-height: 1.5; margin-bottom: 3px; color: var(--text); }
+    .pv-env { font-size: 12px; color: var(--muted); background: #F8FAFF; padding: 6px 10px; border-radius: 5px; margin-top: 4px; }
+    /* Language row */
+    .pv-lang { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid #F1F5FA; }
+    .pv-lang:last-child { border-bottom: none; }
+    .pv-lang-name  { font-size: 13px; font-weight: 700; flex: 1; }
+    .pv-lang-level { font-size: 11px; background: #F1F5FF; color: var(--sub); border: 1px solid #C7D9F6; border-radius: 5px; padding: 3px 12px; font-weight: 700; }
+    /* Edu row */
+    .pv-edu { display: flex; align-items: flex-start; gap: 10px; padding: 9px 14px; border-bottom: 1px solid #F1F5FA; }
+    .pv-edu:last-child { border-bottom: none; }
+    .pv-edu-info { flex: 1; }
+    .pv-edu-title  { font-size: 13px; font-weight: 700; color: var(--navy); }
+    .pv-edu-sub    { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .pv-edu-period { font-size: 11px; font-weight: 700; color: var(--sub); white-space: nowrap; }
+
+    /* MODALS */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(15,23,42,.55); z-index: 400;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-box {
+      background: #fff; border-radius: 12px; padding: 28px;
+      width: 520px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,.3);
+    }
+    .modal-box h3 { font-size: 16px; font-weight: 800; color: var(--navy); margin-bottom: 10px; }
+    .modal-box p  { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 20px; }
+    .modal-box textarea {
+      width: 100%; height: 180px; border: 1.5px solid var(--border); border-radius: 7px;
+      padding: 10px 12px; font-size: 13px; resize: vertical; outline: none;
+      font-family: inherit; color: var(--text); margin-bottom: 20px;
+    }
+    .modal-box textarea:focus { border-color: var(--blue); }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal-warn { background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 7px; padding: 10px 14px; font-size: 12px; color: #92400E; margin-bottom: 16px; }
+
+    /* PROFILE HERO */
+    .profile-hero {
+      background: linear-gradient(135deg, var(--navy) 0%, #253d7c 100%);
+      border-radius: var(--r); color: #fff;
+      padding: 20px 22px; display: flex; align-items: center; gap: 18px;
+      box-shadow: 0 2px 14px rgba(27,45,92,.22); flex-shrink: 0;
+    }
+    .ph-avatar {
+      width: 66px; height: 66px; border-radius: 50%;
+      background: var(--blue); display: flex; align-items: center;
+      justify-content: center; font-size: 24px; font-weight: 900;
+      flex-shrink: 0; border: 3px solid rgba(255,255,255,.25);
+      letter-spacing: -2px;
+    }
+    .ph-info { flex: 1; min-width: 0; }
+    .ph-name  { font-size: 21px; font-weight: 900; line-height: 1.1; letter-spacing: -.3px; }
+    .ph-title { font-size: 13px; color: #93C5FD; margin-top: 5px; font-weight: 600; }
+    .ph-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .ph-badge {
+      font-size: 11px; font-weight: 700;
+      background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.2);
+      padding: 3px 10px; border-radius: 20px; white-space: nowrap;
+    }
+    .ph-badge.exp { background: var(--blue); border-color: transparent; }
+    .ph-right { text-align: right; flex-shrink: 0; }
+    .ph-exp-big { font-size: 30px; font-weight: 900; line-height: 1; }
+    .ph-exp-lbl { font-size: 10px; color: #93C5FD; margin-top: 3px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+
+    /* TOAST */
+    #toast {
+      position: fixed; bottom: 20px; right: 20px; background: var(--navy); color: #fff;
+      padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      opacity: 0; transform: translateY(8px); transition: opacity .25s, transform .25s;
+      z-index: 500; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,.25);
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-theme.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-cvparser-sombre.css') }}"/>
+</head>
+<body>
+
+{% set c = cv.contact or {} %}
+{% set nameParts = (cv.name or '').split(' ') %}
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <button class="btn-back" onclick="window.location.href='/app'">← Retour</button>
+  <div class="topbar-info">
+    <div class="t-name">{{ cv.name or 'Candidat' }}</div>
+    <div class="t-role">{{ cv.title or '—' }}</div>
+  </div>
+  <div class="topbar-actions">
+    <div class="api-badge" id="apiBadge" title="Statut API">
+      <div class="api-dot checking" id="apiDot"></div>
+      <span id="apiLabel">API…</span>
+    </div>
+    <span class="save-indicator" id="saveIndicator">✓ Sauvegardé</span>
+    {% for lc in linked_cvs %}
+    <a href="/cv/{{ lc.id }}" class="tbtn tbtn-ghost" style="text-decoration:none" title="Voir la version {{ lc.language|upper }}">{{ lc.label }}</a>
+    {% endfor %}
+    <button class="tbtn tbtn-ghost" id="btnReanalyser" onclick="relancerAnalyse(this)"
+            title="Repasse le document dans le pipeline (bibliothèques puis IA si besoin)">
+      <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-2.6-6.4"/><path d="M21 3v6h-6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Relancer l'analyse
+    </button>
+    <button class="tbtn tbtn-teal" onclick="showModal('modalTranslate')" title="Traduire le CV en anglais">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>
+      FR → EN
+    </button>
+    <button class="tbtn tbtn-amber" onclick="showModal('modalAdapt')" title="Adapter à une fiche de poste">
+      <svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.81 19.79 19.79 0 01.02 2.18 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>
+      Adapter
+    </button>
+    <button class="tbtn tbtn-ghost" onclick="confirmReset()">
+      <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9 9 9 0 00-7.4 3.9"/><path d="M3 3v6h6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Réinitialiser
+    </button>
+    <button class="tbtn tbtn-green" onclick="saveAll()">
+      <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      Sauvegarder
+    </button>
+    <!-- Un seul gabarit — celui de NH_ADBI.pdf — décliné en deux formats :
+         le PDF pour envoyer au client, le Word pour retoucher avant envoi. -->
+    <button class="tbtn tbtn-pdf" onclick="telechargerDossier('pdf')" title="Dossier de compétences ADBI en PDF">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+      PDF ADBI
+    </button>
+    <button class="tbtn tbtn-word" onclick="telechargerDossier('docx')" title="Dossier de compétences ADBI en Word, modifiable">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Word ADBI
+    </button>
+  </div>
+</div>
+
+<!-- WORKSPACE -->
+<div class="workspace">
+
+  <!-- PDF -->
+  <div class="left-panel">
+    <div class="panel-label">
+      <svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:var(--muted);fill:none;stroke-width:2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Document original
+    </div>
+    {% set ext = cv.ext or '.pdf' %}
+    {% if ext == '.pdf' %}
+      <iframe src="/api/file/{{ cv.id }}" style="flex:1;border:none;width:100%;height:100%"></iframe>
+    {% elif cv.html_content %}
+      <iframe srcdoc="{{ cv.html_content | e }}" style="flex:1;border:none;width:100%;height:100%"></iframe>
+    {% else %}
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--muted);padding:24px;text-align:center">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/></svg>
+        <span style="font-size:13px">Aperçu non disponible</span>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- RIGHT COL: tabs + panels -->
+  <div class="right-col">
+
+    <!-- Tab navigation -->
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="profil"   onclick="switchTab('profil')">👤 Profil</button>
+      <button class="tab-btn"        data-tab="modifier" onclick="switchTab('modifier')">✏️ Modifier</button>
+      <button class="tab-btn"        data-tab="pdf"      onclick="switchTab('pdf')">📄 Aperçu PDF</button>
+    </div>
+
+    <!-- ═══════════════════════════════════
+         TAB: PROFIL (read-only overview)
+    ═══════════════════════════════════ -->
+    <div class="tab-panel active" id="tabProfil">
+
+    <!-- ── PROFILE HERO ── -->
+    {% set ph_init = ((nameParts[0][0] if nameParts|length > 0 and nameParts[0] else '') ~ (nameParts[-1][0] if nameParts|length > 1 and nameParts[-1] else '')) | upper %}
+    <div class="profile-hero">
+      <div class="ph-avatar">{{ ph_init or '?' }}</div>
+      <div class="ph-info">
+        <div class="ph-name">{{ cv.name or 'Candidat' }}</div>
+        <div class="ph-title">{{ cv.title or '—' }}</div>
+        <div class="ph-badges">
+          {% if cv.years_experience %}
+          <span class="ph-badge exp">{{ cv.years_experience }} an{{ 's' if cv.years_experience|int > 1 else '' }} d'expérience</span>
+          {% endif %}
+          {% if c.location %}<span class="ph-badge">📍 {{ c.location }}</span>{% endif %}
+          {% if c.email %}<span class="ph-badge">✉️ {{ c.email }}</span>{% endif %}
+          {% if c.phone %}<span class="ph-badge">📞 {{ c.phone }}</span>{% endif %}
+        </div>
+      </div>
+      {% if cv.years_experience %}
+      <div class="ph-right">
+        <div class="ph-exp-big">{{ cv.years_experience }}</div>
+        <div class="ph-exp-lbl">ans exp.</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- ── COMPÉTENCES TECHNIQUES (profil view) ── -->
+    {% if cv.skills %}
+    <div class="pv-card">
+      <div class="pv-head">
+        <div class="pv-head-icon" style="background:#0891B2"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+        <span class="pv-head-title">Compétences techniques</span>
+        <span class="pv-head-count">{{ cv.skills|length }}</span>
+      </div>
+      {% for sk in cv.skills %}
+      <div class="pv-skill-group">
+        <div class="pv-skill-cat">{{ sk.category }}</div>
+        <div class="pv-tags">
+          {% for item in sk['items'] %}<span class="pv-tag">{{ item }}</span>{% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- ── COMPÉTENCES FONCTIONNELLES (profil view) ── -->
+    {% if cv.interests %}
+    <div class="pv-card">
+      <div class="pv-head">
+        <div class="pv-head-icon" style="background:#16A34A"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
+        <span class="pv-head-title">Compétences fonctionnelles</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;padding:12px 14px">
+        {% for item in cv.interests %}
+        <span class="pv-tag" style="background:#F0FDF4;color:#15803D;border-color:#BBF7D0">{{ item }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- ── EXPÉRIENCES (profil view) ── -->
+    {% if cv.experience %}
+    <div class="pv-card">
+      <div class="pv-head">
+        <div class="pv-head-icon" style="background:#DC2626"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg></div>
+        <span class="pv-head-title">Expériences</span>
+        <span class="pv-head-count">{{ cv.experience|length }}</span>
+      </div>
+      {% for exp in cv.experience %}
+      {% set company = exp.company or exp.title or '' %}
+      {% set role    = exp.title if exp.company else (exp.subtitle or '') %}
+      <div class="pv-exp">
+        <div class="pv-exp-hdr">
+          <div class="pv-exp-left">
+            <div class="pv-exp-company">{{ company }}</div>
+            {% if exp.client %}<div class="pv-exp-client">🏢 Client : {{ exp.client }}</div>{% endif %}
+            {% if role %}<div class="pv-exp-role">{{ role }}</div>{% endif %}
+          </div>
+          {% if exp.period %}<div class="pv-exp-period">{{ exp.period }}</div>{% endif %}
+        </div>
+        <div class="pv-exp-body">
+          {% if exp.contexte %}
+          <div class="pv-field"><span class="pv-field-lbl">Contexte</span>{{ exp.contexte }}</div>
+          {% endif %}
+          {% if exp.objectifs %}
+          <div class="pv-field"><span class="pv-field-lbl">Mission</span>{{ exp.objectifs }}</div>
+          {% endif %}
+          {% if exp.methodologie %}
+          <div class="pv-field"><span class="pv-field-lbl">Méthodologie</span>{{ exp.methodologie }}</div>
+          {% endif %}
+          {% if exp.description %}
+          {% set bullets = exp.description.split(' · ') %}
+          <div><span class="pv-field-lbl">Réalisations</span>
+            <ul class="pv-bullets">
+              {% for b in bullets %}{% if b.strip() %}<li>{{ b.strip() }}</li>{% endif %}{% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+          {% if exp.env_technique %}
+          <div class="pv-env">🛠 {{ exp.env_technique }}</div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- ── FORMATIONS (profil view) ── -->
+    {% if cv.education %}
+    <div class="pv-card">
+      <div class="pv-head">
+        <div class="pv-head-icon" style="background:#D97706"><svg viewBox="0 0 24 24"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg></div>
+        <span class="pv-head-title">Formations</span>
+        <span class="pv-head-count">{{ cv.education|length }}</span>
+      </div>
+      {% for edu in cv.education %}
+      <div class="pv-edu">
+        <div class="pv-edu-info">
+          <div class="pv-edu-title">{{ edu.title }}</div>
+          {% if edu.subtitle %}<div class="pv-edu-sub">{{ edu.subtitle }}</div>{% endif %}
+        </div>
+        {% if edu.period %}<div class="pv-edu-period">{{ edu.period }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- ── LANGUES (profil view) ── -->
+    {% if cv.languages %}
+    <div class="pv-card">
+      <div class="pv-head">
+        <div class="pv-head-icon" style="background:#059669"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg></div>
+        <span class="pv-head-title">Langues</span>
+        <span class="pv-head-count">{{ cv.languages|length }}</span>
+      </div>
+      {% for lang in cv.languages %}
+      <div class="pv-lang">
+        <span class="pv-lang-name">{{ lang.language }}</span>
+        {% if lang.level %}<span class="pv-lang-level">{{ lang.level }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    </div><!-- /tabProfil -->
+
+    <!-- ═══════════════════════════════════
+         TAB: MODIFIER (editor)
+    ═══════════════════════════════════ -->
+    <div class="tab-panel" id="tabModifier">
+    <div class="right-panel" id="rightPanel" style="all:unset;display:contents">
+
+    <!-- PRÉSENTATION -->
+    <div class="sec-card">
+      <div class="sec-head" onclick="toggle(this)">
+        <div class="sec-head-left">
+          <div class="sec-icon" style="background:#2563EB">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          </div>
+          <span class="sec-title">Présentation</span>
+        </div>
+        <span class="sec-chevron">▲</span>
+      </div>
+      <div class="sec-body">
+        <div class="field-row"><span class="field-label">Nom</span>
+          <div class="field-val" contenteditable="true" data-field="name" data-empty="{{ 'true' if not cv.name else 'false' }}" data-placeholder="Non renseigné">{{ cv.name or '' }}</div></div>
+        <div class="field-row"><span class="field-label">Titre</span>
+          <div class="field-val" contenteditable="true" data-field="title" data-empty="{{ 'true' if not cv.title else 'false' }}" data-placeholder="Non renseigné">{{ cv.title or '' }}</div></div>
+        <div class="field-row"><span class="field-label">Années d'exp.</span>
+          <div class="field-val" contenteditable="true" data-field="years_experience" data-empty="{{ 'true' if not cv.years_experience else 'false' }}" data-placeholder="0">{{ cv.years_experience or '' }}</div></div>
+        <div class="field-row"><span class="field-label">Email</span>
+          <div class="field-val" contenteditable="true" data-section="contact" data-field="email" data-empty="{{ 'true' if not c.email else 'false' }}" data-placeholder="Non renseigné">{{ c.email or '' }}</div></div>
+        <div class="field-row"><span class="field-label">Téléphone</span>
+          <div class="field-val" contenteditable="true" data-section="contact" data-field="phone" data-empty="{{ 'true' if not c.phone else 'false' }}" data-placeholder="Non renseigné">{{ c.phone or '' }}</div></div>
+        <div class="field-row"><span class="field-label">Localisation</span>
+          <div class="field-val" contenteditable="true" data-section="contact" data-field="location" data-empty="{{ 'true' if not c.location else 'false' }}" data-placeholder="Non renseigné">{{ c.location or '' }}</div></div>
+        <div class="field-row"><span class="field-label">LinkedIn</span>
+          <div class="field-val" contenteditable="true" data-section="contact" data-field="linkedin" data-empty="{{ 'true' if not c.linkedin else 'false' }}" data-placeholder="Non renseigné">{{ c.linkedin or '' }}</div></div>
+      </div>
+    </div>
+
+    <!-- CARACTÉRISTIQUES -->
+    {% if cv.skills %}
+    <div class="sec-card">
+      <div class="sec-head" onclick="toggle(this)">
+        <div class="sec-head-left">
+          <div class="sec-icon" style="background:#7C3AED">
+            <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </div>
+          <span class="sec-title">Caractéristiques</span>
+        </div>
+        <span class="sec-chevron">▲</span>
+      </div>
+      <div class="sec-body">
+        <div class="carac-grid" id="caracGrid">
+          {% for skill in cv.skills[:4] %}
+          <div class="carac-badge" contenteditable="true" data-carac="{{ loop.index0 }}">{{ skill.category or '' }}</div>
+          {% endfor %}
+          {% for _ in range([0, 4 - cv.skills|length]|max) %}
+          <div class="carac-badge" contenteditable="true" data-carac="extra"></div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- COMPÉTENCES TECHNIQUES -->
+    <div class="sec-card">
+      <div class="sec-head" onclick="toggle(this)">
+        <div class="sec-head-left">
+          <div class="sec-icon" style="background:#0891B2">
+            <svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          </div>
+          <span class="sec-title">Compétences techniques</span>
+          {% if cv.skills %}<span class="sec-count">{{ cv.skills|length }}</span>{% endif %}
+        </div>
+        <span class="sec-chevron">▲</span>
+      </div>
+      <div class="sec-body" id="skillsBody">
+        {% if cv.skills %}
+          {% for skill in cv.skills %}
+          <div class="skill-row" data-skill-idx="{{ loop.index0 }}">
+            <div class="skill-cat" contenteditable="true" data-skill-cat="{{ loop.index0 }}" data-placeholder="Catégorie">{{ skill.category or '' }}</div>
+            <div class="tags-wrap" data-skill-items="{{ loop.index0 }}">
+              {% for item in skill['items'] %}
+              <span class="tag">{{ item }}<button class="tag-del" onclick="delTag(this)">×</button></span>
+              {% endfor %}
+              <input class="tag-input" placeholder="+ Tag" onkeydown="addTag(event, this)" />
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p style="padding:14px 16px;color:var(--muted);font-size:13px;font-style:italic">Aucune compétence détectée.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- LANGUES -->
+    <div class="sec-card">
+      <div class="sec-head" onclick="toggle(this)">
+        <div class="sec-head-left">
+          <div class="sec-icon" style="background:#059669">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>
+          </div>
+          <span class="sec-title">Langues</span>
+          {% if cv.languages %}<span class="sec-count">{{ cv.languages|length }}</span>{% endif %}
+        </div>
+        <span class="sec-chevron">▲</span>
+      </div>
+      <div class="sec-body" id="langsBody">
+        {% if cv.languages %}
+          {% for lang in cv.languages %}
+          <div class="lang-row">
+            <div class="lang-name" contenteditable="true" data-lang-name="{{ loop.index0 }}" data-empty="{{ 'true' if not lang.language else 'false' }}" data-placeholder="Langue">{{ lang.language or '' }}</div>
+            <div class="lang-level" contenteditable="true" data-lang-level="{{ loop.index0 }}">{{ lang.level or '' }}</div>
+            <button class="btn-rm-sm" onclick="this.closest('.lang-row').remove()">×</button>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p style="padding:14px 16px;color:var(--muted);font-size:13px;font-style:italic">Aucune langue détectée.</p>
+        {% endif %}
+        <div class="add-lang-wrap">
+          <button class="btn-add-entry" style="margin:0;width:100%" onclick="addLang()">+ Ajouter une langue</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- COMPÉTENCES FONCTIONNELLES -->
+    <div class="sec-card">
+      <div class="sec-head" onclick="toggle(this)">
+        <div class="sec-head-left">
+          <div class="sec-icon" style="background:#16A34A">
+            <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          </div>
+          <span class="sec-title">Compétences fonctionnelles</span>
+        </div>
+        <span class="sec-chevron">▲</span>
+      </div>
+      <div class="sec-body">
+        <div class="interest-wrap" id="funcTagsWrap">
+          {% if cv.interests %}
+            {% for item in cv.interests %}
+            <span class="interest-tag">
+              <span class="interest-text" contenteditable="true" data-func="{{ loop.index0 }}">{{ item }}</span>
+              <button class="interest-del" onclick="this.closest('.interest-tag').remove()">×</button>
+            </span>
+            {% endfor %}
+          {% endif %}
+          <button class="btn-add-tag" onclick="addFuncTag()">+ Ajouter</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FORMATIONS -->
+    <div class="sec-card">
+      <div class="sec-head" onclick="toggle(this)">
+        <div class="sec-head-left">
+          <div class="sec-icon" style="background:#D97706">
+            <svg viewBox="0 0 24 24"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+          </div>
+          <span class="sec-title">Formations</span>
+          {% if cv.education %}<span class="sec-count">{{ cv.education|length }}</span>{% endif %}
+        </div>
+        <span class="sec-chevron">▲</span>
+      </div>
+      <div class="sec-body" id="bodyEdu">
+        {% if cv.education %}
+          {% for edu in cv.education %}
+          <div class="entry-card" draggable="true" data-section="education" data-entry-idx="{{ loop.index0 }}">
+            <div class="entry-head">
+              <div class="entry-head-left">
+                <div class="entry-company" contenteditable="true" data-f="title" data-empty="{{ 'true' if not edu.title else 'false' }}" data-placeholder="Intitulé du diplôme">{{ edu.title or '' }}</div>
+                <div class="entry-role" contenteditable="true" data-f="subtitle" data-empty="{{ 'true' if not edu.subtitle else 'false' }}" data-placeholder="Établissement">{{ edu.subtitle or '' }}</div>
+              </div>
+              <div class="entry-head-right">
+                <span class="drag-handle" title="Glisser pour réordonner">⠿</span>
+                <div class="period-badge" contenteditable="true" data-f="period" data-empty="{{ 'true' if not edu.period else 'false' }}">{{ edu.period or '' }}</div>
+                <button class="btn-rm" onclick="this.closest('.entry-card').remove()">×</button>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p style="padding:14px 16px;color:var(--muted);font-size:13px;font-style:italic">Aucune formation détectée.</p>
+        {% endif %}
+        <button class="btn-add-entry" onclick="addEduCard()">+ Ajouter une formation</button>
+      </div>
+    </div>
+
+    <!-- EXPÉRIENCES -->
+    <div class="sec-card">
+      <div class="sec-head" onclick="toggle(this)">
+        <div class="sec-head-left">
+          <div class="sec-icon" style="background:#DC2626">
+            <svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+          </div>
+          <span class="sec-title">Expériences</span>
+          {% if cv.experience %}<span class="sec-count">{{ cv.experience|length }}</span>{% endif %}
+        </div>
+        <span class="sec-chevron">▲</span>
+      </div>
+      <div class="sec-body" id="bodyExp">
+        {% if cv.experience %}
+          {% for exp in cv.experience %}
+          {% set company = exp.company or exp.title or '' %}
+          {% set role    = exp.title if exp.company else (exp.subtitle or '') %}
+          <div class="entry-card" draggable="true" data-section="experience" data-entry-idx="{{ loop.index0 }}">
+            <div class="entry-head">
+              <div class="entry-head-left">
+                <div class="entry-company" contenteditable="true" data-f="company" data-empty="{{ 'true' if not company else 'false' }}" data-placeholder="Entreprise">{{ company }}</div>
+                <div class="entry-role" contenteditable="true" data-f="title" data-empty="{{ 'true' if not role else 'false' }}" data-placeholder="Poste occupé">{{ role }}</div>
+              </div>
+              <div class="entry-head-right">
+                <span class="drag-handle" title="Glisser pour réordonner">⠿</span>
+                <div class="period-badge" contenteditable="true" data-f="period" data-empty="{{ 'true' if not exp.period else 'false' }}">{{ exp.period or '' }}</div>
+                <button class="btn-rm" onclick="this.closest('.entry-card').remove()">×</button>
+              </div>
+            </div>
+            <div class="field-row"><span class="field-label">Client</span>
+              <div class="field-val" contenteditable="true" data-f="client" data-empty="{{ 'true' if not exp.client else 'false' }}" data-placeholder="Nom du client / donneur d'ordre">{{ exp.client or '' }}</div></div>
+            <div class="field-row"><span class="field-label">Contexte</span>
+              <div class="field-val" contenteditable="true" data-f="contexte" data-empty="{{ 'true' if not exp.contexte else 'false' }}" data-placeholder="Secteur, client, environnement">{{ exp.contexte or '' }}</div></div>
+            <div class="field-row"><span class="field-label">Objectifs</span>
+              <div class="field-val" contenteditable="true" data-f="objectifs" data-empty="{{ 'true' if not exp.objectifs else 'false' }}" data-placeholder="Objectifs et enjeux">{{ exp.objectifs or '' }}</div></div>
+            <div class="field-row"><span class="field-label">Méthodologie</span>
+              <div class="field-val" contenteditable="true" data-f="methodologie" data-empty="{{ 'true' if not exp.methodologie else 'false' }}" data-placeholder="Agile, Scrum…">{{ exp.methodologie or '' }}</div></div>
+            <div class="field-row"><span class="field-label">Env. technique</span>
+              <div class="field-val" contenteditable="true" data-f="env_technique" data-empty="{{ 'true' if not exp.env_technique else 'false' }}" data-placeholder="Technologies, frameworks">{{ exp.env_technique or '' }}</div></div>
+            <div class="bullets-section">
+              <div class="bullets-label">Description</div>
+              <div data-f="description">
+                {% set bullets = exp.description.split(' · ') if exp.description else [] %}
+                {% for b in bullets %}{% if b.strip() %}
+                <div class="bullet-item"><div class="bullet-marker"></div><div class="bullet-text" contenteditable="true">{{ b.strip() }}</div></div>
+                {% endif %}{% endfor %}
+                {% if not exp.description %}
+                <div class="bullet-item"><div class="bullet-marker"></div><div class="bullet-text" contenteditable="true"></div></div>
+                {% endif %}
+                <button class="btn-add-bullet" onclick="addBullet(this)">+ Ajouter une ligne</button>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p style="padding:14px 16px;color:var(--muted);font-size:13px;font-style:italic">Aucune expérience détectée.</p>
+        {% endif %}
+        <button class="btn-add-entry" onclick="addExpCard()">+ Ajouter une expérience</button>
+      </div>
+    </div>
+
+    <!-- CERTIFICATIONS -->
+    {% if cv.certifications %}
+    <div class="sec-card">
+      <div class="sec-head" onclick="toggle(this)">
+        <div class="sec-head-left">
+          <div class="sec-icon" style="background:#7C3AED">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
+          </div>
+          <span class="sec-title">Certifications</span>
+          <span class="sec-count">{{ cv.certifications|length }}</span>
+        </div>
+        <span class="sec-chevron">▲</span>
+      </div>
+      <div class="sec-body" id="certsBody">
+        {% for cert in cv.certifications %}
+        <div class="cert-row">
+          <div class="cert-name" contenteditable="true" data-cert-name="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.name else 'false' }}" data-placeholder="Nom de la certification">{{ cert.name or '' }}</div>
+          <div class="cert-year" contenteditable="true" data-cert-year="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.year else 'false' }}">{{ cert.year or '' }}</div>
+          <button class="btn-rm-sm" onclick="this.closest('.cert-row').remove()">×</button>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    </div><!-- /right-panel display:contents -->
+    </div><!-- /tabModifier -->
+
+    <!-- ═══════════════════════════════════
+         TAB: PDF APERÇU
+    ═══════════════════════════════════ -->
+    <div class="tab-panel" id="tabPdf">
+      <iframe id="pdfPreviewFrame" style="width:100%;height:100%;border:none;flex:1;display:block"></iframe>
+    </div><!-- /tabPdf -->
+
+  </div><!-- /right-col -->
+</div><!-- /workspace -->
+
+<!-- ══ PROGRESS MODAL ══ -->
+<div class="prog-overlay" id="progOverlay">
+  <div class="prog-box">
+    <div class="prog-icon" id="progIcon">⚙️</div>
+    <div class="prog-title" id="progTitle">Traitement en cours…</div>
+    <div class="prog-sub" id="progSub">L'IA analyse votre CV</div>
+    <div class="prog-track"><div class="prog-bar" id="progBar"></div></div>
+    <div class="prog-pct" id="progPct">0%</div>
+  </div>
+</div>
+
+<!-- ══ MODALS ══ -->
+<div class="modal-overlay" id="modalTranslate" onclick="closeModal('modalTranslate')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <h3>🌐 Traduire le CV en anglais</h3>
+    <div class="modal-warn">⚠️ Cette action traduit et <strong>écrase</strong> le contenu actuel du CV. Sauvegardez d'abord si nécessaire.</div>
+    <p>L'IA va traduire l'intégralité du contenu (descriptions, compétences, formations…) en anglais en conservant la structure JSON.</p>
+    <div class="modal-actions">
+      <button class="tbtn tbtn-ghost" onclick="closeModal('modalTranslate')" style="background:#F1F5F9;color:#334155;border:none">Annuler</button>
+      <button class="tbtn tbtn-teal" onclick="doTranslate()">🌐 Traduire en anglais</button>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal-overlay" id="modalAdapt" onclick="closeModal('modalAdapt')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <h3>🎯 Adapter à une fiche de poste</h3>
+    <p>Collez la fiche de poste ci-dessous. L'IA va réorganiser et reformuler le CV pour maximiser la pertinence.</p>
+    <textarea id="jobPostingInput" placeholder="Collez ici la description du poste (titre, missions, compétences requises…)"></textarea>
+    <div class="modal-actions">
+      <button class="tbtn tbtn-ghost" onclick="closeModal('modalAdapt')" style="background:#F1F5F9;color:#334155;border:none">Annuler</button>
+      <button class="tbtn tbtn-amber" onclick="doAdapt()">🎯 Adapter le CV</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const CV_ID = "{{ cv.id }}";
+const LLM_ENRICHED = {{ 'true' if cv.get('llm_enriched', True) else 'false' }};
+
+if (!LLM_ENRICHED) {
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1B2D5C;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;z-index:999;display:flex;align-items:center;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,.3);font-weight:600';
+  banner.innerHTML = '<span style="width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;display:inline-block"></span> Analyse IA en cours…';
+  document.body.appendChild(banner);
+  document.head.insertAdjacentHTML('beforeend','<style>@keyframes spin{to{transform:rotate(360deg)}}</style>');
+  const poll = setInterval(async () => {
+    try {
+      const d = await fetch(`/api/cvs/${CV_ID}`).then(r => r.json());
+      if (d.llm_enriched) { clearInterval(poll); banner.innerHTML = '✓ Terminé — actualisation…'; banner.style.background = '#16A34A'; setTimeout(() => location.reload(), 900); }
+    } catch (_) {}
+  }, 4000);
+}
+
+function toggle(hd) { hd.closest('.sec-card').classList.toggle('collapsed'); }
+
+function bindEmpty(root) {
+  (root || document).querySelectorAll('[contenteditable][data-empty]').forEach(el => {
+    if (el._eb) return; el._eb = true;
+    el.addEventListener('focus', () => { if (el.dataset.empty === 'true') { el.textContent = ''; el.dataset.empty = 'false'; } });
+    el.addEventListener('blur',  () => { if (!el.textContent.trim()) { el.textContent = ''; el.dataset.empty = 'true'; } else { el.dataset.empty = 'false'; } });
+  });
+}
+bindEmpty();
+
+function addTag(e, input) {
+  if (e.key !== 'Enter' && e.key !== ',') return;
+  e.preventDefault();
+  const val = input.value.trim().replace(/,$/, '');
+  if (!val) return;
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+  tag.innerHTML = `${val}<button class="tag-del" onclick="delTag(this)">×</button>`;
+  input.parentNode.insertBefore(tag, input);
+  input.value = '';
+}
+function delTag(btn) { btn.parentNode.remove(); }
+
+function addBullet(btn) {
+  const row = document.createElement('div');
+  row.className = 'bullet-item';
+  row.innerHTML = '<div class="bullet-marker"></div><div class="bullet-text" contenteditable="true"></div>';
+  btn.parentNode.insertBefore(row, btn);
+  row.querySelector('.bullet-text').focus();
+}
+
+function addLang() {
+  const body = document.getElementById('langsBody');
+  const n = body.querySelectorAll('.lang-row').length;
+  const row = document.createElement('div');
+  row.className = 'lang-row';
+  row.innerHTML = `<div class="lang-name" contenteditable="true" data-lang-name="${n}" data-empty="true" data-placeholder="Langue"></div>
+    <div class="lang-level" contenteditable="true" data-lang-level="${n}"></div>
+    <button class="btn-rm-sm" onclick="this.closest('.lang-row').remove()">×</button>`;
+  body.querySelector('.add-lang-wrap').before(row);
+  row.querySelector('.lang-name').focus();
+  bindEmpty(body);
+}
+
+function addFuncTag() {
+  const wrap = document.getElementById('funcTagsWrap');
+  const tag = document.createElement('span');
+  tag.className = 'interest-tag';
+  tag.innerHTML = '<span class="interest-text" contenteditable="true">Nouvelle compétence</span><button class="interest-del" onclick="this.closest(\'.interest-tag\').remove()">×</button>';
+  wrap.querySelector('.btn-add-tag').before(tag);
+  const ed = tag.querySelector('.interest-text');
+  ed.focus();
+  const r = document.createRange(); r.selectNodeContents(ed); window.getSelection().removeAllRanges(); window.getSelection().addRange(r);
+}
+
+function addEduCard() {
+  const body = document.getElementById('bodyEdu');
+  const card = document.createElement('div');
+  card.className = 'entry-card';
+  card.draggable = true;
+  card.dataset.section = 'education'; card.dataset.entryIdx = Date.now();
+  card.innerHTML = `<div class="entry-head">
+    <div class="entry-head-left">
+      <div class="entry-company" contenteditable="true" data-f="title" data-empty="true" data-placeholder="Intitulé du diplôme"></div>
+      <div class="entry-role" contenteditable="true" data-f="subtitle" data-empty="true" data-placeholder="Établissement"></div>
+    </div>
+    <div class="entry-head-right">
+      <span class="drag-handle" title="Glisser pour réordonner">⠿</span>
+      <div class="period-badge" contenteditable="true" data-f="period" data-empty="true">Période</div>
+      <button class="btn-rm" onclick="this.closest('.entry-card').remove()">×</button>
+    </div></div>`;
+  body.querySelector('.btn-add-entry').before(card);
+  card.querySelector('[data-f="title"]').focus();
+  bindEmpty(card);
+}
+
+function addExpCard() {
+  const body = document.getElementById('bodyExp');
+  const card = document.createElement('div');
+  card.className = 'entry-card';
+  card.draggable = true;
+  card.dataset.section = 'experience'; card.dataset.entryIdx = Date.now();
+  const fr = (l,f,p) => `<div class="field-row"><span class="field-label">${l}</span><div class="field-val" contenteditable="true" data-f="${f}" data-empty="true" data-placeholder="${p}"></div></div>`;
+  card.innerHTML = `<div class="entry-head">
+    <div class="entry-head-left">
+      <div class="entry-company" contenteditable="true" data-f="company" data-empty="true" data-placeholder="Entreprise"></div>
+      <div class="entry-role" contenteditable="true" data-f="title" data-empty="true" data-placeholder="Poste occupé"></div>
+    </div>
+    <div class="entry-head-right">
+      <span class="drag-handle" title="Glisser pour réordonner">⠿</span>
+      <div class="period-badge" contenteditable="true" data-f="period" data-empty="true">Période</div>
+      <button class="btn-rm" onclick="this.closest('.entry-card').remove()">×</button>
+    </div></div>
+    ${fr('Client','client','Nom du client / donneur d\'ordre')}
+    ${fr('Contexte','contexte','Secteur, client')}
+    ${fr('Objectifs','objectifs','Objectifs et enjeux')}
+    ${fr('Méthodologie','methodologie','Agile, Scrum…')}
+    ${fr('Env. technique','env_technique','Technologies, frameworks')}
+    <div class="bullets-section"><div class="bullets-label">Description</div>
+    <div data-f="description">
+      <div class="bullet-item"><div class="bullet-marker"></div><div class="bullet-text" contenteditable="true"></div></div>
+      <button class="btn-add-bullet" onclick="addBullet(this)">+ Ajouter une ligne</button>
+    </div></div>`;
+  body.querySelector('.btn-add-entry').before(card);
+  card.querySelector('[data-f="company"]').focus();
+  bindEmpty(card);
+}
+
+function collectData() {
+  const data = {};
+  document.querySelectorAll('[data-field][contenteditable]').forEach(el => {
+    const sec = el.dataset.section, f = el.dataset.field, v = el.textContent.trim();
+    if (sec === 'contact') { data.contact = data.contact || {}; data.contact[f] = v; }
+    else data[f] = v;
+  });
+  data.experience = [];
+  document.querySelectorAll('.entry-card[data-section="experience"]').forEach(card => {
+    const e = {};
+    card.querySelectorAll('[data-f][contenteditable]').forEach(el => { if (el.dataset.f !== 'description') e[el.dataset.f] = el.textContent.trim(); });
+    const dw = card.querySelector('[data-f="description"]');
+    if (dw) e.description = [...dw.querySelectorAll('.bullet-text')].map(b => b.textContent.trim()).filter(Boolean).join(' · ');
+    if (e.company || e.title) data.experience.push(e);
+  });
+  data.education = [];
+  document.querySelectorAll('.entry-card[data-section="education"]').forEach(card => {
+    const e = {};
+    card.querySelectorAll('[data-f][contenteditable]').forEach(el => { e[el.dataset.f] = el.textContent.trim(); });
+    if (e.title) data.education.push(e);
+  });
+  data.skills = [];
+  document.querySelectorAll('#skillsBody .skill-row').forEach(row => {
+    const cat = row.querySelector('[data-skill-cat]')?.textContent.trim();
+    const items = [...(row.querySelector('[data-skill-items]')?.querySelectorAll('.tag') || [])].map(t => t.childNodes[0].textContent.trim()).filter(Boolean);
+    if (cat) data.skills.push({ category: cat, items });
+  });
+  data.languages = [];
+  document.querySelectorAll('#langsBody .lang-row').forEach(row => {
+    const n = row.querySelector('[data-lang-name]')?.textContent.trim();
+    if (n) data.languages.push({ language: n, level: row.querySelector('[data-lang-level]')?.textContent.trim() || '' });
+  });
+  data.interests = [...document.querySelectorAll('#funcTagsWrap .interest-text')].map(el => el.textContent.trim()).filter(Boolean);
+  data.certifications = [];
+  document.querySelectorAll('#certsBody .cert-row').forEach(row => {
+    const n = row.querySelector('[data-cert-name]')?.textContent.trim();
+    if (n) data.certifications.push({ name: n, year: row.querySelector('[data-cert-year]')?.textContent.trim() || '' });
+  });
+  return data;
+}
+
+async function saveAll() {
+  try {
+    const r = await fetch(`/api/cvs/${CV_ID}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(collectData()) });
+    if ((await r.json()).success) {
+      document.getElementById('saveIndicator').classList.add('show');
+      setTimeout(() => document.getElementById('saveIndicator').classList.remove('show'), 2500);
+      showToast('✅ Modifications enregistrées');
+    }
+  } catch { showToast('❌ Erreur de sauvegarde'); }
+}
+
+function confirmReset() { if (confirm('Réinitialiser tous les champs ?')) location.reload(); }
+
+/**
+ * Télécharge le dossier de compétences ADBI, en PDF ou en Word.
+ *
+ * Les modifications en cours sont enregistrées d'abord : sans cela, le
+ * document produit ignorerait la dernière correction faite à l'écran.
+ */
+async function telechargerDossier(format) {
+  const btn = document.querySelector(format === 'pdf' ? '.tbtn-pdf' : '.tbtn-word');
+  const orig = btn.innerHTML;
+  const sablier = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg> ';
+  btn.disabled = true;
+  btn.classList.add('tbtn-loading');
+  btn.innerHTML = sablier + 'Sauvegarde…';
+  try {
+    await saveAll();
+    btn.innerHTML = sablier + 'Génération…';
+    const r = await fetch(`/api/cvs/${CV_ID}/dossier.${format}`, { credentials: 'include' });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      throw new Error(e.error || `HTTP ${r.status}`);
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    // Le nom du candidat plutôt qu'un identifiant : c'est ce fichier qui part
+    // en pièce jointe.
+    const champNom = document.querySelector('[data-field="name"]');
+    a.download = `ADBI CV_${(champNom?.textContent || 'Candidat').trim()}.${format}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showToast(`✓ Dossier ${format.toUpperCase()} téléchargé`);
+  } catch (e) {
+    alert('❌ Génération impossible : ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('tbtn-loading');
+    btn.innerHTML = orig;
+  }
+}
+
+let _ast;
+document.getElementById('tabModifier').addEventListener('input', () => { clearTimeout(_ast); _ast = setTimeout(saveAll, 3000); });
+
+let _tt;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(_tt); _tt = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+/* ── TABS ── */
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1));
+  if (panel) panel.classList.add('active');
+  if (tab === 'pdf') {
+    const fr = document.getElementById('pdfPreviewFrame');
+    // L'aperçu montre exactement ce qui sera imprimé : le gabarit NH_ADBI.
+    if (!fr.src || fr.src === window.location.href) fr.src = `/cv/${CV_ID}/adbi`;
+  }
+}
+
+/* ── MODALS ── */
+function showModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+/* ── PROGRESS BAR ── */
+let _progTimer = null;
+function startProgress(icon, title, sub) {
+  document.getElementById('progIcon').textContent  = icon;
+  document.getElementById('progTitle').textContent = title;
+  document.getElementById('progSub').textContent   = sub;
+  document.getElementById('progPct').textContent   = '0%';
+  document.getElementById('progBar').style.cssText = 'width:0%;background:linear-gradient(90deg,#2563EB,#06B6D4)';
+  document.getElementById('progOverlay').classList.add('show');
+  let pct = 0;
+  _progTimer = setInterval(() => {
+    pct = pct + (96 - pct) * 0.07;           // logarithmic: fast then slows
+    const rounded = Math.min(95, Math.round(pct));
+    document.getElementById('progPct').textContent   = rounded + '%';
+    document.getElementById('progBar').style.width   = rounded + '%';
+  }, 600);
+}
+function endProgress(ok, msg) {
+  clearInterval(_progTimer);
+  document.getElementById('progBar').style.cssText =
+    `width:100%;background:${ok ? '#16A34A' : '#DC2626'};transition:width .3s`;
+  document.getElementById('progPct').textContent = '100%';
+  setTimeout(() => {
+    document.getElementById('progOverlay').classList.remove('show');
+    if (msg) showToast(msg);
+  }, 700);
+}
+
+/* ── LLM ACTIONS ── */
+async function doTranslate() {
+  closeModal('modalTranslate');
+  startProgress('🌐', 'Traduction FR → EN', 'L\'IA traduit le contenu du CV…');
+  try {
+    const r = await fetch(`/api/cvs/${CV_ID}/translate`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target: 'en'})
+    });
+    const d = await r.json();
+    if (d.success) {
+      endProgress(true, '✅ CV traduit — ouverture de la version anglaise…');
+      setTimeout(() => { window.location.href = `/cv/${d.new_id}`; }, 1000);
+    } else {
+      endProgress(false, '❌ ' + (d.error || 'Erreur de traduction'));
+    }
+  } catch (e) { endProgress(false, '❌ Erreur réseau'); }
+}
+
+
+async function doAdapt() {
+  const jp = document.getElementById('jobPostingInput').value.trim();
+  if (!jp) { showToast('⚠️ Collez une fiche de poste d\'abord'); return; }
+  closeModal('modalAdapt');
+  startProgress('🎯', 'Adaptation au poste', 'L\'IA aligne le CV avec la fiche de poste…');
+  try {
+    const r = await fetch(`/api/cvs/${CV_ID}/adapt`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({job_posting: jp})
+    });
+    const d = await r.json();
+    if (d.success) {
+      endProgress(true, '✅ CV adapté — rechargement…');
+      setTimeout(() => location.reload(), 900);
+    } else {
+      endProgress(false, '❌ ' + (d.error || 'Erreur'));
+    }
+  } catch (e) { endProgress(false, '❌ Erreur réseau'); }
+}
+
+/* ── DRAG & DROP — réordonner les expériences / formations ── */
+(function initDragDrop() {
+  let _dragging = null;
+
+  function getAfterElement(container, clientY) {
+    const cards = [...container.querySelectorAll('.entry-card:not(.dragging)')];
+    return cards.reduce((closest, card) => {
+      const box    = card.getBoundingClientRect();
+      const offset = clientY - box.top - box.height / 2;
+      return (offset < 0 && offset > closest.offset)
+        ? { offset, el: card }
+        : closest;
+    }, { offset: -Infinity, el: null }).el;
+  }
+
+  function setupContainer(containerId) {
+    const c = document.getElementById(containerId);
+    if (!c) return;
+
+    c.addEventListener('dragstart', e => {
+      const card = e.target.closest('.entry-card');
+      if (!card) { e.preventDefault(); return; }
+      _dragging = card;
+      // small timeout so the ghost image renders before opacity change
+      requestAnimationFrame(() => card.classList.add('dragging'));
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    c.addEventListener('dragend', () => {
+      if (_dragging) { _dragging.classList.remove('dragging'); _dragging = null; }
+      c.querySelectorAll('.drag-target').forEach(el => el.classList.remove('drag-target'));
+    });
+
+    c.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (!_dragging) return;
+      c.querySelectorAll('.drag-target').forEach(el => el.classList.remove('drag-target'));
+      const after = getAfterElement(c, e.clientY);
+      if (after) after.classList.add('drag-target');
+      if (after == null) {
+        // insert before the "+ Ajouter" button
+        const addBtn = c.querySelector('.btn-add-entry');
+        if (addBtn) addBtn.before(_dragging);
+      } else {
+        c.insertBefore(_dragging, after);
+      }
+    });
+  }
+
+  setupContainer('bodyExp');
+  setupContainer('bodyEdu');
+})();
+
+/* ── API STATUS ── */
+async function checkApiStatus() {
+  const dot = document.getElementById('apiDot'), label = document.getElementById('apiLabel');
+  try {
+    const d = await fetch('/api/status').then(r => r.json());
+    if (d.api_ok) { dot.className = 'api-dot ok'; label.textContent = 'API OK'; document.getElementById('apiBadge').title = `Modèle : ${d.model}`; }
+    else { dot.className = 'api-dot err'; label.textContent = 'API KO'; document.getElementById('apiBadge').title = d.error || `HTTP ${d.http}`; }
+  } catch { dot.className = 'api-dot err'; label.textContent = 'API KO'; }
+}
+checkApiStatus();
+</script>
+<script src="/static/conv_widget.js"></script>
+<script src="/static/etat-ia.js"></script>
+<script>
+async function relancerAnalyse(btn) {
+  btn.disabled = true;
+  const texte = btn.innerHTML;
+  btn.innerHTML = 'Analyse en cours…';
+  try {
+    const r = await fetch('/api/cv/{{ cv.id }}/reanalyser', { method: 'POST', credentials: 'include' });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || 'Erreur ' + r.status);
+    location.reload();
+  } catch (e) {
+    btn.innerHTML = texte;
+    btn.disabled = false;
+    alert('Ré-analyse impossible : ' + e.message);
+  }
+}
+</script>
+</body>
+</html>

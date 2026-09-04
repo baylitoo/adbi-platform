@@ -1,0 +1,30 @@
+# ── Dépendances (réinstallées : npm ci / pip install) ──────────────────────
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# ── Journaux ────────────────────────────────────────────────────────────────
+factory/logs/
+*.log
+
+# ── SECRETS & DONNÉES LOCALES — ne doivent JAMAIS entrer dans git ───────────
+# Contrats : clés API (Yousign/Zoho/Pappers), code d'accès, base, archives PDF
+contrats/data/secrets.json
+contrats/data/code-parametres.txt
+contrats/data/contrats.sqlite
+contrats/data/contrats-generes/
+contrats/data/templates-perso.json
+# Coffre : clé de chiffrement locale + documents protégés
+coffre/data/
+# OnePager : base de CV
+one-pager/data/
+# Parser : base, uploads, sorties, comptes, réglages LLM
+cv-parser/data/
+cv-parser/uploads/
+cv-parser/cv_output/
+cv-parser/cv_database.json
+
+# ── Divers ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

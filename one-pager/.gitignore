@@ -1,0 +1,7 @@
+node_modules/
+data/*.sqlite
+data/sources/
+_out.log
+_err.log
+runtime/
+One-pager-portable.zip

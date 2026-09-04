@@ -1,0 +1,860 @@
+﻿<!DOCTYPE html>
+<html lang="fr" data-theme="clair">
+<head>
+  <script src="{{ url_for('static', filename='adbi-theme.js') }}"></script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>ADBI — Paramètres</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy: #0F2042; --blue: #1A5CFF; --blue-l: #E8F0FF;
+      --teal: #00ECC6; --teal-l: #E0F7F2; --sub: #3A6FD8;
+      --bg: #F4F6F9; --card: #FFFFFF; --border: #DDE3F0;
+      --text: #0F2042; --muted: #64748B; --r: 12px;
+    }
+    body { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: 14px; color: var(--text); background: var(--bg); }
+
+    /* ── TOPBAR ── */
+    .topbar {
+      background: var(--navy); padding: 0 28px; height: 56px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(15,32,66,.25);
+    }
+    .logo-wrap { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+    .logo-svg { width: 22px; height: 28px; flex-shrink: 0; overflow: visible; }
+    .logo-name { font-size: 19px; font-weight: 900; font-style: italic; color: #fff; letter-spacing: -.5px; }
+    .logo-name span { color: var(--teal); }
+    .nav { display: flex; gap: 4px; }
+    .nav a {
+      padding: 6px 14px; border-radius: 7px; text-decoration: none;
+      color: rgba(255,255,255,.65); font-weight: 600; font-size: 13px; transition: background .15s, color .15s;
+    }
+    .nav a:hover { background: rgba(255,255,255,.1); color: #fff; }
+    .nav a.active { background: var(--blue); color: #fff; }
+    .user-info { display: flex; align-items: center; gap: 10px; }
+    #userName { font-size: 13px; color: rgba(255,255,255,.85); font-weight: 500; }
+    .btn-logout {
+      background: none; border: 1.5px solid rgba(255,255,255,.2); border-radius: 7px;
+      padding: 5px 13px; cursor: pointer; font-size: 12px; color: rgba(255,255,255,.65);
+      font-family: inherit; transition: border-color .15s, color .15s;
+    }
+    .btn-logout:hover { border-color: rgba(255,255,255,.5); color: #fff; }
+
+    /* ── PAGE LAYOUT ── */
+    .page { max-width: 1000px; margin: 0 auto; padding: 32px 20px; }
+    .page-title { font-size: 22px; font-weight: 900; color: var(--navy); margin-bottom: 6px; }
+    .page-sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+
+    /* ── TABS ── */
+    .tabs { display: flex; gap: 4px; background: var(--card); border-radius: 10px; padding: 5px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(15,32,66,.06); width: fit-content; }
+    .tab-btn {
+      padding: 8px 20px; border-radius: 7px; border: none; background: none;
+      font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer;
+      font-family: inherit; transition: all .15s; white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--navy); background: var(--bg); }
+    .tab-btn.active { background: var(--navy); color: #fff; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── CARDS ── */
+    .card {
+      background: var(--card); border-radius: var(--r);
+      box-shadow: 0 2px 12px rgba(15,32,66,.06); padding: 24px;
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-size: 14px; font-weight: 800; color: var(--navy);
+      margin-bottom: 18px; display: flex; align-items: center; gap: 8px;
+    }
+    .card-title::before {
+      content: ''; display: inline-block; width: 3px; height: 18px;
+      border-radius: 2px; background: var(--blue); flex-shrink: 0;
+    }
+
+    /* ── FORM FIELDS ── */
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 5px; }
+    .field input, .field select {
+      width: 100%; padding: 10px 12px; border: 1.5px solid var(--border);
+      border-radius: 8px; font-size: 13px; font-family: inherit; outline: none;
+      color: var(--text); transition: border-color .2s, box-shadow .2s;
+    }
+    .field input:focus, .field select:focus {
+      border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,92,255,.08);
+    }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+    /* ── BUTTONS ── */
+    .btn-primary {
+      padding: 10px 22px; background: var(--blue); color: #fff;
+      border: none; border-radius: 9px; font-size: 13px; font-weight: 700;
+      cursor: pointer; font-family: inherit; transition: background .2s;
+      box-shadow: 0 3px 12px rgba(26,92,255,.2);
+    }
+    .btn-primary:hover { background: var(--sub); }
+    .btn-sm {
+      padding: 5px 12px; border-radius: 6px; border: none; font-size: 12px;
+      font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s;
+    }
+    .btn-danger { background: #FEE2E2; color: #DC2626; }
+    .btn-danger:hover { background: #DC2626; color: #fff; }
+    .btn-ghost { background: var(--bg); color: var(--muted); border: 1.5px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--blue); color: var(--blue); }
+
+    /* ── USER TABLE ── */
+    .user-table { width: 100%; border-collapse: collapse; }
+    .user-table th {
+      font-size: 10px; font-weight: 800; color: var(--muted); text-transform: uppercase;
+      letter-spacing: .5px; padding: 8px 12px; text-align: left;
+      background: #F8FAFF; border-bottom: 2px solid var(--border);
+    }
+    .user-table td { padding: 12px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .user-table tr:last-child td { border-bottom: none; }
+    .user-table tr:hover td { background: #FAFBFF; }
+
+    .user-avatar-sm {
+      width: 34px; height: 34px; border-radius: 50%; background: var(--blue);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 800; color: #fff; flex-shrink: 0;
+    }
+    .role-badge {
+      font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px;
+    }
+    .role-superuser { background: rgba(26,92,255,.1); color: var(--blue); }
+    .role-user { background: var(--bg); color: var(--muted); }
+    .active-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+    .active-yes { background: var(--teal-l); color: #007A65; }
+    .active-no  { background: #F1F3F7; color: #9AAFC8; }
+
+    .stat-mini { display: flex; gap: 8px; flex-wrap: wrap; }
+    .stat-mini span { font-size: 11px; color: var(--muted); }
+    .stat-mini span strong { color: var(--navy); }
+
+    /* ── INVITE SECTION ── */
+    .invite-result {
+      background: var(--blue-l); border: 1.5px solid rgba(26,92,255,.2);
+      border-radius: 9px; padding: 14px 16px; margin-top: 14px; display: none;
+    }
+    .invite-result.show { display: block; }
+    .invite-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+    .invite-link {
+      font-size: 12px; color: var(--blue); font-weight: 600;
+      word-break: break-all; cursor: pointer;
+      background: #fff; border-radius: 6px; padding: 8px 12px; display: block;
+      border: 1px solid var(--border);
+    }
+    .invite-copy { margin-top: 8px; font-size: 11px; color: var(--muted); }
+
+    /* ── ACTIVITY LOG ── */
+    .act-event {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 12px 0; border-bottom: 1px solid var(--border);
+    }
+    .act-event:last-child { border-bottom: none; }
+    .act-icon {
+      width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 14px;
+    }
+    .act-icon.login    { background: var(--blue-l); }
+    .act-icon.upload   { background: var(--teal-l); }
+    .act-icon.match    { background: #FEF3C7; }
+    .act-body { flex: 1; min-width: 0; }
+    .act-text { font-size: 13px; color: var(--text); font-weight: 500; }
+    .act-text strong { color: var(--navy); font-weight: 700; }
+    .act-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    .empty-state { text-align: center; padding: 32px; color: var(--muted); font-size: 13px; }
+
+    /* ── ALERTS ── */
+    .alert {
+      padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; display: none;
+    }
+    .alert.err { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
+    .alert.ok  { background: #F0FDF4; color: #16A34A; border: 1px solid #BBF7D0; }
+    .alert.show { display: block; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; background: var(--navy); color: #fff;
+      padding: 12px 20px; border-radius: 10px; font-weight: 600; font-size: 13px;
+      box-shadow: 0 4px 20px rgba(15,32,66,.25); display: none; z-index: 999;
+      border-left: 3px solid var(--teal);
+    }
+    .toast.show { display: block; animation: slideUp .3s; }
+    @keyframes slideUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-theme.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-cvparser-sombre.css') }}"/>
+</head>
+<body>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:24px">
+    <a href="/" class="logo-wrap">
+      <svg class="logo-svg" viewBox="0 0 26 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="lgDocS" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#1A5CFF" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#0F2042"/>
+          </linearGradient>
+          <linearGradient id="lgScanS" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#00ECC6" stop-opacity="0"/>
+            <stop offset="50%" stop-color="#00ECC6" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#00ECC6" stop-opacity="0"/>
+          </linearGradient>
+          <clipPath id="dcS"><path d="M1,0 L19,0 L25,6 L25,32 L1,32 Z"/></clipPath>
+        </defs>
+        <path d="M1,0 L19,0 L25,6 L25,32 L1,32 Z" fill="url(#lgDocS)"/>
+        <path d="M19,0 L19,6 L25,6 Z" fill="rgba(255,255,255,0.25)"/>
+        <rect x="5" y="11" width="10" height="2" rx="1" fill="#00ECC6" opacity=".95"/>
+        <rect x="5" y="15.5" width="15" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="19" width="12" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="22.5" width="14" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="26" width="10" height="1.5" rx=".75" fill="rgba(255,255,255,.35)"/>
+        <rect x="1" y="0" width="24" height="5" fill="url(#lgScanS)" clip-path="url(#dcS)">
+          <animate attributeName="y" from="-5" to="33" dur="2.2s" repeatCount="indefinite"/>
+        </rect>
+      </svg>
+      <span class="logo-name">adbi<span>.cv</span></span>
+    </a>
+    <nav class="nav">
+      <a href="/app">CVthèque</a>
+      <a href="/needs">Besoins</a>
+      <a href="/rapprochement">Rapprochement</a>
+      <a href="/settings" class="active">Paramètres</a>
+    </nav>
+  </div>
+  <div class="user-info">
+    <span id="userName"></span>
+    <button class="btn-logout" onclick="logout()">Déconnexion</button>
+  </div>
+</div>
+
+<div class="page">
+  <div class="page-title">⚙️ Paramètres</div>
+  <div class="page-sub">Gérez votre profil, les utilisateurs et suivez l'activité de la plateforme.</div>
+
+  <!-- TABS -->
+  <div class="tabs" id="tabsRow">
+    <button class="tab-btn active" onclick="switchTab('profil')">👤 Mon profil</button>
+    <button class="tab-btn" onclick="switchTab('users')" id="tabBtnUsers" style="display:none">👥 Utilisateurs</button>
+    <button class="tab-btn" onclick="switchTab('activity')" id="tabBtnActivity" style="display:none">📊 Activité</button>
+    <button class="tab-btn" onclick="switchTab('llm')" id="tabBtnLlm" style="display:none">🤖 API &amp; LLM</button>
+  </div>
+
+  <!-- ── TAB: MON PROFIL ── -->
+  <div class="tab-panel active" id="tabProfil">
+    <div class="card">
+      <div class="card-title">Informations personnelles</div>
+      <div class="alert" id="profAlert"></div>
+      <div class="field">
+        <label>Adresse e-mail</label>
+        <input type="email" id="profEmail" disabled/>
+      </div>
+      <div class="field">
+        <label>Nom complet</label>
+        <input type="text" id="profName" placeholder="Prénom Nom"/>
+      </div>
+      <div class="field">
+        <label>Rôle</label>
+        <input type="text" id="profRole" disabled/>
+      </div>
+      <button class="btn-primary" onclick="saveName()">Enregistrer le nom</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Changer de mot de passe</div>
+      <div class="alert" id="pwAlert"></div>
+      <div class="field">
+        <label>Mot de passe actuel</label>
+        <input type="password" id="oldPw" placeholder="••••••••"/>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Nouveau mot de passe</label>
+          <input type="password" id="newPw" placeholder="Min. 8 caractères"/>
+        </div>
+        <div class="field">
+          <label>Confirmer</label>
+          <input type="password" id="newPw2" placeholder="••••••••"/>
+        </div>
+      </div>
+      <button class="btn-primary" onclick="changePassword()">Changer le mot de passe</button>
+    </div>
+  </div>
+
+  <!-- ── TAB: UTILISATEURS ── -->
+  <div class="tab-panel" id="tabUsers">
+
+    <!-- Invite -->
+    <div class="card">
+      <div class="card-title">Inviter un utilisateur</div>
+      <div class="row2">
+        <div class="field">
+          <label>Adresse e-mail *</label>
+          <input type="email" id="invEmail" placeholder="prenom@domaine.fr"/>
+        </div>
+        <div class="field">
+          <label>Rôle</label>
+          <select id="invRole">
+            <option value="user">Utilisateur</option>
+            <option value="superuser">Super admin</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn-primary" onclick="sendInvite()">Générer le lien d'invitation</button>
+      <div class="invite-result" id="invResult">
+        <div class="invite-label">Lien d'invitation (valable 72h)</div>
+        <a class="invite-link" id="invLink" onclick="copyInvite()" title="Cliquer pour copier"></a>
+        <div class="invite-copy" id="invCopy">Cliquez sur le lien pour le copier</div>
+      </div>
+    </div>
+
+    <!-- User list -->
+    <div class="card">
+      <div class="card-title">Utilisateurs de la plateforme</div>
+      <div id="usersContainer">
+        <div class="empty-state">Chargement…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: ACTIVITÉ ── -->
+  <div class="tab-panel" id="tabActivity">
+    <div class="card">
+      <div class="card-title">Journal d'activité</div>
+      <div id="activityContainer">
+        <div class="empty-state">Chargement…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: API & LLM ── -->
+  <div class="tab-panel" id="tabLlm">
+    <div class="card">
+      <div class="card-title">Service de langage</div>
+      <div id="llmAlert" class="alert"></div>
+
+      <div style="display:flex;gap:12px;margin-bottom:20px">
+        <div style="flex:1;border:2px solid var(--blue);background:var(--blue-l);border-radius:10px;padding:16px 20px">
+          <div style="font-size:15px;font-weight:800;color:var(--navy);margin-bottom:4px">OVHcloud AI Endpoints</div>
+          <div style="font-size:12px;color:var(--muted)">
+            Hébergé en Union européenne · sans clé ni inscription · rétention zéro,
+            vos données ne servent pas à entraîner les modèles.
+          </div>
+        </div>
+      </div>
+
+      <div style="font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:16px">
+        <strong>OpenAI et OpenRouter ont été retirés.</strong> Leurs clés vivaient en clair
+        dans le code, OpenAI était facturé, et ni l'un ni l'autre n'est hébergé en UE —
+        or un CV est une donnée personnelle. Le choix du modèle se fait désormais dans la
+        chaîne de secours ci-dessous.
+      </div>
+
+      <!-- Model input -->
+      <div class="field">
+        <label>Modèle principal</label>
+        <input type="text" id="llmModel" placeholder="Mistral-Small-3.2-24B-Instruct-2506"/>
+        <div style="font-size:11px;color:#9AAFC8;margin-top:4px">
+          Identifiants OVHcloud, sans barre oblique :
+          <code>Mistral-Small-3.2-24B-Instruct-2506</code>, <code>gpt-oss-20b</code>,
+          <code>Qwen3-Coder-30B-A3B-Instruct</code>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn-primary" onclick="saveLlm()">💾 Enregistrer</button>
+        <button class="btn-ghost" onclick="testLlm()" id="btnTestLlm">🧪 Tester la connexion</button>
+      </div>
+
+      <!-- Test result -->
+      <div id="testResult" style="display:none;margin-top:16px;padding:12px 16px;border-radius:8px;font-size:13px;font-weight:600"></div>
+    </div>
+
+    <!-- Chaîne de secours -->
+    <div class="card">
+      <div class="card-title">Chaîne de secours</div>
+      <div id="chaineAlert" class="alert"></div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.55">
+        Les services sont essayés <strong>dans l'ordre</strong> : le premier qui répond fournit
+        la réponse. Un service en panne, à court de quota ou dont la clé a expiré est
+        simplement sauté — l'analyse ne s'arrête plus pour autant.<br>
+        L'ordre par défaut est <strong>optimisé pour l'extraction de CV</strong> : d'abord les
+        modèles justes sur les nombres (l'ancienneté se calcule à partir des dates),
+        ensuite les plus réguliers, enfin les plus rapides.<br>
+        Les modèles OVHcloud fonctionnent sans clé, sont hébergés en UE et ne conservent
+        aucune donnée : ce sont les seuls à qui confier un CV.
+      </div>
+
+      <div id="chaineListe"></div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+        <button class="btn-primary" onclick="enregistrerChaine()">💾 Enregistrer la chaîne</button>
+        <button class="btn-ghost" onclick="ajouterService()">➕ Ajouter un service</button>
+        <button class="btn-ghost" onclick="reinitChaine()">↺ Revenir au défaut</button>
+      </div>
+    </div>
+
+    <!-- Current status -->
+    <div class="card">
+      <div class="card-title">État actuel</div>
+      <div id="llmStatus" style="font-size:13px;color:var(--muted)">Chargement…</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let currentUser = null;
+let isSuperuser = false;
+
+/* ── Auth ── */
+async function checkAuth() {
+  try {
+    const r = await fetch('/api/auth/me', { credentials: 'include' });
+    if (!r.ok) { window.location.href = '/login'; return; }
+    currentUser = await r.json();
+    isSuperuser = currentUser.role === 'superuser';
+    document.getElementById('userName').textContent = currentUser.full_name || currentUser.email;
+    if (isSuperuser) {
+      document.getElementById('tabBtnUsers').style.display = 'block';
+      document.getElementById('tabBtnActivity').style.display = 'block';
+      document.getElementById('tabBtnLlm').style.display = 'block';
+    }
+    loadProfile();
+  } catch { window.location.href = '/login'; }
+}
+
+async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  window.location.href = '/login';
+}
+
+/* ── Tabs ── */
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+  if (name === 'users') loadUsers();
+  if (name === 'activity') loadActivity();
+  if (name === 'llm') { loadLlm(); chargerChaine(); }
+}
+
+/* ── Profile ── */
+async function loadProfile() {
+  const r = await fetch('/api/settings/profile', { credentials: 'include' });
+  if (!r.ok) return;
+  const u = await r.json();
+  document.getElementById('profEmail').value = u.email;
+  document.getElementById('profName').value  = u.full_name || '';
+  document.getElementById('profRole').value  = u.role === 'superuser' ? 'Super admin' : 'Utilisateur';
+}
+
+async function saveName() {
+  const name = document.getElementById('profName').value.trim();
+  if (!name) { showAlert('profAlert', 'Le nom ne peut pas être vide', 'err'); return; }
+  const r = await fetch('/api/settings/profile', {
+    method: 'PATCH', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ full_name: name }),
+  });
+  if (r.ok) { showAlert('profAlert', 'Nom mis à jour', 'ok'); showToast('Profil mis à jour'); }
+  else { const d = await r.json(); showAlert('profAlert', d.error || 'Erreur', 'err'); }
+}
+
+async function changePassword() {
+  const old = document.getElementById('oldPw').value;
+  const nw  = document.getElementById('newPw').value;
+  const nw2 = document.getElementById('newPw2').value;
+  if (nw !== nw2) { showAlert('pwAlert', 'Les mots de passe ne correspondent pas', 'err'); return; }
+  const r = await fetch('/api/settings/profile', {
+    method: 'PATCH', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ old_password: old, password: nw }),
+  });
+  const d = await r.json();
+  if (r.ok) {
+    showAlert('pwAlert', 'Mot de passe mis à jour', 'ok');
+    document.getElementById('oldPw').value = '';
+    document.getElementById('newPw').value = '';
+    document.getElementById('newPw2').value = '';
+  } else { showAlert('pwAlert', d.error || 'Erreur', 'err'); }
+}
+
+/* ── Users ── */
+async function loadUsers() {
+  const r = await fetch('/api/settings/users', { credentials: 'include' });
+  if (!r.ok) return;
+  const users = await r.json();
+  const container = document.getElementById('usersContainer');
+  if (!users.length) { container.innerHTML = '<div class="empty-state">Aucun utilisateur</div>'; return; }
+
+  container.innerHTML = `
+    <table class="user-table">
+      <thead><tr>
+        <th></th>
+        <th>Utilisateur</th>
+        <th>Rôle</th>
+        <th>Statut</th>
+        <th>Activité</th>
+        <th>Dernière activité</th>
+        <th>Actions</th>
+      </tr></thead>
+      <tbody id="usersTbody"></tbody>
+    </table>`;
+
+  const tbody = document.getElementById('usersTbody');
+  users.forEach(u => {
+    const init = (u.full_name || u.email).split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase() || '?';
+    const lastSeen = u.last_seen ? new Date(u.last_seen).toLocaleDateString('fr-FR', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+    const isMe = u.id === currentUser.id;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><div class="user-avatar-sm">${init}</div></td>
+      <td>
+        <div style="font-weight:700;font-size:13px">${u.full_name || '—'}</div>
+        <div style="font-size:11px;color:var(--muted)">${u.email}</div>
+      </td>
+      <td><span class="role-badge role-${u.role}">${u.role === 'superuser' ? 'Super admin' : 'Utilisateur'}</span></td>
+      <td><span class="active-badge ${u.active !== false ? 'active-yes' : 'active-no'}">${u.active !== false ? 'Actif' : 'Inactif'}</span></td>
+      <td>
+        <div class="stat-mini">
+          <span>🔑 <strong>${u.logins}</strong> connexions</span>
+          <span>📄 <strong>${u.cv_uploads}</strong> CVs</span>
+          <span>🎯 <strong>${u.matches}</strong> matchings</span>
+        </div>
+      </td>
+      <td style="font-size:12px;color:var(--muted)">${lastSeen}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          ${!isMe ? `
+            <button class="btn-sm btn-ghost" onclick="toggleRole('${u.id}','${u.role}')" title="Changer le rôle">
+              ${u.role === 'superuser' ? '↓ User' : '↑ Admin'}
+            </button>
+            <button class="btn-sm ${u.active !== false ? 'btn-ghost' : 'btn-primary'}"
+              onclick="toggleActive('${u.id}',${u.active !== false})">${u.active !== false ? 'Désactiver' : 'Activer'}</button>
+            <button class="btn-sm btn-danger" onclick="deleteUserConfirm('${u.id}','${u.full_name || u.email}')">✕</button>
+          ` : '<span style="font-size:11px;color:var(--muted)">Vous</span>'}
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function toggleRole(userId, currentRole) {
+  const newRole = currentRole === 'superuser' ? 'user' : 'superuser';
+  const r = await fetch(`/api/settings/users/${userId}/role`, {
+    method: 'PATCH', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role: newRole }),
+  });
+  if (r.ok) { showToast('Rôle mis à jour'); loadUsers(); }
+  else { const d = await r.json(); showToast(d.error || 'Erreur'); }
+}
+
+async function toggleActive(userId, currentlyActive) {
+  const r = await fetch(`/api/settings/users/${userId}/active`, {
+    method: 'PATCH', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ active: !currentlyActive }),
+  });
+  if (r.ok) { showToast('Statut mis à jour'); loadUsers(); }
+}
+
+async function deleteUserConfirm(userId, name) {
+  if (!confirm(`Supprimer le compte de ${name} ?`)) return;
+  const r = await fetch(`/api/settings/users/${userId}`, { method: 'DELETE', credentials: 'include' });
+  if (r.ok) { showToast('Utilisateur supprimé'); loadUsers(); }
+}
+
+/* ── Invitations ── */
+async function sendInvite() {
+  const email = document.getElementById('invEmail').value.trim();
+  const role  = document.getElementById('invRole').value;
+  if (!email) { showToast('Email requis'); return; }
+
+  const r = await fetch('/api/settings/invite', {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, role }),
+  });
+  const d = await r.json();
+  if (!r.ok) { showToast(d.error || 'Erreur'); return; }
+
+  const result = document.getElementById('invResult');
+  const link   = document.getElementById('invLink');
+  link.textContent = d.invite_url;
+  link.href = d.invite_url;
+  result.classList.add('show');
+  showToast('Lien d\'invitation généré');
+}
+
+function copyInvite() {
+  const link = document.getElementById('invLink').textContent;
+  navigator.clipboard.writeText(link).then(() => {
+    document.getElementById('invCopy').textContent = '✓ Lien copié dans le presse-papier !';
+    document.getElementById('invCopy').style.color = '#007A65';
+  });
+}
+
+/* ── Activity ── */
+async function loadActivity() {
+  const r = await fetch('/api/settings/activity?limit=100', { credentials: 'include' });
+  if (!r.ok) return;
+  const events = await r.json();
+  const container = document.getElementById('activityContainer');
+
+  if (!events.length) {
+    container.innerHTML = '<div class="empty-state">Aucune activité enregistrée</div>';
+    return;
+  }
+
+  const icons = { login: '🔑', cv_upload: '📄', match_run: '🎯' };
+  const labels = {
+    login:     e => `<strong>${e.user_email}</strong> s'est connecté`,
+    cv_upload: e => `<strong>${e.user_email}</strong> a importé un CV${e.detail?.name ? ' — ' + e.detail.name : ''}`,
+    match_run: e => `<strong>${e.user_email}</strong> a lancé un matching${e.detail?.results ? ' (' + e.detail.results + ' résultats)' : ''}`,
+  };
+
+  container.innerHTML = events.map(e => {
+    const dt = e.ts ? new Date(e.ts).toLocaleString('fr-FR', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+    const label = labels[e.type] ? labels[e.type](e) : `<strong>${e.user_email}</strong> — ${e.type}`;
+    return `
+      <div class="act-event">
+        <div class="act-icon ${e.type === 'cv_upload' ? 'upload' : e.type === 'match_run' ? 'match' : 'login'}">
+          ${icons[e.type] || '•'}
+        </div>
+        <div class="act-body">
+          <div class="act-text">${label}</div>
+          <div class="act-meta">${dt}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+/* ── Helpers ── */
+function showAlert(id, msg, type) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = `alert ${type} show`;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+/* ── LLM ── */
+// Un seul fournisseur depuis le retrait d'OpenAI et d'OpenRouter : il n'y a
+// plus de sélecteur, mais la variable reste lue par saveLlm().
+const _selectedProvider = 'ovh';
+
+function selectProvider() { /* plus de choix : conservé pour compatibilité */ }
+
+async function loadLlm() {
+  try {
+    const r = await fetch('/api/settings/llm', { credentials: 'include' });
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('llmModel').value = d.model;
+    // Un modèle enregistré mais incompatible avec le fournisseur actif est
+    // écarté au profit du modèle par défaut. Sans ce message, on croirait que
+    // c'est lui qui est utilisé — c'est ce qui rendait la panne invisible.
+    const avertIgnore = d.modele_ignore ? `
+      <div style="margin-top:10px;padding:8px 12px;border-radius:8px;font-size:12px;
+                  background:var(--adbi-attention-fond);color:var(--adbi-attention);
+                  border:1px solid var(--adbi-attention-bord)">
+        Le modèle enregistré <code>${d.modele_ignore}</code> n'est pas un modèle
+        OVHcloud : il est ignoré, c'est <code>${d.model}</code> qui est utilisé.
+      </div>` : '';
+
+    document.getElementById('llmStatus').innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span style="font-weight:700;color:var(--navy)">OVHcloud</span>
+        <span style="background:var(--blue-l);color:var(--blue);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">${d.model}</span>
+        <span style="color:var(--muted);font-size:12px">${d.url}</span>
+      </div>${avertIgnore}`;
+  } catch {}
+}
+
+async function saveLlm() {
+  const model = document.getElementById('llmModel').value.trim();
+  const r = await fetch('/api/settings/llm', {
+    method: 'PATCH', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: _selectedProvider, model }),
+  });
+  const d = await r.json();
+  if (!r.ok) { showAlert('llmAlert', d.error || 'Erreur', true); return; }
+  showAlert('llmAlert', `✓ Provider changé : ${_selectedProvider} · ${d.model}`, false);
+  loadLlm();
+}
+
+async function testLlm() {
+  const btn = document.getElementById('btnTestLlm');
+  const res = document.getElementById('testResult');
+  btn.disabled = true; btn.textContent = '⏳ Test en cours…';
+  res.style.display = 'none';
+  try {
+    const r = await fetch('/api/settings/llm/test', { method: 'POST', credentials: 'include' });
+    const d = await r.json();
+    // Couleurs prises dans la charte ADBI (jetons) et non écrites en dur :
+    // elles suivent ainsi le thème clair comme le sombre.
+    if (d.success) {
+      res.style.display = 'block';
+      res.style.background = 'var(--adbi-ok-fond)';
+      res.style.color = 'var(--adbi-ok)';
+      res.style.border = '1px solid var(--adbi-ok-bord)';
+      res.innerHTML = `✅ Connexion OK — <strong>${d.provider}</strong> · <code>${d.model}</code><br>Réponse : <em>${d.response}</em>`;
+    } else {
+      res.style.display = 'block';
+      res.style.background = 'var(--adbi-erreur-fond)';
+      res.style.color = 'var(--adbi-erreur)';
+      res.style.border = '1px solid var(--adbi-erreur-bord)';
+      res.innerHTML = `❌ Échec — ${d.error}`;
+    }
+  } catch (e) {
+    res.style.display = 'block';
+    res.style.background = '#FEF2F2'; res.style.color = '#DC2626'; res.style.border = '1px solid #FECACA';
+    res.textContent = `❌ Erreur réseau : ${e.message}`;
+  }
+  btn.disabled = false; btn.textContent = '🧪 Tester la connexion';
+}
+
+/* ── Chaîne de secours ── */
+let _chaine = [];
+
+async function chargerChaine() {
+  try {
+    const r = await fetch('/api/settings/llm/chaine', { credentials: 'include' });
+    if (!r.ok) return;
+    const d = await r.json();
+    _chaine = d.entrees;
+    dessinerChaine();
+  } catch (e) { /* l'onglet reste utilisable sans la chaîne */ }
+}
+
+function dessinerChaine() {
+  const zone = document.getElementById('chaineListe');
+  if (!_chaine.length) {
+    zone.innerHTML = '<div style="font-size:13px;color:var(--muted)">Aucun service. ' +
+                     'Ajoutez-en un, ou revenez au défaut.</div>';
+    return;
+  }
+  zone.innerHTML = _chaine.map((e, i) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:6px;
+                border:1px solid var(--border);border-radius:9px;flex-wrap:wrap;
+                opacity:${e.actif ? '1' : '.5'}">
+      <span style="font-weight:800;font-size:12px;color:var(--muted);width:16px">${i + 1}</span>
+
+      <button class="btn-ghost" title="Monter" onclick="deplacerService(${i},-1)"
+              style="padding:2px 8px" ${i === 0 ? 'disabled' : ''}>↑</button>
+      <button class="btn-ghost" title="Descendre" onclick="deplacerService(${i},1)"
+              style="padding:2px 8px" ${i === _chaine.length - 1 ? 'disabled' : ''}>↓</button>
+
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+        <input type="checkbox" ${e.actif ? 'checked' : ''} onchange="basculerService(${i},this.checked)">
+        actif
+      </label>
+
+      <div style="flex:1;min-width:220px">
+        <input type="text" value="${e.nom}" onchange="majService(${i},'nom',this.value)"
+               style="font-weight:700;margin-bottom:3px" placeholder="Nom du service">
+        <input type="text" value="${e.modele}" onchange="majService(${i},'modele',this.value)"
+               placeholder="Identifiant du modèle">
+        <input type="text" value="${e.url}" onchange="majService(${i},'url',this.value)"
+               placeholder="URL /chat/completions" style="font-size:11px;margin-top:3px">
+        <input type="password" placeholder="${e.a_une_cle ? 'Clé enregistrée : ' + e.cle_masquee : 'Clé API (facultative)'}"
+               onchange="majService(${i},'cle',this.value)" style="font-size:11px;margin-top:3px">
+      </div>
+
+      <span id="voyant-${i}" style="font-size:11px;font-weight:700;color:var(--muted);min-width:78px">—</span>
+      <button class="btn-ghost" onclick="testerService(${i})" style="padding:4px 10px">Tester</button>
+      <button class="btn-ghost" onclick="supprimerService(${i})" style="padding:4px 10px"
+              title="Retirer de la chaîne">✕</button>
+    </div>`).join('');
+}
+
+function majService(i, champ, valeur) { _chaine[i][champ] = valeur.trim(); }
+function basculerService(i, actif)    { _chaine[i].actif = actif; dessinerChaine(); }
+function supprimerService(i)          { _chaine.splice(i, 1); dessinerChaine(); }
+
+function deplacerService(i, sens) {
+  const j = i + sens;
+  if (j < 0 || j >= _chaine.length) return;
+  [_chaine[i], _chaine[j]] = [_chaine[j], _chaine[i]];
+  dessinerChaine();
+}
+
+function ajouterService() {
+  _chaine.push({ actif: true, nom: 'Nouveau service', modele: '',
+                 url: 'https://', cle: '', a_une_cle: false, cle_masquee: '' });
+  dessinerChaine();
+}
+
+async function enregistrerChaine() {
+  const r = await fetch('/api/settings/llm/chaine', {
+    method: 'PUT', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entrees: _chaine }),
+  });
+  const d = await r.json();
+  if (!r.ok) { showAlert('chaineAlert', d.error || 'Erreur', true); return false; }
+  showAlert('chaineAlert', `✓ Chaîne enregistrée — ${d.nombre} service(s)`, false);
+  await chargerChaine();
+  return true;
+}
+
+async function reinitChaine() {
+  await fetch('/api/settings/llm/chaine/defaut', { method: 'POST', credentials: 'include' });
+  showAlert('chaineAlert', '✓ Chaîne revenue au réglage par défaut', false);
+  chargerChaine();
+}
+
+async function testerService(i) {
+  const voyant = document.getElementById('voyant-' + i);
+  voyant.textContent = '⏳ test…';
+  voyant.style.color = 'var(--muted)';
+
+  /* La chaîne est enregistrée avant le test : le serveur teste par position,
+     et les clés ne quittent jamais le serveur — on ne peut donc pas tester une
+     entrée qui n'existe pas encore chez lui. */
+  if (!await enregistrerChaine()) return;
+
+  try {
+    const r = await fetch('/api/settings/llm/chaine/test', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index: i }),
+    });
+    const d = await r.json();
+    const v = document.getElementById('voyant-' + i);
+    if (d.ok) {
+      v.textContent = `● ${d.ms} ms`;
+      v.style.color = '#15803d';                 // vert : le service répond
+    } else {
+      v.textContent = '● ' + d.detail;
+      // Un quota atteint n'est pas une panne : il se réarme seul, d'où l'orange.
+      v.style.color = d.detail.includes('quota') ? 'var(--adbi-attention)' : '#c8102e';
+    }
+  } catch (e) {
+    document.getElementById('voyant-' + i).textContent = '● injoignable';
+  }
+}
+
+document.getElementById('llmModel').addEventListener('input', function() {
+  this.dataset.userEdited = '1';
+});
+
+checkAuth();
+</script>
+<script src="/static/etat-ia.js"></script>
+</body>
+</html>

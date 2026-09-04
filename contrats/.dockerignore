@@ -1,0 +1,21 @@
+# Ne pas copier ces elements dans l'image Docker
+node_modules
+npm-debug.log
+*.zip
+
+# Fichiers propres a une machine (jamais dans l'image)
+data/secrets.json
+data/contrats.sqlite
+
+# Lanceurs Windows / docs : inutiles dans le conteneur
+Demarrer-ADBI-Contrats.bat
+Creer-Raccourci-Bureau.ps1
+icone.ico
+LISEZ-MOI.txt
+LISEZ-MOI-DOCKER.txt
+
+# Divers
+.git
+.gitignore
+.claude
+scripts

@@ -1,0 +1,18 @@
+# =====================================================================
+#  ADBI - Generateur de contrats  --  Lancement en une commande
+#
+#    docker compose up -d --build        (demarrer)
+#    docker compose down                 (arreter)
+#
+#  Puis ouvrir :  http://localhost:4100
+# =====================================================================
+services:
+  adbi-contrats:
+    build: .
+    image: adbi-contrats:latest
+    container_name: adbi-contrats
+    ports:
+      - "4100:4100"          # host:conteneur  (changez le 1er nombre pour un autre port local)
+    volumes:
+      - ./data:/app/data     # referentiel, historique et cle API conserves sur la machine hote
+    restart: unless-stopped

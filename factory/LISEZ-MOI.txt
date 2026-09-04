@@ -1,0 +1,184 @@
+ADBI FACTORY
+============
+
+Plateforme locale qui regroupe les outils internes ADBI derriere une seule
+page d'accueil. Rien ne sort du poste : tout tourne en localhost.
+
+
+DEMARRER
+--------
+Double-cliquez sur "Demarrer-ADBI-Factory.bat".
+Le navigateur s'ouvre sur http://localhost:4000
+
+Pour un raccourci sur le Bureau : clic droit sur
+"Creer-Raccourci-Bureau.ps1" > "Executer avec PowerShell".
+
+Laissez la fenetre noire OUVERTE pendant l'utilisation.
+La fermer arrete la Factory ET les modules qu'elle a lances.
+
+
+MODULES
+-------
+  One pager  (port 4200)    CV -> dossier de competences ADBI      Node
+  Contrats   (port 4100)    sous-traitance, CDI, CDD               Node
+  CV Parser  (port 5000)    extraction Docling, base de CV         Python
+  Calculatrice TJM/CJM      servie directement par la Factory      -
+
+Les trois premiers sont des applications independantes : la Factory les
+demarre automatiquement au premier clic sur leur tuile, puis les affiche
+dans son cadre.
+
+ATTENTION - le CV Parser met une trentaine de secondes a demarrer : il
+charge le moteur Docling (l'import seul prend ~22 s). C'est normal, la
+Factory patiente jusqu'a 90 s et affiche un message d'attente. Il lui faut
+Python 3.14 (la 3.13 presente sur le poste n'a pas les dependances).
+
+Une tuile grisee ("Gestion ESN") est un emplacement reserve : elle
+s'activera quand l'application sera raccordee.
+
+
+CLAIR OU SOMBRE
+---------------
+La plateforme s'ouvre en CLAIR. Le bouton en bas du rail de gauche bascule
+en sombre ; le choix est memorise et transmis au module affiche dans le
+cadre.
+
+Une application lancee SEULE (par son propre .bat) affiche un petit bouton
+rond en bas a droite, qui fait la meme chose. Il est ajoute automatiquement
+par adbi-theme.js et n'apparait ni dans la Factory (qui a son rail) ni dans
+un module affiche en cadre (qui suit la Factory).
+
+ATTENTION, double lecture a connaitre si vous touchez au CSS :
+  - le theme par DEFAUT DE LA PLATEFORME est le CLAIR ;
+  - mais dans la feuille de style, c'est le SOMBRE qui est le theme
+    "sans attribut". Le clair s'obtient par data-theme="clair" sur <html>.
+Chaque page pose donc cet attribut directement dans son HTML (le clair
+s'applique meme si le script ne se charge pas), et adbi-theme.js ne le
+retire que si l'utilisateur a explicitement choisi le sombre.
+
+Chaque application tourne sur son propre port, donc sur une origine
+differente : elles ne partagent ni stockage ni cookie. Concretement :
+  - la Factory pousse son theme au module qu'elle affiche en cadre ;
+  - une application ouverte SEULE (son propre .bat, ou "Nouvel onglet")
+    garde le dernier theme choisi sur son port a elle.
+Les deux peuvent donc differer si vous les reglez separement. C'est voulu :
+sans serveur commun, il n'y a pas de preference partageable entre ports.
+
+
+CHARTE GRAPHIQUE COMMUNE
+------------------------
+Toutes les applications partagent la meme charte ADBI (accents violet ->
+magenta -> orange, les trois couleurs du logo), en sombre comme en clair.
+
+  theme/adbi-theme.css        LA SOURCE des couleurs (les deux palettes).
+                              C'est le seul endroit ou les modifier.
+  theme/adbi-theme.js         pose le theme avant l'affichage, le memorise,
+                              et synchronise les modules affiches en cadre.
+  theme/fonts/                Poppins, en local.
+  scripts/sync-theme.js       recopie tout cela dans chaque application.
+
+Trois jetons a connaitre si vous ecrivez du CSS. Ils donnent l'ENCRE a
+poser sur un aplat de couleur ; n'ecrivez jamais #fff en dur a ces
+endroits, le rendu serait faux dans l'un des deux themes :
+  --adbi-sur-etat    sur une pastille d'etat (ok / attention / erreur).
+                     En sombre les etats sont clairs, donc ce jeton est
+                     fonce ; en clair c'est l'inverse.
+  --adbi-sur-accent  sur le magenta ou le degrade ADBI (blanc).
+  --adbi-sur-orange  sur un aplat orange plein. L'orange du logo est clair :
+                     du blanc dessus ne tient que 3,1:1, l'encre doit etre
+                     foncee dans les deux themes.
+
+Apres avoir modifie la charte :
+
+    node scripts/sync-theme.js
+
+Chaque application garde sa copie (elle doit s'afficher correctement meme
+lancee seule, sans la Factory) plus un fichier de surcharge qui lui est
+propre : adbi-onepager-sombre.css, adbi-contrats-sombre.css,
+adbi-cvparser-sombre.css. Le suffixe "-sombre" est historique : ces trois
+fichiers gerent desormais LES DEUX themes. Ils n'ont pas ete renommes pour
+ne pas casser les <link> des gabarits.
+
+Ne modifiez jamais la copie de adbi-theme.css ni celle de adbi-theme.js
+dans une application : elles seraient ecrasees a la synchronisation
+suivante. Tout ajustement propre a une application va dans SON fichier de
+surcharge.
+
+La police commune est Poppins, en fichiers locaux (theme/fonts/*.woff2),
+recopies eux aussi par le script.
+
+Seule dependance a Internet qui subsiste : la calculatrice TJM charge ses
+icones depuis cdn.jsdelivr.net (jeu Tabler, 19 icones). Hors ligne, les
+icones ne s'affichent pas mais la calculatrice reste utilisable. Pour la
+rendre 100 % autonome il faudrait telecharger tabler-icons.min.css et sa
+police dans theme/, puis changer le lien en tete du fichier
+public/modules/calculatrice.html.
+
+Deux surfaces restent volontairement CLAIRES, ce sont des documents
+destines a l'impression :
+  - one-pager/public/onepager.css       le dossier de competences A4
+  - CV Parser templates/company_cv.html le CV au format societe
+
+
+AUTHENTIFICATION DU CV PARSER
+-----------------------------
+Elle est DESACTIVEE : l'application tourne en local, elle ne demande plus
+de mot de passe et vous ouvre directement le tableau de bord.
+
+Le code d'authentification est toujours en place, simplement court-circuite.
+Pour le reactiver (indispensable si l'application est un jour servie
+ailleurs que sur le poste), posez la variable d'environnement :
+
+    ADBI_AUTH=on
+
+L'interrupteur est lu dans C:\ADBI CV Parser\core\auth.py.
+
+
+CONFIGURATION
+-------------
+Tout se regle dans "modules.json" :
+
+  dossier   chemin de l'application sur le poste
+            (a corriger si vous deplacez One pager ou Contrats)
+  port      port d'ecoute de l'application
+  type      service  = application lancee par la Factory
+            statique = page servie par la Factory
+            bientot  = tuile grisee, non cliquable
+  entree    fichier principal (server.js, app.py...)
+  commande  executable a lancer. Absent = Node (celui qui fait tourner
+            la Factory). Le CV Parser utilise "py".
+  arguments arguments passes a la commande.
+            Absent = [entree]. Le CV Parser : ["-3.14", "app.py"]
+  delai     secondes d'attente avant d'abandonner (40 par defaut)
+
+Apres modification, relancez la Factory.
+
+
+AJOUTER UN MODULE
+-----------------
+1. Ajoutez un bloc dans "modules.json".
+2. Pour une nouvelle icone : ajoutez son trace SVG dans l'objet ICONES
+   de "public/factory.js", puis referencez son nom dans "icone".
+
+
+EN CAS DE PROBLEME
+------------------
+"Le module n'a pas demarre"
+    Ouvrez "logs/<module>.log" : il contient la sortie de l'application.
+    Verifiez que ses dependances sont installees (npm install dans son
+    dossier) et que le chemin de "modules.json" est correct.
+
+"Application introuvable"
+    Le chemin indique dans "modules.json" n'existe pas sur ce poste.
+
+"ADBI Factory est deja lancee"
+    Une autre fenetre tourne deja : allez sur http://localhost:4000
+
+Un module deja lance a la main (par son propre .bat) est detecte : la
+Factory ne le relance pas, elle l'affiche tel quel.
+
+
+TECHNIQUE
+---------
+Node 18+ uniquement, aucune dependance npm (modules natifs http/net/fs).
+Port 4000. Ecoute limitee a 127.0.0.1.

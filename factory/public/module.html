@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- data-theme="clair" : thème par défaut de la plateforme (voir index.html).
+     data-theme-bouton="non" : la bascule vit dans le rail. -->
+<html lang="fr" data-theme="clair" data-theme-bouton="non">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADBI Factory</title>
+<link rel="icon" href="/logo-adbi.png">
+<!-- Avant les feuilles de style : pose le thème avant le premier affichage. -->
+<script src="/adbi-theme.js"></script>
+<link rel="stylesheet" href="/adbi-theme.css">
+<link rel="stylesheet" href="/factory.css">
+</head>
+<body class="module">
+
+<div class="app">
+
+  <aside class="rail" id="rail"></aside>
+
+  <div class="contenu">
+
+    <header class="barre-module">
+      <a href="/" title="Retour aux modules"><img class="logo" src="/logo-adbi.png" alt="ADBI"></a>
+      <div class="sep"></div>
+      <span class="titre" id="titre">Chargement…</span>
+      <div class="actions">
+        <a class="bouton" id="lien-externe" href="#" target="_blank" rel="noopener" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            <path d="M15 3h6v6"/><path d="M10 14 21 3"/>
+          </svg>
+          Nouvel onglet
+        </a>
+        <a class="bouton principal" href="/">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+               stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+          </svg>
+          Modules
+        </a>
+      </div>
+    </header>
+
+    <div class="cadre">
+      <iframe id="cadre-module" title="Module ADBI" hidden></iframe>
+      <div class="voile" id="voile">
+        <div class="rondelle" id="rondelle"></div>
+        <h2 id="voile-titre">Démarrage du module…</h2>
+        <p id="voile-texte">Première ouverture : le lancement peut prendre quelques secondes.</p>
+        <a class="bouton" href="/" id="voile-retour" hidden>Retour aux modules</a>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script src="/rail.js"></script>
+<script src="/module.js"></script>
+</body>
+</html>

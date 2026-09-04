@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="fr" data-theme="clair">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One pager — ADBI</title>
+<!-- Bascule sombre / clair de la charte. À charger AVANT les styles : il pose
+     l'attribut data-theme sur <html> avant le premier affichage, sinon la page
+     clignoterait en sombre puis passerait en clair. -->
+<script src="adbi-theme.js"></script>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="onepager.css">
+<!-- Charte ADBI (copie synchronisée depuis la Factory, ne pas modifier), puis
+     la surcharge propre à One pager. L'ordre compte : la surcharge doit se
+     charger en dernier. -->
+<link rel="stylesheet" href="adbi-theme.css">
+<link rel="stylesheet" href="adbi-onepager-sombre.css">
+</head>
+<body>
+
+<header class="barre">
+  <div class="marque"><span class="logo">adbi</span><span class="appname">One pager</span></div>
+  <nav class="etapes">
+    <button class="etape actif" data-vue="import"><i>1</i> Import</button>
+    <button class="etape" data-vue="validation" disabled><i>2</i> Validation</button>
+    <button class="etape" data-vue="rendu" disabled><i>3</i> One-pager</button>
+  </nav>
+  <div class="barre-actions">
+    <button class="onglet" data-vue="matching">Rechercher un profil</button>
+    <button class="onglet" data-vue="historique">
+      Historique <span class="pastille" id="historique-nb">0</span>
+    </button>
+  </div>
+</header>
+
+<main>
+
+<!-- ══════════════════════════════════ 1. IMPORT ══════════════════════════ -->
+<section id="vue-import" class="vue active">
+  <div class="depot" id="depot">
+    <svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.4">
+      <path d="M12 16V4m0 0L8 8m4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+    </svg>
+    <h1>Déposez un ou plusieurs CV</h1>
+    <p>N'importe quelle mise en page. Les fichiers sont traités les uns après les autres.</p>
+    <div class="formats"><span>PDF</span><span>Word</span><span>Texte</span></div>
+    <div>
+      <button class="btn primaire" id="btn-parcourir">Choisir des fichiers</button>
+    </div>
+    <input type="file" id="fichier" accept=".pdf,.docx,.doc,.txt" multiple hidden>
+    <div class="note">Tout reste sur ce poste : aucun envoi vers Internet.</div>
+  </div>
+
+  <div class="file" id="file-attente" hidden>
+    <div class="file-entete">
+      <h2 id="file-titre">Traitement en cours…</h2>
+      <span class="grandit"></span>
+      <button class="btn petit" id="btn-file-vider" hidden>Nouvel import</button>
+    </div>
+    <div class="jauge"><div class="jauge-barre" id="jauge-barre"></div></div>
+    <ul id="liste-file"></ul>
+  </div>
+
+  <div class="alerte erreur" id="import-erreur" hidden></div>
+</section>
+
+<!-- ══════════════════════════════ 2. VALIDATION ══════════════════════════ -->
+<section id="vue-validation" class="vue">
+  <div class="bandeau-qualite" id="bandeau-qualite"></div>
+  <div class="split">
+    <aside class="panneau-source">
+      <h2>Texte source</h2>
+      <p class="aide">Référence pour vérifier ce que l'extraction a compris.</p>
+      <pre id="source-brut"></pre>
+    </aside>
+    <div class="panneau-champs" id="champs"></div>
+  </div>
+  <div class="pied-actions">
+    <button class="btn fantome" data-goto="import">← Importer un autre CV</button>
+    <span class="grandit"></span>
+    <button class="btn primaire" id="btn-valider">Générer le one-pager →</button>
+  </div>
+</section>
+
+<!-- ═════════════════════════════════ 3. RENDU ════════════════════════════ -->
+<section id="vue-rendu" class="vue">
+  <div class="rendu-grille">
+    <aside class="reglages">
+      <h2>Réglages</h2>
+
+      <label class="champ">
+        <span>Gabarit</span>
+        <select id="opt-template"></select>
+      </label>
+
+      <label class="champ">
+        <span>Anonymisation</span>
+        <select id="opt-anon">
+          <option value="trigram" selected>Trigramme (dossier ESN)</option>
+          <option value="none">Nom complet</option>
+          <option value="client_prefix">Code client</option>
+        </select>
+      </label>
+
+      <label class="champ" id="champ-client" hidden>
+        <span id="label-client">Trigramme</span>
+        <input type="text" id="opt-client" maxlength="8" placeholder="calculé automatiquement">
+      </label>
+
+      <div class="champ">
+        <span>Portrait</span>
+        <div class="portrait-choix">
+          <button class="btn petit" id="btn-photo">Importer une photo…</button>
+          <button class="btn petit" id="btn-photo-retirer" hidden>Retirer</button>
+          <input type="file" id="photo" accept="image/*" hidden>
+        </div>
+        <div class="galerie avatars" id="galerie-avatars"></div>
+      </div>
+
+      <div class="champ">
+        <span>Badges de certification <small>(bas de page, 5 max)</small></span>
+        <div class="badge-choix">
+          <select id="select-badge" aria-label="Certification à ajouter">
+            <option value="">Choisir une certification…</option>
+          </select>
+          <button class="btn petit" id="btn-badge-select" disabled>Ajouter</button>
+        </div>
+        <ul class="badges-retenus" id="badges-retenus"></ul>
+
+        <div class="badge-actions">
+          <button class="btn petit fantome" id="btn-badge-ajouter">＋ Ajouter une certification…</button>
+          <button class="btn petit fantome danger" id="btn-badge-supprimer" hidden>Supprimer de la bibliothèque</button>
+        </div>
+        <input type="file" id="badge-fichier" accept="image/png,image/jpeg" hidden>
+
+        <!-- Formulaire de rangement : une image sans editeur ni libelle
+             finirait dans un fourre-tout et deviendrait introuvable. -->
+        <form class="badge-form" id="badge-form" hidden>
+          <img id="badge-apercu" alt="">
+          <div class="badge-form-champs">
+            <label>
+              <span>Éditeur</span>
+              <input list="liste-editeurs" id="badge-editeur" maxlength="40"
+                     placeholder="Databricks, TIBCO…" required>
+              <datalist id="liste-editeurs"></datalist>
+            </label>
+            <label>
+              <span>Libellé</span>
+              <input type="text" id="badge-libelle" maxlength="60"
+                     placeholder="Data Engineer Associate" required>
+            </label>
+          </div>
+          <div class="badge-form-actions">
+            <button type="submit" class="btn petit primaire" id="btn-badge-enregistrer">Enregistrer</button>
+            <button type="button" class="btn petit fantome" id="btn-badge-annuler">Annuler</button>
+          </div>
+        </form>
+      </div>
+
+      <label class="champ">
+        <span>Densité</span>
+        <select id="opt-density">
+          <option value="compact">Compacte</option>
+          <option value="normal" selected>Normale</option>
+          <option value="aere">Aérée</option>
+        </select>
+      </label>
+
+      <label class="champ">
+        <span>Angle</span>
+        <select id="opt-focus">
+          <option value="neutre">Neutre</option>
+          <option value="technique">Technique</option>
+          <option value="management">Management</option>
+        </select>
+      </label>
+
+      <label class="champ">
+        <span>Nombre de missions</span>
+        <input type="number" id="opt-maxexp" min="1" max="8" value="3">
+      </label>
+
+      <label class="champ">
+        <span>Cibler une offre <small>(optionnel)</small></span>
+        <textarea id="opt-target" rows="5" placeholder="Collez ici la fiche de poste : le classement des missions et des réalisations s'adapte."></textarea>
+      </label>
+
+      <div class="ecartes">
+        <h3>Écarté du one-pager <span id="ecartes-nb" class="pastille">0</span></h3>
+        <p class="aide">Cliquez pour réintégrer une mission.</p>
+        <ul id="liste-ecartes"></ul>
+      </div>
+    </aside>
+
+    <div class="apercu">
+      <div class="apercu-actions">
+        <button class="btn fantome" data-goto="validation">← Corriger les données</button>
+        <div class="zoom">
+          <button class="btn petit" id="zoom-moins" title="Réduire">−</button>
+          <span id="zoom-valeur">ajusté</span>
+          <button class="btn petit" id="zoom-plus" title="Agrandir">+</button>
+          <button class="btn petit" id="zoom-reset" title="Ajuster à la fenêtre">⤢</button>
+        </div>
+        <span class="grandit"></span>
+        <button class="btn" id="btn-json">JSON</button>
+        <button class="btn" id="btn-pptx">PowerPoint</button>
+        <button class="btn primaire" id="btn-pdf">Imprimer / PDF</button>
+      </div>
+      <div class="scene">
+        <div id="slide" class="slide"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ RECHERCHER UN PROFIL ══════════════════════ -->
+<section id="vue-matching" class="vue">
+  <div class="entete-vue">
+    <div>
+      <h1>Rechercher un profil</h1>
+      <p class="aide">Collez une fiche de poste : les profils enregistrés sont classés par adéquation, avec les raisons.</p>
+    </div>
+  </div>
+
+  <div class="matching-grille">
+    <aside class="offre-panneau">
+      <h2>Fiche de poste</h2>
+      <p class="aide">Intitulé, technologies, années d'expérience, secteur — le tout en vrac suffit.</p>
+      <textarea id="offre-texte" placeholder="Ex. : Data Engineer Azure confirmé, 5 ans minimum. Snowflake, Databricks, Python, dbt. Secteur bancaire. Anglais courant."></textarea>
+      <div style="display:flex; gap:8px; margin-top:12px">
+        <button class="btn primaire" id="btn-chercher">Classer les profils</button>
+        <button class="btn fantome" id="btn-offre-vider">Effacer</button>
+      </div>
+      <div class="besoin-resume" id="besoin-resume"></div>
+    </aside>
+
+    <div>
+      <div class="resultats" id="resultats-matching"></div>
+      <p class="vide" id="matching-vide">Aucune recherche pour l'instant.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════════════════════════ HISTORIQUE ══════════════════════════════ -->
+<section id="vue-historique" class="vue">
+  <div class="entete-vue">
+    <div>
+      <h1>Historique des CV</h1>
+      <p class="aide">Cliquez sur une ligne pour la reprendre. Cochez plusieurs profils pour en faire un livret.</p>
+    </div>
+    <input type="search" id="recherche-histo" placeholder="Rechercher un nom, une techno, un client…">
+  </div>
+
+  <div class="tableau">
+    <table>
+      <thead>
+        <tr>
+          <th class="case"><input type="checkbox" id="tout-cocher" title="Tout sélectionner"></th>
+          <th>Trigramme</th>
+          <th>Nom</th>
+          <th>Titre</th>
+          <th class="num">Missions</th>
+          <th>Fichier source</th>
+          <th>Importé le</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="corps-histo"></tbody>
+    </table>
+    <p class="vide" id="histo-vide" hidden></p>
+  </div>
+
+  <div class="barre-selection" id="barre-selection" hidden>
+    <span id="selection-nb">0 profil sélectionné</span>
+    <span class="grandit"></span>
+    <button class="btn" id="btn-selection-vider">Tout décocher</button>
+    <button class="btn primaire" id="btn-livret">Générer le livret PowerPoint</button>
+  </div>
+</section>
+
+</main>
+
+<div id="notices"></div>
+
+<div class="voile" id="voile" hidden>
+  <div class="voile-boite">
+    <div class="rondelle"></div>
+    <p id="voile-texte">Traitement en cours…</p>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

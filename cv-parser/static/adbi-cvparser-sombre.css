@@ -1,0 +1,1184 @@
+@charset "UTF-8";
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ADBI CV PARSER — surcharge de charte (thèmes SOMBRE et CLAIR)
+
+   Cette feuille est propre à l'application CV Parser. Elle se charge APRÈS
+   les <style> inline des gabarits et APRÈS `adbi-theme.css`, et reprend la
+   main sur les couleurs sans toucher à la structure des écrans.
+
+   Elle gère désormais les DEUX thèmes de la charte :
+     • sombre — thème par défaut, aucun attribut sur <html> ;
+     • clair  — `<html data-theme="clair">`, posé par `adbi-theme.js`.
+   Le nom du fichier est conservé (les gabarits le référencent tel quel).
+
+   Trois leviers, dans cet ordre :
+     1. §0 — des jetons LOCAUX `--cvp-*` pour tout ce qui doit changer d'un
+        thème à l'autre sans exister dans la charte (voiles, encres sur aplat
+        orange, accent en version « texte »…) ;
+     2. §1 — on redéfinit les variables des `:root` dupliqués dans chaque
+        gabarit (--navy, --blue, --teal…) vers les jetons de la charte ADBI.
+        Comme les jetons `--adbi-*` changent de valeur avec le thème, tout ce
+        remappage suit automatiquement ;
+     3. §2 et suivants — on rattrape par sélecteurs ciblés les couleurs
+        écrites en dur dans les gabarits (fonds blancs, pastels clairs,
+        dégradés bleu/teal, encres blanches de la barre haute).
+
+   Règle d'or pour les encres posées sur un aplat :
+     • sur une pastille d'état (ok / attention / erreur) → `--adbi-sur-etat` ;
+     • sur le magenta ou le dégradé ADBI               → `--adbi-sur-accent` ;
+     • sur un aplat orange plein                       → `--cvp-sur-orange`.
+   Ne jamais réécrire `#fff` ni `var(--adbi-bg)` à ces endroits : la valeur
+   serait fausse dans l'un des deux thèmes.
+
+   Ne jamais modifier `adbi-theme.css` ni `adbi-theme.js` : ce sont des copies
+   synchronisées depuis la Factory, elles seraient écrasées.
+
+   ⚠ `company_cv.html` (CV société imprimable) ne charge PAS cette feuille et
+   n'appelle pas `adbi-theme.js` : ce document doit rester sur fond blanc.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ══ 0. JETONS LOCAUX — ce qui doit basculer avec le thème ════════════════
+   La charte fournit les fonds, le texte et les états. Il reste quelques
+   besoins propres à cette application : des voiles, un accent « texte »
+   suffisamment contrasté, et l'encre à poser sur l'orange du logo. On les
+   déclare ici une fois, et on les redéfinit dans le bloc « clair » (§0 bis).
+   ─────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Accent ADBI en version TEXTE.
+     Le magenta plein est fait pour être un APLAT, pas une encre : posé en
+     petit corps sur un voile d'accent il ne tenait que 3,4 à 3,9:1 en sombre,
+     et 4,2:1 sur blanc. On lui substitue donc le rose de la charte dans les
+     deux thèmes (clair au-dessus du sombre, foncé au-dessus du clair) — c'est
+     déjà la teinte employée par --sub, l'écart visuel est minime. */
+  --cvp-accent-texte: var(--adbi-ok);
+
+  /* Orange du logo en version TEXTE, même raisonnement. */
+  --cvp-orange-texte: var(--adbi-orange);
+
+  /* Encre à poser sur un APLAT orange plein. L'orange est clair dans les deux
+     thèmes : l'encre y reste foncée, quel que soit le thème. */
+  --cvp-sur-orange: #2a1206;
+
+  /* Encre secondaire posée SUR le dégradé ADBI (sous-titres du bandeau de
+     profil). Le dégradé est identique dans les deux thèmes → valeur unique. */
+  --cvp-sur-degrade-2: rgba(255, 255, 255, 0.82);
+
+  /* Texte secondaire des gabarits (--sub : rôles, niveaux de langue, années).
+     Rose clair sur fond sombre, rose foncé sur fond clair. */
+  --cvp-sub: #8fc0f5;
+
+  /* Voiles : arrière-plan des modales, et écran d'attente plein cadre. */
+  --cvp-voile-modale: rgba(0, 0, 0, 0.66);
+  --cvp-voile-attente: rgba(8, 8, 11, 0.82);
+
+  /* Voiles radiaux décoratifs du fond de page. */
+  --cvp-fond-voile-1: rgba(139, 26, 126, 0.16);
+  --cvp-fond-voile-2: rgba(242, 101, 34, 0.1);
+
+  /* Pouce des barres de défilement internes (barre latérale, panneaux).
+     Sur fond clair, `--adbi-surface-3` serait presque invisible. */
+  --cvp-pouce: var(--adbi-surface-3);
+}
+
+/* ══ 0 bis. Valeurs du thème CLAIR ════════════════════════════════════════ */
+
+:root[data-theme="clair"] {
+  /* (--cvp-accent-texte vaut déjà var(--adbi-ok) dans les deux thèmes : le
+     jeton --adbi-ok change de valeur tout seul, rose clair en sombre et rose
+     foncé en clair. Rien à redéfinir ici.) */
+
+  /* Orange assombri : l'orange du logo ne fait que 3.1:1 sur blanc. On garde
+     la teinte (c'est la signature du « .cv ») en descendant la luminosité. */
+  --cvp-orange-texte: #c2410c;
+
+  --cvp-sub: var(--adbi-ok);
+
+  /* Voile de modale bleuté et léger : un noir à 66 % écraserait la page. */
+  --cvp-voile-modale: rgba(18, 18, 26, 0.42);
+  --cvp-voile-attente: rgba(244, 244, 248, 0.86);
+
+  /* Voiles de fond nettement atténués : à 16 % le violet virerait au mauve. */
+  --cvp-fond-voile-1: rgba(139, 26, 126, 0.07);
+  --cvp-fond-voile-2: rgba(242, 101, 34, 0.06);
+
+  --cvp-pouce: var(--adbi-border-fort);
+}
+
+/* ══ 1. SOCLE — remappage des variables des gabarits ══════════════════════ */
+
+:root {
+  /* ── Anciennes couleurs de marque ──────────────────────────────────────
+     --navy servait à LA FOIS de fond de barre haute et de couleur de titre.
+     Comme les usages « texte » sont largement majoritaires (titres, noms,
+     libellés), on le remappe vers le texte principal ; les quelques usages
+     « fond » sont rattrapés un par un plus bas (§2, §4). */
+  --navy: var(--adbi-text1);
+
+  /* Accent principal : le bleu vif devient le magenta ADBI. Il sert aussi
+     bien de fond que de texte dans les gabarits : on garde donc le magenta
+     plein, et on corrige les usages « texte » au cas par cas (§7, §11). */
+  --blue: var(--adbi-magenta);
+  /* Variante « claire » : un voile translucide de l'accent, qui fonctionne
+     aussi bien sur fond sombre que sur fond clair. */
+  --blue-l: rgba(22, 101, 193, 0.13);
+
+  /* Accent secondaire : le teal devient l'orange ADBI (le « .cv » du logo). */
+  --teal: var(--adbi-orange);
+  --teal-l: rgba(242, 101, 34, 0.14);
+
+  /* Bleu intermédiaire : sert surtout de couleur de texte secondaire
+     (rôles, niveaux de langue, années). */
+  --sub: var(--cvp-sub);
+
+  /* ── États. La charte bannit le vert : le succès porte la couleur ADBI. ── */
+  --green: var(--adbi-ok);
+  --green-l: var(--adbi-ok-fond);
+  --red: var(--adbi-erreur);
+  --red-l: var(--adbi-erreur-fond);
+  --amber: var(--adbi-attention);
+  --amber-l: var(--adbi-attention-fond);
+  --orange: var(--adbi-orange);
+
+  /* ── Surfaces et texte ── */
+  --bg: var(--adbi-bg);
+  --card: var(--adbi-surface);
+  --border: var(--adbi-border);
+  --text: var(--adbi-text1);
+  --muted: var(--adbi-text2);
+
+  /* Rayon générique unifié sur la charte. */
+  --r: var(--adbi-r-md);
+}
+
+/* Fond général : les gabarits posent `background: var(--bg)` sur body, ce qui
+   est déjà correct, mais certains ajoutent un voile décoratif bleu/teal. */
+body::before {
+  background:
+    radial-gradient(ellipse 70% 50% at 5% 90%, var(--cvp-fond-voile-1) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 95% 5%, var(--cvp-fond-voile-2) 0%, transparent 60%) !important;
+}
+
+/* Barres de défilement propres à certains conteneurs (spécificité de classe :
+   la règle générique de la charte ne suffit pas). */
+.sidebar::-webkit-scrollbar-thumb,
+.skill-tags::-webkit-scrollbar-thumb,
+.main-content::-webkit-scrollbar-thumb,
+.right-panel::-webkit-scrollbar-thumb {
+  background: var(--cvp-pouce);
+}
+
+/* ══ 2. NAVIGATION — barres hautes, liens, puce utilisateur ═══════════════ */
+
+/* La barre haute était en bleu marine plein : elle devient une surface de la
+   charte (sombre ou blanche selon le thème) soulignée d'un filet dégradé. */
+header,
+.topbar {
+  background: var(--adbi-surface) !important;
+  color: var(--adbi-text1);
+  border-bottom: 2px solid transparent;
+  border-image: var(--adbi-degrade) 1;
+  box-shadow: var(--adbi-sh) !important;
+}
+
+/* Logotype « adbi.cv » : les gabarits l'écrivent en blanc en dur, ce qui
+   disparaît sur la barre blanche du thème clair. */
+.brand-name,
+.logo-name,
+.logo-text {
+  color: var(--adbi-text1) !important;
+}
+.brand-name span,
+.logo-name span,
+.logo-text span {
+  color: var(--cvp-orange-texte) !important;
+}
+
+/* Libellés de la barre haute forcés en blanc / blanc translucide par les
+   gabarits : on les repasse sur les encres de la charte. */
+.topbar-info .t-role,
+#headerUser,
+.user-name {
+  color: var(--adbi-text2) !important;
+}
+/* Rappel des raccourcis clavier (span à `style` inline, ciblé par son title). */
+[title^="Raccourcis"] {
+  color: var(--adbi-textm) !important;
+}
+.save-indicator {
+  color: var(--adbi-ok) !important;
+}
+
+/* Liens de navigation (index) — définis dans un <style> placé dans le <body>,
+   donc plus tardif que cette feuille : l'important est nécessaire. */
+.nav-link {
+  color: var(--adbi-text2) !important;
+}
+.nav-link:hover {
+  background: var(--adbi-surface-3) !important;
+  color: var(--adbi-text1) !important;
+}
+.nav a {
+  color: var(--adbi-text2);
+}
+.nav a:hover {
+  background: var(--adbi-surface-3);
+  color: var(--adbi-text1);
+}
+.nav a.active {
+  background: var(--adbi-magenta);
+  color: var(--adbi-sur-accent);
+}
+
+/* Pastilles / boutons translucides de la barre haute : le blanc à 10 %
+   disparaît sur fond sombre et se voit à peine sur fond clair. */
+.stat-chip,
+.api-badge,
+.user-chip,
+.btn-settings,
+.btn-back,
+.tbtn-ghost {
+  background: var(--adbi-surface-2) !important;
+  border-color: var(--adbi-border) !important;
+  color: var(--adbi-text1) !important;
+}
+.btn-settings:hover,
+.btn-back:hover,
+.tbtn-ghost:hover {
+  background: var(--adbi-surface-3) !important;
+}
+.user-role,
+#userRole {
+  color: var(--cvp-orange-texte) !important;
+  background: var(--adbi-accent-faible);
+  border-color: var(--adbi-accent-bord);
+}
+#userName {
+  color: var(--adbi-text2) !important;
+}
+/* Touches de raccourci : `--adbi-textm` sur `--adbi-surface-2` plafonne à
+   3.3:1 en sombre et 4.0:1 en clair pour un corps de 10 px. On monte d'un
+   cran sur `--adbi-text2`, lisible dans les deux thèmes. */
+.kbd-badge {
+  background: var(--adbi-surface-2) !important;
+  border-color: var(--adbi-border) !important;
+  color: var(--adbi-text2) !important;
+}
+
+/* Authentification désactivée (mode poste local) : le bouton « Déconnexion »
+   n'a plus de sens. On le masque en CSS, sans toucher aux gabarits. */
+.btn-logout {
+  display: none !important;
+}
+
+/* Témoin d'état de l'API. Le halo reprend la couleur du point pour rester
+   cohérent dans les deux thèmes. */
+.api-dot {
+  background: var(--adbi-textm) !important;
+}
+.api-dot.ok {
+  background: var(--adbi-orange) !important;
+  box-shadow: 0 0 6px rgba(242, 101, 34, 0.55) !important;
+}
+.api-dot.err {
+  background: var(--adbi-erreur) !important;
+  box-shadow: 0 0 7px var(--adbi-erreur-bord) !important;
+}
+
+/* ══ 3. CARTES, PANNEAUX ET SURFACES BLANCHES ═════════════════════════════ */
+
+/* Tous les fonds blancs de conteneurs. */
+.card,
+.modal-box,
+.modal,
+.prog-box,
+.pv-card,
+.sec-card,
+.left-panel,
+.tab-nav,
+.tabs,
+.module-card,
+.quick-btn,
+.cv-list,
+.cv-card,
+.sk-card,
+.need-panel,
+.form-card,
+.list-card,
+.cand-card {
+  background: var(--adbi-surface);
+  border-color: var(--adbi-border);
+  color: var(--adbi-text1);
+}
+
+/* En-têtes de cartes et bandeaux internes (anciens #F8FAFF / #FAFBFF). */
+.sec-head,
+.pv-head,
+.panel-label,
+.entry-head,
+.pv-exp-hdr,
+.cv-list-header,
+.user-table th,
+.form-header {
+  background: var(--adbi-surface-2) !important;
+  border-color: var(--adbi-border) !important;
+}
+.sec-head:hover {
+  background: var(--adbi-surface-3) !important;
+}
+
+/* Survols de lignes / cellules. */
+.cv-row:hover,
+.user-table tr:hover td,
+.field-val:hover,
+.bullet-text:hover,
+.pv-env,
+.cert-year {
+  background: var(--adbi-surface-2);
+}
+.entry-company:hover,
+.entry-role:hover,
+.skill-cat:hover,
+.lang-name:hover,
+.cert-name:hover,
+.col-sortable:hover {
+  background: var(--adbi-surface-3);
+}
+
+/* Séparateurs internes écrits en dur (#F1F5FA). */
+.field-row,
+.skill-row,
+.lang-row,
+.cert-row,
+.pv-skill-group,
+.pv-lang,
+.pv-edu {
+  border-bottom-color: var(--adbi-border);
+}
+
+/* Bordures de survol des cartes. */
+.cv-card:hover {
+  border-color: var(--adbi-accent-bord);
+  box-shadow: var(--adbi-sh-lg);
+}
+.module-card:hover,
+.cand-card:hover {
+  box-shadow: var(--adbi-sh-lg);
+}
+
+/* Filets d'accent en haut des cartes (étaient bleu / teal). */
+.need-panel,
+.form-card,
+.modal {
+  border-top-color: var(--adbi-magenta);
+}
+.list-card {
+  border-top-color: var(--adbi-orange);
+}
+.module-card.parser::before,
+.module-card.matching::before,
+.card::before {
+  background: var(--adbi-degrade) !important;
+}
+.module-card.matching::after,
+.module-card.matching .module-logo {
+  color: var(--cvp-orange-texte) !important;
+}
+
+/* Aplats portant le dégradé ADBI. Le dégradé est identique dans les deux
+   thèmes : l'encre posée dessus reste donc blanche (`--adbi-sur-accent`). */
+.module-card.parser .module-icon,
+.module-card.matching .module-icon,
+.carac-badge,
+.profile-hero {
+  background: var(--adbi-degrade) !important;
+  color: var(--adbi-sur-accent);
+}
+.module-card.matching .module-cta {
+  background: linear-gradient(90deg, var(--adbi-magenta), var(--adbi-orange)) !important;
+  color: var(--adbi-sur-accent) !important;
+}
+
+/* Sous-titres du bandeau de profil : ils sont POSÉS SUR le dégradé, pas sur
+   une surface. Ils gardent donc une encre claire dans les deux thèmes. */
+.ph-title,
+.ph-exp-lbl {
+  color: var(--cvp-sur-degrade-2) !important;
+}
+
+/* Pastilles de statistiques du tableau de bord : `var(--bg)` vaut le fond de
+   page, trop marqué à l'intérieur d'une carte. */
+.stat-pill,
+.btn-view,
+.btn-ghost,
+.role-user,
+.email-display,
+.rank-badge,
+.status-archivé {
+  background: var(--adbi-surface-2) !important;
+  color: var(--adbi-text2) !important;
+  border-color: var(--adbi-border) !important;
+}
+/* `.tabs .tab-btn` = onglets « pilule » (paramètres) ; `.tab-nav .tab-btn` =
+   onglets soulignés (fiche CV). Deux designs différents, même classe. */
+.tabs .tab-btn:hover,
+.modal-close:hover {
+  background: var(--adbi-surface-3) !important;
+}
+
+/* Voiles de modale : ils étaient teintés bleu marine ou blanc cassé. */
+.modal-backdrop,
+.modal-overlay,
+.prog-overlay {
+  background: var(--cvp-voile-modale) !important;
+  backdrop-filter: blur(4px);
+}
+.spinner-overlay {
+  background: var(--cvp-voile-attente) !important;
+}
+
+/* ══ 4. BOUTONS ═══════════════════════════════════════════════════════════ */
+
+/* Boutons pleins qui utilisaient le bleu marine comme fond : ils passent sur
+   l'accent ADBI (le remappage de --navy vers le texte les aurait rendus
+   quasi noirs en clair et blancs en sombre). */
+.btn-open,
+.btn-open-dossier,
+.active-chip,
+.filter-btn.active,
+.view-btn.active,
+.tech-badge.active-filter,
+.tabs .tab-btn.active,
+.sidebar-toggle:hover {
+  background: var(--adbi-magenta) !important;
+  border-color: var(--adbi-magenta) !important;
+  color: var(--adbi-sur-accent) !important;
+}
+.btn-open-dossier:hover {
+  background: var(--adbi-violet) !important;
+}
+/* La croix de retrait des puces de filtre hérite du blanc du gabarit. */
+.active-chip .rm-chip {
+  color: var(--adbi-sur-accent) !important;
+}
+
+/* Bouton secondaire (export) : le violet de la charte. */
+.btn-export,
+.tbtn-teal {
+  background: var(--adbi-violet) !important;
+  color: var(--adbi-sur-accent) !important;
+}
+/* Aplat orange : trop clair pour du blanc dans les deux thèmes (3.1:1),
+   l'encre y est foncée. */
+.tbtn-amber {
+  background: var(--adbi-orange) !important;
+  color: var(--cvp-sur-orange) !important;
+}
+
+/* Survols des boutons d'action principaux : on éclaircit l'accent plutôt que
+   de basculer sur une autre teinte. */
+.btn-run:hover,
+.btn-primary:hover,
+.btn-match:hover,
+.btn-login:hover,
+.btn:hover,
+.btn-submit:hover {
+  background: var(--adbi-magenta);
+  filter: brightness(1.16);
+}
+.btn-run:disabled,
+.btn-login:disabled,
+.btn:disabled {
+  background: var(--adbi-surface-3) !important;
+  color: var(--adbi-textm) !important;
+  filter: none;
+}
+
+/* Bouton « Sauvegarder » : la charte n'a pas de vert, le succès est magenta. */
+.tbtn-green {
+  background: var(--adbi-magenta) !important;
+  color: var(--adbi-sur-accent) !important;
+}
+.tbtn-pdf {
+  background: var(--adbi-degrade) !important;
+  color: var(--adbi-sur-accent) !important;
+  box-shadow: 0 3px 12px rgba(22, 101, 193, 0.3) !important;
+}
+.tbtn-word {
+  background: linear-gradient(135deg, var(--adbi-orange), #ffa15e) !important;
+  color: var(--cvp-sur-orange) !important;
+  box-shadow: 0 3px 12px rgba(242, 101, 34, 0.28) !important;
+}
+
+/* Boutons fantômes / contours. */
+.btn-outline,
+.ftab,
+.btn-reset,
+.btn-add-bullet,
+.btn-add-tag,
+.btn-add-entry,
+.tag-input {
+  background: var(--adbi-surface-2);
+  border-color: var(--adbi-border-fort);
+  color: var(--adbi-text2);
+}
+.btn-outline:hover,
+.ftab:hover,
+.btn-add-bullet:hover,
+.btn-add-entry:hover {
+  border-color: var(--adbi-magenta);
+  color: var(--cvp-accent-texte);
+  background: var(--adbi-accent-faible);
+}
+.ftab.active {
+  background: var(--adbi-magenta);
+  border-color: var(--adbi-magenta);
+  color: var(--adbi-sur-accent);
+}
+.btn-rm,
+.btn-rm-sm,
+.drag-handle,
+.tag-del,
+.interest-del {
+  border-color: var(--adbi-border-fort);
+  color: var(--adbi-textm);
+}
+
+/* Boutons destructifs. Au survol l'aplat devient la couleur d'erreur :
+   l'encre est alors `--adbi-sur-etat` (foncée en sombre, claire en clair). */
+.btn-del,
+.btn-danger,
+.modal-btn-confirm {
+  background: var(--adbi-erreur-fond) !important;
+  color: var(--adbi-erreur) !important;
+  border-color: var(--adbi-erreur-bord) !important;
+}
+.btn-del:hover,
+.btn-danger:hover,
+.modal-btn-confirm:hover {
+  background: var(--adbi-erreur) !important;
+  color: var(--adbi-sur-etat) !important;
+}
+.btn-rm:hover,
+.btn-reset:hover {
+  background: var(--adbi-erreur-fond) !important;
+  border-color: var(--adbi-erreur-bord) !important;
+  color: var(--adbi-erreur) !important;
+}
+.modal-btn-cancel {
+  background: var(--adbi-surface-3) !important;
+  color: var(--adbi-text2) !important;
+}
+.modal-btn-cancel:hover {
+  background: var(--adbi-border-fort) !important;
+}
+
+/* ══ 5. FORMULAIRES ═══════════════════════════════════════════════════════ */
+
+/* Les gabarits forcent `background: #fff` avec une spécificité de classe :
+   la règle générique de la charte ne passe pas. */
+.field input,
+.field select,
+.field textarea,
+.price-input-wrap input,
+.need-selector select,
+.filter-bar input,
+.comment-box textarea,
+.modal-box textarea,
+.sb-search,
+.sb-input,
+.invite-link,
+.marge-display,
+input[type="email"],
+input[type="password"],
+input[type="text"] {
+  background: var(--adbi-surface-2) !important;
+  border-color: var(--adbi-border) !important;
+  color: var(--adbi-text1) !important;
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus,
+.price-input-wrap input:focus,
+.need-selector select:focus,
+.filter-bar input:focus,
+.comment-box textarea:focus,
+.modal-box textarea:focus,
+.sb-search:focus,
+.sb-input:focus,
+input:focus {
+  border-color: var(--adbi-magenta) !important;
+  box-shadow: 0 0 0 3px var(--adbi-accent-faible) !important;
+}
+
+/* Zone de dépôt de fichier. */
+.upload-zone {
+  background: var(--adbi-surface-2) !important;
+  border-color: var(--adbi-border-fort) !important;
+}
+.upload-zone:hover,
+.upload-zone.drag-over {
+  border-color: var(--adbi-magenta) !important;
+  background: var(--adbi-accent-faible) !important;
+}
+.upload-zone.invalid {
+  background: var(--adbi-erreur-fond) !important;
+  border-color: var(--adbi-erreur) !important;
+}
+.upload-zone .up-icon {
+  background: var(--adbi-degrade) !important;
+}
+
+/* Champs éditables en ligne (fiche CV) : le placeholder et le survol. */
+.field-val[data-empty="true"]:empty::before,
+.entry-company[data-empty="true"]:empty::before,
+.entry-role[data-empty="true"]:empty::before,
+.lang-name[data-empty="true"]:empty::before,
+.cert-name[data-empty="true"]:empty::before,
+.skill-cat:empty::before,
+.lang-level:empty::before,
+.period-badge[data-empty="true"]:empty::before,
+.bullet-text:empty::before,
+.lib-empty svg {
+  color: var(--adbi-textm) !important;
+  stroke: var(--adbi-textm);
+}
+/* Les mentions d'aide sous les champs sont du VRAI texte, pas un placeholder :
+   `--adbi-textm` n'y atteint que 3.6:1 en sombre. On monte sur `--adbi-text2`. */
+.field .hint {
+  color: var(--adbi-text2) !important;
+}
+
+/* Blocs décoratifs des formulaires (dégradés bleu/teal très pâles).
+   Les deux voiles sont translucides : ils fonctionnent sur fond sombre
+   comme sur fond clair. */
+.form-header,
+.price-block {
+  background: linear-gradient(135deg, rgba(22, 101, 193, 0.07), rgba(242, 101, 34, 0.05)) !important;
+  border-color: var(--adbi-border) !important;
+}
+
+/* Marge : positive = accent ADBI, négative = erreur. */
+.marge-display.positive {
+  border-color: var(--adbi-accent-bord) !important;
+  background: var(--adbi-ok-fond) !important;
+}
+.marge-display.negative {
+  border-color: var(--adbi-erreur-bord) !important;
+  background: var(--adbi-erreur-fond) !important;
+}
+.btn-toggle-active.is-active {
+  border-color: var(--adbi-magenta) !important;
+  color: var(--adbi-ok) !important;
+  background: var(--adbi-ok-fond) !important;
+}
+.btn-toggle-active.is-active:hover {
+  background: var(--adbi-magenta) !important;
+  color: var(--adbi-sur-accent) !important;
+}
+
+/* ══ 6. TABLEAUX ET LISTES ════════════════════════════════════════════════ */
+
+.user-table th {
+  color: var(--adbi-text2) !important;
+  border-bottom-color: var(--adbi-border) !important;
+}
+.user-table td,
+.cv-row,
+.act-event,
+.sk-row {
+  border-bottom-color: var(--adbi-border);
+}
+
+/* Barres de progression et pistes grises. */
+.progress-track,
+.prog-track,
+.bar-track,
+.cgw-bar {
+  background: var(--adbi-surface-3) !important;
+}
+.progress-fill.done {
+  background: var(--adbi-magenta) !important;
+}
+.progress-fill.error {
+  background: var(--adbi-erreur) !important;
+}
+.prog-bar {
+  background: var(--adbi-degrade) !important;
+}
+
+/* Squelettes de chargement. Le miroitement joue entre deux surfaces de la
+   charte : il s'inverse tout seul en thème clair. */
+.sk-line {
+  background: linear-gradient(
+    90deg,
+    var(--adbi-surface-2) 25%,
+    var(--adbi-surface-3) 50%,
+    var(--adbi-surface-2) 75%
+  ) !important;
+  background-size: 200% 100% !important;
+}
+
+/* ── Marque « adbi.cv » ────────────────────────────────────────────────────
+   Le petit document animé de la barre haute était bleu (#1A5CFF / #0F2042)
+   avec un scan turquoise (#00ECC6) : seuls éléments restés hors charte. On
+   recolore les arrêts de dégradé du SVG, en visant par valeur (insensible à
+   la casse) plutôt que par identifiant, qui change d'un gabarit à l'autre.
+   Le document reste violet/magenta dans les deux thèmes : les traits blancs
+   translucides qu'il contient restent donc lisibles.
+   Deux classes selon le gabarit : `.brand-svg` (accueil, bibliothèque) et
+   `.logo-svg` (matching, besoins, paramètres, connexion, invitation). */
+.brand-svg stop[stop-color="#1A5CFF" i],
+.logo-svg stop[stop-color="#1A5CFF" i] { stop-color: var(--adbi-magenta); }
+.brand-svg stop[stop-color="#0F2042" i],
+.logo-svg stop[stop-color="#0F2042" i] { stop-color: var(--adbi-violet); }
+.brand-svg stop[stop-color="#00ECC6" i],
+.logo-svg stop[stop-color="#00ECC6" i] { stop-color: var(--adbi-orange); }
+.brand-svg [fill="#00ECC6" i],
+.logo-svg [fill="#00ECC6" i] { fill: var(--adbi-orange); }
+
+/* Avatars : la couleur vient du JS (déterministe à partir du nom, palette
+   AVATAR_COLORS désormais dans l'arc ADBI). On la LAISSE s'appliquer — imposer
+   le dégradé rendrait les 18 avatars identiques et supprimerait le repère
+   visuel par personne dans la liste. Toutes ces teintes sont saturées et
+   foncées : l'encre blanche convient aux deux thèmes. */
+.cv-row-avatar[style],
+.cv-card-avatar[style] {
+  color: var(--adbi-sur-accent);
+}
+
+/* Icônes de section de la fiche CV, elles aussi colorées en `style=""`. */
+.sec-icon[style],
+.pv-head-icon[style] {
+  background: var(--adbi-degrade) !important;
+  color: var(--adbi-sur-accent) !important;
+}
+
+/* ══ 7. BADGES, ÉTIQUETTES ET PASTILLES ═══════════════════════════════════
+   Le FOND reste le voile magenta translucide dans les deux thèmes ; seule
+   l'ENCRE bascule (`--cvp-accent-texte`), le magenta plein n'ayant pas assez
+   de contraste sur un fond clair pour des libellés de 10-11 px. */
+
+/* Étiquettes « accent » : anciens pastels bleus. */
+.tech-badge,
+.tag,
+.pv-tag,
+.lang-badge,
+.sec-count,
+.pv-head-count,
+.period-badge,
+.pv-exp-period,
+.formats-pill,
+.role-superuser,
+.act-icon.login {
+  background: var(--adbi-accent-faible) !important;
+  color: var(--cvp-accent-texte) !important;
+  border-color: var(--adbi-accent-bord) !important;
+}
+.tech-badge:hover {
+  background: var(--adbi-magenta) !important;
+  color: var(--adbi-sur-accent) !important;
+}
+.tech-badge.more {
+  background: var(--adbi-surface-2) !important;
+  color: var(--adbi-text2) !important;
+  border-color: var(--adbi-border) !important;
+}
+.tag-req,
+.chip-achat,
+.status-pourvu,
+.summary-box,
+.invite-result {
+  background: var(--adbi-accent-faible) !important;
+  color: var(--adbi-text1) !important;
+  border-color: var(--adbi-accent-bord) !important;
+}
+
+/* Étiquettes « secondaires » : anciens pastels teal, désormais orange. */
+.tag-bonus,
+.chip-vente,
+.status-active,
+.active-yes,
+.sig-strength,
+.welcome-tag,
+.invite-badge,
+.sb-count-badge,
+.act-icon.upload {
+  background: var(--adbi-accent-faible) !important;
+  color: var(--cvp-orange-texte) !important;
+  border-color: rgba(242, 101, 34, 0.3) !important;
+}
+.welcome-tag::before {
+  color: var(--cvp-orange-texte) !important;
+}
+
+/* Étiquettes filtrables de la barre latérale. */
+.skill-tag,
+.filter-btn,
+.lang-level,
+.pv-lang-level {
+  background: var(--adbi-surface-2) !important;
+  color: var(--adbi-text2) !important;
+  border-color: var(--adbi-border) !important;
+}
+.skill-tag:hover,
+.filter-btn:hover,
+.lang-level:hover {
+  background: var(--adbi-accent-faible) !important;
+  color: var(--cvp-accent-texte) !important;
+  border-color: var(--adbi-accent-bord) !important;
+}
+.skill-tag.active {
+  background: var(--adbi-magenta) !important;
+  color: var(--adbi-sur-accent) !important;
+  border-color: var(--adbi-magenta) !important;
+}
+
+/* Étiquettes « centres d'intérêt » (anciennement vertes). */
+.interest-tag {
+  background: var(--adbi-ok-fond) !important;
+  color: var(--adbi-ok) !important;
+  border-color: var(--adbi-ok-bord) !important;
+}
+.chip-marge {
+  background: var(--adbi-ok-fond) !important;
+  color: var(--adbi-ok) !important;
+}
+.chip-marge.neg {
+  background: var(--adbi-erreur-fond) !important;
+  color: var(--adbi-erreur) !important;
+}
+
+/* Pastilles de mode d'extraction. */
+.mode-pill.digital,
+.mode-badge-sm.digital {
+  background: var(--adbi-accent-faible) !important;
+  color: var(--adbi-ok) !important;
+}
+.mode-pill.scanned,
+.mode-badge-sm.scanned,
+.act-icon.match {
+  background: var(--adbi-attention-fond) !important;
+  color: var(--adbi-attention) !important;
+}
+.parse-summary-card {
+  background: var(--adbi-accent-faible) !important;
+  border-color: var(--adbi-accent-bord) !important;
+}
+.kbd-hint {
+  background: var(--adbi-surface-2) !important;
+  border-color: var(--adbi-border) !important;
+  color: var(--adbi-text2) !important;
+  opacity: 1 !important;
+}
+
+/* Surlignage des résultats de recherche : aplat d'état ambre. L'encre suit
+   `--adbi-sur-etat` — foncée en sombre (ambre clair), claire en thème clair
+   (ambre assombri par la charte). */
+mark.hl {
+  background: var(--adbi-attention) !important;
+  color: var(--adbi-sur-etat) !important;
+}
+
+/* ══ 8. ÉTATS : succès, avertissement, erreur ═════════════════════════════ */
+
+.alert.ok,
+.toast-item.ok {
+  background: var(--adbi-ok-fond) !important;
+  color: var(--adbi-ok) !important;
+  border-color: var(--adbi-ok-bord) !important;
+}
+.alert.err,
+.error-msg,
+.tag-miss,
+.sig-weak,
+.toast-item.err {
+  background: var(--adbi-erreur-fond) !important;
+  color: var(--adbi-erreur) !important;
+  border-color: var(--adbi-erreur-bord) !important;
+}
+.modal-warn,
+.sig-reserve,
+.toast-item.warn {
+  background: var(--adbi-attention-fond) !important;
+  color: var(--adbi-attention) !important;
+  border-color: var(--adbi-attention-bord) !important;
+}
+
+/* Bulles de notification. */
+#toast,
+.toast,
+.toast-item {
+  background: var(--adbi-surface-3) !important;
+  color: var(--adbi-text1) !important;
+  border: 1px solid var(--adbi-border-fort);
+  box-shadow: var(--adbi-sh-lg) !important;
+}
+.toast {
+  border-left: 3px solid var(--adbi-magenta) !important;
+}
+.toast.error {
+  border-left-color: var(--adbi-erreur) !important;
+}
+.toast-bar {
+  background: var(--adbi-accent-bord) !important;
+}
+.toast-close {
+  color: var(--adbi-text2) !important;
+}
+/* Le gabarit passe la croix en blanc au survol : invisible en thème clair. */
+.toast-close:hover {
+  color: var(--adbi-text1) !important;
+}
+
+/* ══ 9. RATTRAPAGES CIBLÉS — couleurs écrites dans l'attribut `style` ══════
+   Certaines couleurs sont posées en ligne par les gabarits ou par le JS.
+   On les rattrape en filtrant sur le contenu de l'attribut : c'est laid mais
+   c'est le seul moyen de les atteindre sans toucher aux gabarits. */
+
+/* Vert foncé « disponibilité » (matching) → orange ADBI. */
+[style*="#007A65"] {
+  color: var(--cvp-orange-texte) !important;
+}
+/* Rouge « compétence manquante » → rouge de la charte. */
+[style*="#DC2626"] {
+  color: var(--adbi-erreur) !important;
+}
+/* Boutons « Annuler » des modales de la fiche CV (fond #F1F5F9). */
+[style*="#F1F5F9"] {
+  background: var(--adbi-surface-3) !important;
+  color: var(--adbi-text1) !important;
+}
+/* Étiquettes de compétences du détail matching (fond #F1F3F9). */
+[style*="#F1F3F9"] {
+  background: var(--adbi-surface-2) !important;
+  color: var(--adbi-text2) !important;
+}
+/* Gris-bleu très pâle des mentions secondaires (« Aucune compétence », détail
+   des sources d'un besoin…) : 2.3:1 sur blanc, invisible sur sombre. */
+[style*="#9AAFC8"],
+.active-no {
+  color: var(--adbi-textm) !important;
+}
+.active-no {
+  background: var(--adbi-surface-2) !important;
+}
+/* Modèle LLM courant, posé en ligne avec `color:var(--blue)` : le magenta
+   plein sur son propre voile ne fait que 3.5:1. On repasse sur l'encre
+   d'accent, qui suit le thème. */
+[style*="color:var(--blue)"] {
+  color: var(--cvp-accent-texte) !important;
+}
+/* Étiquette « centre d'intérêt » du profil (fond #F0FDF4). */
+[style*="#F0FDF4"] {
+  background: var(--adbi-ok-fond) !important;
+  color: var(--adbi-ok) !important;
+  border-color: var(--adbi-ok-bord) !important;
+}
+/* Bandeau « Analyse IA en cours » de la fiche CV : bleu marine plein posé en
+   `cssText` par le JS, avec un anneau blanc à l'intérieur. */
+[style*="#1B2D5C"] {
+  background: var(--adbi-surface-3) !important;
+  color: var(--adbi-text1) !important;
+  box-shadow: var(--adbi-sh-lg) !important;
+}
+[style*="2px solid #fff"] {
+  border-color: var(--adbi-magenta) !important;
+  border-top-color: transparent !important;
+}
+/* Paramètres → cartes de fournisseur LLM : le JS repose `background: #fff`
+   sur la carte NON sélectionnée (illisible en sombre, hors charte en clair).
+   Le navigateur normalise la valeur en `rgb(255, 255, 255)` dans l'attribut :
+   c'est cette forme qu'il faut viser. La carte sélectionnée reçoit
+   `var(--blue-l)`, déjà correct. */
+#cardOpenai[style*="rgb(255, 255, 255)"],
+#cardOpenrouter[style*="rgb(255, 255, 255)"],
+#cardOpenai[style*="#fff"],
+#cardOpenrouter[style*="#fff"] {
+  background: var(--adbi-surface-2) !important;
+}
+
+/* Jauge circulaire de score (matching) : SVG construit en JS avec des
+   `fill` / `stroke` en dur. Les attributs de présentation cèdent devant CSS. */
+.radial-wrap svg circle:first-of-type {
+  stroke: var(--adbi-surface-3) !important;
+}
+.radial-wrap svg circle:nth-of-type(2) {
+  stroke: var(--adbi-magenta) !important;
+}
+.radial-wrap svg text {
+  fill: var(--adbi-text1) !important;
+}
+.radial-wrap svg text:nth-of-type(2) {
+  fill: var(--adbi-textm) !important;
+}
+
+/* ══ 10. DIVERS ═══════════════════════════════════════════════════════════ */
+
+/* Poignée de repli de la barre latérale. */
+.sidebar-toggle {
+  background: var(--adbi-surface-2);
+  border-color: var(--adbi-border);
+  color: var(--adbi-text2);
+}
+
+/* Séparateurs de section de la barre latérale. */
+.sb-section {
+  border-bottom-color: var(--adbi-border);
+}
+
+/* Onglets soulignés de la fiche CV. */
+.tab-nav {
+  border-bottom-color: var(--adbi-border);
+}
+.tab-nav .tab-btn.active {
+  color: var(--cvp-accent-texte);
+  border-bottom-color: var(--adbi-magenta);
+}
+.tab-btn:hover {
+  color: var(--adbi-text1);
+}
+
+/* Le panneau du document original suit la surface de la charte ; le PDF
+   affiché dans l'iframe reste évidemment blanc, c'est un document. */
+.left-panel {
+  border-right-color: var(--adbi-border);
+}
+
+/* Anneau de chargement. */
+.spinner-ring {
+  border-color: var(--adbi-surface-3) !important;
+  border-top-color: var(--adbi-magenta) !important;
+}
+
+/* Cartes candidats : rangs 1/2/3 (or / argent / bronze) conservés, ils
+   restent lisibles sur les deux fonds. Seule la bordure neutre change. */
+.cand-card {
+  border-left-color: var(--adbi-border-fort);
+}
+.cand-card:hover {
+  border-left-color: var(--adbi-magenta);
+}
+
+/* ══ 11. RATTRAPAGES PROPRES AU THÈME CLAIR ═══════════════════════════════
+   Tout ce qui précède s'appuie sur les jetons et bascule tout seul. Ne
+   restent ici que les cas où les gabarits utilisent `var(--blue)` — donc le
+   magenta plein — comme couleur de TEXTE sur une surface blanche : le
+   contraste y descend sous 4.5:1. On leur substitue le rose foncé de la
+   charte, uniquement en thème clair.
+   ─────────────────────────────────────────────────────────────────────── */
+
+:root[data-theme="clair"] .module-card.parser::after,
+:root[data-theme="clair"] .module-card.parser .module-logo,
+:root[data-theme="clair"] .upload-zone .up-sub strong,
+:root[data-theme="clair"] .col-sortable.asc .sort-icon::after,
+:root[data-theme="clair"] .col-sortable.desc .sort-icon::after,
+:root[data-theme="clair"] .sort-icon::after,
+:root[data-theme="clair"] .view-btn:hover,
+:root[data-theme="clair"] .quick-btn:hover,
+:root[data-theme="clair"] .btn-view:hover,
+:root[data-theme="clair"] .btn-ghost:hover,
+:root[data-theme="clair"] .drag-handle:hover,
+:root[data-theme="clair"] .lang-badge,
+:root[data-theme="clair"] .section-label,
+:root[data-theme="clair"] .detail-section h4,
+:root[data-theme="clair"] .invite-link,
+:root[data-theme="clair"] .pv-exp-client,
+:root[data-theme="clair"] .welcome h1 span {
+  color: var(--adbi-ok) !important;
+}
+
+/* Les liens de la charte (`a { color: var(--adbi-magenta) }`) subissent le
+   même sort : sur blanc, le magenta plein reste juste sous le seuil.
+   On EXCLUT les liens qui portent déjà un aplat (onglet de navigation actif,
+   boutons déguisés en liens) : leur encre doit rester `--adbi-sur-accent`. */
+:root[data-theme="clair"] a:not(.active):not([class*="btn"]):not([class*="cta"]) {
+  color: var(--adbi-ok);
+}
+:root[data-theme="clair"] a:not(.active):not([class*="btn"]):not([class*="cta"]):hover {
+  color: var(--cvp-orange-texte);
+}
+:root[data-theme="clair"] .nav a.active {
+  color: var(--adbi-sur-accent);
+}
+
+/* Le fond de la barre haute devient blanc : l'ombre portée de la charte est
+   trop discrète pour la détacher du contenu, on ajoute le filet de bordure. */
+:root[data-theme="clair"] header,
+:root[data-theme="clair"] .topbar {
+  border-bottom-width: 2px;
+}
+
+/* Barres de défilement natives des panneaux : sur blanc, `--adbi-surface-3`
+   ne se voit pas. (La règle générique de la charte est reprise ici avec la
+   spécificité nécessaire.) */
+:root[data-theme="clair"] *::-webkit-scrollbar-thumb {
+  background: var(--adbi-border-fort);
+  background-clip: content-box;
+}
+
+/* ══ 12. LOGOTYPE ANIMÉ ═══════════════════════════════════════════════════
+   Le mot-symbole « adbi.cv » porte le dégradé de la marque — violet, magenta,
+   orange — qui le traverse lentement. Le SIGNE du logo (le petit document en
+   SVG à sa gauche) n'est pas touché : c'est lui l'identité déposée, le
+   dégradé ne fait que l'accompagner.
+
+   Le dégradé est posé sur le conteneur et découpé sur le texte : les
+   descendants (le « .cv » que les gabarits colorent à part) doivent donc
+   passer en encre transparente pour le laisser apparaître.
+   ─────────────────────────────────────────────────────────────────────── */
+
+.brand-name,
+.marque,
+.logo-name,
+.logo-text {
+  background: linear-gradient(
+    100deg,
+    var(--adbi-violet) 0%,
+    var(--adbi-magenta) 28%,
+    var(--adbi-orange) 50%,
+    var(--adbi-magenta) 72%,
+    var(--adbi-violet) 100%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent !important;
+  animation: adbi-logotype 7s linear infinite;
+}
+
+.brand-name span,
+.marque span,
+.logo-name span,
+.logo-text span {
+  -webkit-text-fill-color: transparent;
+  color: transparent !important;
+}
+
+@keyframes adbi-logotype {
+  to {
+    background-position: -300% 0;
+  }
+}
+
+/* Une marque qui bouge sans arrêt finit par fatiguer : on l'arrête pour qui a
+   demandé moins d'animation, et à l'impression. */
+@media (prefers-reduced-motion: reduce) {
+  .brand-name,
+  .marque,
+  .logo-name,
+  .logo-text {
+    animation: none;
+    background-position: 40% 0;
+  }
+}
+@media print {
+  .brand-name,
+  .marque,
+  .logo-name,
+  .logo-text {
+    animation: none;
+  }
+}

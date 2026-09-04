@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  {% if anon %}
+    {% set nameParts = (cv.name or '').split(' ') %}
+    {% set first_initial = nameParts[0][0] if nameParts|length > 0 and nameParts[0] else '' %}
+    {% set last_initial = nameParts[-1][0] if nameParts|length > 1 and nameParts[-1] else '' %}
+    {% set display_name = (first_initial + last_initial) | upper or 'Candidat' %}
+  {% else %}
+    {% set display_name = cv.name or 'NOM Prénom' %}
+  {% endif %}
+  <title>CV ADBI — {{ display_name }}</title>
+  <style>
+    @page { size: A4; margin: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      {% if color == 'blue' %}
+      --primary:  #1b4d8c;
+      --primary2: #3a82e6;
+      --primary3: #13396b;
+      --primary4: #0c2563;
+      --wave-mid: #6baaf0;
+      --wave-lt:  #c2dafa;
+      {% elif color == 'green' %}
+      --primary:  #15803d;
+      --primary2: #22c55e;
+      --primary3: #166534;
+      --primary4: #14532d;
+      --wave-mid: #5cd98a;
+      --wave-lt:  #bbf7d0;
+      {% elif color == 'grey' %}
+      --primary:  #4b5563;
+      --primary2: #9ca3af;
+      --primary3: #374151;
+      --primary4: #1f2937;
+      --wave-mid: #c4c9d0;
+      --wave-lt:  #e5e7eb;
+      {% else %}
+      --primary:  #E04F20;
+      --primary2: #F07040;
+      --primary3: #C83810;
+      --primary4: #A02800;
+      --wave-mid: #FF9060;
+      --wave-lt:  #FFBFA0;
+      {% endif %}
+      --orange:  var(--primary);
+      --orange2: var(--primary2);
+      --orange3: var(--primary3);
+      --text: #1A1A1A;
+    }
+
+    body {
+      font-family: 'Calibri', 'Segoe UI', Arial, sans-serif;
+      font-size: 10pt;
+      color: var(--text);
+      background: #e8e8e8;
+    }
+
+    .no-print {
+      position: fixed; top: 14px; right: 16px;
+      display: flex; gap: 8px; z-index: 100;
+    }
+    .no-print button {
+      padding: 9px 18px; border: none; border-radius: 5px;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .btn-print { background: var(--orange); color: #fff; }
+    .btn-close { background: #555; color: #fff; }
+
+    @media print {
+      .no-print { display: none; }
+      body { background: white; }
+      .page { margin: 0 !important; box-shadow: none !important; page-break-after: always; }
+      .page:last-child { page-break-after: auto; }
+    }
+
+    /* ── PAGE ── */
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      background: white;
+      margin: 10mm auto;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 24px rgba(0,0,0,.18);
+    }
+
+    /* ── WAVES ── */
+    .wave-tl {
+      position: absolute; top: 0; left: 0;
+      width: 62mm; height: 42mm;
+      background: linear-gradient(145deg, var(--primary) 0%, var(--wave-mid) 55%, var(--wave-lt) 100%);
+      border-radius: 0 0 100% 0;
+      z-index: 0;
+    }
+    .wave-br {
+      position: absolute; bottom: 0; right: 0;
+      width: 62mm; height: 42mm;
+      background: linear-gradient(325deg, var(--primary) 0%, var(--wave-mid) 55%, var(--wave-lt) 100%);
+      border-radius: 100% 0 0 0;
+      z-index: 0;
+    }
+
+    /* ── CONTENT ── */
+    .content {
+      padding: 14mm 16mm 20mm;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── PAGE 1 HEADER ── */
+    .p1-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 7mm;
+      padding-top: 2mm;
+    }
+    .cand-name    { font-size: 20pt; font-weight: 900; color: var(--primary); line-height: 1.1; }
+    .cand-title   { font-size: 11pt; font-weight: 700; color: var(--text); margin-top: 2mm; }
+    .cand-exp     { font-size: 10pt; font-style: italic; color: var(--primary); margin-top: 1.5mm; }
+    .cand-contact { font-size: 8pt; color: #666; margin-top: 2mm; letter-spacing: .2px; }
+    .adbi-logo  {
+      font-size: 34pt; font-weight: 900; font-style: italic;
+      color: var(--orange); letter-spacing: -2px; line-height: 1;
+      font-family: 'Calibri', Arial, sans-serif;
+    }
+    .adbi-logo span { font-size: 18pt; vertical-align: super; color: var(--orange2); }
+
+    /* ── CHARACTERISTIC BOXES ── */
+    .char-row {
+      display: flex; gap: 2mm; margin-bottom: 7mm;
+    }
+    .char-box {
+      flex: 1; padding: 3mm 4mm; text-align: center;
+      font-size: 8.5pt; font-weight: 700; color: white;
+    }
+    .char-box:nth-child(1) { background: var(--primary); }
+    .char-box:nth-child(2) { background: var(--primary2); }
+    .char-box:nth-child(3) { background: var(--primary3); }
+    .char-box:nth-child(4) { background: var(--primary4); }
+
+    /* ── SECTION TITLE ── */
+    .sec-title {
+      font-size: 12pt; font-weight: 900;
+      color: var(--orange); text-align: center;
+      margin-top: 6mm; margin-bottom: 3mm;
+    }
+
+    /* ── SKILLS TABLE ── */
+    .skills-tbl { width: 100%; border-collapse: collapse; }
+    .skills-tbl td { padding: 1.8mm 2mm; vertical-align: top; line-height: 1.35; }
+    .skills-tbl td:first-child { font-weight: 700; width: 45mm; }
+
+    /* ── BULLETS ── */
+    .func-list { list-style: disc; padding-left: 7mm; }
+    .func-list li { margin-bottom: 1.5mm; line-height: 1.35; }
+
+    /* ── TRAINING TABLE ── */
+    .train-tbl { width: 100%; border-collapse: collapse; }
+    .train-tbl td { padding: 1.5mm 2mm; vertical-align: top; }
+    .train-tbl td:first-child { font-weight: 700; width: 28mm; }
+
+    /* ── FOOTER ── */
+    .page-footer {
+      position: absolute; bottom: 10mm; left: 0; right: 0;
+      text-align: center; z-index: 1;
+    }
+    .footer-name { font-size: 9pt; font-weight: 700; color: var(--orange); }
+    .footer-title { font-size: 8.5pt; color: #888; }
+
+    /* ── EXPERIENCE PAGE ── */
+    .exp-section-title {
+      font-size: 13pt; font-weight: 900;
+      color: var(--orange); margin-bottom: 5mm;
+    }
+    .exp-row {
+      margin-bottom: 6mm; padding-bottom: 5mm;
+      border-bottom: 1px solid #E0D0C8;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .exp-row:last-child { border-bottom: none; }
+    .exp-hdr {
+      display: flex; justify-content: space-between;
+      align-items: baseline; margin-bottom: 1.5mm;
+    }
+    .exp-company { font-size: 12pt; font-weight: 900; color: var(--orange); }
+    .exp-client-inline { font-size: 9.5pt; font-weight: 700; color: var(--orange3); font-style: italic; }
+    .exp-period  { font-size: 10pt; font-weight: 700; color: var(--orange); white-space: nowrap; }
+    .exp-role    { font-size: 9.5pt; font-weight: 700; font-style: italic; margin-bottom: 3mm; }
+    .exp-field   { margin-bottom: 2mm; line-height: 1.4; }
+    .exp-label   { font-weight: 700; }
+    .real-title  { font-weight: 700; margin-top: 3mm; margin-bottom: 1.5mm; }
+    .real-list   { list-style: disc; padding-left: 7mm; }
+    .real-list li { margin-bottom: 1.5mm; line-height: 1.35; }
+    .env-block   { margin-top: 3mm; }
+  </style>
+</head>
+<body>
+
+<div class="no-print">
+  <button class="btn-print" onclick="window.print()">🖨️ Imprimer / PDF</button>
+  <button class="btn-close" onclick="history.back()">← Retour</button>
+</div>
+
+{% set c    = cv.contact or {} %}
+{% set name = display_name %}
+{% set nameparts = name.split() %}
+
+<!-- ══════════════════════════════════════════════
+     PAGE 1 — PRÉSENTATION & COMPÉTENCES
+═══════════════════════════════════════════════ -->
+<div class="page">
+  <div class="wave-tl"></div>
+  <div class="wave-br"></div>
+
+  <div class="content">
+
+    <!-- Header -->
+    <div class="p1-header">
+      <div>
+        <div class="cand-name">{{ name }}</div>
+        <div class="cand-title">{{ cv.title or '' }}</div>
+        {% if cv.years_experience %}
+        <div class="cand-exp">{{ cv.years_experience }} ans d'expérience</div>
+        {% endif %}
+        {% set cparts = [] %}
+        {% if c.location %}{% set cparts = cparts + ['📍 ' ~ c.location] %}{% endif %}
+        {% if c.email   %}{% set cparts = cparts + ['✉ '  ~ c.email]    %}{% endif %}
+        {% if c.phone   %}{% set cparts = cparts + ['☎ '  ~ c.phone]    %}{% endif %}
+        {% if cparts %}
+        <div class="cand-contact">{{ cparts | join('   ·   ') }}</div>
+        {% endif %}
+      </div>
+      <div class="adbi-logo">adbi<span>●</span></div>
+    </div>
+
+    <!-- 4 Characteristic boxes -->
+    {% if cv.skills %}
+    <div class="char-row">
+      {% for skill in cv.skills[:4] %}
+      <div class="char-box">{{ skill.category }}</div>
+      {% endfor %}
+      {% for _ in range([0, 4 - cv.skills|length]|max) %}
+      <div class="char-box" style="background:#ccc"></div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Compétences techniques -->
+    {% if cv.skills %}
+    <div class="sec-title">Compétences techniques</div>
+    <table class="skills-tbl">
+      {% for skill in cv.skills %}
+      <tr>
+        <td>{{ skill.category }}</td>
+        <td>{{ skill['items'] | join(', ') }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+
+    <!-- Compétences technico-fonctionnelles -->
+    {% if cv.interests %}
+    <div class="sec-title">Compétences technico-fonctionnelles</div>
+    <ul class="func-list">
+      {% for item in cv.interests %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <!-- Formations & Certifications -->
+    {% if cv.education or cv.certifications %}
+    <div class="sec-title">Formations &amp; Certifications</div>
+    <table class="train-tbl">
+      {% for edu in cv.education %}
+      <tr>
+        <td>{{ edu.period or '' }}</td>
+        <td>{{ edu.title }}{% if edu.subtitle %} — {{ edu.subtitle }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+      {% for cert in cv.certifications %}
+      <tr>
+        <td>{{ cert.year or '' }}</td>
+        <td>{{ cert.name }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+
+    <!-- Langues -->
+    {% if cv.languages %}
+    <div class="sec-title">Langues</div>
+    <table class="train-tbl">
+      {% for lang in cv.languages %}
+      <tr>
+        <td style="font-weight:700;width:40mm">{{ lang.language }}</td>
+        <td style="color:#555">{{ lang.level or '' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+
+  </div>
+
+  <div class="page-footer">
+    <div class="footer-name">{{ name }}</div>
+    {% if cv.title %}<div class="footer-title">{{ cv.title }}</div>{% endif %}
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGES EXPÉRIENCES — missions courtes regroupées
+═══════════════════════════════════════════════ -->
+{% if cv.experience %}
+{# Threshold: if accumulated text on current page exceeds this, open a new page #}
+{% set CHAR_LIMIT = 1400 %}
+{% set ns = namespace(in_page=false, page_len=0) %}
+{% for exp in cv.experience %}
+{# Estimate rendered length for this experience #}
+{% set exp_text = (exp.title or '') ~ (exp.subtitle or '') ~ (exp.client or '') ~ (exp.contexte or '') ~ (exp.objectifs or '') ~ (exp.methodologie or '') ~ (exp.description or '') ~ (exp.env_technique or '') %}
+{% set exp_len = exp_text | length %}
+{# Open a new page if none is open, or if current page is full #}
+{% if not ns.in_page or (ns.page_len + exp_len > CHAR_LIMIT) %}
+  {% if ns.in_page %}
+  </div><!-- /content -->
+  <div class="page-footer">
+    <div class="footer-name">{{ name }}</div>
+    {% if cv.title %}<div class="footer-title">{{ cv.title }}</div>{% endif %}
+  </div>
+</div><!-- /page -->
+  {% endif %}
+<div class="page">
+  <div class="wave-tl"></div>
+  <div class="wave-br"></div>
+  <div class="content">
+    <div class="exp-section-title">Projets</div>
+{% set ns.in_page = true %}
+{% set ns.page_len = exp_len %}
+{% else %}
+{% set ns.page_len = ns.page_len + exp_len %}
+{% endif %}
+
+    {% set exp_company = exp.company or exp.title or '' %}
+    {% set exp_role    = exp.title if exp.company else (exp.subtitle or '') %}
+    <div class="exp-row">
+      <!-- Entreprise + Client inline + Période -->
+      <div class="exp-hdr">
+        <div class="exp-company">
+          {{ exp_company }}{% if exp.client %}<span class="exp-client-inline"> — {{ exp.client }}</span>{% endif %}
+        </div>
+        <div class="exp-period">{{ exp.period or '' }}</div>
+      </div>
+      <div class="exp-role">{{ exp_role }}</div>
+
+      <!-- Contexte -->
+      {% if exp.contexte %}
+      <div class="exp-field">
+        <span class="exp-label">Contexte :</span> {{ exp.contexte }}
+      </div>
+      {% endif %}
+
+      <!-- Mission / Objectifs -->
+      {% if exp.objectifs %}
+      <div class="exp-field">
+        <span class="exp-label">MISSION :</span> {{ exp.objectifs }}
+      </div>
+      {% endif %}
+
+      <!-- Méthodologie -->
+      {% if exp.methodologie %}
+      <div class="exp-field">
+        <span class="exp-label">Méthodologie :</span> {{ exp.methodologie }}
+      </div>
+      {% endif %}
+
+      <!-- Réalisations -->
+      {% if exp.description %}
+      {% set bullets = exp.description.split(' · ') %}
+      {% if bullets | length > 1 or bullets[0].strip() %}
+      <div class="real-title">Réalisations</div>
+      <ul class="real-list">
+        {% for b in bullets %}{% if b.strip() %}<li>{{ b.strip() }}</li>{% endif %}{% endfor %}
+      </ul>
+      {% endif %}
+      {% endif %}
+
+      <!-- Environnement technique -->
+      {% if exp.env_technique %}
+      <div class="env-block exp-field">
+        <div class="exp-label">Environnement technique</div>
+        {{ exp.env_technique }}
+      </div>
+      {% endif %}
+    </div>
+
+{% if loop.last %}
+  </div><!-- /content -->
+  <div class="page-footer">
+    <div class="footer-name">{{ name }}</div>
+    {% if cv.title %}<div class="footer-title">{{ cv.title }}</div>{% endif %}
+  </div>
+</div><!-- /page -->
+{% endif %}
+{% endfor %}
+{% endif %}
+
+</body>
+</html>

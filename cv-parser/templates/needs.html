@@ -1,0 +1,688 @@
+﻿<!DOCTYPE html>
+<html lang="fr" data-theme="clair">
+<head>
+  <script src="{{ url_for('static', filename='adbi-theme.js') }}"></script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>ADBI — Besoins clients</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy: #0F2042; --blue: #1A5CFF; --blue-l: #E8F0FF;
+      --teal: #00ECC6; --teal-l: #E0FFF9; --sub: #3A6FD8;
+      --bg: #F4F6F9; --card: #FFFFFF; --border: #DDE3F0;
+      --text: #0F2042; --muted: #64748B; --r: 12px;
+      --green: #10B981; --green-l: #D1FAE5;
+      --red: #EF4444; --red-l: #FEE2E2;
+      --amber: #F59E0B; --amber-l: #FEF3C7;
+    }
+    body { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: 14px; color: var(--text); background: var(--bg); }
+
+    /* ── TOPBAR ── */
+    .topbar {
+      background: var(--navy); padding: 0 28px; height: 56px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 2px 12px rgba(15,32,66,.25);
+    }
+    .logo-wrap { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+    .logo-svg { width: 26px; height: 32px; flex-shrink: 0; overflow: visible; }
+    .logo-name { font-size: 20px; font-weight: 900; font-style: italic; color: #fff; letter-spacing: -0.5px; }
+    .logo-name span { color: var(--teal); }
+    .nav { display: flex; gap: 4px; }
+    .nav a {
+      padding: 6px 14px; border-radius: 7px; text-decoration: none;
+      color: rgba(255,255,255,.65); font-weight: 600; font-size: 13px;
+      transition: background .15s, color .15s;
+    }
+    .nav a:hover { background: rgba(255,255,255,.1); color: #fff; }
+    .nav a.active { background: var(--blue); color: #fff; }
+    .user-info { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+    #userName { color: rgba(255,255,255,.85); font-weight: 500; }
+    #userRole {
+      font-size: 11px; background: rgba(0,236,198,.15); color: var(--teal);
+      padding: 2px 9px; border-radius: 20px; font-weight: 700;
+      border: 1px solid rgba(0,236,198,.3);
+    }
+    .btn-logout {
+      background: none; border: 1.5px solid rgba(255,255,255,.2); border-radius: 7px;
+      padding: 5px 13px; cursor: pointer; font-size: 12px; color: rgba(255,255,255,.65);
+      font-family: inherit; transition: border-color .15s, color .15s;
+    }
+    .btn-logout:hover { border-color: rgba(255,255,255,.5); color: #fff; }
+
+    /* ── LAYOUT ── */
+    .main {
+      max-width: 1320px; margin: 0 auto; padding: 28px 20px;
+      display: grid; grid-template-columns: 460px 1fr; gap: 24px; align-items: start;
+    }
+
+    /* ── FORM CARD ── */
+    .form-card {
+      background: var(--card); border-radius: var(--r);
+      box-shadow: 0 2px 16px rgba(15,32,66,.07);
+      border-top: 3px solid var(--blue);
+      overflow: hidden;
+    }
+    .form-header {
+      padding: 20px 24px 14px; border-bottom: 1px solid var(--border);
+      background: linear-gradient(135deg, rgba(26,92,255,.04), rgba(0,236,198,.04));
+    }
+    .form-header h2 {
+      font-size: 15px; font-weight: 800; color: var(--navy);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .form-header h2::before {
+      content: ''; display: inline-block; width: 16px; height: 16px; border-radius: 4px;
+      background: linear-gradient(135deg, var(--blue), var(--teal)); flex-shrink: 0;
+    }
+    .form-body { padding: 20px 24px; }
+
+    /* Section separator */
+    .section-label {
+      font-size: 10px; font-weight: 800; color: var(--blue); text-transform: uppercase;
+      letter-spacing: 1px; margin: 18px 0 12px; display: flex; align-items: center; gap: 8px;
+    }
+    .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    .field { margin-bottom: 12px; }
+    .field label {
+      display: block; font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px;
+    }
+    .field input, .field select, .field textarea {
+      width: 100%; padding: 9px 12px; border: 1.5px solid var(--border);
+      border-radius: 8px; font-size: 13px; font-family: inherit;
+      outline: none; transition: border-color .2s, box-shadow .2s;
+      background: #fff; color: var(--text);
+    }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,92,255,.08);
+    }
+    .field textarea { resize: vertical; min-height: 65px; }
+    .field .hint { font-size: 11px; color: #9AAFC8; margin-top: 3px; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+    /* Price block */
+    .price-block {
+      background: linear-gradient(135deg, rgba(26,92,255,.04), rgba(0,236,198,.06));
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 14px; margin-bottom: 12px;
+    }
+    .price-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .price-input-wrap { position: relative; }
+    .price-input-wrap input {
+      width: 100%; padding: 9px 34px 9px 12px; border: 1.5px solid var(--border);
+      border-radius: 8px; font-size: 13px; font-family: inherit; outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .price-input-wrap input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,92,255,.08); }
+    .price-suffix {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      font-size: 12px; font-weight: 600; color: var(--muted); pointer-events: none;
+    }
+    .price-label {
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px;
+    }
+    .marge-display {
+      background: #fff; border: 1.5px solid var(--border); border-radius: 8px;
+      padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;
+      transition: border-color .3s;
+    }
+    .marge-display.positive { border-color: var(--green); background: var(--green-l); }
+    .marge-display.negative { border-color: var(--red); background: var(--red-l); }
+    .marge-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .marge-value { font-size: 16px; font-weight: 900; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .marge-pct { font-size: 12px; font-weight: 700; color: var(--muted); margin-left: 6px; }
+    .marge-display.positive .marge-value { color: var(--green); }
+    .marge-display.positive .marge-pct { color: var(--green); }
+    .marge-display.negative .marge-value { color: var(--red); }
+    .marge-display.negative .marge-pct { color: var(--red); }
+
+    .btn-submit {
+      width: 100%; padding: 12px; background: linear-gradient(135deg, var(--blue), #3A6FD8); color: #fff;
+      border: none; border-radius: 9px; font-size: 14px; font-weight: 700;
+      cursor: pointer; font-family: inherit; transition: opacity .2s, box-shadow .2s;
+      margin-top: 8px; box-shadow: 0 4px 14px rgba(26,92,255,.25);
+    }
+    .btn-submit:hover { opacity: .9; box-shadow: 0 6px 20px rgba(26,92,255,.35); }
+    .btn-submit:active { transform: scale(.98); }
+
+    /* ── LIST CARD ── */
+    .list-card {
+      background: var(--card); border-radius: var(--r);
+      box-shadow: 0 2px 16px rgba(15,32,66,.07);
+      border-top: 3px solid var(--teal);
+    }
+    .list-header {
+      padding: 18px 24px 14px; border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .list-header h2 { font-size: 15px; font-weight: 800; color: var(--navy); }
+    .list-count { font-size: 13px; color: var(--muted); font-weight: 500; }
+    .list-body { padding: 16px 20px; }
+
+    /* Filter tabs */
+    .filter-tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+    .ftab {
+      padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 700;
+      cursor: pointer; border: 1.5px solid var(--border); background: #fff;
+      color: var(--muted); transition: all .15s;
+    }
+    .ftab:hover { border-color: var(--blue); color: var(--blue); }
+    .ftab.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+    /* ── NEED ITEM ── */
+    .need-item {
+      border: 1.5px solid var(--border); border-radius: 10px;
+      padding: 16px; margin-bottom: 12px;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .need-item:hover { border-color: var(--blue); box-shadow: 0 4px 16px rgba(26,92,255,.08); }
+    .need-item.inactive { opacity: .65; border-style: dashed; }
+    .need-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .need-title { font-size: 14px; font-weight: 700; color: var(--text); flex: 1; }
+    .need-badges { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+    .need-meta { font-size: 12px; color: var(--muted); margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap; }
+    .need-meta span { display: flex; align-items: center; gap: 4px; }
+    .need-price-row {
+      display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap;
+    }
+    .price-chip {
+      display: flex; align-items: center; gap: 5px; padding: 3px 10px;
+      border-radius: 20px; font-size: 11px; font-weight: 700;
+    }
+    .chip-achat { background: var(--blue-l); color: var(--navy); }
+    .chip-vente { background: var(--teal-l); color: #007A65; }
+    .chip-marge { background: var(--green-l); color: var(--green); }
+    .chip-marge.neg { background: var(--red-l); color: var(--red); }
+
+    /* Tags */
+    .tag { display: inline-block; border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; margin: 2px; }
+    .tag-req { background: var(--blue-l); color: var(--navy); }
+    .tag-bonus { background: var(--teal-l); color: #007A65; }
+
+    /* Status badge */
+    .status-badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+    .status-active { background: var(--teal-l); color: #007A65; }
+    .status-archivé { background: #F1F3F7; color: #9AAFC8; }
+    .status-pourvu { background: var(--blue-l); color: var(--blue); }
+    .status-inactive { background: var(--amber-l); color: var(--amber); }
+
+    /* Actions */
+    .need-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+    .btn-sm {
+      padding: 6px 14px; border-radius: 7px; border: none;
+      font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit;
+      transition: background .15s, box-shadow .15s;
+    }
+    .btn-match { background: var(--blue); color: #fff; }
+    .btn-match:hover { background: var(--sub); }
+    .btn-view { background: var(--bg); color: var(--navy); border: 1.5px solid var(--border); }
+    .btn-view:hover { border-color: var(--blue); color: var(--blue); }
+    .btn-del { background: #fff; color: var(--red); border: 1.5px solid #FECACA; }
+    .btn-del:hover { background: var(--red-l); }
+    .btn-toggle-active {
+      padding: 5px 12px; border-radius: 20px; border: 1.5px solid;
+      font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit;
+      transition: all .15s;
+    }
+    .btn-toggle-active.is-active { border-color: #10B981; color: #10B981; background: var(--green-l); }
+    .btn-toggle-active.is-active:hover { background: #10B981; color: #fff; }
+    .btn-toggle-active.is-inactive { border-color: var(--amber); color: var(--amber); background: var(--amber-l); }
+    .btn-toggle-active.is-inactive:hover { background: var(--amber); color: #fff; }
+
+    .empty { text-align: center; color: var(--muted); padding: 40px; font-size: 13px; line-height: 1.6; }
+    .empty-icon { font-size: 32px; margin-bottom: 8px; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: var(--navy); color: #fff;
+      padding: 12px 20px; border-radius: 10px; font-weight: 600; font-size: 13px;
+      box-shadow: 0 4px 20px rgba(15,32,66,.25); display: none; z-index: 999;
+      border-left: 3px solid var(--teal);
+    }
+    .toast.error { border-left-color: var(--red); }
+    .toast.show { display: block; animation: slideUp .3s ease; }
+    @keyframes slideUp { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
+  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-theme.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-cvparser-sombre.css') }}"/>
+</head>
+<body>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:24px">
+    <a href="/" class="logo-wrap">
+      <!-- Animated CV icon -->
+      <svg class="logo-svg" viewBox="0 0 26 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="docGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#1A5CFF" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#0F2042" stop-opacity=".9"/>
+          </linearGradient>
+          <linearGradient id="scanGradN" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#00ECC6" stop-opacity="0"/>
+            <stop offset="50%" stop-color="#00ECC6" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#00ECC6" stop-opacity="0"/>
+          </linearGradient>
+          <clipPath id="docClipN">
+            <path d="M1,0 L19,0 L25,6 L25,32 L1,32 Z"/>
+          </clipPath>
+        </defs>
+        <!-- Document body -->
+        <path d="M1,0 L19,0 L25,6 L25,32 L1,32 Z" fill="url(#docGrad)"/>
+        <!-- Folded corner -->
+        <path d="M19,0 L19,6 L25,6 Z" fill="rgba(255,255,255,0.25)"/>
+        <!-- CV lines -->
+        <rect x="5" y="11" width="10" height="2" rx="1" fill="#00ECC6" opacity=".95"/>
+        <rect x="5" y="15.5" width="15" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="19" width="12" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="22.5" width="14" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="26" width="10" height="1.5" rx=".75" fill="rgba(255,255,255,.35)"/>
+        <!-- Scanline -->
+        <rect x="1" y="0" width="24" height="5" fill="url(#scanGradN)" clip-path="url(#docClipN)">
+          <animate attributeName="y" from="-5" to="33" dur="2.2s" repeatCount="indefinite"/>
+        </rect>
+      </svg>
+      <span class="logo-name">adbi<span>.</span>cv</span>
+    </a>
+    <nav class="nav">
+      <a href="/app">CVthèque</a>
+      <a href="/needs" class="active">Besoins</a>
+      <a href="/rapprochement">Rapprochement</a>
+      <a href="/settings">Paramètres</a>
+    </nav>
+  </div>
+  <div class="user-info">
+    <span id="userName"></span>
+    <span id="userRole"></span>
+    <button class="btn-logout" onclick="logout()">Déconnexion</button>
+  </div>
+</div>
+
+<div class="main">
+  <!-- ── FORMULAIRE ── -->
+  <div class="form-card">
+    <div class="form-header">
+      <h2>Nouveau besoin client</h2>
+    </div>
+    <div class="form-body">
+
+      <div class="section-label">Identification</div>
+      <div class="field">
+        <label>Intitulé de mission *</label>
+        <input type="text" id="f_title" placeholder="Ex : Data Engineer Azure Senior"/>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Client</label>
+          <input type="text" id="f_client" placeholder="Nom du client final"/>
+        </div>
+        <div class="field">
+          <label>Secteur</label>
+          <select id="f_sector">
+            <option value="">— Sélectionner —</option>
+            <option value="IT & Tech">IT &amp; Tech</option>
+            <option value="Finance">Finance &amp; Banque</option>
+            <option value="Assurance">Assurance</option>
+            <option value="Énergie">Énergie &amp; Utilities</option>
+            <option value="Industrie">Industrie &amp; Manufacturing</option>
+            <option value="Retail">Retail &amp; Distribution</option>
+            <option value="Santé">Santé &amp; Pharma</option>
+            <option value="Télécom">Télécom &amp; Médias</option>
+            <option value="Transport">Transport &amp; Logistique</option>
+            <option value="Secteur public">Secteur public</option>
+            <option value="Immobilier">Immobilier &amp; Construction</option>
+            <option value="Conseil">Conseil &amp; Services</option>
+            <option value="Autre">Autre</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-label">Compétences</div>
+      <div class="field">
+        <label>Compétences obligatoires</label>
+        <input type="text" id="f_required" placeholder="Ex : Python, Azure, Databricks, SQL"/>
+        <div class="hint">Séparées par des virgules</div>
+      </div>
+      <div class="field">
+        <label>Compétences bonus</label>
+        <input type="text" id="f_bonus" placeholder="Ex : dbt, Spark, Power BI"/>
+        <div class="hint">Séparées par des virgules</div>
+      </div>
+
+      <div class="section-label">Profil &amp; Contrat</div>
+      <div class="row2">
+        <div class="field">
+          <label>Séniorité</label>
+          <select id="f_seniority">
+            <option value="">Indifférent</option>
+            <option value="junior">Junior (0-2 ans)</option>
+            <option value="confirmé">Confirmé (3-5 ans)</option>
+            <option value="senior">Senior (6-9 ans)</option>
+            <option value="expert">Expert (10+ ans)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Années min.</label>
+          <input type="number" id="f_min_years" min="0" max="30" value="0"/>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Type de contrat</label>
+          <select id="f_contract">
+            <option value="Tous">Tous</option>
+            <option value="CDI">CDI</option>
+            <option value="Freelance">Freelance</option>
+            <option value="CDD">CDD</option>
+            <option value="Stage">Stage</option>
+            <option value="Alternance">Alternance</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Démarrage</label>
+          <input type="text" id="f_start_date" placeholder="ASAP / 01/09/2025"/>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Localisation</label>
+          <input type="text" id="f_location" placeholder="Paris, Lyon, Remote…"/>
+        </div>
+        <div class="field">
+          <label>Télétravail</label>
+          <select id="f_remote">
+            <option value="flexible">Flexible</option>
+            <option value="full_remote">Full remote</option>
+            <option value="on_site">Présentiel</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Langues requises</label>
+        <input type="text" id="f_languages" placeholder="Ex : Français, Anglais"/>
+      </div>
+
+      <div class="section-label">Tarification</div>
+      <div class="price-block">
+        <div class="price-row">
+          <div>
+            <div class="price-label">Prix d'achat</div>
+            <div class="price-input-wrap">
+              <input type="number" id="f_prix_achat" min="0" step="10" placeholder="0" oninput="calcMarge()"/>
+              <span class="price-suffix">€/j</span>
+            </div>
+          </div>
+          <div>
+            <div class="price-label">Prix de vente</div>
+            <div class="price-input-wrap">
+              <input type="number" id="f_prix_vente" min="0" step="10" placeholder="0" oninput="calcMarge()"/>
+              <span class="price-suffix">€/j</span>
+            </div>
+          </div>
+        </div>
+        <div class="marge-display" id="margeDisplay">
+          <div class="marge-label">Marge brute</div>
+          <div>
+            <span class="marge-value" id="margeVal">—</span>
+            <span class="marge-pct" id="margePct"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Budget indicatif (affiché)</label>
+        <input type="text" id="f_budget" placeholder="Ex : 600-750 €/j (optionnel)"/>
+      </div>
+
+      <div class="section-label">Informations complémentaires</div>
+      <div class="field">
+        <label>Contexte</label>
+        <textarea id="f_context" placeholder="Contexte de la mission, environnement technique…"></textarea>
+      </div>
+      <div class="field">
+        <label>Remarques</label>
+        <textarea id="f_notes" placeholder="Informations complémentaires…" style="min-height:50px"></textarea>
+      </div>
+
+      <button class="btn-submit" onclick="createNeed()">✚ Enregistrer le besoin</button>
+    </div>
+  </div>
+
+  <!-- ── LISTE ── -->
+  <div class="list-card">
+    <div class="list-header">
+      <h2>Besoins clients</h2>
+      <span class="list-count" id="needCount"></span>
+    </div>
+    <div class="list-body">
+      <div class="filter-tabs">
+        <div class="ftab active" onclick="filterNeeds('all', this)">Tous</div>
+        <div class="ftab" onclick="filterNeeds('active', this)">Actifs</div>
+        <div class="ftab" onclick="filterNeeds('archivé', this)">Archivés</div>
+        <div class="ftab" onclick="filterNeeds('pourvu', this)">Pourvus</div>
+      </div>
+      <div id="needsList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Auth ──────────────────────────────────────────────────────────────────────
+async function checkAuth() {
+  try {
+    const r = await fetch('/api/auth/me', { credentials: 'include' });
+    if (!r.ok) { window.location.href = '/login'; return; }
+    const u = await r.json();
+    document.getElementById('userName').textContent = u.full_name || u.email;
+    document.getElementById('userRole').textContent = u.role === 'superuser' ? 'Super admin' : 'Utilisateur';
+  } catch { window.location.href = '/login'; }
+}
+async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  window.location.href = '/login';
+}
+
+// ── Marge calculator ──────────────────────────────────────────────────────────
+function calcMarge() {
+  const achat = parseFloat(document.getElementById('f_prix_achat').value) || 0;
+  const vente = parseFloat(document.getElementById('f_prix_vente').value) || 0;
+  const display = document.getElementById('margeDisplay');
+  const val = document.getElementById('margeVal');
+  const pct = document.getElementById('margePct');
+
+  if (!achat && !vente) {
+    val.textContent = '—'; pct.textContent = '';
+    display.classList.remove('positive', 'negative');
+    return;
+  }
+  const marge = vente - achat;
+  const margePct = vente > 0 ? (marge / vente * 100) : 0;
+  val.textContent = (marge >= 0 ? '+' : '') + marge.toFixed(0) + ' €/j';
+  pct.textContent = '(' + (margePct >= 0 ? '+' : '') + margePct.toFixed(1) + '%)';
+  display.classList.toggle('positive', marge >= 0);
+  display.classList.toggle('negative', marge < 0);
+}
+
+// ── Needs ─────────────────────────────────────────────────────────────────────
+let _allNeeds = [];
+let _currentFilter = 'all';
+
+async function loadNeeds() {
+  const r = await fetch('/api/needs', { credentials: 'include' });
+  if (!r.ok) return;
+  _allNeeds = await r.json();
+  renderNeeds();
+}
+
+function filterNeeds(filter, el) {
+  _currentFilter = filter;
+  document.querySelectorAll('.ftab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderNeeds();
+}
+
+function renderNeeds() {
+  const needs = _currentFilter === 'all'
+    ? _allNeeds
+    : _allNeeds.filter(n => n.status === _currentFilter);
+
+  const container = document.getElementById('needsList');
+  document.getElementById('needCount').textContent = `${_allNeeds.length} besoin(s)`;
+
+  if (!needs.length) {
+    container.innerHTML = `<div class="empty"><div class="empty-icon">📋</div>Aucun besoin trouvé.<br>Utilisez le formulaire pour créer votre premier besoin client.</div>`;
+    return;
+  }
+
+  container.innerHTML = needs.map(n => {
+    const reqTags   = (n.required_skills || []).slice(0, 5).map(s => `<span class="tag tag-req">${s}</span>`).join('');
+    const bonusTags = (n.bonus_skills || []).slice(0, 3).map(s => `<span class="tag tag-bonus">${s}</span>`).join('');
+    const isActive  = n.status === 'active';
+    const statusCls = { active: 'status-active', 'archivé': 'status-archivé', pourvu: 'status-pourvu' }[n.status] || 'status-active';
+    const statusLbl = { active: 'Actif', 'archivé': 'Archivé', pourvu: 'Pourvu' }[n.status] || n.status;
+
+    // Price chips
+    let priceHtml = '';
+    const achat = parseFloat(n.prix_achat) || 0;
+    const vente = parseFloat(n.prix_vente) || 0;
+    if (achat || vente) {
+      const marge = vente - achat;
+      const margePct = vente > 0 ? (marge / vente * 100) : 0;
+      priceHtml = `<div class="need-price-row">
+        ${achat ? `<span class="price-chip chip-achat">🛒 ${achat}€/j achat</span>` : ''}
+        ${vente ? `<span class="price-chip chip-vente">💰 ${vente}€/j vente</span>` : ''}
+        ${(achat && vente) ? `<span class="price-chip chip-marge${marge < 0 ? ' neg' : ''}">📊 ${marge >= 0 ? '+' : ''}${marge.toFixed(0)}€/j (${margePct.toFixed(1)}%)</span>` : ''}
+      </div>`;
+    }
+
+    const toggleCls = isActive ? 'is-active' : 'is-inactive';
+    const toggleLbl = isActive ? '✓ Actif' : '⊘ Inactif';
+
+    return `
+      <div class="need-item${isActive ? '' : ' inactive'}" id="need-${n.id}">
+        <div class="need-top">
+          <div class="need-title">${n.title}</div>
+          <div class="need-badges">
+            <span class="status-badge ${statusCls}">${statusLbl}</span>
+          </div>
+        </div>
+        <div class="need-meta">
+          ${n.client   ? `<span>🏢 ${n.client}</span>` : ''}
+          ${n.sector   ? `<span>🏷 ${n.sector}</span>` : ''}
+          ${n.seniority ? `<span>📊 ${n.seniority}</span>` : ''}
+          ${n.location  ? `<span>📍 ${n.location}</span>` : ''}
+          ${n.contract_type && n.contract_type !== 'Tous' ? `<span>📝 ${n.contract_type}</span>` : ''}
+          ${n.start_date ? `<span>📅 ${n.start_date}</span>` : ''}
+          ${n.budget    ? `<span>💼 ${n.budget}</span>` : ''}
+        </div>
+        ${priceHtml}
+        <div style="margin-top:8px">${reqTags}${bonusTags}</div>
+        <div class="need-actions">
+          ${isActive ? `<button class="btn-sm btn-match" onclick="goMatch('${n.id}')">🎯 Lancer le matching</button>` : ''}
+          <button class="btn-sm btn-view" onclick="viewResults('${n.id}')">📋 Résultats</button>
+          <button class="btn-toggle-active ${toggleCls}" onclick="toggleActive('${n.id}', ${isActive})">${toggleLbl}</button>
+          <button class="btn-sm btn-del" onclick="deleteNeed('${n.id}')">🗑</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function createNeed() {
+  const get = id => document.getElementById(id).value.trim();
+  const splitSkills = s => s ? s.split(',').map(x => x.trim()).filter(Boolean) : [];
+
+  const body = {
+    title:           get('f_title'),
+    context:         get('f_context'),
+    required_skills: splitSkills(get('f_required')),
+    bonus_skills:    splitSkills(get('f_bonus')),
+    seniority:       get('f_seniority'),
+    min_years:       parseInt(get('f_min_years')) || 0,
+    contract_type:   get('f_contract'),
+    start_date:      get('f_start_date'),
+    location:        get('f_location'),
+    remote:          get('f_remote'),
+    client:          get('f_client'),
+    sector:          get('f_sector'),
+    budget:          get('f_budget'),
+    languages:       splitSkills(get('f_languages')),
+    notes:           get('f_notes'),
+    prix_achat:      parseFloat(get('f_prix_achat')) || 0,
+    prix_vente:      parseFloat(get('f_prix_vente')) || 0,
+  };
+
+  if (!body.title) { showToast('Le titre est obligatoire', true); return; }
+
+  const r = await fetch('/api/needs', {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) { const d = await r.json(); showToast(d.error || 'Erreur serveur', true); return; }
+
+  showToast('✓ Besoin créé avec succès');
+  // Reset form
+  ['f_title','f_context','f_required','f_bonus','f_start_date','f_location','f_client','f_budget','f_languages','f_notes','f_prix_achat','f_prix_vente']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('f_min_years').value = '0';
+  document.getElementById('f_sector').value = '';
+  document.getElementById('margeVal').textContent = '—';
+  document.getElementById('margePct').textContent = '';
+  document.getElementById('margeDisplay').classList.remove('positive', 'negative');
+  loadNeeds();
+}
+
+async function toggleActive(id, currentlyActive) {
+  const newStatus = currentlyActive ? 'archivé' : 'active';
+  const r = await fetch(`/api/needs/${id}`, {
+    method: 'PATCH', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: newStatus }),
+  });
+  if (!r.ok) { showToast('Erreur lors de la mise à jour', true); return; }
+  showToast(newStatus === 'active' ? '✓ Besoin activé' : '⊘ Besoin mis en veille');
+  loadNeeds();
+}
+
+async function deleteNeed(id) {
+  if (!confirm('Supprimer ce besoin définitivement ?')) return;
+  await fetch(`/api/needs/${id}`, { method: 'DELETE', credentials: 'include' });
+  showToast('Besoin supprimé');
+  loadNeeds();
+}
+
+async function goMatch(needId) {
+  showToast('Matching en cours…');
+  const r = await fetch(`/api/needs/${needId}/match`, { method: 'POST', credentials: 'include' });
+  if (!r.ok) { showToast('Erreur lors du matching', true); return; }
+  const d = await r.json();
+  showToast(`${d.total_matched} profils analysés`);
+  setTimeout(() => window.location.href = `/rapprochement?need_id=${needId}`, 800);
+}
+
+function viewResults(needId) {
+  window.location.href = `/rapprochement?need_id=${needId}`;
+}
+
+function showToast(msg, error = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.toggle('error', error);
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+checkAuth();
+loadNeeds();
+</script>
+<script src="/static/etat-ia.js"></script>
+</body>
+</html>

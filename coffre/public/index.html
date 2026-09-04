@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="fr" data-theme="clair">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADBI Coffre — protection de documents</title>
+<!-- Bascule sombre / clair de la charte. À charger AVANT les styles : il pose
+     l'attribut data-theme sur <html> avant le premier affichage, sinon la page
+     clignoterait en sombre puis passerait en clair. -->
+<script src="adbi-theme.js"></script>
+<link rel="stylesheet" href="coffre.css">
+<!-- Charte ADBI (copie synchronisée depuis la Factory, ne pas modifier).
+     L'ordre compte : la charte se charge en dernier. -->
+<link rel="stylesheet" href="adbi-theme.css">
+</head>
+<body>
+
+<header class="barre">
+  <div class="marque"><span class="logo adbi-degrade-texte">adbi</span><span class="appname">Coffre</span></div>
+  <nav class="onglets">
+    <button class="onglet actif" data-vue="protege" type="button">
+      <svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.4-3 8.4-7 9.5C8 19.4 5 15.4 5 11V6z"/><path d="M9.5 12l1.8 1.8 3.4-3.6"/></svg>
+      Protéger un document
+    </button>
+    <button class="onglet" data-vue="archiver" type="button">
+      <svg viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/></svg>
+      Fichier / dossier à clé
+    </button>
+    <button class="onglet" data-vue="dechiffrer" type="button">
+      <svg viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 7.7-1.5"/><path d="M12 14.5v2.5"/></svg>
+      Déchiffrer
+    </button>
+    <button class="onglet" data-vue="references" type="button">
+      <svg viewBox="0 0 24 24"><path d="M5 5.5h14v13H5z"/><path d="M8 9.5h8"/><path d="M8 13h8"/><path d="M8 16h5"/></svg>
+      Références
+    </button>
+  </nav>
+  <div class="barre-fin">
+    <span class="badge-local" title="Aucune donnée ne quitte ce poste : analyse et chiffrement sont entièrement locaux.">
+      <svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.4-3 8.4-7 9.5C8 19.4 5 15.4 5 11V6z"/></svg>
+      100 % local
+    </span>
+  </div>
+</header>
+
+<main>
+
+<!-- ═══════════════════════════ PROTÉGER UN DOCUMENT ══════════════════════ -->
+<section id="vue-protege" class="vue active">
+
+  <div id="protege-depot">
+    <div class="depot" id="depot-protege">
+      <svg viewBox="0 0 24 24" width="52" height="52"><path d="M12 3l7 3v5c0 4.4-3 8.4-7 9.5C8 19.4 5 15.4 5 11V6z"/><path d="M9.5 12l1.8 1.8 3.4-3.6"/></svg>
+      <h1>Déposez un document à protéger</h1>
+      <p>Le document est analysé sur ce poste — noms, e-mails, téléphones, IBAN…
+      Vous choisissez ce qui est masqué, <strong>le fichier garde son format</strong>
+      et redevient l'original au déchiffrement. Aucun mot de passe à retenir.</p>
+      <div class="formats"><span>PDF</span><span>Word</span></div>
+      <div><button class="btn primaire" id="btn-parcourir-protege" type="button">Choisir un document</button></div>
+      <input type="file" id="fichier-protege" hidden>
+      <div class="note">Tout reste sur ce poste : aucun envoi vers Internet.</div>
+    </div>
+    <div class="alerte erreur" id="erreur-protege" hidden></div>
+  </div>
+
+  <div id="protege-analyse" hidden>
+    <div class="carte analyse-carte">
+      <span class="tourne grand"></span>
+      <p id="analyse-texte">Analyse…</p>
+    </div>
+  </div>
+
+  <!-- ── Atelier PDF : aperçu visuel + zones cliquables ── -->
+  <div id="protege-atelier" hidden>
+    <div class="alerte attention" id="alerte-scan" hidden>
+      Aucun texte exploitable dans ce PDF (document scanné ?). La détection
+      automatique et la sélection manuelle sont indisponibles — vous pouvez
+      tout de même utiliser « Masquer tout le document ».
+    </div>
+
+    <div class="atelier">
+      <aside class="panneau">
+        <div class="panneau-entete">
+          <h2>Informations détectées</h2>
+          <div class="panneau-actions">
+            <button class="btn petit" id="btn-tout-cocher" type="button">Tout</button>
+            <button class="btn petit fantome" id="btn-tout-decocher" type="button">Rien</button>
+          </div>
+        </div>
+        <p class="aide">Cochez ce qui doit être masqué. Dans l'aperçu, cliquez une
+        zone pour la basculer, ou <strong>surlignez du texte</strong> pour ajouter
+        un masquage manuel.</p>
+
+        <div class="note" id="note-reference" hidden></div>
+
+        <div id="groupes-detections"></div>
+
+        <div class="panneau-mdp">
+          <h2>Mode de sortie</h2>
+          <div class="choix-mode">
+            <button class="btn mode actif" data-mode="protege" data-portee="pdf" type="button">
+              Protégé <small>réversible</small>
+            </button>
+            <button class="btn mode" data-mode="anonyme" data-portee="pdf" type="button">
+              Anonymisé <small>définitif</small>
+            </button>
+          </div>
+          <p class="aide" id="aide-mode-pdf">L'original complet, chiffré par la
+          <strong>clé locale</strong>, voyage dans le fichier : déchiffrable ici
+          même, sur ce poste. Sauvegardez <code>data\cle-locale.bin</code>.</p>
+          <button class="btn primaire grand" id="btn-generer-protege" type="button">Générer le PDF protégé</button>
+          <button class="btn grand" id="btn-tout-masquer" type="button">Masquer tout le document</button>
+          <button class="btn fantome grand" id="btn-autre-pdf" type="button">Protéger un autre document</button>
+        </div>
+      </aside>
+
+      <div class="apercu" id="apercu-pages"></div>
+    </div>
+
+    <ul class="resultats" id="resultats-protege"></ul>
+  </div>
+
+  <!-- ── Atelier Word : liste des détections (pas d'aperçu paginé) ── -->
+  <div id="protege-atelier-docx" hidden>
+    <div class="atelier-docx">
+      <div class="carte">
+        <div class="panneau-entete">
+          <h2>Informations détectées dans <span id="docx-nom" class="docx-nom"></span></h2>
+          <div class="panneau-actions">
+            <button class="btn petit" id="btn-tout-cocher-docx" type="button">Tout</button>
+            <button class="btn petit fantome" id="btn-tout-decocher-docx" type="button">Rien</button>
+          </div>
+        </div>
+        <p class="aide">Cochez ce qui doit être masqué : chaque valeur sera remplacée
+        par des ▓ dans le document, le contexte vous situe chaque détection.
+        L'original complet, chiffré, voyage à l'intérieur du fichier protégé.</p>
+        <div id="groupes-docx"></div>
+      </div>
+
+      <div class="carte panneau-mdp">
+        <h2>Mode de sortie</h2>
+        <div class="choix-mode">
+          <button class="btn mode actif" data-mode="protege" data-portee="docx" type="button">
+            Protégé <small>réversible</small>
+          </button>
+          <button class="btn mode" data-mode="anonyme" data-portee="docx" type="button">
+            Anonymisé <small>définitif</small>
+          </button>
+        </div>
+        <p class="aide" id="aide-mode-docx">L'original complet, chiffré par la
+        <strong>clé locale</strong>, voyage dans le fichier : déchiffrable ici
+        même, sur ce poste. Sauvegardez <code>data\cle-locale.bin</code>.</p>
+        <button class="btn primaire grand" id="btn-generer-docx" type="button">Générer le Word protégé</button>
+        <button class="btn grand" id="btn-tout-masquer-docx" type="button">Masquer tout le document</button>
+        <button class="btn fantome grand" id="btn-autre-docx" type="button">Protéger un autre document</button>
+      </div>
+    </div>
+
+    <ul class="resultats" id="resultats-docx"></ul>
+  </div>
+
+  <button class="btn primaire petit flottant" id="btn-masquer-selection" type="button" hidden>Masquer la sélection</button>
+</section>
+
+<!-- ═══════════════════════ FICHIER / DOSSIER À CLÉ ═══════════════════════ -->
+<section id="vue-archiver" class="vue">
+
+  <div class="depot" id="depot-archiver">
+    <svg viewBox="0 0 24 24" width="52" height="52"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/></svg>
+    <h1>Protéger un fichier ou un dossier par une clé</h1>
+    <p>Tous formats, dossiers entiers compris. Le résultat est une archive ZIP
+    chiffrée en AES-256 : <strong>la clé est demandée à l'ouverture</strong>
+    (7-Zip, WinRAR…). À transmettre par un autre canal que le fichier.</p>
+    <div class="depot-boutons">
+      <button class="btn primaire" id="btn-archive-fichiers" type="button">Choisir des fichiers</button>
+      <button class="btn" id="btn-archive-dossier" type="button">Choisir un dossier</button>
+    </div>
+    <input type="file" id="entree-archive-fichiers" multiple hidden>
+    <input type="file" id="entree-archive-dossier" webkitdirectory hidden>
+    <div class="note">Glissez-déposez aussi un dossier entier ici. Tout reste sur ce poste.</div>
+  </div>
+
+  <ul class="fichiers" id="liste-archiver"></ul>
+
+  <div class="carte" id="carte-archiver" hidden>
+    <h2>Clé d'ouverture</h2>
+    <div class="champs-mdp">
+      <label class="champ">
+        <span>Clé <small>(8 caractères minimum)</small></span>
+        <span class="saisie">
+          <input type="password" id="mdp-archive" autocomplete="new-password" spellcheck="false">
+          <button class="oeil" type="button" data-cible="mdp-archive" title="Afficher / masquer" aria-label="Afficher ou masquer la clé"></button>
+        </span>
+      </label>
+      <label class="champ">
+        <span>Confirmation</span>
+        <span class="saisie">
+          <input type="password" id="mdp-archive-confirme" autocomplete="new-password" spellcheck="false">
+          <button class="oeil" type="button" data-cible="mdp-archive-confirme" title="Afficher / masquer" aria-label="Afficher ou masquer la confirmation"></button>
+        </span>
+      </label>
+    </div>
+    <div class="jauge-ligne">
+      <div class="jauge"><div class="jauge-barre" id="jauge-archive-barre"></div></div>
+      <span class="jauge-libelle" id="jauge-archive-libelle"></span>
+    </div>
+    <div class="generer-ligne">
+      <button class="btn" id="btn-generer-mdp-archive" type="button">Générer une clé</button>
+      <button class="btn fantome" id="btn-copier-mdp-archive" type="button">Copier la clé</button>
+      <span class="copie-ok" id="copie-archive-ok" hidden>Copiée.</span>
+    </div>
+    <div class="alerte attention">
+      <strong>Clé perdue = archive illisible.</strong> À l'ouverture du ZIP, la clé
+      est demandée par 7-Zip ou WinRAR (l'explorateur Windows ne lit pas les ZIP
+      chiffrés en AES). Transmettez-la par téléphone ou SMS, jamais dans le même
+      mail que le fichier.
+    </div>
+    <button class="btn primaire grand" id="btn-archiver" type="button" disabled>Créer l'archive protégée</button>
+  </div>
+
+  <ul class="resultats" id="resultats-archiver"></ul>
+</section>
+
+<!-- ══════════════════════════════ DÉCHIFFRER ═════════════════════════════ -->
+<section id="vue-dechiffrer" class="vue">
+
+  <div class="depot" id="depot-dechiffrer">
+    <svg viewBox="0 0 24 24" width="52" height="52"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 7.7-1.5"/><path d="M12 14.5v2.5"/></svg>
+    <h1>Déposez des documents protégés</h1>
+    <p>PDF ou Word protégés par ADBI Coffre : chaque fichier retrouve son nom et son
+    contenu d'origine, à l'octet près. Aucun mot de passe à saisir — la clé locale
+    du poste s'en charge.</p>
+    <div><button class="btn primaire" id="btn-parcourir-dechiffrer" type="button">Choisir des fichiers</button></div>
+    <input type="file" id="fichiers-dechiffrer" accept=".pdf,.docx,.adbi" multiple hidden>
+    <div class="note">Tout reste sur ce poste : aucun envoi vers Internet.</div>
+  </div>
+
+  <ul class="fichiers" id="liste-dechiffrer"></ul>
+
+  <div class="carte" id="carte-action-dechiffrer" hidden>
+    <p class="aide">L'original restitué est garanti intègre : si sa charge chiffrée a
+    été altérée d'un seul octet, ou si elle vient d'un poste avec une autre clé,
+    le déchiffrement échoue net.</p>
+    <button class="btn primaire grand" id="btn-dechiffrer" type="button">Déchiffrer</button>
+  </div>
+
+  <ul class="resultats" id="resultats-dechiffrer"></ul>
+</section>
+
+<!-- ═══════════════════════════════ RÉFÉRENCES ════════════════════════════ -->
+<section id="vue-references" class="vue">
+
+  <div class="carte">
+    <h1 style="font-size:19px;margin-bottom:6px">Références des documents traités</h1>
+    <p class="aide">Chaque document protégé reçoit une référence — <code>ADBI-7K4M</code> —
+    qui remplace le nom de la personne à l'intérieur du document et donne son nom au
+    fichier produit. Ce tableau est le seul endroit qui relie la référence au document
+    d'origine : il est <strong>chiffré par la clé locale du poste</strong> et ne le quitte
+    jamais.</p>
+    <div class="champ" style="margin-top:14px">
+      <input type="search" id="recherche-reference" autocomplete="off"
+             placeholder="Chercher une référence (ADBI-7K4M) ou un nom de fichier…">
+    </div>
+    <div class="note" id="compte-references">Chargement…</div>
+  </div>
+
+  <ul class="resultats" id="liste-references"></ul>
+</section>
+
+</main>
+
+<footer class="pied">
+  AES-256-GCM · clé locale du poste, aucun mot de passe stocké ni demandé ·
+  analyse et chiffrement 100 % locaux · le document protégé garde son format
+</footer>
+
+<script src="prenoms.js"></script>
+<script src="detecteurs.js"></script>
+<script src="coffre.js"></script>
+<script src="references.js"></script>
+<script src="lib/pdf-lib.min.js"></script>
+<script src="protege.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="fr" data-theme="clair">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ADBI — Générateur de contrats</title>
+<!-- Pose data-theme sur <html> AVANT les feuilles de style : sans cela la page
+     s'afficherait une fraction de seconde en sombre avant de passer en clair. -->
+<script src="/adbi-theme.js"></script>
+<!-- Ordre imposé : la feuille de l'application, puis la charte ADBI commune,
+     puis la surcharge de thème propre à Contrats (qui doit gagner). -->
+<link rel="stylesheet" href="/styles.css" />
+<link rel="stylesheet" href="/adbi-theme.css" />
+<link rel="stylesheet" href="/adbi-contrats-sombre.css" />
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><img src="/logo-adbi.png" class="logo-img" alt="ADBI" /><span class="brand-sub">Générateur de contrats</span></div>
+    <nav class="nav">
+      <button class="nav-item active" data-view="editeur"><span class="ico-anim">✎</span>  Éditeur</button>
+      <button class="nav-item" data-view="historique"><span class="ico-anim">☰</span>  Historique</button>
+      <button class="nav-item" data-view="signatures"><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:14px;height:14px"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span> Signatures</button>
+      <button class="nav-item" data-view="referentiels">Référentiels</button>
+      <button class="nav-item" data-view="parametres">Parametres</button>
+    </nav>
+    <div class="type-pick">
+      <label>Type de contrat</label>
+      <div id="typeButtons" class="type-buttons"></div>
+    </div>
+    <div class="side-foot">Port 4100 — local — ADBI</div>
+  </aside>
+
+  <main class="main">
+    <!-- VUE EDITEUR -->
+    <section id="view-editeur" class="view">
+      <div class="cols">
+        <div class="col-form">
+          <div class="panel">
+            <div class="panel-head"><h2 id="formTitle">Convention de sous-traitance</h2>
+              <span id="stubBadge" class="badge hidden">Modèle à venir</span></div>
+            <div id="formGroups"></div>
+          </div>
+          <div class="panel hidden" id="optionsPanel">
+            <div class="panel-head"><h3>Clauses optionnelles</h3></div>
+            <div id="optionsList" class="options"></div>
+          </div>
+          <div class="panel hidden" id="checklistPanel">
+            <div class="panel-head"><h3>Checklist documents</h3>
+              <div class="chk-head-actions">
+                <span id="checkCount" class="badge soft">0 / 0</span>
+                <button id="btnMail" class="btn btn-ghost"><span class="ico-anim">✉️</span> Mail de demande</button>
+              </div></div>
+            <div id="docAlerts" class="doc-alerts hidden"></div>
+            <div id="checklist" class="checklist"></div>
+            <div id="mailBox" class="mail-box hidden">
+              <textarea id="mailText" rows="14" readonly></textarea>
+              <div class="mail-actions">
+                <button id="btnCopyMail" class="btn btn-primary">Copier le mail</button>
+                <span id="mailStatus" class="status"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-preview">
+          <div id="editBanner" class="edit-banner hidden">
+            <span>✎ Modification du contrat <b class="edit-num"></b> — « Enregistrer » met à jour cette ligne de l'historique.</span>
+            <span class="edit-acts">
+              <button id="editSaveNew" class="btn btn-ghost" type="button">Enregistrer comme nouveau</button>
+              <button id="editQuit" class="btn btn-ghost" type="button" title="Quitter le mode modification">✕</button>
+            </span>
+          </div>
+          <div class="preview-bar">
+            <div class="exports">
+              <button id="btnPdf" class="btn">PDF</button>
+              <button id="btnWord" class="btn">Word</button>
+              <button id="btnZip" class="btn btn-primary">ZIP complet</button>
+              <button id="btnSign" class="btn"><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:14px;height:14px"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span> Signature</button>
+              <button id="btnSave" class="btn btn-ghost">Enregistrer</button>
+            </div>
+            <span id="status" class="status"></span>
+          </div>
+          <div class="preview-wrap"><div id="preview" class="page"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VUE HISTORIQUE -->
+    <section id="view-historique" class="view hidden">
+      <div id="finAlertes" class="fin-alertes hidden"></div>
+      <div class="panel">
+        <div class="panel-head"><h2><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:18px;height:18px"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span> Historique des contrats</h2>
+          <span class="head-acts">
+            <button id="btnImporter" class="btn">⬆ Importer</button>
+            <input id="histFiltre" class="hist-filtre" type="search" placeholder="🔍 Filtrer (n°, entreprise, client…)" />
+            <button id="histDelSel" class="btn btn-danger hidden"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:13px;height:13px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Supprimer la sélection</button>
+            <button id="refreshHist" class="btn btn-ghost">Rafraîchir</button>
+          </span></div>
+        <table class="hist"><thead><tr>
+          <th class="col-sel"><input type="checkbox" id="histAll" title="Tout sélectionner" /></th>
+          <th>Contrat</th><th>Type</th><th>Client final</th><th>Date</th><th class="col-acts"></th></tr></thead>
+        <tbody id="histBody"></tbody></table>
+        <p id="histEmpty" class="muted">Aucun contrat enregistré pour le moment.</p>
+      </div>
+    </section>
+
+    <!-- VUE SIGNATURES (ADBI Sign, intégré au module Contrats) -->
+    <section id="view-signatures" class="view hidden">
+      <div class="panel">
+        <div class="panel-head"><h2><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:18px;height:18px"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span> ADBI Sign — suivi des signatures</h2>
+          <span class="head-acts">
+            <button id="btnImporter2" class="btn">⬆ Importer un contrat signé</button>
+            <button id="refreshSignVue" class="btn btn-ghost">Rafraîchir</button>
+          </span></div>
+        <div id="signStats" class="sign-stats"></div>
+        <div id="listeSignatures"></div>
+        <p id="signVide" class="muted hidden">Aucune demande de signature pour le moment —
+          envoyez un contrat en signature depuis l'éditeur (bouton « ✍ Signature »),
+          ou importez un contrat déjà signé ailleurs.</p>
+      </div>
+    </section>
+
+    <!-- Modal « code d'accès Paramètres » (code dans data/code-parametres.txt) -->
+    <div id="codeModal" class="modal-overlay hidden">
+      <div class="modal modal-code">
+        <div class="modal-head">
+          <h2>🔒 Paramètres protégés</h2>
+          <button id="codeClose" class="modal-x" type="button">×</button>
+        </div>
+        <p class="muted modal-intro">L'accès aux Paramètres (clés API des connecteurs, modèles de contrat,
+          corbeille) est réservé : saisis le code d'accès.</p>
+        <input id="codeInput" type="password" autocomplete="off" placeholder="Code d'accès" class="code-input" />
+        <div class="modal-actions">
+          <button id="codeValider" class="btn btn-primary" type="button">Déverrouiller</button>
+          <span id="codeStatus" class="status"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal « Importer un contrat existant » (PDF signé ou non, contrat ou avenant) -->
+    <div id="importModal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-head">
+          <h2>⬆ Importer un contrat existant</h2>
+          <button id="importClose" class="modal-x" type="button">×</button>
+        </div>
+        <p class="muted modal-intro">Pour un contrat créé HORS de l'application (papier, autre outil) :
+          le PDF rejoint le dossier du contrat, et les informations saisies alimentent l'historique,
+          les alertes de fin de mission et les récaps d'avenant — comme un contrat créé ici.</p>
+        <div class="import-grille">
+          <label>Type de document
+            <select id="impType">
+              <option value="sous-traitance">Convention de sous-traitance</option>
+              <option value="cds">Centre de services (CDS)</option>
+              <option value="cdi">Contrat de travail (CDI)</option>
+              <option value="cdd">Contrat de travail (CDD)</option>
+              <option value="avenant">Avenant</option>
+            </select></label>
+          <label id="impNumWrap">N° du contrat *<input id="impNumero" type="text" placeholder="ex : 02-09-2026" /></label>
+          <label id="impNumAvWrap" class="hidden">N° d'avenant *<input id="impNumAvenant" type="text" placeholder="ex : 1" /></label>
+          <label id="impInitialWrap" class="hidden">N° du contrat initial<input id="impInitial" type="text" placeholder="ex : 02-09-2026" list="dl-contrats" /></label>
+          <label>Sous-traitant / co-contractant *<input id="impSt" type="text" placeholder="ex : ADCONSI" /></label>
+          <label>Client final<input id="impClient" type="text" placeholder="ex : THALES" /></label>
+          <label>Consultant<input id="impConsultant" type="text" placeholder="ex : Amine OUKLI" /></label>
+          <label>TJM (€ HT / jour)<input id="impTjm" type="number" placeholder="ex : 500" /></label>
+          <label>Date de début<input id="impDebut" type="date" /></label>
+          <label>Date de fin<input id="impFin" type="date" /></label>
+          <label class="imp-signe"><span><input id="impSigne" type="checkbox" checked /> Document déjà signé</span>
+            <input id="impSigneLe" type="date" title="Date de signature" /></label>
+          <label class="imp-fichier">PDF du contrat *
+            <input id="impFichier" type="file" accept="application/pdf" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button id="impCreer" class="btn btn-primary" type="button">⬆ Importer dans le dossier</button>
+          <span id="impStatus" class="status"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal « Marquer signé » : contrat signé HORS application (pièce jointe) -->
+    <div id="signeModal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-head">
+          <h2>✔ Marquer « signé » — <span id="signeNumero"></span></h2>
+          <button id="signeClose" class="modal-x" type="button">×</button>
+        </div>
+        <p class="muted modal-intro">Ce contrat a été signé HORS de l'application (papier, autre outil).
+          Joignez le PDF signé (recommandé — il sera archivé dans le dossier du contrat)
+          et la mention <b class="sig-ok">signé</b> sera cochée dans l'historique.</p>
+        <div class="import-grille">
+          <label>Date de signature<input id="signeDate" type="date" /></label>
+          <label class="imp-fichier">PDF signé (pièce jointe)
+            <input id="signeFichier" type="file" accept="application/pdf" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button id="signeValider" class="btn btn-primary" type="button">✔ Cocher la mention signé</button>
+          <span id="signeStatus" class="status"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal « Envoyer en signature » (façon Zoho Sign) -->
+    <div id="signModal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-head">
+          <h2><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:17px;height:17px"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Envoyer en signature</h2>
+          <button id="signClose" class="modal-x" type="button">×</button>
+        </div>
+        <div id="signStep1">
+          <p class="muted modal-intro">Le contrat est figé tel quel puis confié au <b>tiers de confiance</b>
+            (connecteur Yousign, eIDAS) : chaque partie reçoit son invitation par e-mail, relit le document et signe
+            sur la page sécurisée du fournisseur (code de vérification par e-mail).
+            <b>Ordre de signature : le co-contractant signe en premier, ADBI signe ensuite</b> —
+            relances automatiques, puis PDF signé + dossier de preuve récupérés dans le dossier du contrat.</p>
+          <div class="sign-parties">
+            <div class="sign-partie">
+              <h3><span class="rang-badge">1er à signer</span> Co-contractant</h3>
+              <label>Nom du signataire<input id="sp2nom" type="text" /></label>
+              <label>Email<input id="sp2email" type="email" placeholder="ex : contact@societe.fr" /></label>
+            </div>
+            <div class="sign-partie">
+              <h3><span class="rang-badge deux">2e à signer</span> ADBI (Client)</h3>
+              <label>Nom du signataire<input id="sp1nom" type="text" /></label>
+              <label>Email<input id="sp1email" type="email" placeholder="ex : aoukli@adbi.fr" /></label>
+            </div>
+          </div>
+          <label class="sign-echeance">⏰ Délai : à signer avant le
+            <input id="signEcheance" type="date" />
+            <span class="muted">(prolongeable ensuite depuis le suivi)</span>
+          </label>
+          <div class="modal-actions">
+            <button id="signCreate" class="btn btn-primary" type="button">Créer la demande de signature</button>
+            <span id="signStatus" class="status"></span>
+          </div>
+        </div>
+        <div id="signStep2" class="hidden">
+          <p class="muted modal-intro">Demande créée chez le tiers de confiance — rien d'autre à faire :
+            les invitations et les relances partent automatiquement.</p>
+          <div id="signLinks"></div>
+          <p class="muted modal-note">Suivi, synchronisation et documents finaux dans l'onglet <b>✍ Signatures</b>
+            (et sur la ligne du contrat dans l'Historique).</p>
+          <div class="modal-actions">
+            <button id="signDone" class="btn btn-primary" type="button">Terminer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal « Fiche entreprise » (données publiques gouv.fr) -->
+    <div id="entModal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-head">
+          <h2><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:18px;height:18px"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 21v-4h6v4"/><path d="M8 7h.01M12 7h.01M16 7h.01M8 11h.01M12 11h.01M16 11h.01M8 15h.01M16 15h.01"/></svg></span> <span id="entNom">Fiche entreprise</span></h2>
+          <button id="entClose" class="modal-x" type="button">×</button>
+        </div>
+        <div id="entCorps"><p class="muted">Chargement…</p></div>
+      </div>
+    </div>
+
+    <!-- VUE REFERENTIELS -->
+    <section id="view-referentiels" class="view hidden">
+      <div class="panel" style="max-width:780px">
+        <div class="panel-head"><h2>Référentiels</h2></div>
+        <p class="muted set-intro">Stockés sur ce poste (<code>data/referentiels.json</code>). Les clients (avec leurs valideurs de CRA et leurs lieux) et les managers alimentent l'auto-complétion dans le formulaire.</p>
+        <div id="refContent"></div>
+      </div>
+    </section>
+
+    <!-- VUE PARAMETRES -->
+    <section id="view-parametres" class="view hidden">
+      <div class="panel settings-panel">
+        <div class="panel-head"><h2>Paramètres — clés API</h2></div>
+        <p class="muted set-intro">Ces clés restent sur ce poste (fichier <code>data/secrets.json</code>), ne sont jamais partagées et n'apparaissent pas dans les contrats. Laissez un champ vide pour conserver la clé déjà enregistrée.</p>
+
+        <div class="set-group">
+          <h3>Recherche société</h3>
+          <label class="set-row">
+            <span>Source de données</span>
+            <select id="setSource">
+              <option value="gouv">Recherche d'entreprises (gouv.fr) — gratuit, sans clé, avec représentant</option>
+              <option value="pappers">Pappers (clé requise)</option>
+              <option value="insee">INSEE Sirene (clé requise)</option>
+            </select>
+          </label>
+          <div class="set-row">
+            <span>Source gratuite par défaut <em id="setGouvState" class="set-state ok">🟢 sans clé</em>
+              <button type="button" class="set-test" data-provider="gouv">Tester</button></span>
+            <div class="muted set-hint">API officielle « Recherche d'entreprises » (annuaire-entreprises.data.gouv.fr) — fonctionne sans aucune configuration. Pas besoin de clé.</div>
+          </div>
+          <label class="set-row">
+            <span>Clé API Pappers <em id="setPappersState" class="set-state">—</em>
+              <button type="button" class="set-test" data-provider="pappers">Tester</button></span>
+            <input id="setPappers" type="password" autocomplete="off" placeholder="Token Pappers" />
+          </label>
+          <label class="set-row">
+            <span>Clé API INSEE <em id="setInseeState" class="set-state">—</em>
+              <button type="button" class="set-test" data-provider="insee">Tester</button></span>
+            <input id="setInsee" type="password" autocomplete="off" placeholder="Clé INSEE Sirene" />
+          </label>
+        </div>
+
+        <div class="set-group">
+          <h3>Signature électronique — connecteur API
+            <em id="setSignState" class="set-state">—</em>
+            <button type="button" class="set-test" data-provider="yousign">Tester</button></h3>
+          <div class="muted set-hint">La signature passe <b>exclusivement par un tiers de confiance</b> (connecteur API) :
+            il envoie les invitations et les relances, fait signer sur sa page sécurisée,
+            et fournit le <b>dossier de preuve</b>. Deux connecteurs au choix :
+            <b>Yousign</b> (eIDAS 🇫🇷, données UE, clé API simple, sandbox gratuite) et
+            <b>Zoho Sign</b> (région UE possible, OAuth2 — pratique si vous êtes déjà chez Zoho).
+            Voir <code>docs/INTEGRATION-SIGNATURE.md</code>.</div>
+          <div class="smtp-grille">
+            <label>Connecteur actif
+              <select id="setSignFournisseur">
+                <option value="yousign">Yousign (eIDAS, France)</option>
+                <option value="zoho">Zoho Sign</option>
+              </select></label>
+          </div>
+          <div id="zoneYousign" class="smtp-grille zone-connecteur">
+            <label>Mode Yousign
+              <select id="setYousignMode">
+                <option value="sandbox">Sandbox (test, gratuit)</option>
+                <option value="production">Production (valeur légale)</option>
+              </select></label>
+            <label>Clé API Yousign<input id="setYousignCle" type="password" autocomplete="off" placeholder="clé créée sur yousign.com" /></label>
+            <label>Secret webhook (optionnel)<input id="setYousignWebhook" type="password" autocomplete="off" placeholder="pour vérifier l'authenticité des webhooks" /></label>
+          </div>
+          <div id="zoneZoho" class="smtp-grille zone-connecteur hidden">
+            <label>Région Zoho
+              <select id="setZohoRegion">
+                <option value="eu">Europe (sign.zoho.eu) — RGPD</option>
+                <option value="com">International (sign.zoho.com)</option>
+                <option value="in">Inde (sign.zoho.in)</option>
+              </select></label>
+            <label>Client ID<input id="setZohoClientId" type="password" autocomplete="off" placeholder="depuis api-console.zoho.eu (Self Client)" /></label>
+            <label>Client Secret<input id="setZohoClientSecret" type="password" autocomplete="off" placeholder="depuis api-console.zoho.eu" /></label>
+            <label class="zoho-code">Code d'autorisation (valable 10 min)
+              <span class="zoho-code-ligne">
+                <input id="setZohoCode" type="text" autocomplete="off" placeholder="généré avec la portée ZohoSign.documents.ALL" />
+                <button type="button" id="btnZohoEchanger" class="btn">Échanger le code</button>
+              </span>
+              <span class="muted zoho-aide">1) Enregistre client ID + secret ci-dessus · 2) API console Zoho → Self Client →
+                Generate Code (portée <code>ZohoSign.documents.ALL</code>) · 3) colle le code ici → le refresh token est stocké sur ce poste.</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="set-actions">
+          <button id="btnSaveSettings" class="btn btn-primary">Enregistrer les clés</button>
+          <span id="setStatus" class="status"></span>
+        </div>
+      </div>
+
+      <!-- Corbeille : tout ce qui a été supprimé, restaurable à la sélection -->
+      <div class="panel settings-panel">
+        <div class="panel-head"><h2><span class="ico-anim">🗑</span> Corbeille — restaurer des éléments supprimés</h2>
+          <button id="corbRafraichir" class="btn btn-ghost">Rafraîchir</button></div>
+        <p class="muted set-intro">Chaque suppression (contrat de l'historique, demande de signature) arrive ici
+          au lieu d'être perdue. Coche ce que tu veux récupérer puis « Restaurer » — une demande de signature
+          restaurée réactive ses liens d'origine. La purge définitive demande une double confirmation.</p>
+        <div id="corbListe" class="corb-liste"></div>
+        <p id="corbVide" class="muted hidden">La corbeille est vide.</p>
+        <div class="modal-actions">
+          <button id="corbRestaurer" class="btn btn-primary" type="button">♻ Restaurer la sélection</button>
+          <button id="corbPurger" class="btn btn-danger" type="button">🗑 Supprimer définitivement la sélection</button>
+          <span id="corbStatus" class="status"></span>
+        </div>
+      </div>
+
+      <!-- Éditeur des modèles de contrat : texte des articles, titres, en-tête, pied -->
+      <div class="panel settings-panel">
+        <div class="panel-head"><h2><span class="ico-anim">📝</span> Modèles de contrat — modifier le texte</h2></div>
+        <p class="muted set-intro">Modifie ici le texte du modèle (articles, titres, en-tête, pied de page) :
+          l'aperçu et tous les exports (PDF, Word, signature) utiliseront ta version.
+          Conserve les variables <code>{{…}}</code> (elles sont remplacées par les valeurs du formulaire)
+          et le gras <code>**…**</code>. Les blocs personnalisés sont marqués et réversibles un par un (↺).
+          <b>Évite de modifier un modèle pendant qu'une demande de signature est en cours</b> (le document
+          régénéré changerait).</p>
+        <div class="tpl-toolbar">
+          <select id="tplType" class="tpl-select"></select>
+          <input id="tplFiltre" type="search" class="hist-filtre" placeholder="🔍 Chercher un article, un mot…" />
+          <button id="tplSave" class="btn btn-primary">Enregistrer le modèle</button>
+          <button id="tplResetAll" class="btn btn-danger">↺ Tout réinitialiser</button>
+        </div>
+        <div class="tpl-etat"><span id="tplCompteur" class="muted"></span> <span id="tplStatus" class="status"></span></div>
+        <div id="tplMeta" class="tpl-meta"></div>
+        <div id="tplBlocs" class="tpl-blocs"></div>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

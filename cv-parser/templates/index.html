@@ -1,0 +1,1403 @@
+﻿<!DOCTYPE html>
+<html lang="fr" data-theme="clair">
+<head>
+  <script src="{{ url_for('static', filename='adbi-theme.js') }}"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ADBI — Bibliothèque CVs</title>
+  <style>
+    :root {
+      --navy:   #0F2042;
+      --blue:   #1A5CFF;
+      --blue-l: #E8F0FF;
+      --teal:   #00ECC6;
+      --sub:    #3A6FD8;
+      --green:  #00C48C;
+      --red:    #DC2626;
+      --orange: #D97706;
+      --bg:     #F4F6F9;
+      --card:   #FFFFFF;
+      --border: #DDE3F0;
+      --text:   #0F2042;
+      --muted:  #64748B;
+      --r:      8px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; background: var(--bg);
+           color: var(--text); display: flex; flex-direction: column; }
+
+    /* ── HEADER ─────────────────────────────────────────────────────────── */
+    header {
+      background: var(--navy); color: #fff; height: 54px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; box-shadow: 0 2px 14px rgba(0,0,0,.28); z-index: 50;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand-svg { width: 22px; height: 28px; flex-shrink: 0; overflow: visible; }
+    .brand-name { font-size: 17px; font-weight: 800; font-style: italic; color: #fff; letter-spacing: -.5px; }
+    .brand-name span { color: var(--teal); }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .stat-chip {
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22);
+      color: #fff; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px;
+      transition: background .3s;
+    }
+    .api-badge {
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.18);
+      padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; color: #fff;
+    }
+    .api-dot { width: 9px; height: 9px; border-radius: 50%; background: #94a3b8; flex-shrink: 0; transition: background .4s; }
+    .api-dot.ok    { background: var(--teal); box-shadow: 0 0 6px #00ECC688; }
+    .api-dot.err   { background: #f87171; box-shadow: 0 0 6px #f8717188; }
+    .api-dot.checking { animation: puls .9s ease-in-out infinite; }
+    @keyframes puls { 0%,100%{opacity:.4} 50%{opacity:1} }
+
+    /* ── APP BODY ────────────────────────────────────────────────────────── */
+    .app-body { display: flex; flex: 1; overflow: hidden; min-height: 0; position: relative; }
+
+    /* ── SIDEBAR ─────────────────────────────────────────────────────────── */
+    .sidebar {
+      width: 268px; min-width: 268px; flex-shrink: 0; background: var(--card);
+      border-right: 1.5px solid var(--border);
+      display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden;
+      transition: width .26s cubic-bezier(.4,0,.2,1), min-width .26s cubic-bezier(.4,0,.2,1),
+                  border-right-width .26s, opacity .26s;
+      position: relative;
+    }
+    .sidebar.collapsed {
+      width: 0; min-width: 0; border-right-width: 0; opacity: 0; pointer-events: none;
+    }
+    .sidebar::-webkit-scrollbar { width: 4px; }
+    .sidebar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 2px; }
+
+    /* Sidebar toggle button */
+    .sidebar-toggle {
+      position: fixed; top: 50%; left: 268px;
+      transform: translate(-50%, -50%);
+      width: 22px; height: 44px; border-radius: 0 8px 8px 0;
+      background: var(--card); border: 1.5px solid var(--border); border-left: none;
+      color: var(--muted); font-size: 10px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; z-index: 20;
+      transition: left .26s cubic-bezier(.4,0,.2,1), background .15s, color .15s;
+      box-shadow: 3px 0 8px rgba(15,32,66,.07);
+    }
+    .sidebar-toggle:hover { background: var(--navy); border-color: var(--navy); color: #fff; }
+    .sidebar.collapsed ~ .sidebar-toggle { left: 0; border-radius: 0 8px 8px 0; }
+
+    .sb-section { padding: 14px 14px 12px; border-bottom: 1px solid var(--border); }
+    .sb-section:last-child { border-bottom: none; }
+    .sb-title {
+      font-size: 10px; font-weight: 800; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .7px; margin-bottom: 9px;
+    }
+    .sb-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+    .sb-count-badge {
+      background: #E0F7F2; color: #008B74; font-size: 10px; font-weight: 700;
+      padding: 1px 7px; border-radius: 10px;
+    }
+
+    /* Upload zone */
+    .upload-zone {
+      border: 1.5px dashed #94A3B8; border-radius: var(--r);
+      padding: 16px 12px; text-align: center; cursor: pointer;
+      background: #FAFBFF; transition: all .2s;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--blue); background: var(--blue-l);
+    }
+    .upload-zone.invalid { animation: shake .35s ease; border-color: var(--red); background: #FEF2F2; }
+    @keyframes shake {
+      0%,100%{transform:translateX(0)} 20%{transform:translateX(-5px)}
+      40%{transform:translateX(5px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)}
+    }
+    .upload-zone .up-icon {
+      width: 38px; height: 38px; background: var(--navy); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; margin: 0 auto 10px;
+      transition: transform .2s;
+    }
+    .upload-zone:hover .up-icon { transform: scale(1.08); }
+    .upload-zone .up-icon svg { width: 18px; height: 18px; stroke: #fff; fill: none; stroke-width: 2; }
+    .upload-zone .up-title { font-size: 13px; font-weight: 700; color: var(--navy); margin-bottom: 3px; }
+    .upload-zone .up-sub   { font-size: 11px; color: var(--muted); line-height: 1.4; }
+    .upload-zone .up-sub strong { color: var(--blue); }
+    .formats-pill {
+      display: inline-block; margin-top: 8px;
+      background: #E0EAFF; color: var(--blue); font-size: 10px; font-weight: 800;
+      padding: 2px 10px; border-radius: 20px;
+    }
+    #fileInput { display: none; }
+
+    /* Upload progress */
+    .upload-progress { margin-top: 10px; }
+    .up-filename { font-size: 11px; font-weight: 700; color: var(--navy); margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .progress-track { height: 6px; background: #E2E8F0; border-radius: 6px; overflow: hidden; margin-bottom: 5px; }
+    .progress-fill { height: 100%; width: 0%; border-radius: 6px; background: linear-gradient(90deg, var(--blue), var(--teal)); transition: width .35s ease-out; }
+    .progress-fill.done  { background: var(--green); }
+    .progress-fill.error { background: var(--red); }
+    .up-status { font-size: 11px; color: var(--muted); }
+
+    /* ── Import en lot ──
+       Les CV partent UN PAR UN : l'analyse passe par la cascade de modèles,
+       dont le palier gratuit d'OVHcloud plafonne à 2 requêtes par minute et
+       par modèle. Dix envois simultanés se feraient refuser en bloc. */
+    .lot { margin-top: 12px; }
+    .lot-entete { display: flex; align-items: center; justify-content: space-between;
+                  font-size: 11px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
+    .lot-stop { background: none; border: none; padding: 0; cursor: pointer;
+                font-family: inherit; font-size: 10.5px; font-weight: 700;
+                color: var(--muted); text-decoration: underline; }
+    .lot-stop:hover { color: var(--red); }
+    .lot-liste { list-style: none; margin-top: 8px; max-height: 190px; overflow-y: auto; }
+    .lot-liste li { display: flex; align-items: center; gap: 7px; padding: 3px 0;
+                    font-size: 11px; color: var(--muted); }
+    .lot-liste .nomf { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lot-liste .etat { margin-left: auto; flex: none; font-size: 13px; line-height: 1; }
+    .lot-liste li.encours { color: var(--navy); font-weight: 700; }
+    .lot-liste li.fait { color: var(--navy); }
+    .lot-liste li.rate { color: var(--red); }
+    .lot-liste li.encours .etat { animation: lot-bat 1s ease-in-out infinite; }
+    @keyframes lot-bat { 0%,100% { opacity: .35 } 50% { opacity: 1 } }
+
+    /* Parse summary */
+    .parse-summary { margin-top: 10px; }
+    .parse-summary-card { background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: var(--r); padding: 10px 12px; }
+    .mode-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 800; padding: 3px 9px; border-radius: 20px; margin-bottom: 6px; }
+    .mode-pill.digital { background: #D1FAE5; color: #065F46; }
+    .mode-pill.scanned { background: #FEF3C7; color: #92400E; }
+    .parse-stats { font-size: 11px; color: var(--muted); margin-bottom: 8px; line-height: 1.5; }
+    .parse-name  { font-size: 12px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
+    .btn-open-dossier { display: block; text-align: center; background: var(--navy); color: #fff; font-size: 12px; font-weight: 700; padding: 7px; border-radius: 6px; text-decoration: none; transition: background .15s; }
+    .btn-open-dossier:hover { background: var(--blue); }
+
+    /* Search */
+    .sb-search { width: 100%; border: 1.5px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 12px; outline: none; transition: border-color .15s, box-shadow .15s; }
+    .sb-search:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,92,255,.08); }
+    .sb-input { width: 100%; border: 1.5px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 12px; outline: none; transition: border-color .15s; }
+    .sb-input:focus { border-color: var(--blue); }
+    .kbd-hint { font-size: 10px; background: #F1F5F9; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 5px; font-family: monospace; color: var(--muted); opacity: .7; }
+
+    /* Skill tags */
+    .skill-tags { display: flex; flex-wrap: wrap; gap: 5px; max-height: 180px; overflow-y: auto; }
+    .skill-tags::-webkit-scrollbar { width: 3px; }
+    .skill-tags::-webkit-scrollbar-thumb { background: #CBD5E1; }
+    .skill-tag {
+      background: #F1F5FF; color: var(--sub); border: 1px solid #C7D9F6;
+      border-radius: 5px; padding: 3px 8px; font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: all .15s; user-select: none; white-space: nowrap;
+    }
+    .skill-tag:hover { background: #E0EAFF; color: var(--blue); border-color: #90AAFF; transform: translateY(-1px); }
+    .skill-tag.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .skill-tag .sk-count { opacity: .65; font-size: 10px; margin-left: 3px; }
+    .no-skills { font-size: 11px; color: var(--muted); font-style: italic; }
+
+    /* Active chips bar */
+    .active-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; min-height: 0; }
+    .active-chip {
+      display: flex; align-items: center; gap: 4px;
+      background: var(--navy); color: #fff; font-size: 11px; font-weight: 700;
+      padding: 3px 10px; border-radius: 20px;
+      animation: chipIn .15s ease;
+    }
+    @keyframes chipIn { from { opacity: 0; transform: scale(.85); } }
+    .active-chip .rm-chip { cursor: pointer; opacity: .7; font-size: 13px; line-height: 1; background: none; border: none; color: #fff; padding: 0; }
+    .active-chip .rm-chip:hover { opacity: 1; }
+
+    /* Filter buttons */
+    .filter-btns { display: flex; flex-wrap: wrap; gap: 5px; }
+    .filter-btn { background: #F1F5FF; color: var(--muted); border: 1px solid #C7D9F6; border-radius: 5px; padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all .15s; }
+    .filter-btn:hover { background: #E0EAFF; color: var(--blue); }
+    .filter-btn.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+
+    /* Reset */
+    .btn-reset { width: 100%; background: none; border: 1.5px solid var(--border); color: var(--muted); font-size: 12px; font-weight: 700; padding: 7px; border-radius: 6px; cursor: pointer; transition: all .15s; }
+    .btn-reset:hover { border-color: var(--red); color: var(--red); background: #FEF2F2; }
+
+    /* ── MAIN CONTENT ────────────────────────────────────────────────────── */
+    .main-content { flex: 1; overflow-y: auto; padding: 20px 22px 30px; min-width: 0; transition: padding-left .26s; }
+    .main-content::-webkit-scrollbar { width: 5px; }
+    .main-content::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+
+    .lib-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+    .lib-title { font-size: 16px; font-weight: 800; color: var(--navy); }
+    .lib-count  { font-size: 12px; color: var(--muted); margin-top: 2px; transition: color .2s; }
+    .lib-header-right { display: flex; align-items: center; gap: 8px; }
+
+    /* View toggle */
+    .view-toggle { display: flex; gap: 3px; }
+    .view-btn {
+      width: 30px; height: 30px; border: 1.5px solid var(--border); border-radius: 6px;
+      background: var(--card); color: var(--muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all .15s;
+    }
+    .view-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .view-btn:hover { border-color: var(--blue); color: var(--blue); }
+    .view-btn.active { background: var(--navy); border-color: var(--navy); color: #fff; }
+
+    /* Sort select */
+    .sort-select {
+      border: 1.5px solid var(--border); border-radius: 6px; padding: 5px 8px;
+      font-size: 11px; font-weight: 700; color: var(--muted); background: var(--card);
+      cursor: pointer; outline: none; font-family: inherit; transition: border-color .15s;
+    }
+    .sort-select:focus { border-color: var(--blue); }
+
+    /* ── LIST VIEW ─────────────────────────────────────────────────────── */
+    .cv-list { border: 1.5px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--card); }
+    .cv-list-header {
+      display: flex; align-items: center; gap: 12px; padding: 9px 16px;
+      background: #F8FAFF; border-bottom: 2px solid var(--border);
+      font-size: 10px; font-weight: 800; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .6px;
+    }
+    .col-av   { width: 40px; flex-shrink: 0; }
+    .col-main { flex: 1; min-width: 0; }
+    .col-date { min-width: 110px; text-align: right; flex-shrink: 0; }
+    .col-acts { min-width: 150px; text-align: right; flex-shrink: 0; }
+
+    /* Sortable column headers */
+    .col-sortable {
+      cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 4px; border-radius: 4px; transition: background .12s, color .12s;
+    }
+    .col-sortable:hover { background: #ECEFFA; color: var(--navy); }
+    .col-sortable.asc  .sort-icon::after { content: '▲'; font-size: 8px; color: var(--blue); }
+    .col-sortable.desc .sort-icon::after { content: '▼'; font-size: 8px; color: var(--blue); }
+    .col-sortable:not(.asc):not(.desc) .sort-icon::after { content: '⇅'; font-size: 9px; opacity: .35; }
+
+    /* CV rows */
+    @keyframes fadeInRow {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideOutRow {
+      to { opacity: 0; transform: translateX(-18px); max-height: 0;
+           padding-top: 0; padding-bottom: 0; overflow: hidden; border-bottom-width: 0; }
+    }
+    .cv-row {
+      display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+      border-bottom: 1px solid var(--border); transition: background .15s;
+      animation: fadeInRow .2s ease both;
+    }
+    .cv-row:last-child { border-bottom: none; }
+    .cv-row:hover { background: #F5F8FF; }
+    .cv-row.removing { animation: slideOutRow .28s ease-out forwards; pointer-events: none; }
+
+    .cv-row-avatar {
+      width: 40px; height: 40px; border-radius: 50%; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 13px; flex-shrink: 0; letter-spacing: -1px;
+      transition: transform .15s;
+    }
+    .cv-row:hover .cv-row-avatar { transform: scale(1.07); }
+    .cv-row-main { flex: 1; min-width: 0; cursor: pointer; }
+    .cv-row-name { font-size: 14px; font-weight: 700; color: var(--navy); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .cv-row-sub  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .cv-row-techs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+
+    /* Search highlight */
+    mark.hl { background: #FEF08A; color: var(--navy); border-radius: 2px; padding: 0 1px; font-style: normal; }
+
+    /* Tech badges */
+    .tech-badge {
+      background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;
+      border-radius: 4px; padding: 2px 7px; font-size: 10.5px; font-weight: 700;
+      cursor: pointer; transition: all .12s; white-space: nowrap;
+    }
+    .tech-badge:hover { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .tech-badge.more  { background: #F1F5FF; color: var(--muted); border-color: #C7D9F6; cursor: default; }
+    .tech-badge.active-filter { background: var(--navy); color: #fff; border-color: var(--navy); }
+
+    /* Language & mode badges */
+    .lang-badge { font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 10px; background: #E0EAFF; color: var(--blue); border: 1px solid #AABFFF; }
+    .mode-badge-sm { font-size: 9.5px; font-weight: 700; padding: 1px 7px; border-radius: 10px; }
+    .mode-badge-sm.digital { background: #D1FAE5; color: #065F46; }
+    .mode-badge-sm.scanned { background: #FEF3C7; color: #92400E; }
+
+    .cv-row-date { min-width: 110px; text-align: right; flex-shrink: 0; font-size: 12px; color: var(--muted); }
+    .cv-row-date strong { display: block; font-size: 11px; font-weight: 800; color: var(--navy); }
+    .cv-row-actions { display: flex; gap: 5px; flex-shrink: 0; min-width: 150px; justify-content: flex-end; }
+    .btn-row { padding: 5px 12px; font-size: 11px; font-weight: 700; border-radius: 5px; border: none; cursor: pointer; transition: all .15s; }
+    .btn-row:hover { filter: brightness(1.12); transform: translateY(-1px); }
+    .btn-row:active { transform: translateY(0); }
+    .btn-open   { background: var(--navy); color: #fff; }
+    .btn-export { background: var(--sub);  color: #fff; }
+    .btn-del    { background: #FEE2E2; color: var(--red); }
+
+    /* ── GRID VIEW ─────────────────────────────────────────────────────── */
+    .cv-grid-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 14px;
+    }
+    .cv-card {
+      background: var(--card); border: 1.5px solid var(--border);
+      border-radius: 14px; padding: 16px;
+      transition: box-shadow .2s, transform .2s, border-color .2s;
+      cursor: pointer; position: relative;
+      animation: fadeInRow .22s ease both;
+    }
+    .cv-card:hover { box-shadow: 0 8px 28px rgba(15,32,66,.11); transform: translateY(-3px); border-color: #B8C8F0; }
+    .cv-card.removing { animation: slideOutRow .28s ease-out forwards; pointer-events: none; }
+    .cv-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .cv-card-avatar {
+      width: 44px; height: 44px; border-radius: 50%; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 15px; flex-shrink: 0;
+      transition: transform .18s;
+    }
+    .cv-card:hover .cv-card-avatar { transform: scale(1.08); }
+    .cv-card-name { font-size: 13px; font-weight: 800; color: var(--navy); margin-bottom: 2px; }
+    .cv-card-sub { font-size: 11px; color: var(--muted); line-height: 1.4; }
+    .cv-card-techs { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 12px; min-height: 22px; }
+    .cv-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; border-top: 1px solid var(--border); padding-top: 10px; }
+    .cv-card-date { font-size: 10.5px; color: var(--muted); }
+    .cv-card-actions { display: flex; gap: 5px; }
+
+    /* ── SKELETON ──────────────────────────────────────────────────────── */
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    .sk-line {
+      border-radius: 6px;
+      background: linear-gradient(90deg, #E8EDFB 25%, #F3F5FD 50%, #E8EDFB 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.6s ease-in-out infinite;
+    }
+    .sk-circle { border-radius: 50%; }
+    .sk-row {
+      display: flex; align-items: center; gap: 12px; padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sk-card {
+      background: var(--card); border: 1.5px solid var(--border);
+      border-radius: 14px; padding: 16px;
+    }
+
+    /* ── EMPTY STATE ───────────────────────────────────────────────────── */
+    .lib-empty { text-align: center; padding: 48px 24px; color: var(--muted); font-size: 14px; }
+    .lib-empty svg { width: 52px; height: 52px; margin: 0 auto 12px; display: block; stroke: #CBD5E1; }
+    .lib-empty p { font-size: 12px; margin-top: 6px; }
+
+    /* ── TOAST SYSTEM ──────────────────────────────────────────────────── */
+    #toastContainer {
+      position: fixed; bottom: 20px; right: 20px; z-index: 400;
+      display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+    }
+    .toast-item {
+      background: var(--navy); color: #fff;
+      padding: 10px 14px 10px 14px; border-radius: 10px;
+      font-size: 13px; font-weight: 600;
+      max-width: 340px; line-height: 1.4; position: relative;
+      display: flex; align-items: flex-start; gap: 10px;
+      box-shadow: 0 4px 20px rgba(15,32,66,.22);
+      animation: toastIn .28s cubic-bezier(.34,1.56,.64,1);
+      overflow: hidden;
+    }
+    .toast-item.leaving { animation: toastOut .22s ease-in forwards; }
+    @keyframes toastIn  { from { opacity:0; transform: translateX(30px) scale(.96); } }
+    @keyframes toastOut { to   { opacity:0; transform: translateX(20px) scale(.94); max-height:0; padding:0; margin:0; } }
+    .toast-item.warn { background: #92400E; }
+    .toast-item.ok   { background: var(--green); }
+    .toast-item.err  { background: var(--red); }
+    .toast-icon { font-size: 16px; flex-shrink: 0; }
+    .toast-text { flex: 1; }
+    .toast-close { background: none; border: none; color: rgba(255,255,255,.6); cursor: pointer; font-size: 16px; padding: 0; line-height: 1; flex-shrink: 0; margin-top: -1px; }
+    .toast-close:hover { color: #fff; }
+    .toast-bar {
+      position: absolute; bottom: 0; left: 0; height: 3px;
+      background: rgba(255,255,255,.35); border-radius: 0 0 10px 10px;
+      animation: toastBar linear forwards;
+    }
+    @keyframes toastBar { from { width: 100%; } to { width: 0%; } }
+
+    /* ── CONFIRM MODAL ─────────────────────────────────────────────────── */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(15,32,66,.45);
+      backdrop-filter: blur(4px); z-index: 500;
+      display: flex; align-items: center; justify-content: center;
+      animation: fadeInBd .16s ease;
+    }
+    @keyframes fadeInBd { from { opacity: 0; } }
+    .modal-box {
+      background: #fff; border-radius: 20px; padding: 32px 28px 24px;
+      max-width: 360px; width: 90%;
+      box-shadow: 0 24px 60px rgba(15,32,66,.22);
+      animation: modalPop .2s cubic-bezier(.34,1.56,.64,1);
+    }
+    @keyframes modalPop { from { transform: scale(.88); opacity: 0; } }
+    .modal-icon  { font-size: 44px; text-align: center; margin-bottom: 14px; }
+    .modal-title { font-size: 18px; font-weight: 800; color: var(--navy); text-align: center; margin-bottom: 8px; }
+    .modal-msg   { font-size: 13px; color: var(--muted); text-align: center; margin-bottom: 22px; line-height: 1.6; }
+    .modal-btns  { display: flex; gap: 10px; }
+    .modal-btn   { flex: 1; padding: 11px; border-radius: 10px; border: none; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .modal-btn-cancel  { background: #F1F5F9; color: var(--muted); }
+    .modal-btn-cancel:hover  { background: #E2E8F0; }
+    .modal-btn-confirm { background: var(--red); color: #fff; }
+    .modal-btn-confirm:hover { background: #B91C1C; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(220,38,38,.3); }
+
+    /* ── KEYBOARD SHORTCUT POPUP ───────────────────────────────────────── */
+    .kbd-badge {
+      display: inline-block; font-size: 10px; font-family: monospace;
+      background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
+      border-radius: 4px; padding: 1px 5px; color: rgba(255,255,255,.7);
+    }
+  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-theme.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-cvparser-sombre.css') }}"/>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="brand">
+    <a href="/" style="display:flex;align-items:center;gap:9px;text-decoration:none;">
+      <svg class="brand-svg" viewBox="0 0 26 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="lgDocI" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#1A5CFF" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#0F2042"/>
+          </linearGradient>
+          <linearGradient id="lgScanI" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#00ECC6" stop-opacity="0"/>
+            <stop offset="50%" stop-color="#00ECC6" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#00ECC6" stop-opacity="0"/>
+          </linearGradient>
+          <clipPath id="dcI"><path d="M1,0 L19,0 L25,6 L25,32 L1,32 Z"/></clipPath>
+        </defs>
+        <path d="M1,0 L19,0 L25,6 L25,32 L1,32 Z" fill="url(#lgDocI)"/>
+        <path d="M19,0 L19,6 L25,6 Z" fill="rgba(255,255,255,0.25)"/>
+        <rect x="5" y="11" width="10" height="2" rx="1" fill="#00ECC6" opacity=".95"/>
+        <rect x="5" y="15.5" width="15" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="19" width="12" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="22.5" width="14" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="26" width="10" height="1.5" rx=".75" fill="rgba(255,255,255,.35)"/>
+        <rect x="1" y="0" width="24" height="5" fill="url(#lgScanI)" clip-path="url(#dcI)">
+          <animate attributeName="y" from="-5" to="33" dur="2.2s" repeatCount="indefinite"/>
+        </rect>
+      </svg>
+      <span class="brand-name">adbi<span>.cv</span></span>
+    </a>
+    <nav style="display:flex;gap:4px;margin-left:12px">
+      <a href="/needs"    class="nav-link">Besoins</a>
+      <a href="/rapprochement" class="nav-link">Rapprochement</a>
+      <a href="/settings" class="nav-link">⚙ Paramètres</a>
+    </nav>
+  </div>
+  <div class="header-right">
+    <span style="font-size:10px;color:rgba(255,255,255,.4)" title="Raccourcis : / = recherche · Echap = reset"
+          class="kbd-badge">/</span>
+    <div class="api-badge" id="apiBadge" title="Statut API LLM">
+      <div class="api-dot checking" id="apiDot"></div>
+      <span id="apiLabel">API…</span>
+    </div>
+    <div class="stat-chip" id="statChip">—</div>
+    <span id="headerUser" style="font-size:12px;font-weight:600;color:rgba(255,255,255,.75);padding:0 4px"></span>
+    <button onclick="logout()" class="btn-logout">Déconnexion</button>
+  </div>
+</header>
+
+<style>
+  .nav-link { padding:5px 12px;border-radius:6px;text-decoration:none;color:rgba(255,255,255,.65);font-weight:600;font-size:12px;transition:background .15s,color .15s; }
+  .nav-link:hover { background:rgba(255,255,255,.1);color:#fff; }
+  .btn-logout { background:none;border:1.5px solid rgba(255,255,255,.25);border-radius:7px;padding:4px 12px;cursor:pointer;font-size:12px;color:rgba(255,255,255,.65);font-family:inherit;transition:all .15s; }
+  .btn-logout:hover { border-color:rgba(255,255,255,.6);color:#fff; }
+</style>
+
+<!-- APP BODY -->
+<div class="app-body">
+
+  <!-- ═══════════ SIDEBAR ═══════════ -->
+  <aside class="sidebar" id="sidebar">
+
+    <!-- Upload -->
+    <div class="sb-section">
+      <div class="sb-title">Importer un CV</div>
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+        <div class="up-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L8 8m4-4 4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+        </div>
+        <div class="up-title">Glisser des CV ici</div>
+        <div class="up-sub">ou <strong>cliquer</strong> pour importer</div>
+        <span class="formats-pill">PDF · DOCX · en lot</span>
+      </div>
+      <input type="file" id="fileInput" accept=".pdf,.docx" multiple />
+
+      <div class="upload-progress" id="uploadProgress" style="display:none">
+        <div class="up-filename" id="upFilename">—</div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="up-status" id="upStatus">Envoi en cours…</div>
+      </div>
+
+      <!-- File d'attente d'un import en lot : un CV part à la fois, l'écran
+           dit lequel et ce qu'il reste. -->
+      <div class="lot" id="lot" hidden>
+        <div class="lot-entete">
+          <span id="lotTitre">Import en lot</span>
+          <button type="button" class="lot-stop" id="lotStop" onclick="arreterLot()">Arrêter</button>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="lotBarre"></div></div>
+        <ol class="lot-liste" id="lotListe"></ol>
+      </div>
+
+      <div class="parse-summary" id="parseSummary" style="display:none">
+        <div class="parse-summary-card">
+          <div class="mode-pill" id="modePill">📄 Digital</div>
+          <div class="parse-name" id="parseName"></div>
+          <div class="parse-stats" id="parseStats"></div>
+          <a class="btn-open-dossier" id="openDossierBtn" href="#">Ouvrir le dossier →</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="sb-section">
+      <div class="sb-title-row">
+        <span class="sb-title" style="margin-bottom:0">Recherche libre</span>
+        <span class="kbd-hint">/</span>
+      </div>
+      <input class="sb-search" id="searchInput" type="text"
+             placeholder="🔍  Nom, titre, techno, ville…" />
+    </div>
+
+    <!-- Technologies -->
+    <div class="sb-section">
+      <div class="sb-title-row">
+        <span class="sb-title" style="margin-bottom:0">Technologies</span>
+        <span class="sb-count-badge" id="skillCountBadge">0</span>
+      </div>
+      <div class="skill-tags" id="skillTagsContainer">
+        <span class="no-skills">Chargement…</span>
+      </div>
+    </div>
+
+    <!-- Localisation -->
+    <div class="sb-section">
+      <div class="sb-title">Localisation</div>
+      <input class="sb-input" id="locationInput" type="text"
+             placeholder="Paris, Lyon, Marseille…" />
+    </div>
+
+    <!-- Séniorité -->
+    <div class="sb-section">
+      <div class="sb-title">Séniorité</div>
+      <div class="filter-btns" id="seniorityBtns">
+        <button class="filter-btn active" data-val="" onclick="setSeniority(this)">Tous</button>
+        <button class="filter-btn" data-val="junior" onclick="setSeniority(this)">Junior<br><small style="font-weight:400;font-size:9px">0–2 ans</small></button>
+        <button class="filter-btn" data-val="mid"    onclick="setSeniority(this)">Mid<br><small style="font-weight:400;font-size:9px">3–5 ans</small></button>
+        <button class="filter-btn" data-val="senior" onclick="setSeniority(this)">Senior<br><small style="font-weight:400;font-size:9px">6–9 ans</small></button>
+        <button class="filter-btn" data-val="expert" onclick="setSeniority(this)">Expert<br><small style="font-weight:400;font-size:9px">10+ ans</small></button>
+      </div>
+    </div>
+
+    <!-- Expérience -->
+    <div class="sb-section">
+      <div class="sb-title">Expérience minimale</div>
+      <div class="filter-btns" id="expBtns">
+        <button class="filter-btn active" data-val="0"  onclick="setMinExp(this)">Tous</button>
+        <button class="filter-btn"        data-val="3"  onclick="setMinExp(this)">3+ ans</button>
+        <button class="filter-btn"        data-val="5"  onclick="setMinExp(this)">5+ ans</button>
+        <button class="filter-btn"        data-val="8"  onclick="setMinExp(this)">8+ ans</button>
+        <button class="filter-btn"        data-val="10" onclick="setMinExp(this)">10+ ans</button>
+      </div>
+    </div>
+
+    <!-- Reset -->
+    <div class="sb-section">
+      <button class="btn-reset" onclick="resetFilters()">↺ Réinitialiser les filtres</button>
+    </div>
+
+  </aside>
+
+  <!-- Sidebar toggle button -->
+  <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Masquer/Afficher le panneau">‹</button>
+
+  <!-- ═══════════ MAIN ═══════════ -->
+  <main class="main-content" id="mainContent">
+
+    <div class="lib-header">
+      <div>
+        <div class="lib-title">Bibliothèque de CVs</div>
+        <div class="lib-count" id="libCount">Chargement…</div>
+      </div>
+      <div class="lib-header-right">
+        <!-- Sort -->
+        <select class="sort-select" id="sortSelect" onchange="applySort(this.value)">
+          <option value="date_desc">↓ Date (récent)</option>
+          <option value="date_asc">↑ Date (ancien)</option>
+          <option value="name_asc">↑ Nom A→Z</option>
+          <option value="name_desc">↓ Nom Z→A</option>
+          <option value="exp_desc">↓ Expérience</option>
+          <option value="exp_asc">↑ Expérience</option>
+        </select>
+        <!-- View toggle -->
+        <div class="view-toggle">
+          <button class="view-btn active" id="viewList" onclick="setView('list')" title="Vue liste">
+            <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1.2" fill="currentColor"/><circle cx="3" cy="12" r="1.2" fill="currentColor"/><circle cx="3" cy="18" r="1.2" fill="currentColor"/></svg>
+          </button>
+          <button class="view-btn" id="viewGrid" onclick="setView('grid')" title="Vue grille">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active filter chips -->
+    <div class="active-chips" id="activeChips"></div>
+
+    <!-- CV List/Grid -->
+    <div id="cvGrid"></div>
+
+  </main>
+</div>
+
+<div id="toastContainer"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════════════ */
+let allCVs = [];
+let _viewMode  = localStorage.getItem('adbi_view')  || 'list';
+let _sortMode  = localStorage.getItem('adbi_sort')  || 'date_desc';
+const activeFilters = { q:'', techs: new Set(), location:'', minExp:0, seniority:'' };
+
+/* ═══════════════════════════════════════════════════════════════
+   AVATAR COLORS — deterministic from name
+═══════════════════════════════════════════════════════════════ */
+// Teintes prises dans l'arc du logo ADBI (violet -> magenta -> orange).
+// Elles restent distinctes les unes des autres pour qu'on reconnaisse un
+// profil d'un coup d'oeil dans la liste, tout en restant dans la charte.
+const AVATAR_COLORS = [
+  '#8b1a7e','#a81f8a','#c81e78','#e8167a','#e83a5e',
+  '#ee4f44','#f26522','#d4522a','#b83070','#9c2b96',
+];
+function hashColor(name) {
+  let h = 0;
+  for (let i = 0; i < (name||'').length; i++) h = (h * 31 + (name||'').charCodeAt(i)) & 0xffff;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SEARCH HIGHLIGHT
+═══════════════════════════════════════════════════════════════ */
+function hlText(raw, q) {
+  if (!q) return esc(raw);
+  const safe = q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  return esc(raw).replace(new RegExp(`(${safe})`, 'gi'),
+    '<mark class="hl">$1</mark>');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SKELETON LOADERS
+═══════════════════════════════════════════════════════════════ */
+function skeletonList(n=5) {
+  const rows = Array.from({length:n}, () => `
+    <div class="sk-row">
+      <div class="sk-line sk-circle" style="width:40px;height:40px;flex-shrink:0"></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:7px">
+        <div class="sk-line" style="width:38%;height:13px"></div>
+        <div class="sk-line" style="width:55%;height:10px"></div>
+        <div style="display:flex;gap:5px">
+          <div class="sk-line" style="width:50px;height:18px;border-radius:4px"></div>
+          <div class="sk-line" style="width:60px;height:18px;border-radius:4px"></div>
+          <div class="sk-line" style="width:45px;height:18px;border-radius:4px"></div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;min-width:100px">
+        <div class="sk-line" style="width:80px;height:11px"></div>
+        <div class="sk-line" style="width:50px;height:10px"></div>
+      </div>
+    </div>`).join('');
+  return `<div class="cv-list">${rows}</div>`;
+}
+
+function skeletonGrid(n=6) {
+  return `<div class="cv-grid-cards">${
+    Array.from({length:n}, () => `
+      <div class="sk-card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <div class="sk-line sk-circle" style="width:44px;height:44px;flex-shrink:0"></div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+            <div class="sk-line" style="width:65%;height:13px"></div>
+            <div class="sk-line" style="width:80%;height:10px"></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:5px;margin-bottom:12px">
+          <div class="sk-line" style="width:50px;height:18px;border-radius:4px"></div>
+          <div class="sk-line" style="width:65px;height:18px;border-radius:4px"></div>
+          <div class="sk-line" style="width:45px;height:18px;border-radius:4px"></div>
+        </div>
+        <div style="border-top:1px solid #EEF2F9;padding-top:10px;display:flex;justify-content:space-between">
+          <div class="sk-line" style="width:70px;height:10px"></div>
+          <div style="display:flex;gap:5px">
+            <div class="sk-line" style="width:55px;height:22px;border-radius:5px"></div>
+            <div class="sk-line" style="width:30px;height:22px;border-radius:5px"></div>
+          </div>
+        </div>
+      </div>`).join('')
+  }</div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   UPLOAD
+═══════════════════════════════════════════════════════════════ */
+const zone = document.getElementById('uploadZone');
+const EXTENSIONS = ['pdf', 'docx'];
+const echapperNom = (t) => String(t ?? '').replace(/[<>&"]/g,
+  c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+
+zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault(); zone.classList.remove('drag-over');
+  deposer(e.dataTransfer.files);
+});
+document.getElementById('fileInput').addEventListener('change', e => {
+  deposer(e.target.files);
+  e.target.value = '';
+});
+
+/**
+ * Point d'entrée du dépôt : un fichier suit le chemin habituel, plusieurs
+ * passent par la file d'attente.
+ */
+function deposer(liste) {
+  const tous = [...(liste || [])];
+  if (!tous.length) return;
+  const bons = tous.filter(f => EXTENSIONS.includes(f.name.split('.').pop().toLowerCase()));
+  const ecartes = tous.length - bons.length;
+  if (ecartes) {
+    showToast(`${ecartes} fichier${ecartes > 1 ? 's' : ''} ignoré${ecartes > 1 ? 's' : ''} — `
+              + 'PDF et DOCX uniquement', 4500, 'warn');
+  }
+  if (!bons.length) {
+    zone.classList.add('invalid');
+    setTimeout(() => zone.classList.remove('invalid'), 700);
+    return;
+  }
+  bons.length === 1 ? handleFile(bons[0]) : lancerLot(bons);
+}
+
+function showParseSummary(data) {
+  const s = data.parse_summary || {};
+  const isDigital = s.mode === 'digital';
+  document.getElementById('modePill').textContent  = isDigital ? '📄 PDF digital' : '🔍 PDF scanné · OCR';
+  document.getElementById('modePill').className    = 'mode-pill ' + (isDigital ? 'digital' : 'scanned');
+  document.getElementById('parseName').textContent = s.name || data.name || '';
+  let statsHtml = `${s.experiences} expérience${s.experiences>1?'s':''} · ${s.skills} compétence${s.skills>1?'s':''} · ${s.education} formation${s.education>1?'s':''}`;
+  const t = s.timing || {};
+  if (t.total_s) {
+    const llmPct = t.llm_s ? Math.round(t.llm_s / t.total_s * 100) : 0;
+    statsHtml += `<br><span style="font-size:10px;color:#9AAFC8;display:block;margin-top:5px">
+      ⏱ Total <strong>${t.total_s}s</strong> — LLM <strong style="color:${llmPct>80?'#EF4444':'#64748B'}">${t.llm_s}s</strong> (${llmPct}%)</span>`;
+  }
+  document.getElementById('parseStats').innerHTML = statsHtml;
+  document.getElementById('openDossierBtn').href = `/cv/${data.id}`;
+  document.getElementById('parseSummary').style.display = 'block';
+}
+
+function resetUploadZone() {
+  document.getElementById('parseSummary').style.display = 'none';
+  document.getElementById('uploadProgress').style.display = 'none';
+  const f = document.getElementById('progressFill');
+  f.style.width = '0%'; f.classList.remove('done','error');
+}
+
+/**
+ * Envoie UN CV et rend son issue, sans rien décider de l'affichage.
+ *
+ * Séparé de `handleFile` pour que la file d'attente puisse enchaîner les
+ * fichiers sans déclencher, à chaque fois, le panneau de synthèse et les
+ * messages destinés à un import isolé.
+ */
+async function envoyerCv(file, discret) {
+  // Jeton de suivi : le serveur y note sa progression réelle, le widget la lit.
+  const jeton = (crypto.randomUUID ? crypto.randomUUID()
+                 : Date.now() + '-' + Math.random().toString(36).slice(2));
+  if (!discret) ConvWidget.startLocal(file.name, jeton);   // en lot, la liste suffit
+  const fd = new FormData(); fd.append('file', file); fd.append('jeton', jeton);
+  try {
+    const r = await fetch('/api/upload', { method: 'POST', body: fd, credentials: 'include' });
+    const data = await r.json();
+    if (!r.ok || data.error) {
+      const erreur = data.error || `Erreur HTTP ${r.status}`;
+      if (!discret) ConvWidget.fail(erreur);
+      return { ok: false, erreur };
+    }
+    // `ConvWidget.done` émet `convDone` : c'est cet écouteur qui affiche la
+    // synthèse et le message. Ne les répétez pas ici, ils sortaient en double.
+    if (!discret) ConvWidget.done(data.id, data.parse_warning);
+    return { ok: true, data };
+  } catch {
+    if (!discret) ConvWidget.fail('Impossible de contacter le serveur');
+    return { ok: false, erreur: 'Impossible de contacter le serveur' };
+  }
+}
+
+async function handleFile(file) {
+  const r = await envoyerCv(file);
+  if (!r.ok) showToast(r.erreur, 4000, 'err');
+}
+
+document.addEventListener('convDone', e => {
+  const { cvId, warning, parseSummary } = e.detail;
+  loadLibrary(); loadSkills();
+  // Pendant un lot, c'est le panneau de file qui rend compte : dix synthèses
+  // et vingt messages successifs ne diraient rien de plus.
+  if (lotEnCours) return;
+  if (parseSummary) showParseSummary({ id: cvId, parse_summary: parseSummary, parse_warning: warning });
+  if (warning) showToast('Extraction partielle — certains champs peuvent être vides', 6000, 'warn');
+  else         showToast('CV analysé avec succès !', 3500, 'ok');
+});
+
+/* ── Import en lot ────────────────────────────────────────────────────────
+   Les CV partent UN PAR UN. L'analyse passe par la cascade de modèles, dont
+   le palier gratuit d'OVHcloud plafonne à 2 requêtes par minute et par
+   modèle : lancer dix envois de front les ferait tous refuser (HTTP 429).
+   Compter environ 15 à 40 s par CV. */
+
+let lotEnCours = null;
+
+function majBarreLot(faits, total, ok, rates) {
+  document.getElementById('lotBarre').style.width = `${Math.round(faits / total * 100)}%`;
+  const reste = total - faits;
+  document.getElementById('lotTitre').textContent =
+    reste ? `Import en lot — ${faits}/${total}`
+          : `Lot terminé — ${ok} importé${ok > 1 ? 's' : ''}` + (rates ? `, ${rates} en échec` : '');
+}
+
+async function lancerLot(fichiers) {
+  if (lotEnCours) { showToast('Un import est déjà en cours', 3000, 'warn'); return; }
+  lotEnCours = { annule: false };
+
+  resetUploadZone();
+  document.getElementById('lot').hidden = false;
+  document.getElementById('lotStop').hidden = false;
+  document.getElementById('lotBarre').classList.remove('done', 'error');
+  document.getElementById('lotListe').innerHTML = fichiers.map((f, i) =>
+    `<li id="lot-${i}"><span class="nomf">${echapperNom(f.name)}</span>` +
+    `<span class="etat">·</span></li>`).join('');
+  majBarreLot(0, fichiers.length, 0, 0);
+
+  // Deux envois SIMULTANÉS : le serveur encaisse (Flask multi-fils, quotas
+  // IA comptés par modèle), et un lot de 10 CV prend presque moitié moins de
+  // temps qu'en file simple. Au-delà de 2, l'OCR se marcherait dessus.
+  let ok = 0, rates = 0, faits = 0, suivant = 0;
+  const travailleur = async () => {
+    while (!lotEnCours.annule && suivant < fichiers.length) {
+      const i = suivant++;
+      const li = document.getElementById(`lot-${i}`);
+      li.className = 'encours';
+      li.querySelector('.etat').textContent = '◍';
+      li.scrollIntoView({ block: 'nearest' });
+
+      const r = await envoyerCv(fichiers[i], true);
+      if (r.ok) {
+        ok++; li.className = 'fait'; li.querySelector('.etat').textContent = '✓';
+      } else {
+        rates++; li.className = 'rate'; li.querySelector('.etat').textContent = '✕';
+        li.title = r.erreur;                     // le détail au survol, pas à l'écran
+      }
+      majBarreLot(++faits, fichiers.length, ok, rates);
+    }
+  };
+  await Promise.all([travailleur(), travailleur()]);
+
+  const interrompu = lotEnCours.annule;
+  lotEnCours = null;
+  document.getElementById('lotStop').hidden = true;
+  document.getElementById('lotBarre').classList.add(rates ? 'error' : 'done');
+  if (interrompu) majBarreLot(ok + rates, fichiers.length, ok, rates);
+
+  loadLibrary(); loadSkills();
+  showToast(
+    interrompu ? `Import interrompu — ${ok} CV importé${ok > 1 ? 's' : ''} sur ${fichiers.length}`
+    : rates ? `${ok} CV importé${ok > 1 ? 's' : ''}, ${rates} en échec — survolez la ligne pour le motif`
+    : `${ok} CV importés`,
+    rates || interrompu ? 7000 : 4000,
+    rates ? 'warn' : 'ok');
+}
+
+function arreterLot() {
+  if (!lotEnCours) return;
+  lotEnCours.annule = true;                      // le CV en cours va jusqu'au bout
+  document.getElementById('lotTitre').textContent = 'Arrêt après le CV en cours…';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DATA LOADING
+═══════════════════════════════════════════════════════════════ */
+async function loadLibrary() {
+  // Show skeleton while loading
+  const grid = document.getElementById('cvGrid');
+  if (!allCVs.length) grid.innerHTML = _viewMode === 'grid' ? skeletonGrid() : skeletonList();
+
+  try {
+    const list = await fetch('/api/cvs', { credentials:'include' }).then(r => r.json());
+    allCVs = Array.isArray(list) ? list : [];
+    applyFilters();
+    animateCount(allCVs.length);
+  } catch {
+    document.getElementById('libCount').textContent = 'Erreur de chargement';
+    grid.innerHTML = `<div class="lib-empty"><p>Impossible de charger les CVs</p></div>`;
+  }
+}
+
+async function loadSkills() {
+  try {
+    const skills = await fetch('/api/skills', { credentials:'include' }).then(r => r.json());
+    renderSkillTags(skills);
+  } catch {
+    document.getElementById('skillTagsContainer').innerHTML = '<span class="no-skills">Indisponible</span>';
+  }
+}
+
+/* Count animation */
+let _countTimer = null;
+function animateCount(target) {
+  if (_countTimer) clearInterval(_countTimer);
+  let cur = 0;
+  const chip = document.getElementById('statChip');
+  _countTimer = setInterval(() => {
+    cur = Math.min(cur + Math.ceil((target - cur) / 4) || 1, target);
+    chip.textContent = `${cur} CV${cur>1?'s':''} stocké${cur>1?'s':''}`;
+    if (cur >= target) clearInterval(_countTimer);
+  }, 40);
+}
+
+function renderSkillTags(skills) {
+  const container = document.getElementById('skillTagsContainer');
+  document.getElementById('skillCountBadge').textContent = skills.length;
+  if (!skills.length) { container.innerHTML = '<span class="no-skills">Aucune compétence détectée</span>'; return; }
+  container.innerHTML = skills.slice(0, 50).map(s =>
+    `<span class="skill-tag${activeFilters.techs.has(s.skill) ? ' active':''}"
+           data-skill="${esc(s.skill)}" onclick="toggleTech('${esc(s.skill)}')"
+           title="${s.count} CV${s.count>1?'s':''}">
+       ${esc(s.skill)}<span class="sk-count">${s.count}</span></span>`
+  ).join('');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SORTING
+═══════════════════════════════════════════════════════════════ */
+function sortCVs(list, mode) {
+  return [...list].sort((a,b) => {
+    switch(mode) {
+      case 'name_asc':  return (a.name||'').localeCompare(b.name||'');
+      case 'name_desc': return (b.name||'').localeCompare(a.name||'');
+      case 'exp_asc':   return (a.years_experience||0) - (b.years_experience||0);
+      case 'exp_desc':  return (b.years_experience||0) - (a.years_experience||0);
+      case 'date_asc':  return (a.stored_at||'').localeCompare(b.stored_at||'');
+      default:          return (b.stored_at||'').localeCompare(a.stored_at||'');
+    }
+  });
+}
+
+function applySort(mode) {
+  _sortMode = mode;
+  localStorage.setItem('adbi_sort', mode);
+  applyFilters();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FILTERING
+═══════════════════════════════════════════════════════════════ */
+let _searchTimer = null;
+function scheduleFilter() {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(applyFilters, 140);
+}
+
+document.getElementById('searchInput').addEventListener('input', scheduleFilter);
+document.getElementById('locationInput').addEventListener('input', scheduleFilter);
+
+function applyFilters() {
+  activeFilters.q        = (document.getElementById('searchInput').value   || '').toLowerCase().trim();
+  activeFilters.location = (document.getElementById('locationInput').value || '').toLowerCase().trim();
+
+  let filtered = allCVs.filter(cv => {
+    if (activeFilters.q) {
+      const h = `${cv.name||''} ${cv.title||''} ${(cv.skills_flat||[]).join(' ')} ${cv.location||''}`.toLowerCase();
+      if (!h.includes(activeFilters.q)) return false;
+    }
+    if (activeFilters.techs.size > 0) {
+      const sl = (cv.skills_flat||[]).map(s => s.toLowerCase());
+      for (const t of activeFilters.techs)
+        if (!sl.some(s => s.includes(t.toLowerCase()))) return false;
+    }
+    if (activeFilters.location)
+      if (!(cv.location||'').toLowerCase().includes(activeFilters.location)) return false;
+    if (activeFilters.minExp > 0 && (cv.years_experience||0) < activeFilters.minExp) return false;
+    if (activeFilters.seniority) {
+      const y = cv.years_experience||0;
+      const ranges = { junior:[0,2], mid:[3,5], senior:[6,9], expert:[10,99] };
+      const [lo,hi] = ranges[activeFilters.seniority]||[0,99];
+      if (y < lo || y > hi) return false;
+    }
+    return true;
+  });
+
+  filtered = sortCVs(filtered, _sortMode);
+  renderCards(filtered);
+  renderActiveChips();
+}
+
+function toggleTech(skill) {
+  if (activeFilters.techs.has(skill)) activeFilters.techs.delete(skill);
+  else activeFilters.techs.add(skill);
+  document.querySelectorAll('.skill-tag').forEach(el =>
+    el.classList.toggle('active', activeFilters.techs.has(el.dataset.skill)));
+  applyFilters();
+}
+function setSeniority(btn) {
+  activeFilters.seniority = btn.dataset.val;
+  document.querySelectorAll('#seniorityBtns .filter-btn').forEach(b => b.classList.toggle('active', b===btn));
+  applyFilters();
+}
+function setMinExp(btn) {
+  activeFilters.minExp = parseInt(btn.dataset.val,10)||0;
+  document.querySelectorAll('#expBtns .filter-btn').forEach(b => b.classList.toggle('active', b===btn));
+  applyFilters();
+}
+function resetFilters() {
+  activeFilters.q=''; activeFilters.techs.clear(); activeFilters.location=''; activeFilters.minExp=0; activeFilters.seniority='';
+  document.getElementById('searchInput').value = '';
+  document.getElementById('locationInput').value = '';
+  document.querySelectorAll('.skill-tag.active').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.val===''||b.dataset.val==='0'));
+  applyFilters();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VIEW TOGGLE
+═══════════════════════════════════════════════════════════════ */
+function setView(mode) {
+  _viewMode = mode;
+  localStorage.setItem('adbi_view', mode);
+  document.getElementById('viewList').classList.toggle('active', mode==='list');
+  document.getElementById('viewGrid').classList.toggle('active', mode==='grid');
+  applyFilters();
+}
+// Restore saved state
+document.getElementById('viewList').classList.toggle('active', _viewMode==='list');
+document.getElementById('viewGrid').classList.toggle('active', _viewMode==='grid');
+document.getElementById('sortSelect').value = _sortMode;
+
+/* ═══════════════════════════════════════════════════════════════
+   SIDEBAR TOGGLE
+═══════════════════════════════════════════════════════════════ */
+let _sidebarOpen = true;
+function toggleSidebar() {
+  _sidebarOpen = !_sidebarOpen;
+  const sb  = document.getElementById('sidebar');
+  const btn = document.getElementById('sidebarToggle');
+  sb.classList.toggle('collapsed', !_sidebarOpen);
+  btn.textContent = _sidebarOpen ? '‹' : '›';
+  btn.style.left  = _sidebarOpen ? '268px' : '0px';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RENDER — LIST VIEW
+═══════════════════════════════════════════════════════════════ */
+const HEADER_ROW = `<div class="cv-list-header">
+  <div class="col-av"></div>
+  <div class="col-main">Candidat</div>
+  <div class="col-date">Conversion</div>
+  <div class="col-acts">Actions</div>
+</div>`;
+
+function renderCards(list) {
+  const grid = document.getElementById('cvGrid');
+  const total = allCVs.length, shown = list.length;
+  document.getElementById('libCount').textContent =
+    shown === total ? `${total} CV${total>1?'s':''} stocké${total>1?'s':''}`
+                    : `${shown} résultat${shown>1?'s':''} sur ${total}`;
+
+  if (!list.length) {
+    const msg = allCVs.length
+      ? 'Aucun profil ne correspond aux filtres.<p>Modifiez ou réinitialisez les critères.</p>'
+      : 'Aucun CV. Importez votre premier CV dans la barre latérale.';
+    grid.innerHTML = `<div class="cv-list"><div class="lib-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.2">
+        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+      </svg>${msg}</div></div>`;
+    return;
+  }
+
+  if (_viewMode === 'grid') { renderGrid(list, grid); return; }
+
+  const q = activeFilters.q;
+  const rows = list.map((cv, i) => {
+    const init  = (cv.name||'?').split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
+    const color = hashColor(cv.name||'');
+    const d     = cv.stored_at ? new Date(cv.stored_at) : null;
+    const dateStr = d ? d.toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+    const timeStr = d ? d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : '';
+
+    const parts = [];
+    if (cv.title)            parts.push(hlText(cv.title, q));
+    if (cv.years_experience) parts.push(`${cv.years_experience} an${cv.years_experience>1?'s':''}`);
+    if (cv.location)         parts.push(`📍 ${esc(cv.location)}`);
+    const sub = parts.join('  ·  ');
+
+    const langBadge = cv.language==='en' ? `<span class="lang-badge">🇬🇧 EN</span>` : '';
+    const skills    = cv.skills_flat||[];
+    const topSkills = skills.slice(0,6);
+    const rest      = skills.length - topSkills.length;
+    const techHTML  = topSkills.map(sk => {
+      const isActive = activeFilters.techs.has(sk);
+      return `<span class="tech-badge${isActive?' active-filter':''}"
+                    onclick="event.stopPropagation();toggleTech('${esc(sk)}')"
+                    title="Filtrer par ${esc(sk)}">${hlText(sk, q)}</span>`;
+    }).join('') + (rest>0 ? `<span class="tech-badge more">+${rest}</span>`:'');
+
+    return `<div class="cv-row" data-id="${cv.id}" style="animation-delay:${i*28}ms">
+      <div class="cv-row-avatar" style="background:${color}">${init}</div>
+      <div class="cv-row-main" onclick="openCV('${cv.id}')">
+        <div class="cv-row-name">${hlText(cv.name||'Inconnu', q)} ${langBadge}</div>
+        <div class="cv-row-sub">${sub||'—'}</div>
+        ${techHTML ? `<div class="cv-row-techs">${techHTML}</div>` : ''}
+      </div>
+      <div class="cv-row-date"><strong>${dateStr}</strong><span>${timeStr}</span></div>
+      <div class="cv-row-actions">
+        <button class="btn-row btn-open"   onclick="openCV('${cv.id}')">Ouvrir</button>
+        <button class="btn-row btn-export" onclick="exportCV('${cv.id}')">PDF</button>
+        <button class="btn-row btn-del"    onclick="deleteCV('${cv.id}',this)">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  grid.innerHTML = `<div class="cv-list">${HEADER_ROW}${rows}</div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RENDER — GRID VIEW
+═══════════════════════════════════════════════════════════════ */
+function renderGrid(list, grid) {
+  const q = activeFilters.q;
+  const cards = list.map((cv, i) => {
+    const init  = (cv.name||'?').split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase()||'?';
+    const color = hashColor(cv.name||'');
+    const d     = cv.stored_at ? new Date(cv.stored_at) : null;
+    const dateStr = d ? d.toLocaleDateString('fr-FR',{day:'2-digit',month:'short'}) : '—';
+
+    const parts = [];
+    if (cv.title)            parts.push(hlText(cv.title, q));
+    if (cv.years_experience) parts.push(`${cv.years_experience} an${cv.years_experience>1?'s':''}`);
+    if (cv.location)         parts.push(`📍 ${esc(cv.location)}`);
+
+    const skills    = cv.skills_flat||[];
+    const topSkills = skills.slice(0,5);
+    const rest      = skills.length - topSkills.length;
+    const techHTML  = topSkills.map(sk => {
+      const isActive = activeFilters.techs.has(sk);
+      return `<span class="tech-badge${isActive?' active-filter':''}"
+                    onclick="event.stopPropagation();toggleTech('${esc(sk)}')">${hlText(sk,q)}</span>`;
+    }).join('') + (rest>0 ? `<span class="tech-badge more">+${rest}</span>`:'');
+
+    return `<div class="cv-card" data-id="${cv.id}" style="animation-delay:${i*30}ms"
+                 onclick="openCV('${cv.id}')">
+      <div class="cv-card-top">
+        <div class="cv-card-avatar" style="background:${color}">${init}</div>
+        <div>
+          <div class="cv-card-name">${hlText(cv.name||'Inconnu', q)}</div>
+          <div class="cv-card-sub">${parts.join(' · ') || '—'}</div>
+        </div>
+      </div>
+      <div class="cv-card-techs">${techHTML||'<span style="font-size:11px;color:#9AAFC8">Aucune compétence</span>'}</div>
+      <div class="cv-card-footer">
+        <div class="cv-card-date">${dateStr}</div>
+        <div class="cv-card-actions" onclick="event.stopPropagation()">
+          <button class="btn-row btn-export" onclick="exportCV('${cv.id}')">PDF</button>
+          <button class="btn-row btn-del" onclick="deleteCV('${cv.id}',this)">✕</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  grid.innerHTML = `<div class="cv-grid-cards">${cards}</div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ACTIVE CHIPS
+═══════════════════════════════════════════════════════════════ */
+function renderActiveChips() {
+  const bar = document.getElementById('activeChips');
+  const chips = [];
+  if (activeFilters.q)
+    chips.push(`<span class="active-chip">🔍 "${esc(activeFilters.q)}"
+      <button class="rm-chip" onclick="document.getElementById('searchInput').value='';applyFilters()">×</button></span>`);
+  for (const t of activeFilters.techs)
+    chips.push(`<span class="active-chip">⚙️ ${esc(t)}
+      <button class="rm-chip" onclick="toggleTech('${esc(t)}')">×</button></span>`);
+  if (activeFilters.location)
+    chips.push(`<span class="active-chip">📍 ${esc(activeFilters.location)}
+      <button class="rm-chip" onclick="document.getElementById('locationInput').value='';applyFilters()">×</button></span>`);
+  if (activeFilters.seniority)
+    chips.push(`<span class="active-chip">👤 ${activeFilters.seniority}
+      <button class="rm-chip" onclick="setSeniority(document.querySelector('#seniorityBtns .filter-btn'))">×</button></span>`);
+  if (activeFilters.minExp > 0)
+    chips.push(`<span class="active-chip">📅 ${activeFilters.minExp}+ ans
+      <button class="rm-chip" onclick="setMinExp(document.querySelector('#expBtns .filter-btn'))">×</button></span>`);
+  bar.innerHTML = chips.join('');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ACTIONS
+═══════════════════════════════════════════════════════════════ */
+function openCV(id)   { window.open(`/cv/${id}`, '_blank'); }
+function exportCV(id) { window.open(`/api/cvs/${id}/export`, '_blank'); }
+
+async function deleteCV(id, btn) {
+  const row = btn.closest('[data-id]');
+  const nm  = row?.querySelector('.cv-row-name, .cv-card-name')?.textContent?.trim() || 'ce CV';
+
+  const confirmed = await showConfirm({
+    icon:    '🗑️',
+    title:   'Supprimer le CV ?',
+    message: `"${nm}" sera supprimé définitivement. Cette action est irréversible.`,
+    confirm: 'Supprimer',
+    cancel:  'Annuler',
+  });
+  if (!confirmed) return;
+
+  row?.classList.add('removing');
+  await new Promise(r => setTimeout(r, 260));
+
+  try {
+    await fetch(`/api/cvs/${id}`, { method:'DELETE', credentials:'include' });
+    allCVs = allCVs.filter(c => c.id !== id);
+    animateCount(allCVs.length);
+    applyFilters();
+    showToast('CV supprimé', 3000, 'ok');
+  } catch {
+    row?.classList.remove('removing');
+    showToast('Erreur lors de la suppression', 4000, 'err');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CUSTOM CONFIRM MODAL
+═══════════════════════════════════════════════════════════════ */
+function showConfirm({ icon='⚠️', title='Confirmer', message='', confirm='Oui', cancel='Annuler' }) {
+  return new Promise(resolve => {
+    const bd = document.createElement('div');
+    bd.className = 'modal-backdrop';
+    bd.innerHTML = `
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <div class="modal-icon">${icon}</div>
+        <div class="modal-title">${title}</div>
+        <div class="modal-msg">${message}</div>
+        <div class="modal-btns">
+          <button class="modal-btn modal-btn-cancel"  id="mCancel">${cancel}</button>
+          <button class="modal-btn modal-btn-confirm" id="mConfirm">${confirm}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(bd);
+    const close = val => { bd.remove(); resolve(val); };
+    bd.addEventListener('click', () => close(false));
+    bd.querySelector('#mCancel').addEventListener('click',  () => close(false));
+    bd.querySelector('#mConfirm').addEventListener('click', () => close(true));
+    bd.querySelector('#mConfirm').focus();
+    // Esc closes
+    const onKey = e => { if (e.key === 'Escape') { close(false); document.removeEventListener('keydown', onKey); } };
+    document.addEventListener('keydown', onKey);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TOAST SYSTEM  (stackable, icon, progress bar)
+═══════════════════════════════════════════════════════════════ */
+const TOAST_ICONS = { ok:'✅', warn:'⚠️', err:'❌', '':'🔔' };
+
+function showToast(msg, duration=4000, type='') {
+  const container = document.getElementById('toastContainer');
+  const item = document.createElement('div');
+  item.className = `toast-item${type?' '+type:''}`;
+  item.innerHTML = `
+    <span class="toast-icon">${TOAST_ICONS[type]||'🔔'}</span>
+    <span class="toast-text">${esc(msg)}</span>
+    <button class="toast-close" onclick="this.closest('.toast-item').remove()">×</button>
+    <div class="toast-bar" style="animation-duration:${duration}ms"></div>`;
+  container.appendChild(item);
+  setTimeout(() => {
+    item.classList.add('leaving');
+    setTimeout(() => item.remove(), 240);
+  }, duration);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   KEYBOARD SHORTCUTS
+═══════════════════════════════════════════════════════════════ */
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === '/') {
+    e.preventDefault();
+    document.getElementById('searchInput').focus();
+    document.getElementById('searchInput').select();
+  }
+  if (e.key === 'Escape') resetFilters();
+  if (e.key === 'g' && !e.ctrlKey && !e.metaKey) setView('grid');
+  if (e.key === 'l' && !e.ctrlKey && !e.metaKey) setView('list');
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   API STATUS
+═══════════════════════════════════════════════════════════════ */
+async function checkApiStatus() {
+  const dot = document.getElementById('apiDot'), label = document.getElementById('apiLabel');
+  try {
+    const d = await fetch('/api/status').then(r => r.json());
+    if (d.api_ok) {
+      dot.className='api-dot ok'; label.textContent='API OK';
+      document.getElementById('apiBadge').title=`Modèle : ${d.model}`;
+    } else {
+      dot.className='api-dot err'; label.textContent='API KO';
+      document.getElementById('apiBadge').title=d.error||`HTTP ${d.http}`;
+    }
+  } catch { dot.className='api-dot err'; label.textContent='API KO'; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   AUTH
+═══════════════════════════════════════════════════════════════ */
+async function checkAuth() {
+  try {
+    const r = await fetch('/api/auth/me', { credentials:'include' });
+    if (!r.ok) { window.location.href = '/login'; return; }
+    const u = await r.json();
+    const el = document.getElementById('headerUser');
+    if (el) el.textContent = u.full_name || u.email;
+  } catch { window.location.href = '/login'; }
+}
+async function logout() {
+  await fetch('/api/auth/logout', { method:'POST', credentials:'include' });
+  window.location.href = '/login';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   UTILS
+═══════════════════════════════════════════════════════════════ */
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                       .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════════════ */
+(async () => {
+  // Show skeleton immediately
+  document.getElementById('cvGrid').innerHTML = _viewMode === 'grid' ? skeletonGrid() : skeletonList();
+  await Promise.all([checkAuth(), loadLibrary(), loadSkills(), checkApiStatus()]);
+})();
+</script>
+<script src="/static/conv_widget.js"></script>
+<script src="/static/etat-ia.js"></script>
+</body>
+</html>

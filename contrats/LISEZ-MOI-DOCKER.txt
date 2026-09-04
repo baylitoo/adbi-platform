@@ -1,0 +1,93 @@
+============================================================
+  ADBI - Generateur de contrats  --  Version DOCKER
+  Installation identique sur Windows, Mac et Linux,
+  SANS installer Node.js.
+============================================================
+
+------------------------------------------------------------
+1. PRE-REQUIS (une seule fois par machine)
+------------------------------------------------------------
+
+  Installer Docker :
+    - Windows / Mac : "Docker Desktop"
+      https://www.docker.com/products/docker-desktop
+    - Linux : "Docker Engine" + "Docker Compose"
+
+  Verifier que Docker tourne :  docker --version
+
+
+------------------------------------------------------------
+2. DEMARRAGE (2 commandes)
+------------------------------------------------------------
+
+  a) Extraire le ZIP, puis ouvrir un terminal DANS le dossier
+     "adbi-contrats" (celui qui contient "docker-compose.yml").
+
+       - Windows : dans l'explorateur, tapez "cmd" ou
+         "powershell" dans la barre d'adresse du dossier.
+       - Mac/Linux : ouvrez un terminal et faites "cd" vers
+         le dossier.
+
+  b) Lancer :
+
+       docker compose up -d --build
+
+     Le premier lancement telecharge et construit l'image
+     (quelques minutes, connexion Internet requise).
+     Les fois suivantes sont quasi instantanees.
+
+  c) Ouvrir dans le navigateur :
+
+       http://localhost:4100
+
+
+------------------------------------------------------------
+3. ARRETER / REDEMARRER
+------------------------------------------------------------
+
+  Arreter        :  docker compose down
+  Redemarrer     :  docker compose up -d
+  Voir les logs  :  docker compose logs -f
+  Apres une MAJ  :  docker compose up -d --build
+                    du code (reconstruit l'image)
+
+
+------------------------------------------------------------
+4. OU SONT MES DONNEES ?
+------------------------------------------------------------
+
+  Tout ce qui doit persister est dans le sous-dossier "data\"
+  a cote du docker-compose.yml (monte dans le conteneur) :
+
+    data\referentiels.json ... vos clients / managers
+    data\contrats.sqlite ..... l'historique des contrats
+    data\secrets.json ........ votre cle IA (creee quand vous
+                               la saisissez dans Parametres)
+
+  Ces fichiers restent sur la machine hote meme si vous
+  supprimez/reconstruisez le conteneur. Pour repartir de zero,
+  videz le dossier "data\" (referentiels.json sera recree).
+
+
+------------------------------------------------------------
+5. NOTES
+------------------------------------------------------------
+
+  - Aucune cle n'est necessaire pour l'essentiel (contrats,
+    recherche d'entreprise, analyse Kbis/URSSAF). Seule la
+    fonction "Rediger avec l'IA" demande une cle OpenRouter,
+    a saisir dans l'onglet "Parametres" (stockee dans data\).
+
+  - La 1re analyse d'une PIECE (OCR d'une image) telecharge le
+    modele de langue francais : une connexion Internet est
+    requise cette fois-la.
+
+  - Changer le port local : dans docker-compose.yml, remplacez
+    "4100:4100" par ex. "8080:4100", puis "docker compose up -d".
+    L'outil sera alors sur http://localhost:8080
+
+  - Tout tourne en local sur votre machine. Aucune donnee de
+    contrat n'est envoyee sur Internet (hormis, si vous
+    l'activez, la generation de texte par l'IA).
+
+============================================================

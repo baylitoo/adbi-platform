@@ -1,0 +1,400 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   One pager — habillage ADBI, thème SOMBRE et thème CLAIR.
+
+   (Le nom du fichier reste `adbi-onepager-sombre.css` : il est référencé
+   ailleurs. Il ne gère plus seulement le sombre.)
+
+   Cette feuille se charge EN DERNIER, après `styles.css`, `onepager.css` et
+   `adbi-theme.css`. Elle ne réécrit pas la mise en page : elle rebranche les
+   variables de `styles.css` sur les jetons de la charte, puis rattrape le
+   petit nombre de couleurs écrites en dur.
+
+   Comment fonctionnent les deux thèmes
+   ────────────────────────────────────
+   `adbi-theme.css` définit DEUX palettes sur les mêmes jetons `--adbi-*` :
+   le sombre par défaut, le clair sous `<html data-theme="clair">` (attribut
+   posé par `adbi-theme.js`, chargé en tête de page). Toute règle qui consomme
+   un jeton suit donc les deux thèmes sans une ligne de plus.
+
+   Règle de conduite ici : ne JAMAIS écrire une couleur en dur qui suppose un
+   fond sombre (ou clair). Deux jetons sont faits pour ça :
+     - `--adbi-sur-etat`   : l'encre à poser sur un aplat d'état (ok /
+                             attention / erreur), foncée en sombre, claire en
+                             clair. Ne jamais y mettre `#fff` ni `--adbi-bg` ;
+     - `--adbi-sur-accent` : l'encre à poser sur le magenta, le violet ou le
+                             dégradé ADBI (blanc dans les deux thèmes).
+   Le peu qui ne peut pas s'exprimer par un jeton commun est regroupé dans le
+   bloc `:root[data-theme="clair"]` du § 1 bis.
+
+   Deux fichiers ne sont JAMAIS modifiés :
+     - `adbi-theme.css` / `adbi-theme.js` : copies synchronisées depuis la
+                           Factory, elles seraient écrasées à la prochaine
+                           synchro ;
+     - `onepager.css`    : rendu imprimable A4 du dossier de compétences, il
+                           reste sur fond blanc à encre foncée DANS LES DEUX
+                           THÈMES (voir « Aperçu du one-pager » en fin de
+                           fichier).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ══ 1. Rebranchement du :root de styles.css ══════════════════════════════
+   C'est le levier principal : `styles.css` compte 186 usages de var(--…),
+   tous alimentés par ces quelques lignes. Le reste du fichier n'est que du
+   rattrapage.
+
+   Ces valeurs-ci sont celles du thème sombre (le défaut de la charte) ; le
+   § 1 bis ne reprend que les jetons dont la valeur doit s'inverser en clair.
+   ─────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Accents ── */
+  --orange: var(--adbi-orange);
+  /* Sur fond sombre, un bouton survolé doit s'ÉCLAIRCIR : assombri, il
+     paraîtrait désactivé. En clair, l'inverse (voir § 1 bis). */
+  --orange-fonce: #ff8446;
+
+  /* Le violet ADBI (#0d3a8c) est trop sombre pour du texte sur fond noir :
+     `--violet` sert ici de couleur de premier plan (titres de blocs, étape
+     active, KPI…). On lui substitue le magenta, qui est l'accent lisible de
+     la charte en sombre ; le vrai violet reste utilisé en aplat. */
+  --violet: var(--adbi-magenta);
+  --violet-clair: #ff5c9e;
+  /* Aplat de survol de `.btn.violet` : un cran plus foncé que `--violet`. */
+  --violet-survol: var(--adbi-violet);
+
+  /* ── Variantes « pâles » ──────────────────────────────────────────────
+     À l'origine c'étaient des aplats pastel OPAQUES, prévus pour recevoir du
+     texte foncé : repris tels quels sur fond sombre, ils redeviendraient des
+     rectangles blancs illisibles. On les remplace par des voiles translucides
+     (~8-15 %) qui se posent sur la surface du dessous et se contentent de la
+     teinter — ce qui marche dans les deux thèmes, le voile suivant la surface
+     qu'il recouvre. */
+  --orange-clair: rgba(242, 101, 34, .14);
+  --violet-pale: var(--adbi-accent-faible);
+  --ok-pale: var(--adbi-ok-fond);
+  --alerte-pale: var(--adbi-attention-fond);
+  --erreur-pale: var(--adbi-erreur-fond);
+
+  /* ── Textes ── */
+  --encre: var(--adbi-text1);
+  /* Libellés de champs : on les garde au niveau le plus lisible, ils portent
+     le sens de la saisie. */
+  --encre-douce: var(--adbi-text1);
+  /* `--gris` alimente beaucoup de texte réellement lu (aides, états de la
+     file, texte source, cellules atténuées). `--adbi-textm` tomberait sous
+     le seuil de contraste AA à 12-13 px : on prend `--adbi-text2`, et on
+     réserve `--adbi-textm` aux placeholders (déjà géré par adbi-theme.css). */
+  --gris: var(--adbi-text2);
+
+  /* ── Fonds et traits ──
+     `--fond` est le fond de page (le plus profond) et `--blanc` la surface
+     des cartes, barres et panneaux. Les deux jetons de la charte s'inversent
+     tout seuls d'un thème à l'autre : rien à redire ici. */
+  --fond: var(--adbi-bg);
+  --blanc: var(--adbi-surface);
+  --trait: var(--adbi-border);
+
+  /* ── États. Pas de vert : la charte porte le succès en rose ADBI. ── */
+  --ok: var(--adbi-ok);
+  --alerte: var(--adbi-attention);
+  --erreur: var(--adbi-erreur);
+
+  /* ── Rayons et ombres ── */
+  --r: var(--adbi-r-sm);
+  --r-lg: var(--adbi-r-md);
+  --ombre: var(--adbi-sh);
+  --ombre-forte: var(--adbi-sh-lg);
+
+  /* ── Voiles locaux ────────────────────────────────────────────────────
+     Deux cas que la charte ne couvre pas.
+     `--voile-fond` : le rideau du traitement long. Il doit rester sombre dans
+     les deux thèmes (c'est un rideau, pas une surface), mais moins dense en
+     clair, où l'on veut deviner la page derrière.
+     `--selection-btn*` : fond des boutons de la barre de sélection, qui est
+     elle-même une pastille de surface haute — voir § 4. */
+  --voile-fond: rgba(4, 4, 7, .74);
+  --selection-btn: rgba(255, 255, 255, .10);
+  --selection-btn-survol: rgba(255, 255, 255, .18);
+}
+
+/* ══ 1 bis. Ce qui doit s'inverser en thème clair ═════════════════════════
+   Uniquement les jetons dont la logique — et non la seule valeur — change
+   avec le fond. Tout le reste suit la charte sans intervention.
+   ─────────────────────────────────────────────────────────────────────── */
+
+:root[data-theme="clair"] {
+  /* Sur fond clair, un bouton survolé s'ASSOMBRIT. Cette teinte sert aussi
+     de texte (`.jeton.techno` sur pastille orange pâle) : elle est choisie
+     assez foncée pour tenir le contraste AA dans les deux emplois. */
+  --orange-fonce: #b8480f;
+
+  /* Le magenta plafonne à 4,4:1 sur blanc : insuffisant pour du texte de
+     12-15 px. On rend son rôle de premier plan au vrai violet ADBI, qui monte
+     à 8,3:1 — c'est d'ailleurs l'accent de la version claire d'origine. */
+  --violet: var(--adbi-violet);
+  --violet-clair: #a83c97;
+  --violet-survol: #6d0f63;
+
+  /* Rideau plus léger : la surface en dessous est claire, inutile d'écraser
+     toute la page pour détacher la boîte d'attente. */
+  --voile-fond: rgba(22, 22, 38, .42);
+  /* Sur une pastille claire, un voile blanc ne se voit plus : les boutons
+     redeviennent des surfaces pleines, bordées. */
+  --selection-btn: var(--adbi-surface);
+  --selection-btn-survol: var(--adbi-surface-2);
+}
+
+/* ══ 2. Profondeur : distinguer les éléments de leur support ═══════════════
+   À l'origine, `--blanc` servait à la fois de fond de barre ET de fond de
+   bouton : le trait suffisait à les séparer. Une fois les surfaces branchées
+   sur la charte, les deux se confondent ; on décale donc les éléments
+   interactifs d'un cran de surface. Le cran fonctionne dans les deux sens :
+   il éclaircit en sombre, il grise légèrement en clair.
+   Les variantes (.primaire, .violet, .fantome) ont deux classes, donc une
+   spécificité supérieure : elles ne sont pas touchées. ─────────────────── */
+
+.btn,
+.onglet,
+.icone {
+  background: var(--adbi-surface-2);
+}
+
+/* Champs de saisie : un cran au-dessus du bloc qui les contient. */
+input[type=text],
+input[type=number],
+input[type=search],
+select,
+textarea {
+  background: var(--adbi-surface-2);
+}
+
+/* La zone de dépôt et les cartes cliquables restent sur la surface de base :
+   ce sont elles le « papier », pas un contrôle posé dessus. */
+
+/* Le mot-repère « adbi » reprend le dégradé du logo, identique dans les deux
+   thèmes : c'est la signature de la marque. */
+.logo {
+  background: var(--adbi-degrade);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Jauge d'import : le dégradé se lit mieux qu'un aplat, sur clair comme sur
+   sombre. */
+.jauge-barre {
+  background: var(--adbi-degrade);
+}
+
+/* (La sélection de texte était rattrapée ici ; la correction a été remontée
+   dans adbi-theme.css, qui pose désormais `color: var(--adbi-text1)`.) */
+
+/* ══ 3. Couleurs écrites en dur hors :root ════════════════════════════════ */
+
+/* Survol de .btn.violet : le seul endroit où le vrai violet ADBI garde tout
+   son sens, en aplat sous une encre claire. */
+.btn.violet:hover:not(:disabled) {
+  background: var(--violet-survol);
+  border-color: var(--violet-survol);
+  color: var(--adbi-sur-accent);
+}
+
+/* Compteur logé DANS un onglet actif : le fond était un voile blanc à 25 %,
+   qui tombe à 3,4:1 sous une encre blanche sur l'aplat magenta. Un voile
+   sombre creuse la pastille au lieu de l'éclaircir — l'aplat qui la porte est
+   foncé dans les deux thèmes, le voile marche donc des deux côtés. */
+.onglet.actif .pastille {
+  background: rgba(0, 0, 0, .24);
+  color: var(--adbi-sur-accent);
+}
+
+/* Bordures d'état : les hex pastel deviennent les bords translucides. */
+.alerte.erreur {
+  border-color: var(--adbi-erreur-bord);
+}
+.puce-avert {
+  border-color: var(--adbi-attention-bord);
+}
+.champ.doute input,
+.champ.doute textarea {
+  border-color: var(--adbi-attention-bord);
+}
+.portrait-profil.partiel {
+  border-color: var(--adbi-attention);
+}
+
+/* Bordures de survol (anciennement des gris lavande). */
+input:hover,
+select:hover,
+textarea:hover,
+.mission:hover {
+  border-color: var(--adbi-border-fort);
+}
+
+/* Fonds « presque blancs » : carte de mission et en-tête de tableau. */
+.mission {
+  background: var(--adbi-surface-2);
+}
+thead th {
+  background: var(--adbi-surface-2);
+}
+
+/* Survol de la zone de dépôt : `--orange-clair` étant devenu translucide, il
+   laisserait passer le fond de page — plus sombre que la zone au repos en
+   thème sombre, plus gris en thème clair : dans les deux cas un survol qui
+   ternit. On empile le voile orange par-dessus la surface pour retrouver
+   l'effet attendu. */
+.depot.survol {
+  background: linear-gradient(var(--orange-clair), var(--orange-clair)), var(--adbi-surface);
+}
+
+/* Texte source : adbi-theme.css donne un fond aux <pre>. Ici le bloc est déjà
+   dans un panneau, la boîte ferait doublon. */
+#source-brut {
+  background: transparent;
+}
+
+/* ══ 4. Éléments qui utilisaient `--encre` COMME FOND ══════════════════════
+   Point critique : à l'origine, la barre de sélection et les notices étaient
+   des pastilles d'encre foncée avec du texte blanc. `--encre` valant
+   désormais la couleur de TEXTE de la charte, elles deviendraient blanc sur
+   blanc en sombre — et noir sur noir en clair. On les repose donc sur une
+   surface haute, bordée, qui se lit dans les deux thèmes. ──────────────── */
+
+.barre-selection {
+  background: var(--adbi-surface-3);
+  color: var(--adbi-text1);
+  border: 1px solid var(--adbi-border-fort);
+}
+
+/* Ses boutons portaient un voile blanc et `color:#fff` : sur la pastille
+   claire du thème clair, c'était blanc sur blanc. Ils redeviennent des
+   boutons ordinaires, à l'encre courante. */
+.barre-selection .btn {
+  background: var(--selection-btn);
+  border-color: var(--adbi-border-fort);
+  color: var(--adbi-text1);
+}
+.barre-selection .btn:hover:not(:disabled) {
+  background: var(--selection-btn-survol);
+  border-color: var(--adbi-border-fort);
+  color: var(--adbi-text1);
+}
+/* Le bouton d'action principale garde l'aplat orange, avec l'encre foncée
+   prévue pour lui : du blanc sur cet orange ne tenait que 3,1:1. */
+.btn.primaire,
+.btn.primaire:hover:not(:disabled),
+.barre-selection .btn.primaire {
+  color: var(--adbi-sur-orange);
+}
+.barre-selection .btn.primaire {
+  background: var(--orange);
+  border-color: var(--orange);
+}
+
+.notice {
+  background: var(--adbi-surface-3);
+  color: var(--adbi-text1);
+  border: 1px solid var(--adbi-border-fort);
+}
+
+/* Les variantes restent des aplats saturés, comme prévu à l'origine — mais
+   l'encre posée dessus ne peut plus être `#fff` : en sombre les couleurs
+   d'état sont CLAIRES (rose vif, rouge corail), en clair elles sont foncées.
+   C'est exactement le rôle de `--adbi-sur-etat`, qui bascule pour nous.
+   Mesuré : ok 9,1:1 en sombre / 5,9:1 en clair ; erreur 6,4:1 / 5,9:1. */
+.notice.ok {
+  background: var(--adbi-ok);
+  border-color: var(--adbi-ok);
+  color: var(--adbi-sur-etat);
+}
+.notice.erreur {
+  background: var(--adbi-erreur);
+  border-color: var(--adbi-erreur);
+  color: var(--adbi-sur-etat);
+}
+/* La notice d'information n'est pas un état mais un accent : elle prend le
+   violet ADBI, assez foncé pour porter du blanc dans les deux thèmes (8,3:1),
+   là où le magenta plafonnerait à 4,4:1. */
+.notice.info {
+  background: var(--adbi-violet);
+  border-color: var(--adbi-violet);
+  color: var(--adbi-sur-accent);
+}
+
+/* Rideau d'attente : dense en sombre, plus léger en clair (voir § 1). */
+.voile {
+  background: var(--voile-fond);
+}
+
+/* ══ 5. Aperçu du one-pager — îlot clair préservé ═════════════════════════
+   `onepager.css` n'est pas modifié : la slide y déclare déjà `background:#fff`
+   et `color:#2b2b33`. Ces deux valeurs sont volontairement écrites en dur ici
+   aussi — la feuille A4 est un DOCUMENT, pas une surface d'interface : elle
+   reste blanche à encre foncée en thème clair COMME en thème sombre, sans
+   quoi le dossier de compétences changerait d'apparence selon le thème de
+   l'outil qui l'a produit.
+
+   Ce qui pourrait déborder, ce sont les règles générales d'adbi-theme.css
+   (titres, liens, <pre>, <code>, champs, tableaux). Le gabarit n'emploie
+   aujourd'hui aucun de ces éléments, mais on verrouille quand même : le jour
+   où un <h3> ou un <a> entre dans le gabarit, l'aperçu ne doit pas virer au
+   blanc sur blanc.
+
+   La toile autour de la slide (.apercu / .scene) suit le thème : fond
+   d'atelier sombre en sombre, gris clair en clair, comme dans un lecteur de
+   PDF. Seule la feuille elle-même est figée. ───────────────────────────── */
+
+.slide {
+  background: #fff;
+  color: #2b2b33;
+}
+
+/* Le `:not([class])` n'est pas une coquetterie : sans lui, `.slide b` et
+   `.op-tech b` auraient la même spécificité et, cette feuille se chargeant en
+   dernier, c'est ELLE qui gagnerait — l'orange et le violet du gabarit
+   disparaîtraient. On ne reprend donc la main que sur les éléments que
+   `onepager.css` ne stylise pas, c'est-à-dire ceux sans classe. */
+.slide h1:not([class]),
+.slide h2:not([class]),
+.slide h3:not([class]),
+.slide h4:not([class]),
+.slide h5:not([class]),
+.slide h6:not([class]),
+.slide a:not([class]),
+.slide th:not([class]),
+.slide td:not([class]) {
+  color: inherit;
+}
+.slide code:not([class]),
+.slide kbd:not([class]),
+.slide pre:not([class]),
+.slide samp:not([class]) {
+  background: transparent;
+  color: inherit;
+}
+
+/* À l'écran, un liseré tient lieu de bord de feuille : en sombre l'ombre
+   portée seule est invisible, en clair elle ne suffit pas à séparer la
+   feuille blanche d'une toile presque blanche. Neutralisé à l'impression. */
+@media screen {
+  .slide {
+    box-shadow: 0 0 0 1px var(--adbi-border-fort), var(--adbi-sh-lg);
+  }
+}
+
+/* ══ 6. Impression ════════════════════════════════════════════════════════
+   adbi-theme.css impose `html, body { background: … !important }`. Sans ce
+   contre-ordre, l'export « Imprimer / PDF » sortirait une page noire quand
+   l'outil est en thème sombre — la régression la plus coûteuse. On force donc
+   le document imprimé, quel que soit le thème à l'écran. ───────────────── */
+
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    color: #2b2b33;
+  }
+  .slide {
+    box-shadow: none;
+  }
+}

@@ -1,0 +1,598 @@
+﻿<!DOCTYPE html>
+<html lang="fr" data-theme="clair">
+<head>
+  <script src="{{ url_for('static', filename='adbi-theme.js') }}"></script>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>ADBI — Rapprochement fiche de poste</title>
+  <style>
+    *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* Les noms de variables sont ceux des autres gabarits : `adbi-cvparser-
+       sombre.css`, chargé en dernier, les remappe vers les jetons de la charte
+       et la page suit les deux thèmes sans une ligne de plus. Les valeurs
+       écrites ici ne servent que si la charte ne se charge pas — d'où le
+       recours à var(--adbi-*) avec un repli littéral. Plus aucun bleu :
+       l'accent est le magenta ADBI, le secondaire son orange. */
+    :root {
+      --navy:   var(--adbi-text1, #1B1220);
+      --blue:   var(--adbi-magenta, #E8167A);
+      --or:     var(--adbi-orange, #F26522);
+      --vi:     var(--adbi-violet, #8B1A7E);
+      --bg:     var(--adbi-bg, #F7F5FA);
+      --card:   var(--adbi-surface, #FFFFFF);
+      --border: var(--adbi-border, #ECE6F0);
+      --text:   var(--adbi-text1, #1B1220);
+      --muted:  var(--adbi-text2, #6F6480);
+      --ok:     var(--adbi-ok, #C1146A);
+      --moyen:  var(--adbi-attention, #8F5900);
+      --faible: var(--adbi-erreur, #C8102E);
+      --degrade: var(--adbi-degrade, linear-gradient(120deg,#8B1A7E,#E8167A 52%,#F26522));
+      --r:      14px;
+    }
+    body { font-family:'Poppins','Inter','Segoe UI',system-ui,sans-serif; font-size:14px;
+           color:var(--text); background:var(--bg); }
+
+    /* ── Barre haute : même structure que les autres écrans, pour que la
+          charte s'y applique à l'identique ── */
+    .topbar { background:var(--navy); padding:0 28px; height:56px; display:flex;
+              align-items:center; justify-content:space-between; position:sticky;
+              top:0; z-index:100; box-shadow:0 2px 12px rgba(27,18,32,.18); }
+    .logo-wrap { display:flex; align-items:center; gap:9px; text-decoration:none; }
+    .logo-svg { width:26px; height:32px; flex-shrink:0; overflow:visible; }
+    .logo-name { font-size:20px; font-weight:900; font-style:italic; color:#fff;
+                 letter-spacing:-.5px; }
+    .nav { display:flex; gap:4px; }
+    .nav a { padding:6px 14px; border-radius:8px; text-decoration:none; font-size:13px;
+             font-weight:600; color:rgba(255,255,255,.65); transition:background .15s, color .15s; }
+    .nav a:hover { background:rgba(255,255,255,.1); color:#fff; }
+    .nav a.active { background:var(--blue); color:#fff; }
+
+    /* ── Page ── */
+    .page { max-width:1180px; margin:0 auto; padding:30px 20px 80px; }
+    .entete-page { margin-bottom:24px; }
+    h1 { font-size:26px; font-weight:800; letter-spacing:-.5px;
+         background:var(--degrade); -webkit-background-clip:text; background-clip:text;
+         color:transparent; width:fit-content; }
+    .sous { font-size:13.5px; color:var(--muted); margin-top:5px; max-width:70ch; line-height:1.5; }
+
+    .carte { background:var(--card); border:1px solid var(--border); border-radius:var(--r);
+             padding:22px 24px; box-shadow:0 1px 2px rgba(27,18,32,.04),
+             0 8px 24px rgba(27,18,32,.05); margin-bottom:18px; }
+    /* Le numéro d'étape est porté par une pastille : on lit d'un coup d'œil
+       qu'il y a trois temps, et où l'on en est. */
+    .titre-carte { font-size:14px; font-weight:700; margin-bottom:16px;
+                   display:flex; align-items:center; gap:11px; }
+    .titre-carte i { width:24px; height:24px; flex:none; border-radius:50%;
+                     background:var(--degrade); color:#fff; font-style:normal;
+                     font-size:12px; font-weight:700; display:grid; place-items:center; }
+
+    textarea { width:100%; min-height:180px; padding:13px 15px; border:1px solid var(--border);
+               border-radius:11px; font-family:inherit; font-size:13px; line-height:1.55;
+               resize:vertical; background:var(--card); color:var(--text);
+               transition:border-color .15s, box-shadow .15s; }
+    textarea:focus, input[type=search]:focus { outline:none; border-color:var(--blue);
+               box-shadow:0 0 0 3px var(--adbi-accent-faible, rgba(232,22,122,.12)); }
+    .barre-outils { display:flex; gap:9px; align-items:center; flex-wrap:wrap; margin-bottom:13px; }
+    input[type=search] { flex:1; min-width:200px; padding:10px 13px; border:1px solid var(--border);
+                         border-radius:10px; font-family:inherit; font-size:13px;
+                         background:var(--card); color:var(--text); }
+
+    .btn { padding:10px 20px; border:none; border-radius:10px; font-family:inherit;
+           font-size:13px; font-weight:700; cursor:pointer; transition:transform .12s, box-shadow .15s, opacity .15s; }
+    .btn-p { background:var(--degrade); color:#fff; box-shadow:0 4px 14px rgba(232,22,122,.28); }
+    .btn-p:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 7px 20px rgba(232,22,122,.34); }
+    .btn-p:disabled { opacity:.45; cursor:not-allowed; box-shadow:none; }
+    .btn-s { background:transparent; color:var(--muted); border:1px solid var(--border); }
+    .btn-s:hover { color:var(--blue); border-color:var(--blue); }
+
+    .liste-cv { max-height:340px; overflow:auto; border:1px solid var(--border); border-radius:11px; }
+    .item { display:flex; align-items:center; gap:12px; padding:10px 14px;
+            border-bottom:1px solid var(--border); cursor:pointer;
+            transition:background .12s; }
+    .item:last-child { border-bottom:none; }
+    .item:hover { background:var(--adbi-surface-2, #F7F5FA); }
+    /* Un CV coché se repère sans relire la case : voile d'accent et filet. */
+    .item:has(input:checked) { background:var(--adbi-accent-faible, rgba(232,22,122,.09));
+                               box-shadow:inset 3px 0 0 var(--blue); }
+    .item input { width:16px; height:16px; cursor:pointer; flex:none; accent-color:var(--blue); }
+    .item .jeton { width:28px; height:28px; flex:none; border-radius:50%; display:grid;
+                   place-items:center; font-size:10.5px; font-weight:700; color:#fff;
+                   background:var(--degrade); letter-spacing:.3px; }
+    .item .nom { font-weight:600; font-size:13px; }
+    .item .meta { font-size:11.5px; color:var(--muted); }
+    .compte { font-size:12px; color:var(--muted); margin-top:10px; }
+
+    /* Barre d'action collée au bas : le bouton reste sous la main même quand
+       la liste de CV est longue. Fond PLEIN et bordure : posée en translucide,
+       elle passait pour un défaut d'affichage par-dessus le formulaire. */
+    .barre-action { position:sticky; bottom:16px; z-index:20; margin:0 0 20px;
+                    padding:12px 16px; border-radius:var(--r);
+                    background:var(--card); border:1px solid var(--border);
+                    box-shadow:0 6px 20px rgba(27,18,32,.10);
+                    display:flex; align-items:center; gap:14px; }
+
+    table { width:100%; border-collapse:collapse; }
+    th { font-size:10.5px; font-weight:700; color:var(--muted); text-transform:uppercase;
+         letter-spacing:.6px; padding:10px 10px; text-align:left;
+         background:var(--adbi-surface-2, #F7F5FA); border-bottom:1px solid var(--border); }
+    th:first-child { border-radius:8px 0 0 8px; }
+    th:last-child { border-radius:0 8px 8px 0; }
+    td { padding:13px 10px; border-bottom:1px solid var(--border); vertical-align:top; font-size:12.5px; }
+    tbody tr { transition:background .12s; }
+    tbody tr:hover { background:var(--adbi-surface-2, #FAF8FC); }
+    tr:last-child td { border-bottom:none; }
+    .rang { font-size:16px; font-weight:800; color:var(--muted); width:36px; }
+    .score { font-size:17px; font-weight:800; }
+    .score.bon { color:var(--ok); } .score.moyen { color:var(--moyen); } .score.faible { color:var(--faible); }
+    .jauge { height:5px; border-radius:3px; background:var(--border); margin-top:5px; overflow:hidden; }
+    .jauge i { display:block; height:100%; background:var(--degrade); border-radius:3px; }
+    ul.pts { list-style:none; }
+    ul.pts li { position:relative; padding-left:14px; margin-bottom:4px; line-height:1.4; }
+    ul.pts li::before { content:'•'; position:absolute; left:0; }
+    ul.pts.forts li::before { color:var(--ok); }
+    ul.pts.faibles li::before { color:var(--faible); }
+    .avis { margin-top:7px; padding-top:7px; border-top:1px dashed var(--border);
+            font-size:11.5px; color:var(--muted); font-style:italic; line-height:1.4; }
+    .detail-score { font-size:10.5px; color:var(--muted); margin-top:5px; }
+    .discorde { color:var(--moyen); font-weight:700; }
+    .vide { padding:30px; text-align:center; color:var(--muted); font-size:13px; }
+    /* Les écartés restent lisibles mais visiblement en retrait : on doit voir
+       qui a été comparé sans confondre avec ce qu'on présentera au client. */
+    .carte.hors { background:transparent; border-style:dashed; box-shadow:none; }
+    .carte.hors .titre-carte i { background:var(--muted); }
+    .carte.hors tbody td { opacity:.72; }
+    .carte.hors .rang { color:var(--border); }
+    .avert { background:var(--adbi-attention-fond, #FFF7ED);
+             border:1px solid var(--adbi-attention-bord, #FED7AA);
+             color:var(--adbi-attention, #9A3412);
+             border-radius:11px; padding:11px 15px; font-size:12.5px; margin-bottom:14px; }
+    @media (max-width: 760px) {
+      .page { padding:20px 14px 60px; }
+      .carte { padding:18px 16px; }
+      .nav a { padding:6px 10px; }
+    }
+
+    /* ——— Panneau de travail ———
+       Le classement enchaîne deux appels au modèle : près d'une minute pendant
+       laquelle rien ne bouge à l'écran. On y annonce l'étape réellement en
+       cours, telle que le serveur la diffuse. */
+    .travail { display:flex; align-items:center; gap:15px; }
+    .rouage { width:46px; height:46px; flex:none; }
+    .rouage .satellite, .rouage .coeur { transform-box:view-box; transform-origin:24px 24px; }
+    .rouage .satellite { animation:tourner 1.5s linear infinite; }
+    .rouage .coeur { animation:battre 1.5s ease-in-out infinite; }
+    .rouage .avance { transition:stroke-dashoffset .45s ease; }
+    @keyframes tourner { to { transform:rotate(360deg); } }
+    @keyframes battre { 0%,100% { transform:scale(.7); opacity:.6; } 50% { transform:scale(1.15); opacity:1; } }
+    .travail-titre { font-size:14px; font-weight:800; }
+    .travail-detail { font-size:12px; color:var(--muted); margin-top:2px; min-height:16px; }
+    .chrono { margin-left:auto; font-size:12px; font-weight:700; color:var(--muted);
+              font-variant-numeric:tabular-nums; }
+    .etapes { list-style:none; margin-top:15px; padding-top:13px; border-top:1px solid var(--border); }
+    .etapes li { display:flex; align-items:flex-start; gap:10px; padding:5px 0;
+                 font-size:12.5px; color:var(--muted); }
+    .etapes .puce { width:15px; height:15px; border-radius:50%; flex:none; margin-top:1px;
+                    border:2px solid var(--border); position:relative; }
+    .etapes li.faite { color:var(--text); }
+    .etapes li.faite .puce { border-color:var(--or); background:var(--or); }
+    .etapes li.faite .puce::after { content:''; position:absolute; left:3.5px; top:.5px;
+                    width:4px; height:8px; border:2px solid #fff; border-top:0; border-left:0;
+                    transform:rotate(42deg); }
+    .etapes li.encours { color:var(--text); font-weight:700; }
+    .etapes li.encours .puce { border-color:var(--or); animation:halo 1.4s ease-out infinite; }
+    @keyframes halo { 0% { box-shadow:0 0 0 0 rgba(255,102,0,.45); }
+                    100% { box-shadow:0 0 0 8px rgba(255,102,0,0); } }
+    .etapes .note { font-weight:400; color:var(--muted); font-size:11.5px; }
+    @media (prefers-reduced-motion: reduce) {
+      .rouage .satellite, .rouage .coeur, .etapes li.encours .puce { animation:none; }
+    }
+  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-theme.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='adbi-cvparser-sombre.css') }}"/>
+</head>
+<body>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:24px">
+    <a href="/" class="logo-wrap">
+      <svg class="logo-svg" viewBox="0 0 26 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="docGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#1A5CFF" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#0F2042" stop-opacity=".9"/>
+          </linearGradient>
+          <linearGradient id="scanGradR" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#00ECC6" stop-opacity="0"/>
+            <stop offset="50%" stop-color="#00ECC6" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#00ECC6" stop-opacity="0"/>
+          </linearGradient>
+          <clipPath id="docClipR"><path d="M1,0 L19,0 L25,6 L25,32 L1,32 Z"/></clipPath>
+        </defs>
+        <path d="M1,0 L19,0 L25,6 L25,32 L1,32 Z" fill="url(#docGrad)"/>
+        <path d="M19,0 L19,6 L25,6 Z" fill="rgba(255,255,255,0.25)"/>
+        <rect x="5" y="11" width="10" height="2" rx="1" fill="#00ECC6" opacity=".95"/>
+        <rect x="5" y="15.5" width="15" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="19" width="12" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="22.5" width="14" height="1.5" rx=".75" fill="rgba(255,255,255,.55)"/>
+        <rect x="5" y="26" width="10" height="1.5" rx=".75" fill="rgba(255,255,255,.35)"/>
+        <rect x="1" y="0" width="24" height="5" fill="url(#scanGradR)" clip-path="url(#docClipR)">
+          <animate attributeName="y" from="-5" to="33" dur="2.2s" repeatCount="indefinite"/>
+        </rect>
+      </svg>
+      <span class="logo-name">adbi<span>.</span>cv</span>
+    </a>
+    <nav class="nav">
+      <a href="/app">CVthèque</a>
+      <a href="/needs">Besoins</a>
+      <a href="/rapprochement" class="active">Rapprochement</a>
+      <a href="/settings">Paramètres</a>
+    </nav>
+  </div>
+</div>
+
+<div class="page">
+  <div class="entete-page">
+    <h1>Rapprochement</h1>
+    <p class="sous">Collez une fiche de poste, choisissez les CV à confronter, obtenez un classement
+    argumenté — contact, points forts, réserves et score. Les règles pèsent 60 %, l'avis
+    des modèles 40 %.</p>
+  </div>
+
+  <div class="carte">
+    <div class="titre-carte"><i>1</i> La fiche de poste</div>
+    <textarea id="description" placeholder="Collez ici l'annonce ou le descriptif du besoin : intitulé, compétences exigées, années d'expérience, localisation, type de contrat…">
+{%- if besoin_prerempli -%}
+{{ besoin_prerempli.title or '' }}
+{% if besoin_prerempli.description %}{{ besoin_prerempli.description }}{% endif %}
+{% if besoin_prerempli.required_skills %}Compétences exigées : {{ besoin_prerempli.required_skills | join(', ') }}{% endif %}
+{% if besoin_prerempli.min_years %}Expérience : {{ besoin_prerempli.min_years }} ans minimum{% endif %}
+{% if besoin_prerempli.location %}Lieu : {{ besoin_prerempli.location }}{% endif %}
+{% if besoin_prerempli.contract_type %}Contrat : {{ besoin_prerempli.contract_type }}{% endif %}
+{%- endif -%}
+</textarea>
+  </div>
+
+  <div class="carte">
+    <div class="titre-carte"><i>2</i> Les CV à comparer</div>
+    <div class="barre-outils">
+      <input type="search" id="filtre" placeholder="Filtrer par nom, titre ou compétence…" autocomplete="off">
+      <button class="btn btn-s" onclick="toutCocher(true)">Tout cocher</button>
+      <button class="btn btn-s" onclick="toutCocher(false)">Tout décocher</button>
+    </div>
+    <div class="liste-cv" id="listeCv"><div class="vide">Chargement de la CVthèque…</div></div>
+    <div class="compte" id="compte"></div>
+  </div>
+
+  <div class="barre-action">
+    <button class="btn btn-p" id="btnLancer" onclick="lancer()">Comparer et classer</button>
+    <span class="compte" id="rappelChoix" style="margin:0"></span>
+  </div>
+
+  <div class="carte" id="carteTravail" hidden>
+    <div class="travail">
+      <svg class="rouage" viewBox="0 0 48 48" aria-hidden="true">
+        <defs>
+          <linearGradient id="degradeTravail" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#7030A0"/>
+            <stop offset="55%" stop-color="#E02D8A"/>
+            <stop offset="100%" stop-color="#FF6600"/>
+          </linearGradient>
+        </defs>
+        <circle cx="24" cy="24" r="19" fill="none" stroke="var(--border)" stroke-width="4"/>
+        <circle id="arcAvance" class="avance" cx="24" cy="24" r="19" fill="none"
+                stroke="url(#degradeTravail)" stroke-width="4" stroke-linecap="round"
+                stroke-dasharray="119.4" stroke-dashoffset="119.4" transform="rotate(-90 24 24)"/>
+        <circle class="satellite" cx="24" cy="5" r="3.2" fill="var(--or)"/>
+        <circle class="coeur" cx="24" cy="24" r="4.5" fill="url(#degradeTravail)"/>
+      </svg>
+      <div>
+        <div class="travail-titre" id="travailTitre">Préparation…</div>
+        <div class="travail-detail" id="travailDetail"></div>
+      </div>
+      <div class="chrono" id="travailChrono">0 s</div>
+    </div>
+    <ol class="etapes" id="listeEtapes"></ol>
+  </div>
+
+  <div class="carte" id="carteResultats" hidden>
+    <div class="titre-carte"><i>3</i> Classement</div>
+    <div id="avertBesoin"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Candidat</th><th>Contact</th>
+          <th>Points forts</th><th>Points faibles</th><th style="width:96px">Score</th>
+        </tr>
+      </thead>
+      <tbody id="resultats"></tbody>
+    </table>
+  </div>
+
+  <div class="carte hors" id="carteEcartes" hidden>
+    <div class="titre-carte"><i>—</i> Hors classement</div>
+    <div class="compte" id="noteEcartes" style="margin:0 0 12px"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Candidat</th><th>Contact</th>
+          <th>Points forts</th><th>Points faibles</th><th style="width:96px">Score</th>
+        </tr>
+      </thead>
+      <tbody id="ecartes"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let CVS = [];
+const choisis = new Set();
+
+const echapper = (t) => String(t ?? '').replace(/[<>&"]/g,
+  c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+async function chargerCvs() {
+  const r = await fetch('/api/cvs', { credentials: 'include' });
+  CVS = r.ok ? await r.json() : [];
+  dessinerListe();
+}
+
+function dessinerListe() {
+  const q = (document.getElementById('filtre').value || '').toLowerCase().trim();
+  const zone = document.getElementById('listeCv');
+  const vus = CVS.filter(c => !q ||
+    `${c.name} ${c.title} ${(c.skills_flat || []).join(' ')}`.toLowerCase().includes(q));
+
+  if (!vus.length) {
+    zone.innerHTML = '<div class="vide">Aucun CV ne correspond.</div>';
+    return;
+  }
+  zone.innerHTML = vus.map(c => `
+    <label class="item">
+      <input type="checkbox" value="${c.id}" ${choisis.has(c.id) ? 'checked' : ''}
+             onchange="basculer('${c.id}', this.checked)">
+      <span class="jeton">${echapper(initiales(c.name))}</span>
+      <span>
+        <span class="nom">${echapper(c.name || 'Sans nom')}</span>
+        <span class="meta"> — ${echapper(c.title || 'titre non renseigné')}
+          ${c.years_experience ? ' · ' + c.years_experience + ' ans' : ''}</span>
+      </span>
+    </label>`).join('');
+  majCompte();
+}
+
+/** Initiales affichées dans la pastille : prénom + nom, « ? » si on ne sait pas.
+    On ne garde que les mots commençant par une lettre : « Youssef Harrach (EN) »
+    donnait « Y( », la parenthèse étant prise pour un patronyme. */
+function initiales(nom) {
+  const mots = String(nom || '').trim().split(/[\s-]+/)
+    .filter(m => /^\p{L}/u.test(m));
+  if (!mots.length) return '?';
+  if (mots.length === 1) return mots[0].slice(0, 2).toUpperCase();
+  return (mots[0][0] + mots[mots.length - 1][0]).toUpperCase();
+}
+
+function basculer(id, actif) { actif ? choisis.add(id) : choisis.delete(id); majCompte(); }
+
+function toutCocher(actif) {
+  const q = (document.getElementById('filtre').value || '').toLowerCase().trim();
+  CVS.filter(c => !q ||
+      `${c.name} ${c.title} ${(c.skills_flat || []).join(' ')}`.toLowerCase().includes(q))
+    .forEach(c => actif ? choisis.add(c.id) : choisis.delete(c.id));
+  dessinerListe();
+}
+
+function majCompte() {
+  const texte = choisis.size ? `${choisis.size} CV sélectionné${choisis.size > 1 ? 's' : ''}`
+                             : 'Aucun CV sélectionné';
+  document.getElementById('compte').textContent = texte;
+  // Rappelé aussi près du bouton : la liste peut être longue, le décompte du
+  // haut sort alors de l'écran au moment de lancer.
+  document.getElementById('rappelChoix').textContent = texte;
+  document.getElementById('btnLancer').disabled = !choisis.size;
+}
+
+document.getElementById('filtre').addEventListener('input', dessinerListe);
+
+/* ——— Panneau de travail ———
+   Les quatre étapes correspondent à celles que `core/rapprochement.classer`
+   annonce réellement : rien n'est simulé, la barre n'avance que lorsque le
+   serveur a franchi le palier. */
+const ETAPES = [
+  ['lecture',     'Lecture de la fiche de poste',    'le modèle en extrait les critères'],
+  ['comparaison', 'Comparaison aux CV choisis',      'moteur de règles, note sur 100'],
+  ['analyse',     'Analyse par plusieurs modèles',   'ils votent en parallèle, la note est moyennée'],
+  ['classement',  'Classement final',                '60 % règles, 40 % avis des modèles'],
+];
+const CIRCONFERENCE = 119.4;
+let vueEtape = null, chrono = null;
+
+function demarrerChargement() {
+  vueEtape = null;
+  document.getElementById('carteTravail').hidden = false;
+  document.getElementById('travailTitre').textContent = 'Préparation…';
+  document.getElementById('travailDetail').textContent = '';
+  document.getElementById('arcAvance').style.strokeDashoffset = CIRCONFERENCE;
+  document.getElementById('listeEtapes').innerHTML = ETAPES.map(([cle, nom, note]) =>
+    `<li id="et-${cle}"><span class="puce"></span>
+       <span>${nom}<span class="note"> — ${note}</span></span></li>`).join('');
+
+  const debut = Date.now();
+  clearInterval(chrono);
+  chrono = setInterval(() => {
+    document.getElementById('travailChrono').textContent =
+      Math.round((Date.now() - debut) / 1000) + ' s';
+  }, 500);
+  document.getElementById('travailChrono').textContent = '0 s';
+}
+
+function avancerArc(part) {
+  document.getElementById('arcAvance').style.strokeDashoffset =
+    CIRCONFERENCE * (1 - Math.min(1, part));
+}
+
+function marquerEtape(cle, detail) {
+  const i = ETAPES.findIndex(e => e[0] === cle);
+  if (i < 0) return;
+  const repetition = vueEtape === cle;   // deuxième message d'une même étape : elle s'achève
+  vueEtape = cle;
+
+  ETAPES.forEach(([c], j) => {
+    const li = document.getElementById('et-' + c);
+    li.className = j < i ? 'faite' : j === i ? 'encours' : '';
+  });
+  document.getElementById('travailTitre').textContent = ETAPES[i][1];
+  document.getElementById('travailDetail').textContent = detail || ETAPES[i][2];
+  avancerArc((i + (repetition ? 0.85 : 0.3)) / ETAPES.length);
+}
+
+function terminerChargement() {
+  clearInterval(chrono);
+  ETAPES.forEach(([c]) => document.getElementById('et-' + c).className = 'faite');
+  avancerArc(1);
+  setTimeout(() => { document.getElementById('carteTravail').hidden = true; }, 700);
+}
+
+async function lancer() {
+  const btn = document.getElementById('btnLancer');
+  const description = document.getElementById('description').value.trim();
+  if (description.length < 30) { alert('La fiche de poste est trop courte.'); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Analyse en cours…';
+  document.getElementById('carteResultats').hidden = true;
+  document.getElementById('carteEcartes').hidden = true;
+  demarrerChargement();
+
+  try {
+    const r = await fetch('/api/rapprochement/flux', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description, cv_ids: [...choisis] }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      throw new Error(d.error || `HTTP ${r.status}`);
+    }
+
+    // Réponse diffusée : une ligne JSON par étape, la dernière porte le résultat.
+    const lecteur = r.body.getReader(), decodeur = new TextDecoder();
+    let reste = '', resultat = null;
+    for (;;) {
+      const { value, done } = await lecteur.read();
+      if (done) break;
+      const lignes = (reste + decodeur.decode(value, { stream: true })).split('\n');
+      reste = lignes.pop();
+      for (const ligne of lignes) {
+        if (!ligne.trim()) continue;
+        const m = JSON.parse(ligne);
+        if (m.erreur) throw new Error(m.erreur);
+        if (m.fini) resultat = m.resultat;
+        else marquerEtape(m.etape, m.detail);
+      }
+    }
+    if (!resultat) throw new Error('La réponse du serveur a été interrompue.');
+    terminerChargement();
+    afficher(resultat);
+  } catch (e) {
+    clearInterval(chrono);
+    document.getElementById('carteTravail').hidden = true;
+    alert('❌ ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Comparer et classer';
+    majCompte();
+  }
+}
+
+function afficher(d) {
+  const seuil = d.seuil ?? 80;
+  document.getElementById('carteResultats').hidden = false;
+
+  // On dit d'où viennent les critères : un classement bâti sur une lecture
+  // locale, faute de modèle disponible, ne se lit pas comme un autre.
+  const b = d.besoin || {};
+  document.getElementById('avertBesoin').innerHTML =
+    (d.source_besoin && d.source_besoin.startsWith('lecture locale')
+      ? `<div class="avert">Critères extraits sans modèle de langage (aucun service disponible) :
+         le classement s'appuie surtout sur l'intitulé et les mots-clés. Relancez plus tard
+         pour une lecture complète de la fiche.</div>`
+      : `<div class="compte" style="margin-bottom:12px">Critères retenus :
+         <strong>${echapper(b.title || '—')}</strong>
+         ${b.seniority ? ' · ' + echapper(b.seniority) : ''}
+         ${b.min_years ? ' · ' + b.min_years + ' ans min' : ''}
+         ${(b.required_skills || []).length ? ' · ' + echapper((b.required_skills || []).join(', ')) : ''}
+         <br>Score final : 60 % règles, 40 % avis des modèles
+         ${(d.modeles || []).length
+            ? ` — ${d.modeles.length} modèle${d.modeles.length > 1 ? 's' : ''} consulté${d.modeles.length > 1 ? 's' : ''}
+                en parallèle, note moyennée : <em>${echapper(d.modeles.map(m => m.split('/').pop()).join(', '))}</em>`
+            : ''}
+         ${d.source_avis && d.source_avis.startsWith('aucune')
+            ? ' — <strong>analyse indisponible, score sur les seules règles</strong>' : ''}</div>`)
+    + `<div class="compte" style="margin-bottom:12px">Seuil de classement :
+       <strong>${seuil}/100</strong> — en dessous, le profil est écarté.</div>`;
+
+  const res = d.resultats || [];
+  const retenus = res.filter(r => r.retenu);
+  const ecartes = res.filter(r => !r.retenu);
+
+  document.getElementById('resultats').innerHTML =
+    retenus.length ? retenus.map(ligne).join('')
+    : `<tr><td colspan="6" class="vide">Aucun candidat n'atteint ${seuil}/100 sur cette fiche
+       de poste.${ecartes.length ? ` Les ${ecartes.length} profils comparés figurent ci-dessous,
+       hors classement.` : ''}</td></tr>`;
+
+  const carte = document.getElementById('carteEcartes');
+  carte.hidden = !ecartes.length;
+  if (ecartes.length) {
+    document.getElementById('noteEcartes').innerHTML =
+      `${ecartes.length} profil${ecartes.length > 1 ? 's' : ''} sous le seuil de
+       <strong>${seuil}/100</strong> — comparé${ecartes.length > 1 ? 's' : ''} et
+       noté${ecartes.length > 1 ? 's' : ''}, mais non classé${ecartes.length > 1 ? 's' : ''}.`;
+    document.getElementById('ecartes').innerHTML = ecartes.map(ligne).join('');
+  }
+}
+
+function ligne(r) {
+  const total = r.score?.total ?? 0;
+  const classe = total >= 70 ? 'bon' : total >= 45 ? 'moyen' : 'faible';
+  const ex = r.explanation || {};
+  const liste = (items, cls) => (items || []).length
+    ? `<ul class="pts ${cls}">${items.slice(0, 4).map(x => `<li>${echapper(x)}</li>`).join('')}</ul>`
+    : '<span class="meta">—</span>';
+  return `<tr>
+    <td class="rang">${r.rank ?? '—'}</td>
+    <td>
+      <div class="nom"><a href="/cv/${r.candidate_id}" target="_blank"
+           style="color:var(--navy);text-decoration:none">${echapper(r.candidate_name || 'Sans nom')}</a></div>
+      <div class="meta">${echapper(r.candidate_title || '')}</div>
+    </td>
+    <td class="meta">
+      ${r.email ? echapper(r.email) + '<br>' : ''}
+      ${r.phone ? echapper(r.phone) : ''}
+      ${!r.email && !r.phone ? '—' : ''}
+    </td>
+    <!-- L'analyse du modèle passe devant quand elle existe : elle explique,
+         là où les règles se contentent de constater. Les « weaknesses »
+         résument déjà les compétences manquantes, on ne les répète pas. -->
+    <td>${liste(r.ia?.forts?.length ? r.ia.forts : ex.strengths, 'forts')}</td>
+    <td>${liste(r.ia?.faibles?.length ? r.ia.faibles
+                : ((ex.weaknesses || []).length ? ex.weaknesses : ex.missing_skills), 'faibles')}
+        ${r.ia?.avis ? `<div class="avis">${echapper(r.ia.avis)}</div>` : ''}</td>
+    <td>
+      <div class="score ${classe}">${total}<span style="font-size:11px;color:var(--muted)">/100</span></div>
+      <div class="jauge"><i style="width:${Math.min(100, total)}%"></i></div>
+      <div class="detail-score">règles ${r.score_regles ?? '—'}
+        · IA ${r.score_ia ?? '—'}${r.ia?.nb_modeles ? ` <span class="meta">(${r.ia.nb_modeles} mod.)</span>` : ''}
+        <!-- Un écart marqué entre modèles se signale : la moyenne seule
+             laisserait croire à un avis tranché là où ils se contredisent. -->
+        ${r.ia && (r.ia.score_max - r.ia.score_min) >= 20
+          ? `<br><span class="discorde">avis partagés ${r.ia.score_min}–${r.ia.score_max}</span>` : ''}</div>
+    </td>
+  </tr>`;
+}
+
+chargerCvs();
+</script>
+</body>
+</html>

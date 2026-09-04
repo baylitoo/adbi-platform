@@ -1,0 +1,207 @@
+/*
+ * Gabarit ADBI — dossier de compétences one-page.
+ *
+ * Dimensions physiques en millimetres : le rendu ecran et le PDF imprime sont
+ * strictement le meme objet, ce qui evite les mauvaises surprises a l'export.
+ * Format A4 paysage (297 x 210 mm), qui est la cible d'impression reelle.
+ * Couleurs relevees dans le vrai gabarit PowerPoint ADBI.
+ */
+
+@page { size: A4 landscape; margin: 0; }
+
+.slide {
+  --or: #ff5f00;
+  --or2: #fb7603;
+  --vi: #8e0b80;
+  --vi2: #a83c97;
+  --nb: #2b2b33;
+  --gr: #6a6a76;
+  /* Hauteur commune aux deux bandeaux de titre, et hauteur reservee au bloc
+     d'en-tete. Les deux colonnes s'alignent a partir de ces deux valeurs :
+     aucun calage a l'oeil, donc rien qui se decale quand le titre passe sur
+     deux lignes. */
+  --h-bandeau: 8.5mm;
+  --h-entete: 26mm;
+
+  width: 297mm;
+  height: 210mm;
+  padding: 9mm 10mm 6mm;
+  background: #fff;
+  color: var(--nb);
+  font-family: "Segoe UI", Calibri, system-ui, sans-serif;
+  display: grid;
+  grid-template-columns: 1fr 72mm;
+  /* Ligne 2 = les deux bandeaux de titre. Les placer dans la MEME ligne de
+     grille les aligne par construction, quelle que soit la longueur du titre
+     professionnel au-dessus. */
+  grid-template-rows: var(--h-entete) var(--h-bandeau) 1fr auto;
+  column-gap: 7mm;
+  box-shadow: 0 2px 10px rgba(20, 10, 30, .12);
+  position: relative;
+  overflow: hidden;
+  /* Mise a l'echelle pour l'apercu ecran ; l'impression la neutralise. */
+  transform: scale(var(--zoom, 1));
+  transform-origin: top center;
+}
+
+/* Vagues d'arcs du gabarit d'origine, en haut a droite puis en bas a gauche. */
+.op-fond {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.op-fond img {
+  position: absolute;
+  opacity: .5;
+}
+.op-fond .haut { top: -22mm; right: -30mm; width: 160mm; }
+.op-fond .bas { bottom: -46mm; left: -34mm; width: 130mm; transform: rotate(180deg); }
+
+/* Empilement au-dessus du fond. On cible les blocs un par un : une regle
+   generale « .slide > * » ecraserait le positionnement absolu du portrait,
+   qui redeviendrait un element de grille et disloquerait la mise en page. */
+.op-tete, .op-bandeau, .op-cote-titre, .op-exp, .op-cote, .op-pied { position: relative; z-index: 1; }
+
+/* ------------------------------------------------------------ en-tete --- */
+
+/* La hauteur minimale reserve la place du portrait, qui est en position
+   absolue : sans elle, la premiere mission passerait sous le cercle. */
+/* justify-content:flex-end colle le bandeau au bas du bloc d'en-tete : son
+   ordonnee ne depend plus du nombre de lignes du titre. */
+.op-tete {
+  grid-column: 1; grid-row: 1;
+  display: flex; flex-direction: column; justify-content: center;
+  max-width: 138mm; overflow: hidden;
+}
+.op-nom { font-size: 19pt; font-weight: 600; line-height: 1.15; }
+.op-nom .n { color: var(--or); font-weight: 700; }
+.op-nom .t { color: var(--nb); }
+
+.op-bandeau {
+  grid-column: 1; grid-row: 2;
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--vi); color: #fff;
+  border-radius: 999px; padding: 0 6mm;
+  width: 100%; max-width: 128mm; height: var(--h-bandeau);
+  font-size: 11.5pt; font-weight: 600;
+}
+.op-cote-titre { grid-column: 2; grid-row: 2; }
+.op-bandeau .badge { font-weight: 500; font-size: 10pt; }
+
+/* ------------------------------------------------------------ portrait -- */
+
+.op-portrait {
+  position: absolute;
+  /* Repere pris sur le bord de la slide, pas sur sa zone de contenu. */
+  top: 2mm; left: 56%; transform: translateX(-50%);
+  width: 27mm; height: 27mm;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1mm solid var(--or);
+  background: #fff;
+  z-index: 3;
+}
+.op-portrait img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* -------------------------------------------------------- experiences --- */
+
+.op-exp {
+  grid-column: 1; grid-row: 3; padding-top: 3mm;
+  /* min-height:0 est indispensable : sans lui, la piste « 1fr » se dimensionne
+     sur le contenu, la zone ne borne plus rien et le debordement passe
+     inapercu a l'ecran pour n'apparaitre qu'a l'impression, tronque. */
+  overflow: hidden; min-height: 0;
+}
+
+/* --k : facteur d'echelle du bloc missions, pose par l'ajustement au format.
+   Reduire le corps plutot que retrancher du texte garde le dossier fidele au
+   CV source, et fait correspondre l'apercu a l'export PowerPoint. */
+/* --corps : taille UNIQUE de tout le bloc missions. La hierarchie se lit a
+   la couleur et a la graisse, pas au corps — comme dans le livret ADBI.
+   --k : facteur de reduction pose par l ajustement au format. */
+.op-exp { --k: 1; --corps: 8.6pt; }
+
+.op-mission { margin-bottom: calc(3.2mm * var(--k)); break-inside: avoid; }
+.op-mission-tete { font-size: calc(var(--corps) * var(--k)); line-height: 1.35; }
+.op-mission-tete::before { content: "●"; color: var(--vi); margin-right: 2mm; font-size: 7pt; vertical-align: middle; }
+.op-mission-tete .role { color: var(--vi); font-weight: 700; }
+.op-mission-tete .client { color: var(--or); font-weight: 700; }
+.op-mission-tete .periode { color: var(--gr); font-weight: 500; }
+
+.op-ctx { font-size: calc(var(--corps) * var(--k)); line-height: 1.35; margin: .8mm 0 0 5mm; }
+
+.op-puces { margin: 1mm 0 0 9mm; padding: 0; list-style: none; }
+.op-puces li { font-size: calc(var(--corps) * var(--k)); line-height: 1.34; margin-bottom: .5mm; position: relative; padding-left: 3.6mm; }
+.op-puces li::before { content: "○"; position: absolute; left: 0; color: var(--vi2); font-size: 6.5pt; top: .4mm; }
+.op-puces li.chiffre::before { content: "●"; color: var(--or); }
+
+.op-tech { font-size: calc(var(--corps) * var(--k)); margin: 1mm 0 0 5mm; line-height: 1.3; }
+.op-tech b { color: var(--or); }
+
+/* ------------------------------------------------------ colonne droite --- */
+
+/* gap volontairement nul : les blocs s'enchainent sans trou. Voir .op-certifs. */
+/* Le retrait haut place « Compétences techniques » exactement a la hauteur du
+   bandeau « Expériences » de la colonne de gauche. */
+.op-cote {
+  grid-column: 2; grid-row: 3;
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  padding-top: 3mm;
+}
+
+.op-titre-bloc {
+  display: flex; align-items: center; justify-content: center;
+  background: var(--vi); color: #fff; text-align: center;
+  border-radius: 999px; padding: 0 4mm; height: var(--h-bandeau);
+  font-size: 11pt; font-weight: 700;
+}
+
+.op-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5mm; margin: 0 0 3mm; }
+.op-chip {
+  border-radius: 2.5mm; padding: 3.2mm 2mm; text-align: center;
+  color: #fff; font-weight: 700; font-size: 10pt;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 11mm; line-height: 1.15;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+/* Un libelle fonctionnel est plus long qu'un nom de techno : il tient sur
+   deux lignes plutot que d'etre tronque. */
+.op-chip.long { font-size: 8.5pt; padding: 2mm 1.5mm; }
+.op-chip:nth-child(1), .op-chip:nth-child(4) { background: linear-gradient(135deg, #ff8340, var(--or)); }
+.op-chip:nth-child(2), .op-chip:nth-child(3) { background: linear-gradient(135deg, #ff9a52, var(--or2)); }
+
+.op-skills { font-size: 8pt; line-height: 1.42; }
+.op-skills div { margin-bottom: 1mm; }
+.op-skills b { color: var(--vi); }
+
+/* Le bloc certifications suit immediatement les competences : pas de
+   « margin-top:auto », qui creusait un vide au milieu de la colonne. */
+.op-certifs { margin-top: 3mm; }
+.op-certifs ul { margin: 2mm 0 0; padding: 0 0 0 3mm; list-style: none; }
+.op-certifs li { font-size: 8pt; line-height: 1.4; position: relative; padding-left: 3mm; margin-bottom: .4mm; }
+.op-certifs li::before { content: "•"; position: absolute; left: 0; color: var(--nb); }
+
+/* --------------------------------------------------------------- pied --- */
+
+.op-pied {
+  grid-column: 1 / -1; grid-row: 4;
+  display: flex; align-items: flex-end; gap: 6mm;
+  padding-top: 2mm;
+}
+.op-logo { width: 26mm; }
+.op-logo img { width: 100%; display: block; }
+.op-pied-droite { margin-left: auto; text-align: right; padding-bottom: 2mm; display: flex; flex-direction: column; gap: .8mm; }
+.op-langues, .op-contact { font-size: 8pt; color: var(--gr); }
+
+/* Badges de certification, centres sous la colonne des experiences comme
+   dans le gabarit d'origine (et non repousses dans le coin). */
+.op-badges { display: flex; gap: 3mm; align-items: flex-end; margin-left: 22%; }
+.op-badges img { height: 17mm; width: auto; display: block; }
+
+/* Signale un debordement : mieux vaut le voir a l'ecran qu'a l'impression. */
+.slide.deborde .op-exp { outline: 1px dashed var(--or); outline-offset: 2mm; }
+
+@media print {
+  .slide { transform: none; box-shadow: none; margin: 0; }
+}

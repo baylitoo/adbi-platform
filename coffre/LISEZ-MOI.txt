@@ -1,0 +1,113 @@
+ADBI Coffre — protection locale de documents
+============================================
+
+Le principe
+-----------
+Trois onglets :
+
+1. « Protéger un document » : déposez un PDF ou un Word (.docx). L'application
+   l'analyse SUR CE POSTE et détecte les informations sensibles ; vous cochez
+   ce qui doit être masqué (tout ou partie) — les zones sont recouvertes de
+   caches « XXXX ». Le fichier produit GARDE SON FORMAT, en deux modes :
+   - PROTÉGÉ (réversible) : l'original complet, chiffré, est embarqué dans le
+     fichier ; déchiffrable sur ce poste, sans mot de passe (clé locale).
+   - ANONYMISÉ (définitif) : AUCUN original embarqué — les informations
+     masquées sont supprimées pour toujours, personne ne peut les retrouver.
+     C'est l'anonymisation au sens RGPD.
+2. « Fichier / dossier à clé » : n'importe quel fichier, ou un DOSSIER entier,
+   devient une archive ZIP chiffrée en AES-256. À l'ouverture (7-Zip,
+   WinRAR…), LA CLÉ EST DEMANDÉE. Idéal pour envoyer un lot de documents :
+   l'archive par mail, la clé par SMS. (L'explorateur Windows ne lit pas les
+   ZIP chiffrés en AES : le destinataire utilise 7-Zip, gratuit.)
+3. « Déchiffrer » : déposez un document protégé, il redevient l'original
+   exact, à l'octet près. Un document anonymisé est refusé avec un message
+   clair : il n'y a rien à récupérer, c'est le but.
+
+La clé locale (au lieu d'un mot de passe)
+-----------------------------------------
+Le chiffrement utilise une clé créée au premier lancement dans
+`data\cle-locale.bin`. Conséquences à connaître :
+- Le déchiffrement se fait dans ADBI Coffre, sur un poste détenant cette clé.
+  Un destinataire du fichier protégé LIT la version masquée, mais ne peut pas
+  récupérer l'original : c'est le but.
+- Pour qu'un autre poste ADBI puisse déchiffrer : copiez `data\cle-locale.bin`
+  au même endroit sur ce poste.
+- SAUVEGARDEZ CETTE CLÉ (clé USB, coffre) : la perdre rend tous les originaux
+  embarqués définitivement irrécupérables. Il n'existe aucune récupération.
+- Toute personne ayant accès à ce poste (session Windows) peut déchiffrer :
+  la protection vaut ce que vaut l'accès au poste.
+
+Ce qui est détecté automatiquement
+----------------------------------
+Avec validation arithmétique quand elle existe (clé IBAN, formule de Luhn,
+clé du n° de sécurité sociale, clé de TVA) pour éviter les fausses alertes :
+- noms et prénoms : dictionnaire de prénoms, civilités (M., Mme, Maître…),
+  étiquettes (« Nom : », « Candidat : », « représenté par »…), motif
+  « Prénom NOMENMAJUSCULES » sans dictionnaire (Oussama NIDHAMMOU), ligne
+  d'en-tête de document (un CV commence par le nom), prénoms composés,
+  particules (ben, de, van…)
+- PHOTOS ET IMAGES : photo d'identité d'un CV, tampon, signature scannée —
+  zones d'images du PDF, cadres d'images du Word (média remplacé par un pavé
+  gris dans l'archive : la photo ne reste pas lisible dedans)
+- e-mails, téléphones (06…, +33 (0)6…, (+33) 680 988 967, points, tirets,
+  collés — nombre de chiffres vérifié)
+- IBAN, cartes bancaires, SIREN/SIRET, n° TVA intracommunautaire
+- numéros de sécurité sociale
+- adresses postales (types de voie étendus), codes postaux + villes
+- dates, montants (TJM, salaires…), plaques d'immatriculation
+- profils en ligne (LinkedIn, GitHub…)
+
+La détection des noms reste heuristique : l'atelier sert à vérifier. Dans un
+PDF, cliquez une zone pour la basculer, ou SURLIGNEZ n'importe quel texte
+pour un masquage manuel. Dans un Word, cochez dans la liste (le contexte de
+chaque détection est affiché au survol).
+
+Le fichier protégé
+------------------
+- PDF : pages ré-imagées — le texte masqué est RÉELLEMENT absent du fichier
+  (rien à « gratter », aucun texte extractible), caches aux couleurs ADBI.
+  Le texte n'y est plus sélectionnable ; le destinataire lit, c'est tout.
+- Word : les valeurs choisies sont remplacées par des ▓ dans le texte
+  (mise en page préservée), fichier lisible normalement dans Word.
+- Dans les deux cas : l'original chiffré (AES-256-GCM) voyage dans le fichier
+  (pièce jointe PDF / entrée d'archive `adbi/original.bin`). Un seul fichier.
+- « Masquer tout le document » remplace le contenu par une page neutre
+  « Document protégé », l'original chiffré toujours embarqué.
+
+Démarrage
+---------
+- Par la plateforme : ADBI Factory, tuile « ADBI Coffre ».
+- Seul : Demarrer-ADBI-Coffre.bat, puis http://localhost:4300.
+Aucune dépendance npm (crypto, zlib et zip maison en natif ; pdfjs et pdf-lib
+embarqués en local dans public/lib — aucun CDN, fonctionne hors ligne).
+
+Limites à connaître
+-------------------
+- PDF déjà verrouillés par mot de passe et documents de plus de 60 pages :
+  refusés. PDF scannés : pas de texte détectable, « Masquer tout » possible.
+- Autres formats (Excel, images…) : pas encore gérés en « même format ».
+- L'habillage visible du fichier protégé n'est pas scellé ; c'est l'ORIGINAL
+  restitué qui est garanti intègre (toute altération de la charge chiffrée
+  fait échouer le déchiffrement).
+- Après protection, l'original en clair reste sur votre disque : supprimez-le
+  vous-même si nécessaire. Taille maximale : 512 Mo.
+
+Sous le capot (pour audit)
+--------------------------
+- AES-256-GCM ; clé de fichier dérivée de la clé locale par HKDF-SHA256 avec
+  sel unique par fichier (format ADBIC2). L'ancien mode mot de passe (ADBIC1,
+  scrypt N=2^17) reste lisible et disponible par l'API.
+- Conteneur chiffré : magic + paramètres + sel + IV en en-tête authentifié
+  (AAD), données, étiquette GCM ; le nom d'origine est DANS la partie chiffrée.
+- Analyse/rendu PDF : pdfjs ; assemblage PDF : pdf-lib ; Word : lecture et
+  écriture ZIP maison (zlib natif) + réécriture des w:t, dans docx.js.
+
+API locale (pour les autres applications ADBI)
+----------------------------------------------
+En-têtes : X-Nom-Fichier (encodeURIComponent) ; X-Cle facultatif (sans lui,
+clé locale ; avec lui, mot de passe scrypt).
+POST /api/chiffrer        corps = fichier brut  → conteneur chiffré
+POST /api/dechiffrer      corps = conteneur, PDF ou Word protégé → original
+POST /api/docx/analyser   corps = .docx → { detections: [...] }
+POST /api/docx/proteger   corps = .docx, X-Zones="1,4" | "toutes" | X-Tout=1
+GET  /api/sante

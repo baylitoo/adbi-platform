@@ -1,0 +1,52 @@
+{
+  "_lisezmoi": [
+    "Catalogue des badges de certification, classes par editeur.",
+    "",
+    "Pour AJOUTER un badge : deposez le fichier .png dans un sous-dossier portant",
+    "le nom de l'editeur, par exemple  badges/Databricks/Data Engineer Associate.png",
+    "Il apparait aussitot dans la liste deroulante, sans toucher a ce fichier :",
+    "le dossier donne l'editeur, le nom du fichier donne le libelle.",
+    "",
+    "Ce fichier ne sert qu'a decrire les badges poses A PLAT dans badges/, dont le",
+    "nom (badge-12.png) ne dit rien. Ils gardent ce nom parce que les dossiers de",
+    "competences deja enregistres y font reference : les renommer les casserait.",
+    "",
+    "\"exclu\": true retire une image de la liste sans la supprimer du disque."
+  ],
+
+  "badge-12.png": { "editeur": "Qlik", "libelle": "Data Integration Administrator — Certified" },
+  "badge-16.png": { "editeur": "Qlik", "libelle": "Data Integration Developer — Certified" },
+  "badge-18.png": { "editeur": "Qlik", "libelle": "Cloud Administrator — Certified" },
+  "badge-38.png": { "editeur": "Qlik", "libelle": "Cloud Administrator — Professional" },
+  "badge-36.png": { "editeur": "Qlik", "libelle": "Qlik Compose — Provisioning Data" },
+  "badge-37.png": { "editeur": "Qlik", "libelle": "Qlik Replicate — Synchronizing Data" },
+
+  "badge-30.png": { "editeur": "Talend", "libelle": "Cloud Administrator — Professional" },
+  "badge-31.png": { "editeur": "Talend", "libelle": "Big Data Developer — Professional" },
+  "badge-32.png": { "editeur": "Talend", "libelle": "Data Integration Developer — Professional" },
+  "badge-33.png": { "editeur": "Talend", "libelle": "API Services Developer — Certified" },
+
+  "badge-34.png": { "editeur": "Microsoft", "libelle": "Azure Fundamentals (AZ-900)" },
+  "badge-51.png": { "editeur": "Microsoft", "libelle": "Power BI Data Analyst Associate (PL-300)" },
+
+  "badge-42.png": { "editeur": "AWS", "libelle": "Cloud Practitioner — Foundational" },
+  "badge-43.png": { "editeur": "Cisco", "libelle": "CCNA" },
+
+  "badge-20.png": { "editeur": "Scrum.org", "libelle": "Professional Scrum Master I (PSM I)" },
+  "badge-50.png": { "editeur": "Scrum.org", "libelle": "Professional Scrum Master & Product Owner" },
+  "badge-21.png": { "editeur": "Scaled Agile", "libelle": "SAFe 5 Scrum Master (SSM)" },
+
+  "badge-24.png": { "editeur": "Future Skills Academy", "libelle": "CCGP — Certified" },
+  "badge-25.png": { "editeur": "OpenAI", "libelle": "Complete AI Training" },
+
+  "badge-40.png": {
+    "exclu": true,
+    "libelle": "Attestation nominative Databricks (Siradio DIALLO)",
+    "raison": "Ce n'est pas un badge mais un certificat NOMINATIF, recupere depuis un CV. Le laisser dans la liste ferait apparaitre le nom d'un candidat sur le dossier d'un autre."
+  },
+  "badge-63.png": {
+    "exclu": true,
+    "libelle": "Portrait d'une personne",
+    "raison": "Photo d'identite recuperee depuis un CV, arrivee ici par erreur. Sa place n'est pas dans une bibliotheque de badges partagee."
+  }
+}
