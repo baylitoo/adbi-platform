@@ -4,7 +4,8 @@
   "description": "Generateur de contrats ADBI (sous-traitance / CDI / CDD) - apercu, export PDF & Word, checklist documents, export ZIP.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "migrer-vers-postgres": "node scripts/migrer-vers-postgres.js"
   },
   "author": "ADBI",
   "license": "UNLICENSED",
@@ -16,6 +17,7 @@
     "nodemailer": "^10.0.0",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.15.0",
+    "pg": "^8.13.1",
     "sql.js": "^1.10.3",
     "tesseract.js": "^7.0.0"
   }
