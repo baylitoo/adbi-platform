@@ -55,10 +55,19 @@ templates/, static/      interface web
 
 ## Données
 
-Stocké dans `data/` (gitignoré) : `adbi.db` (SQLite), `users.json`,
-`tokens.json`, `invites.json`, `jwt_secret.txt` (généré au premier
-lancement). Compatibilité : `cv_database.json`, `uploads/` à la racine du
-module (gitignorés aussi).
+PostgreSQL — **requis** (issue #15, PR B), plus de repli SQLite/JSON : voir
+`core/pg.py` (schéma), `core/database_pg.py` (besoins/matching),
+`core/auth_pg.py` (utilisateurs/tokens/invitations), `core/activity_pg.py`
+(journal d'activité), `core/cvstore_pg.py` (CVthèque). `DATABASE_URL` doit
+pointer vers une base existante (`core/pg.py::database_url` lève sinon) —
+voir [`.env.example`](.env.example). Une base existante en `adbi.db`
+(SQLite) / `users.json` / `tokens.json` / `invites.json` / `activity.json` /
+`cv_database.json` doit être migrée au préalable avec
+`scripts/migrer_vers_postgres.py` (lecture seule sur les sources, rejouable).
+
+`data/` (gitignoré) ne garde plus que `jwt_secret.txt` (généré au premier
+lancement) et les réglages LLM (`llm_provider.txt`, `llm_model_interne.txt`).
+`uploads/` (fichiers déposés) reste à la racine du module (gitignoré aussi).
 
 ## Démarrage
 
@@ -66,6 +75,7 @@ module (gitignorés aussi).
 python -m venv .venv
 .venv/Scripts/activate      # ou source .venv/bin/activate sur Linux/Mac
 pip install -r requirements.txt
+export DATABASE_URL=postgresql://adbi:motdepasse@localhost:5432/adbi_cv_parser
 python app.py                # → http://localhost:5000
 ```
 
@@ -75,7 +85,9 @@ Premier lancement : téléchargement des modèles Docling (long, normal).
 
 ```bash
 docker build -t adbi-cv-parser .
-docker run -p 5000:5000 -v "$(pwd)/data:/app/data" -e ADBI_AUTH=on adbi-cv-parser
+docker run -p 5000:5000 -v "$(pwd)/data:/app/data" \
+  -e ADBI_AUTH=on -e DATABASE_URL=postgresql://adbi:motdepasse@host:5432/adbi_cv_parser \
+  adbi-cv-parser
 ```
 
 `ADBI_AUTH=on` n'est **pas** posé par défaut dans l'image — à fournir

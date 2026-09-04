@@ -58,7 +58,7 @@ except ImportError:
 
 # ── Config centralisée ────────────────────────────────────────────────────────
 from config import (
-    UPLOAD_DIR, CV_DB_FILE, MAX_LLM_CHARS,
+    UPLOAD_DIR, MAX_LLM_CHARS,
     get_active_llm, set_active_llm,
 )
 
@@ -68,8 +68,17 @@ from core.auth import (
     verify_access_token, ensure_default_superuser,
     AUTH_ACTIVE,
 )
-from core.database import init_db
-from core.activity import log_event as _log
+# ── PostgreSQL (issue #15, PR B) ───────────────────────────────────────────────
+# init_schema() crée toutes les tables (needs/matching_results/users/
+# refresh_tokens/invites/activity/cvs) — un seul schema.sql pour tout, voir
+# core/pg.py. cvstore_pg remplace les anciens load_db()/save_db() d'app.py
+# (dict complet cv_database.json) par des lectures/écritures ligne à ligne ;
+# importé en module (cvstore_pg.get_cv, ...) pour ne pas entrer en conflit
+# avec les routes de ce fichier qui portent les mêmes noms
+# (get_cv, list_cvs, delete_cv).
+from core.pg import init_schema
+from core.activity_pg import log_event as _log
+from core import cvstore_pg
 
 # ── Blueprints ────────────────────────────────────────────────────────────────
 from api.auth_bp      import auth_bp
@@ -131,7 +140,6 @@ def handle_exception(e):
     traceback.print_exc()
     return jsonify({"error": f"Erreur serveur : {str(e)}"}), 500
 
-_db_lock        = threading.Lock()
 _converter      = None          # Singleton DocumentConverter (chargé une seule fois)
 _converter_lock = threading.Lock()
 
@@ -1428,57 +1436,35 @@ def process_cv(file_path, jeton=None) -> dict:
     return cv_data
 
 
-def load_db() -> dict:
-    with _db_lock:
-        if CV_DB_FILE.exists():
-            try:
-                with open(CV_DB_FILE, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                if content:
-                    return json.loads(content)
-            except json.JSONDecodeError as e:
-                print(f"[ERREUR] Base de données corrompue ({CV_DB_FILE}): {e} — base réinitialisée.")
-            except Exception as e:
-                print(f"[ERREUR] Impossible de lire la base de données: {e}")
-        return {}
-
-
-def save_db(db: dict) -> None:
-    with _db_lock:
-        tmp = CV_DB_FILE.with_suffix(".tmp")
-        try:
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(db, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, CV_DB_FILE)
-        except Exception as e:
-            try:
-                tmp.unlink(missing_ok=True)
-            except Exception:
-                pass
-            raise RuntimeError(f"Impossible de sauvegarder la base de données: {e}")
+# load_db()/save_db() ont été retirées (issue #15, PR B) : la CVthèque vit
+# désormais dans PostgreSQL (table cvs, core/cvstore_pg.py) et chaque route
+# lit/écrit une fiche à la fois — plus de dict complet chargé/réécrit en
+# mémoire à chaque appel. cvstore_pg.list_cvs() reste disponible pour les
+# écrans qui listent/recherchent toute la CVthèque (pas un cache : chaque
+# appel relit la table).
 
 
 def _enrich_cv_background(cv_id: str) -> None:
     """Background thread: call LLM and update the stored CV without blocking upload."""
     try:
-        db = load_db()
-        if cv_id not in db:
+        cv = cvstore_pg.get_cv(cv_id)
+        if cv is None:
             print(f"[WARN] _enrich_cv_background : CV {cv_id} introuvable.")
             return
-        experience = db[cv_id].get("experience", [])
+        experience = cv.get("experience", [])
         if not experience:
-            db = load_db()
-            if cv_id in db:
-                db[cv_id]["llm_enriched"] = True
-                save_db(db)
+            cv = cvstore_pg.get_cv(cv_id)
+            if cv is not None:
+                cv["llm_enriched"] = True
+                cvstore_pg.save_cv(cv_id, cv)
             return
         enriched = llm_enrich_experiences(experience)
         # Reload to preserve any edits made by the user during enrichment
-        db = load_db()
-        if cv_id in db:
-            db[cv_id]["experience"] = enriched
-            db[cv_id]["llm_enriched"] = True
-            save_db(db)
+        cv = cvstore_pg.get_cv(cv_id)
+        if cv is not None:
+            cv["experience"] = enriched
+            cv["llm_enriched"] = True
+            cvstore_pg.save_cv(cv_id, cv)
     except Exception:
         traceback.print_exc()
 
@@ -1693,7 +1679,7 @@ def upload_cv():
     empreinte = hashlib.sha256(file_path.read_bytes()).hexdigest()
     source_cache = None
     try:
-        for existante in load_db().values():
+        for existante in cvstore_pg.list_cvs().values():
             if existante.get("empreinte") != empreinte:
                 continue
             if existante.get("llm_enriched") or (existante.get("bilan_adbi") or {}).get("exploitable"):
@@ -1763,9 +1749,7 @@ def upload_cv():
 
     # Store immediately so the detail page is available right away
     try:
-        db = load_db()
-        db[file_id] = cv_data
-        save_db(db)
+        cvstore_pg.save_cv(file_id, cv_data)
     except Exception as e:
         traceback.print_exc()
         print(f"[ERREUR] Impossible de sauvegarder le CV {file_id} : {e}")
@@ -1775,10 +1759,10 @@ def upload_cv():
         threading.Thread(target=_enrich_cv_background, args=(file_id,), daemon=True).start()
     else:
         try:
-            db = load_db()
-            if file_id in db:
-                db[file_id]["llm_enriched"] = True
-                save_db(db)
+            cv = cvstore_pg.get_cv(file_id)
+            if cv is not None:
+                cv["llm_enriched"] = True
+                cvstore_pg.save_cv(file_id, cv)
         except Exception:
             pass
 
@@ -1828,8 +1812,7 @@ def reanalyser_cv(file_id):
     bibliothèques peut être complétée plus tard, en un clic, sans re-déposer
     le document. La progression passe par le même jeton que le dépôt.
     """
-    db = load_db()
-    fiche = db.get(file_id)
+    fiche = cvstore_pg.get_cv(file_id)
     if not fiche:
         return jsonify({"error": "CV introuvable"}), 404
 
@@ -1857,8 +1840,7 @@ def reanalyser_cv(file_id):
     cv_data["bilan_adbi"] = bilan_adbi(cv_data)
     cv_data.pop("_timing", None)
 
-    db[file_id] = cv_data
-    save_db(db)
+    cvstore_pg.save_cv(file_id, cv_data)
     noter_progression(jeton, 100, "Terminé")
     return jsonify({
         "ok": True,
@@ -1882,7 +1864,7 @@ def serve_file(file_id):
 @app.route("/api/cvs", methods=["GET"])
 @require_auth
 def list_cvs():
-    db = load_db()
+    db = cvstore_pg.list_cvs()
     summary = []
     for cid, cv in db.items():
         # Rétrocompatibilité : calcule skills_flat si absent (anciens CVs)
@@ -1910,7 +1892,7 @@ def list_cvs():
 @require_auth
 def list_all_skills():
     """Retourne toutes les compétences uniques + leur fréquence pour la sidebar."""
-    db = load_db()
+    db = cvstore_pg.list_cvs()
     counter: dict[str, int] = {}
     for cv in db.values():
         sf = cv.get("skills_flat") or compute_skills_flat(cv)
@@ -1932,7 +1914,7 @@ def search_cvs():
       min_exp   — années d'expérience minimales (int)
       seniority — junior | mid | senior | expert
     """
-    db = load_db()
+    db = cvstore_pg.list_cvs()
     q         = request.args.get("q", "").strip().lower()
     tech_raw  = request.args.get("tech", "").strip()
     location  = request.args.get("location", "").strip().lower()
@@ -2007,38 +1989,38 @@ def store_cv():
     if not data:
         return jsonify({"error": "Aucune donnée"}), 400
     cid = data.get("id") or str(uuid.uuid4())
-    db = load_db()
     data["stored_at"] = datetime.now().isoformat()
-    db[cid] = data
-    save_db(db)
+    cvstore_pg.save_cv(cid, data)
     return jsonify({"success": True, "id": cid})
 
 
 @app.route("/api/cvs/<cv_id>", methods=["GET"])
 @require_auth
 def get_cv(cv_id):
-    db = load_db()
-    if cv_id not in db:
+    cv = cvstore_pg.get_cv(cv_id)
+    if cv is None:
         abort(404)
-    return jsonify(db[cv_id])
+    return jsonify(cv)
 
 
 @app.route("/cv/<cv_id>")
 @require_auth
 def cv_detail(cv_id):
-    db = load_db()
-    if cv_id not in db:
+    cv = cvstore_pg.get_cv(cv_id)
+    if cv is None:
         abort(404)
-    cv = db[cv_id]
     # Collect all linked versions (translations / original)
     linked_cvs = []
     src_id = cv.get("source_cv_id", "")
-    if src_id and src_id in db:
-        src = db[src_id]
-        lang = src.get("language", "fr")
-        linked_cvs.append({"id": src_id, "language": lang,
-                            "label": "🇫🇷 FR" if lang == "fr" else f"🌐 {lang.upper()}"})
-    for cid, other in db.items():
+    if src_id:
+        src = cvstore_pg.get_cv(src_id)
+        if src is not None:
+            lang = src.get("language", "fr")
+            linked_cvs.append({"id": src_id, "language": lang,
+                                "label": "🇫🇷 FR" if lang == "fr" else f"🌐 {lang.upper()}"})
+    # Recherche inverse (autres fiches dérivées de celle-ci) : nécessite un
+    # scan de toute la CVthèque, pas d'index sur source_cv_id.
+    for cid, other in cvstore_pg.list_cvs().items():
         if cid != cv_id and other.get("source_cv_id") == cv_id:
             lang = other.get("language", "en")
             flag = {"en": "🇬🇧", "fr": "🇫🇷"}.get(lang, "🌐")
@@ -2049,8 +2031,8 @@ def cv_detail(cv_id):
 @app.route("/api/cvs/<cv_id>", methods=["PATCH"])
 @require_auth
 def update_cv(cv_id):
-    db = load_db()
-    if cv_id not in db:
+    cv = cvstore_pg.get_cv(cv_id)
+    if cv is None:
         abort(404)
     updates = request.json or {}
     # Always store years_experience as int
@@ -2060,31 +2042,29 @@ def update_cv(cv_id):
         except (ValueError, TypeError):
             updates["years_experience"] = 0
     for key, val in updates.items():
-        db[cv_id][key] = val
-    db[cv_id]["updated_at"] = datetime.now().isoformat()
-    save_db(db)
+        cv[key] = val
+    cv["updated_at"] = datetime.now().isoformat()
+    cvstore_pg.save_cv(cv_id, cv)
     return jsonify({"success": True})
 
 
 @app.route("/api/cvs/<cv_id>", methods=["DELETE"])
 @require_auth
 def delete_cv(cv_id):
-    db = load_db()
-    db.pop(cv_id, None)
-    save_db(db)
+    cvstore_pg.delete_cv(cv_id)
     return jsonify({"success": True})
 
 
 @app.route("/api/cvs/<cv_id>/copilot", methods=["POST"])
 @require_auth
 def cv_copilot(cv_id):
-    db = load_db()
-    if cv_id not in db:
+    cv = cvstore_pg.get_cv(cv_id)
+    if cv is None:
         return jsonify({"error": "CV introuvable"}), 404
-        
+
     req_data = request.json or {}
     user_message = req_data.get("message", "")
-    current_cv = req_data.get("cv", db[cv_id])
+    current_cv = req_data.get("cv", cv)
     
     if not user_message:
         return jsonify({"error": "Message vide"}), 400
@@ -2144,12 +2124,12 @@ Réponds selon les consignes. N'ajoute pas de blabla inutile, sois professionnel
 @app.route("/api/cvs/<cv_id>/export")
 @require_auth
 def export_company_cv(cv_id):
-    db = load_db()
-    if cv_id not in db:
+    cv = cvstore_pg.get_cv(cv_id)
+    if cv is None:
         abort(404)
     anon  = request.args.get("anon",  "false").lower() == "true"
     color = request.args.get("color", "orange").lower()
-    return render_template("company_cv.html", cv=db[cv_id], anon=anon, color=color)
+    return render_template("company_cv.html", cv=cv, anon=anon, color=color)
 
 
 # Technologies dont le nom est trop court pour porter une voyelle. Sans cette
@@ -2292,10 +2272,9 @@ def apercu_adbi(cv_id):
     réinventés), mêmes positions au point près, mêmes couleurs — orange
     #ff6600, violet #7030a0.
     """
-    db = load_db()
-    if cv_id not in db:
+    cv = cvstore_pg.get_cv(cv_id)
+    if cv is None:
         abort(404)
-    cv = db[cv_id]
     return render_template(
         "adbi_cv.html",
         cv=cv,
@@ -2324,7 +2303,7 @@ def page_rapprochement():
     need_id = request.args.get("need_id", "").strip()
     if need_id:
         try:
-            from core.database import get_need
+            from core.database_pg import get_need
             besoin = get_need(need_id)
         except Exception:
             besoin = None
@@ -2430,10 +2409,9 @@ def telecharger_dossier(cv_id, format_sortie):
     """
     if format_sortie not in ("pdf", "docx"):
         abort(404)
-    db = load_db()
-    if cv_id not in db:
+    cv = cvstore_pg.get_cv(cv_id)
+    if cv is None:
         abort(404)
-    cv = db[cv_id]
 
     pastilles = _pastilles_adbi(cv)
     savoir = _savoir_faire_adbi(cv)
@@ -2468,10 +2446,9 @@ def export_word(cv_id):
     if not _DOCX_AVAILABLE:
         return jsonify({"error": "python-docx non installé"}), 500
 
-    db = load_db()
-    if cv_id not in db:
+    cv = cvstore_pg.get_cv(cv_id)
+    if cv is None:
         abort(404)
-    cv        = db[cv_id]
     c         = cv.get("contact") or {}
     name      = cv.get("name") or "Candidat"
     title_str = cv.get("title") or ""
@@ -2820,10 +2797,9 @@ def export_word(cv_id):
 def translate_cv(cv_id):
     """Translate a CV to English and store it as a NEW linked entry (original untouched)."""
     import shutil
-    db = load_db()
-    if cv_id not in db:
+    original = cvstore_pg.get_cv(cv_id)
+    if original is None:
         abort(404)
-    original = db[cv_id]
     target    = (request.json or {}).get("target", "en")
     lang_name = "English" if target == "en" else "French"
 
@@ -2879,8 +2855,7 @@ def translate_cv(cv_id):
         new_cv["ext"]      = orig_ext
         new_cv["filename"] = Path(original.get("filename", "")).stem + f"_{target.upper()}{orig_ext}"
 
-    db[new_id] = new_cv
-    save_db(db)
+    cvstore_pg.save_cv(new_id, new_cv)
     return jsonify({"success": True, "new_id": new_id})
 
 
@@ -2888,10 +2863,9 @@ def translate_cv(cv_id):
 @require_auth
 def enrich_cv_endpoint(cv_id):
     """Enrich CV bullet points and descriptions using LLM."""
-    db = load_db()
-    if cv_id not in db:
+    cv = cvstore_pg.get_cv(cv_id)
+    if cv is None:
         abort(404)
-    cv = db[cv_id]
 
     snippet = json.dumps({k: cv.get(k) for k in ("title", "experience", "skills", "interests")},
                          ensure_ascii=False, indent=2)[:8000]
@@ -2917,8 +2891,7 @@ def enrich_cv_endpoint(cv_id):
             if enriched.get(k):
                 cv[k] = enriched[k]
         cv["enriched"] = True
-        db[cv_id] = cv
-        save_db(db)
+        cvstore_pg.save_cv(cv_id, cv)
         return jsonify({"success": True})
     except Exception as e:
         traceback.print_exc()
@@ -2929,10 +2902,9 @@ def enrich_cv_endpoint(cv_id):
 @require_auth
 def adapt_cv(cv_id):
     """Adapt CV to a given job posting using LLM. Saves result directly."""
-    db = load_db()
-    if cv_id not in db:
+    cv = cvstore_pg.get_cv(cv_id)
+    if cv is None:
         abort(404)
-    cv = db[cv_id]
     job_posting = (request.json or {}).get("job_posting", "").strip()
     if not job_posting:
         return jsonify({"error": "Fiche de poste manquante"}), 400
@@ -2961,8 +2933,7 @@ def adapt_cv(cv_id):
             if adapted.get(k):
                 cv[k] = adapted[k]
         cv["adapted_to_job"] = True
-        db[cv_id] = cv
-        save_db(db)
+        cvstore_pg.save_cv(cv_id, cv)
         return jsonify({"success": True})
     except Exception as e:
         traceback.print_exc()
@@ -2971,8 +2942,8 @@ def adapt_cv(cv_id):
 
 if __name__ == "__main__":
     # ── Initialisation au démarrage ───────────────────────────────────────────
-    init_db()                    # Crée les tables SQLite si absentes
-    ensure_default_superuser()   # Crée admin@adbi.fr si aucun utilisateur
+    init_schema()                 # Crée les tables PostgreSQL si absentes (DATABASE_URL requise)
+    ensure_default_superuser()    # Crée admin@adbi.fr si aucun utilisateur
 
     if not AUTH_ACTIVE:
         print("[AUTH] ⚠ Authentification DÉSACTIVÉE (ADBI_AUTH != on) — "

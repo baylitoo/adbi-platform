@@ -5,14 +5,14 @@
 #   → Factory sur http://localhost:4000
 #
 # PostgreSQL est provisionné ci-dessous (une base par service, voir
-# infra/postgres/init-databases.sh). contrats est bascule dessus (issue #14,
-# PR B) : DATABASE_URL est requise et reellement consommee par
-# contrats/server.js. cv-parser et one-pager gardent pour l'instant leur
-# stockage fichier actuel (SQLite/JSON) — DATABASE_URL reste cablee pour eux
-# aussi, prete pour leur propre bascule (issues #15/#16), sans retoucher ce
-# fichier. Les noms de service ci-dessous (contrats, one-pager, coffre,
-# cv-parser) sont ceux que factory/modules.docker.json utilise comme "hote" —
-# ne pas les renommer sans adapter ce fichier également.
+# infra/postgres/init-databases.sh). contrats (issue #14, PR B) et cv-parser
+# (issue #15, PR B) CONSOMMENT désormais leur base — DATABASE_URL requise,
+# plus de repli SQLite/JSON pour ces deux services. one-pager garde pour
+# l'instant son stockage fichier actuel — DATABASE_URL reste câblée pour que
+# sa migration (issue #16) n'ait qu'à la lire, sans retoucher ce fichier. Les
+# noms de service ci-dessous (contrats, one-pager, coffre, cv-parser) sont
+# ceux que factory/modules.docker.json utilise comme "hote" — ne pas les
+# renommer sans adapter ce fichier également.
 services:
   postgres:
     image: postgres:17-alpine
@@ -133,7 +133,7 @@ services:
       # qu'exposer ce service via compose n'oublie jamais l'authentification
       # (voir factory/README.md § Authentification du CV Parser).
       ADBI_AUTH: "on"
-      # Pas encore consommée par le code (voir issue #15).
+      # Requise : cv-parser n'a plus de repli SQLite/JSON (issue #15, PR B).
       DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_cv_parser
       ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
       ADBI_SUPERUSER_EMAIL: ${ADBI_SUPERUSER_EMAIL:?ADBI_SUPERUSER_EMAIL est requis (voir .env.example) — jamais admin@adbi.fr en déploiement}

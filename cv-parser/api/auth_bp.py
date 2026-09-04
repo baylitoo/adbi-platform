@@ -3,7 +3,7 @@ from datetime import timezone, datetime
 from flask import Blueprint, jsonify, request, make_response, redirect
 
 from config import ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
-from core.activity import log_event
+from core.activity_pg import log_event
 from core.auth import (
     get_user_by_email, get_user_by_id, list_users,
     create_user, update_user, delete_user,

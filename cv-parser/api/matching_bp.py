@@ -1,13 +1,10 @@
 """api/matching_bp.py — Lancement du matching + récupération des résultats."""
-import json
-from pathlib import Path
-
 from flask import Blueprint, jsonify, request
 
-from config import CV_DB_FILE
 from core.auth import require_auth, get_current_user
-from core.activity import log_event
-from core.database import (
+from core.activity_pg import log_event
+from core.cvstore_pg import get_cv
+from core.database_pg import (
     get_need, upsert_match_results, get_match_results, get_match_result,
 )
 from core.matcher import run_matching
@@ -56,16 +53,11 @@ def get_results(need_id: str):
     if not rows:
         return jsonify({"error": "Aucun résultat — lancez d'abord le matching"}), 404
 
-    # Enrichir avec les infos candidat depuis cv_database.json
-    try:
-        cv_db = json.loads(CV_DB_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        cv_db = {}
-
+    # Enrichir avec les infos candidat (lecture par ligne — CVthèque PostgreSQL)
     enriched = []
     for r in rows:
         cid = r["candidate_id"]
-        cv  = cv_db.get(cid, {})
+        cv  = get_cv(cid) or {}
         contact = cv.get("contact") or {}
         r["candidate_name"]  = cv.get("name", r.get("candidate_id", ""))
         r["candidate_title"] = cv.get("title", "")
@@ -96,12 +88,8 @@ def get_detail(need_id: str, candidate_id: str):
     if not match:
         return jsonify({"error": "Résultat introuvable pour ce candidat"}), 404
 
-    # Candidat complet depuis cv_database.json
-    try:
-        cv_db = json.loads(CV_DB_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        cv_db = {}
-    cv = cv_db.get(candidate_id, {})
+    # Candidat complet (lecture par ligne — CVthèque PostgreSQL)
+    cv = get_cv(candidate_id) or {}
 
     return jsonify({
         "need":      need,

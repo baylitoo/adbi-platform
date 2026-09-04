@@ -19,21 +19,18 @@ JWT_ALGORITHM              = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60        # 1 heure
 REFRESH_TOKEN_EXPIRE_DAYS   = 7
 
-# ── Fichiers de stockage ──────────────────────────────────────────────────────
-USERS_FILE   = DATA_DIR / "users.json"
-TOKENS_FILE  = DATA_DIR / "tokens.json"
-DB_FILE      = DATA_DIR / "adbi.db"     # SQLite pour besoins + matching
-INVITES_FILE = DATA_DIR / "invites.json"
-
-# ── Fichiers existants (compatibilité) ────────────────────────────────────────
-CV_DB_FILE = BASE_DIR / "cv_database.json"
+# ── Stockage ──────────────────────────────────────────────────────────────────
+# users.json/tokens.json/invites.json/adbi.db (SQLite)/cv_database.json ont
+# disparu avec la bascule PostgreSQL (issue #15, PR B) — voir core/pg.py,
+# core/auth_pg.py, core/database_pg.py, core/cvstore_pg.py, core/activity_pg.py.
+# DATABASE_URL est désormais requise (core/pg.py::database_url lève sinon).
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # ── Premier lancement ─────────────────────────────────────────────────────────
 #
-# Identifiants du superuser créé si data/users.json est vide (voir
-# core/auth.py, ensure_default_superuser). Le mot de passe par défaut n'a de
+# Identifiants du superuser créé si la table users (PostgreSQL) est vide
+# (voir core/auth.py::ensure_default_superuser). Le mot de passe par défaut n'a de
 # sens qu'en développement local (poste, ADBI_AUTH=off) : le poser explicitement
 # via variable d'environnement avant toute exposition Internet.
 DEFAULT_SUPERUSER_EMAIL    = os.environ.get("ADBI_SUPERUSER_EMAIL") or "admin@adbi.fr"

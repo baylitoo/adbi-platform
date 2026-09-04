@@ -1,52 +1,29 @@
 """
 settings_bp.py — Paramétrage, gestion utilisateurs, invitations, activité, profil.
 """
-import json
 import secrets
-import threading
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 
 from flask import Blueprint, request, jsonify
 
 import requests as _requests
 import llm_cascade
-from config import INVITES_FILE, DATA_DIR, PROVIDERS, get_active_llm, set_active_llm
+from config import PROVIDERS, get_active_llm, set_active_llm
 from core.auth import (
     require_auth, require_superuser, get_current_user,
     list_users, get_user_by_id, update_user, delete_user,
     create_user, verify_password,
 )
-from core.activity import get_events, get_user_stats
+from core.activity_pg import get_events, get_user_stats
+# Alias : évite le conflit avec les routes create_invite()/get_invite_info()
+# définies plus bas dans ce même module.
+from core.auth_pg import (
+    create_invite as pg_create_invite,
+    get_invite as pg_get_invite,
+    mark_invite_used,
+)
 
 settings_bp = Blueprint("settings", __name__)
-
-_inv_lock = threading.Lock()
-
-
-# ── Invite helpers ────────────────────────────────────────────────────────────
-
-def _load_invites() -> list:
-    if not INVITES_FILE.exists():
-        return []
-    try:
-        return json.loads(INVITES_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-
-
-def _save_invites(invites: list):
-    DATA_DIR.mkdir(exist_ok=True)
-    INVITES_FILE.write_text(
-        json.dumps(invites, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
-
-def _get_invite(token: str) -> dict | None:
-    for inv in _load_invites():
-        if inv.get("token") == token:
-            return inv
-    return None
 
 
 # ── User management (superuser only) ─────────────────────────────────────────
@@ -139,30 +116,21 @@ def create_invite():
 
     current = get_current_user()
     token   = secrets.token_urlsafe(32)
-    expires = (datetime.now(timezone.utc) + timedelta(hours=72)).isoformat()
+    expires = datetime.now(timezone.utc) + timedelta(hours=72)
 
-    with _inv_lock:
-        invites = _load_invites()
-        # Revoke previous pending invites for same email
-        invites = [i for i in invites if i.get("email") != email or i.get("used")]
-        invites.append({
-            "token":      token,
-            "email":      email,
-            "role":       role,
-            "created_by": current["email"],
-            "expires_at": expires,
-            "used":       False,
-        })
-        _save_invites(invites)
+    # pg_create_invite révoque déjà les invitations en attente pour le même
+    # email (DELETE ... WHERE used = false) avant d'insérer la nouvelle —
+    # voir core/auth_pg.py::create_invite.
+    pg_create_invite(token, email, role, current["email"], expires)
 
     base_url = request.host_url.rstrip("/")
     invite_url = f"{base_url}/invite/{token}"
-    return jsonify({"success": True, "invite_url": invite_url, "expires_at": expires})
+    return jsonify({"success": True, "invite_url": invite_url, "expires_at": expires.isoformat()})
 
 
 @settings_bp.route("/api/settings/invite/<token>", methods=["GET"])
 def get_invite_info(token):
-    inv = _get_invite(token)
+    inv = pg_get_invite(token)
     if not inv:
         return jsonify({"error": "Invitation invalide ou expirée"}), 404
     if inv.get("used"):
@@ -190,37 +158,32 @@ def accept_invite():
     if len(password) < 8:
         return jsonify({"error": "Mot de passe trop court (8 caractères min.)"}), 400
 
-    with _inv_lock:
-        invites = _load_invites()
-        inv = next((i for i in invites if i.get("token") == token), None)
-        if not inv:
-            return jsonify({"error": "Invitation invalide"}), 404
-        if inv.get("used"):
-            return jsonify({"error": "Invitation déjà utilisée"}), 410
+    inv = pg_get_invite(token)
+    if not inv:
+        return jsonify({"error": "Invitation invalide"}), 404
+    if inv.get("used"):
+        return jsonify({"error": "Invitation déjà utilisée"}), 410
 
-        expires = inv.get("expires_at", "")
-        if expires:
-            try:
-                if datetime.now(timezone.utc) > datetime.fromisoformat(expires):
-                    return jsonify({"error": "Invitation expirée"}), 410
-            except Exception:
-                pass
-
-        # Check email not already taken
-        users = list_users()
-        if any(u["email"] == inv["email"] for u in users):
-            return jsonify({"error": "Un compte existe déjà pour cet email"}), 409
-
+    expires = inv.get("expires_at", "")
+    if expires:
         try:
-            create_user(email=inv["email"], password=password,
-                        full_name=name, role=inv["role"])
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            if datetime.now(timezone.utc) > datetime.fromisoformat(expires):
+                return jsonify({"error": "Invitation expirée"}), 410
+        except Exception:
+            pass
 
-        # Mark invite as used
-        inv["used"] = True
-        _save_invites(invites)
+    # Check email not already taken
+    users = list_users()
+    if any(u["email"] == inv["email"] for u in users):
+        return jsonify({"error": "Un compte existe déjà pour cet email"}), 409
 
+    try:
+        create_user(email=inv["email"], password=password,
+                    full_name=name, role=inv["role"])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    mark_invite_used(token)
     return jsonify({"success": True, "email": inv["email"]})
 
 

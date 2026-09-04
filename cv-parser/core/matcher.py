@@ -10,12 +10,10 @@ Score /100 décomposé en 6 critères :
 """
 from __future__ import annotations
 
-import json
 import re
 from difflib import SequenceMatcher
-from pathlib import Path
 
-from config import CV_DB_FILE
+from core.cvstore_pg import list_cvs
 
 try:
     from skills_normalizer import normalize_one, normalize_skills, compute_skills_flat
@@ -46,12 +44,16 @@ SENIORITY_YEARS = {
 # ── Chargement CVthèque ───────────────────────────────────────────────────────
 
 def _load_cv_db() -> dict:
+    """Toute la CVthèque — lecture PostgreSQL (core/cvstore_pg.py).
+
+    Nom conservé (utilisé par core/rapprochement.py) : un scan complet des
+    candidats est un besoin légitime du matching, pas un cache — chaque appel
+    relit la table.
+    """
     try:
-        if CV_DB_FILE.exists():
-            return json.loads(CV_DB_FILE.read_text(encoding="utf-8"))
+        return list_cvs()
     except Exception:
-        pass
-    return {}
+        return {}
 
 
 def _get_skills_flat(cv: dict) -> list[str]:
