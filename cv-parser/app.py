@@ -2974,6 +2974,10 @@ if __name__ == "__main__":
     init_db()                    # Crée les tables SQLite si absentes
     ensure_default_superuser()   # Crée admin@adbi.fr si aucun utilisateur
 
+    if not AUTH_ACTIVE:
+        print("[AUTH] ⚠ Authentification DÉSACTIVÉE (ADBI_AUTH != on) — "
+              "à réserver au poste local, jamais à un déploiement exposé.")
+
     # Rechargement automatique DÉSACTIVÉ par défaut. Le veilleur de Werkzeug
     # surveillait aussi site-packages : torch, torchvision et jusqu'aux modules
     # d'encodage de Python déclenchaient des redémarrages — trois pendant un

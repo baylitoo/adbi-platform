@@ -68,16 +68,22 @@ async function initDb() {
 // un code, stocké dans data/code-parametres.txt (modifiable là, sans toucher au
 // code). Le navigateur l'envoie dans l'en-tête x-code-parametres après
 // déverrouillage ; les routes SENSIBLES le vérifient côté serveur.
+//
+// ADBI_CODE_PARAMETRES (variable d'environnement) est prioritaire sur le
+// fichier : à poser en déploiement pour ne jamais dépendre du code par défaut
+// ci-dessous, qui n'a de sens qu'en développement local.
+const CODE_PARAM_DEFAUT = "ADbi2027@@";
 const CODE_PARAM_FICHIER = path.join(__dirname, "data", "code-parametres.txt");
 
 function codeParametres() {
+  if (process.env.ADBI_CODE_PARAMETRES) return process.env.ADBI_CODE_PARAMETRES.trim();
   try {
     if (!fs.existsSync(CODE_PARAM_FICHIER)) {
-      fs.writeFileSync(CODE_PARAM_FICHIER, "ADbi2027@@");
+      fs.writeFileSync(CODE_PARAM_FICHIER, CODE_PARAM_DEFAUT);
     }
     return fs.readFileSync(CODE_PARAM_FICHIER, "utf8").trim();
   } catch (e) {
-    return "ADbi2027@@";
+    return CODE_PARAM_DEFAUT;
   }
 }
 

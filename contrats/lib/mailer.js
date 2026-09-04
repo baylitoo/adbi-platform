@@ -17,17 +17,23 @@ const BLEU = "#1665c1";
 const NUIT = "#0d3a8c";
 const ENCRE = "#1b2559";
 
+// Priorité : variable d'environnement, puis secrets.json (même convention
+// que lib/integrations.js) — un déploiement Coolify n'a jamais besoin
+// d'écrire dans data/secrets.json.
 function configSmtp() {
   let s = {};
   try { s = JSON.parse(fs.readFileSync(SECRETS_PATH, "utf8")); } catch (e) {}
-  if (!s.smtpHote || !s.smtpUtilisateur || !s.smtpMdp) return null;
-  const port = parseInt(s.smtpPort, 10) || 587;
+  const hote = process.env.SMTP_HOST || s.smtpHote;
+  const utilisateur = process.env.SMTP_USER || s.smtpUtilisateur;
+  const mdp = process.env.SMTP_PASS || s.smtpMdp;
+  if (!hote || !utilisateur || !mdp) return null;
+  const port = parseInt(process.env.SMTP_PORT || s.smtpPort, 10) || 587;
   return {
-    host: s.smtpHote,
+    host: hote,
     port,
     secure: port === 465,                 // 465 = SSL direct ; 587/25 = STARTTLS
-    auth: { user: s.smtpUtilisateur, pass: s.smtpMdp },
-    expediteur: s.smtpExpediteur || s.smtpUtilisateur,
+    auth: { user: utilisateur, pass: mdp },
+    expediteur: process.env.SMTP_FROM || s.smtpExpediteur || utilisateur,
   };
 }
 
