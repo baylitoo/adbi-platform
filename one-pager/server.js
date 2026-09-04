@@ -22,6 +22,12 @@ const { buildPptx, buildLivret } = require("./lib/render-pptx");
 const db = require("./lib/db");
 
 const PORT = Number(process.env.PORT) || 4200;
+// Local par defaut (poste de dev) ; le Dockerfile passe ADBI_HOTE=0.0.0.0 —
+// sans ca, "127.0.0.1" a l'interieur du conteneur n'est PAS atteignable via
+// le port publie ("-p 4200:4200" arrive sur l'interface externe, pas la
+// loopback), meme si le HEALTHCHECK (execute dans le meme conteneur) semble
+// fonctionner.
+const HOTE = process.env.ADBI_HOTE || "127.0.0.1";
 
 /**
  * Une erreur inattendue est journalisee sans couper le serveur : en pleine
@@ -406,14 +412,14 @@ function fileSafe(s) {
 
 db.init()
   .then(() => {
-    // Ecoute STRICTEMENT locale. Sans le « 127.0.0.1 », Node se lie a toutes
-    // les interfaces : le vivier — qui contient des CV de candidats, donc des
-    // donnees personnelles — serait alors consultable sans mot de passe depuis
-    // n'importe quel poste du reseau.
-    const serveur = app.listen(PORT, "127.0.0.1", () => {
+    // Local par defaut : le vivier contient des CV de candidats (donnees
+    // personnelles), consultable sans mot de passe — ne pas lier "0.0.0.0" en
+    // poste de dev. En conteneur, ADBI_HOTE=0.0.0.0 (Dockerfile) : l'isolation
+    // reseau est alors assuree par Docker/le reverse proxy, pas par la loopback.
+    const serveur = app.listen(PORT, HOTE, () => {
       demarre = true;
       console.log("");
-      console.log("  One pager — prêt sur http://localhost:" + PORT);
+      console.log("  One pager — prêt sur http://" + HOTE + ":" + PORT);
       console.log("  Base locale : data/cvs.sqlite  (accès local uniquement)");
       console.log("");
     });
