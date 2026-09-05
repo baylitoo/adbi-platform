@@ -18,3 +18,9 @@ pymupdf>=1.24.0
 # pas de pilote async necessaire. Variante [binary] : pas de libpq a
 # installer sur l'hote/l'image Docker.
 psycopg[binary]>=3.1
+# Serveur WSGI de production pour le conteneur (Dockerfile CMD + gunicorn.
+# conf.py) — le serveur de dev Flask (app.run(...), garde pour `python app.py`
+# en local) n'est pas concu pour etre expose. >=23.0.0 : derniere serie
+# stable au moment de l'ecriture ; verifie au build de l'image (Python 3.14,
+# voir Dockerfile) que l'installation et le demarrage aboutissent bien.
+gunicorn>=23.0.0

@@ -22,11 +22,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# 0.0.0.0 : app.py ne le fait PAS par défaut (127.0.0.1, poste local) — voir
-# app.py::__main__. Indispensable pour que le port publié par Docker atteigne
-# le processus. ADBI_AUTH=on à poser explicitement au lancement (voir README) :
-# volontairement PAS ici, pour ne jamais masquer un oubli avec une valeur par
-# défaut qui semblerait sûre.
+# 0.0.0.0 : ni app.py ni gunicorn.conf.py ne le font PAR DÉFAUT (127.0.0.1,
+# poste local) — voir gunicorn.conf.py (utilisé par le CMD ci-dessous) et
+# app.py::__main__ (`python app.py` en local). Indispensable pour que le port
+# publié par Docker atteigne le processus. ADBI_AUTH=on à poser explicitement
+# au lancement (voir README) : volontairement PAS ici, pour ne jamais masquer
+# un oubli avec une valeur par défaut qui semblerait sûre.
 ENV PYTHONUNBUFFERED=1
 ENV ADBI_HOTE=0.0.0.0
 EXPOSE 5000
@@ -34,4 +35,9 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','5000')+'/api/status', timeout=4)" || exit 1
 
-CMD ["python", "app.py"]
+# Serveur de production Gunicorn (issue #61 — le serveur de dev Flask n'est
+# pas conçu pour être exposé) plutôt que `python app.py` : configuration dans
+# gunicorn.conf.py (bind via ADBI_HOTE/PORT, un seul worker + threads, voir
+# ce fichier pour le détail). `python app.py` reste disponible pour le
+# développement local (hors Docker).
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]
