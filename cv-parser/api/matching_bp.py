@@ -21,7 +21,11 @@ def launch_match(need_id: str):
         return jsonify({"error": "Besoin introuvable"}), 404
     check_need_access(need)
 
-    limit   = int(request.args.get("limit", 50))
+    try:
+        limit = int(request.args.get("limit", 50))
+    except (TypeError, ValueError):
+        limit = 50
+    limit   = max(1, min(limit, 500))
     results = run_matching(need, limit=limit)
 
     upsert_match_results(need_id, results)

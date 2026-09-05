@@ -1,0 +1,91 @@
+{
+  "cv_parser": {
+    "name": "Thomas Verrier",
+    "title": "",
+    "email": "thomas.verrier@example.fr",
+    "phone": "07 89 12 34 56",
+    "linkedin": "",
+    "location": "",
+    "experience": [],
+    "education": [
+      {
+        "degree": "Septembre 2016 - Août 2018",
+        "institution": "",
+        "period": ""
+      },
+      {
+        "degree": "Diplôme d'Ingénieur, spécialité Informatique -- INSA Rennes, 2016",
+        "institution": "",
+        "period": ""
+      },
+      {
+        "degree": "Développement de sites web sur mesure pour des clients PME, du cahier des charges à la mise en production.",
+        "institution": "",
+        "period": ""
+      },
+      {
+        "degree": "Licence Informatique -- Université Rennes 1, 2013",
+        "institution": "",
+        "period": ""
+      },
+      {
+        "degree": "Environnement technique : PHP, Symfony, MySQL, jQuery, Bootstrap",
+        "institution": "",
+        "period": ""
+      },
+      {
+        "degree": "COMPETENCES",
+        "institution": "",
+        "period": ""
+      },
+      {
+        "degree": "Cloud et Infra : AWS, Docker, Kubernetes, Terraform, Ansible",
+        "institution": "",
+        "period": ""
+      },
+      {
+        "degree": "Langages : Python, PHP, JavaScript, Bash",
+        "institution": "",
+        "period": ""
+      },
+      {
+        "degree": "Bases de données : PostgreSQL, MySQL, MongoDB, Redis",
+        "institution": "",
+        "period": ""
+      },
+      {
+        "degree": "CI/CD et Monitoring : GitLab CI, Jenkins, Prometheus, Grafana",
+        "institution": "",
+        "period": ""
+      }
+    ],
+    "skills": [],
+    "languages": [
+      {
+        "language": "Français",
+        "level": "natif"
+      },
+      {
+        "language": "Anglais",
+        "level": "courant"
+      },
+      {
+        "language": "Espagnol",
+        "level": "notions"
+      }
+    ],
+    "_meta": {
+      "llm_parsed": false,
+      "docling_used": false,
+      "parsing_mode": "digital",
+      "wall_s": 1.29
+    }
+  },
+  "docie": {
+    "_error": "skipped"
+  },
+  "comparison": {
+    "cv_parser_error": null,
+    "docie_error": "skipped"
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "name": "Camille Béranger",
+  "title": "",
+  "years_experience": 0,
+  "contact": {
+    "email": "camille.beranger@example.fr",
+    "phone": "06 12 34 56 78",
+    "linkedin": "",
+    "github": "",
+    "location": ""
+  },
+  "experience": [],
+  "education": [],
+  "skills": [],
+  "languages": [
+    {
+      "language": "Français",
+      "level": "natif"
+    },
+    {
+      "language": "Anglais",
+      "level": "courant"
+    }
+  ],
+  "projects": [],
+  "certifications": [],
+  "interests": [],
+  "html_content": "",
+  "skills_flat": [],
+  "skills_raw_flat": [],
+  "llm_parsed": false,
+  "docling_used": false,
+  "parsing_mode": "digital",
+  "_timing": {
+    "extract_s": 0.261,
+    "clean_s": 0.0,
+    "llm_s": 0.01,
+    "normalize_s": 0.001,
+    "total_s": 0.275
+  },
+  "llm_service": "",
+  "extraction": "bibliothèques",
+  "bilan_adbi": {
+    "rubriques": {
+      "Nom": 1,
+      "Titre / poste": 0,
+      "Années d'expérience": 0,
+      "Contact": 2,
+      "Compétences techniques": 0,
+      "Expériences": 0,
+      "Formations": 0,
+      "Certifications": 0,
+      "Langues": 2,
+      "Centres d'intérêt": 0
+    },
+    "manquantes": [
+      "Titre / poste",
+      "Années d'expérience",
+      "Compétences techniques",
+      "Expériences",
+      "Formations",
+      "Certifications",
+      "Centres d'intérêt"
+    ],
+    "exploitable": false
+  },
+  "parse_warning": "L'extraction par bibliothèques est incomplète (titre, expériences, compétences) et aucun service IA n'a répondu. Relancez l'analyse depuis la fiche quand un service répond, ou complétez à la main.",
+  "_wall_s": 0.275
+}

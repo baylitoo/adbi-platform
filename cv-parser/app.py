@@ -178,28 +178,36 @@ def _init_converter():
         from docling.datamodel.base_models import InputFormat
         from docling.document_converter import DocumentConverter, PdfFormatOption
 
+        # OCR ACTIVÉ : ce convertisseur n'est jamais utilisé pour les CVs
+        # numériques (voir process_cv() — un CV avec couche texte passe par
+        # _extract_text_fast()/pdfplumber et ne touche pas à Docling). Il ne
+        # sert QUE de secours pour les PDF scannés/images, où l'OCR est la
+        # seule façon d'obtenir du texte. Le désactiver ici revenait à couper
+        # l'OCR sur le seul chemin qui en a besoin, et laissait un CV papier
+        # scanné ressortir vide, marqué inexploitable (issue #63).
         opts = PdfPipelineOptions()
-        opts.do_ocr = False               # inutile pour les CVs numériques
+        opts.do_ocr = True
         opts.do_table_structure = False   # ralentit sans apporter grand-chose
 
         _converter = DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}
         )
-        print("[INFO] DocumentConverter prêt (OCR et tables désactivés).")
+        print("[INFO] DocumentConverter prêt (OCR activé, tables désactivées).")
     except Exception as e:
-        print(f"[WARN] Impossible d'initialiser le convertisseur optimisé ({e}) — fallback OCR désactivé.")
+        print(f"[WARN] Impossible d'initialiser le convertisseur optimisé ({e}) — nouvelle tentative en options minimales.")
         try:
-            # Deuxième tentative : options minimales, OCR toujours désactivé
+            # Deuxième tentative : options minimales, OCR conservé (voir
+            # commentaire ci-dessus : c'est le seul chemin qui en a besoin).
             from docling.datamodel.pipeline_options import PdfPipelineOptions
             from docling.datamodel.base_models import InputFormat
             from docling.document_converter import DocumentConverter, PdfFormatOption
             opts2 = PdfPipelineOptions()
-            opts2.do_ocr             = False   # OCR désactivé dans tous les cas
+            opts2.do_ocr             = True
             opts2.do_table_structure = False
             _converter = DocumentConverter(
                 format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts2)}
             )
-            print("[INFO] DocumentConverter prêt (fallback, OCR désactivé).")
+            print("[INFO] DocumentConverter prêt (fallback, OCR activé).")
         except Exception as e2:
             print(f"[ERREUR] DocumentConverter inutilisable : {e2}")
 
@@ -1431,9 +1439,20 @@ def process_cv(file_path, jeton=None) -> dict:
     print(f"[PERF] Étape 5 normalize  : {T['normalize_s']:.3f}s")
     print(f"[PERF] ─── TOTAL pipeline : {T['total_s']:.2f}s ({'LLM=%d%%' % round(T['llm_s']/T['total_s']*100)})")
 
-    # Dernier recours pour le nom : le nom du fichier. Un dossier anonymisé
-    # n'en contient aucun, et une fiche sans nom est inutilisable en recherche.
-    if not cv_data.get("name"):
+    # Extraction insuffisante ET aucun service IA n'a pu compenser : c'est un
+    # échec réel (ex. PDF scanné dont même l'OCR ne récupère rien), pas un CV
+    # anonymisé — voir juste en dessous, cette distinction conditionne le
+    # secours par nom de fichier.
+    extraction_a_echoue = (not suffisante) and (not llm_ok)
+
+    # Dernier recours pour le nom : le nom du fichier — réservé aux documents
+    # dont l'extraction a par ailleurs réussi mais qui ne déclarent simplement
+    # aucune identité (dossier anonymisé, par exemple). Une extraction qui a
+    # échoué dans son ensemble ne doit PAS se voir attribuer un nom tiré du
+    # fichier : ça ressemble à une vraie donnée et masque silencieusement
+    # l'échec (une fiche à « Nom : Compare Scanné » a l'air normale, alors que
+    # rien n'a pu être lu dans le document).
+    if not cv_data.get("name") and not extraction_a_echoue:
         depuis_fichier = nom_depuis_fichier(file_path)
         if depuis_fichier:
             cv_data["name"] = depuis_fichier
@@ -1452,7 +1471,7 @@ def process_cv(file_path, jeton=None) -> dict:
     # Avertir SEULEMENT si la fiche est incomplète ET que l'IA n'a pas pu
     # compléter : des bibliothèques qui suffisent sont le cas nominal, pas
     # une anomalie.
-    if not suffisante and not llm_ok:
+    if extraction_a_echoue:
         cv_data["parse_warning"] = (
             "L'extraction par bibliothèques est incomplète ("
             + ", ".join(manques) +
@@ -1785,8 +1804,11 @@ def upload_cv():
 
     # Le nom d'origine n'est connu qu'ici : process_cv ne voit que le fichier
     # stocké, nommé par identifiant. Un dossier anonymisé ne portant pas
-    # d'identité dans son contenu, c'est la dernière source disponible.
-    if not cv_data.get("name"):
+    # d'identité dans son contenu, c'est la dernière source disponible — mais
+    # seulement si l'extraction a par ailleurs réussi (pas de parse_warning) :
+    # sinon ce serait la même invention de fausse donnée que dans process_cv()
+    # (voir son commentaire), pour une fiche dont l'extraction a échoué.
+    if not cv_data.get("name") and not cv_data.get("parse_warning"):
         depuis_fichier = nom_depuis_fichier(file.filename)
         if depuis_fichier:
             cv_data["name"] = depuis_fichier
