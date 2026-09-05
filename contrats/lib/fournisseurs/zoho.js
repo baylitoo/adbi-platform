@@ -15,6 +15,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { DELAI_HTTP_MS, DELAI_UPLOAD_MS, delaiSignal, messageDelai } = require("../httpDelai");
 
 const SECRETS_PATH = path.join(__dirname, "..", "..", "data", "secrets.json");
 
@@ -47,16 +48,22 @@ async function jetonAcces(force) {
   const c = config();
   if (!c) throw new Error("Zoho Sign non configuré (client ID, secret et refresh token requis — Paramètres → Signature électronique).");
   if (!force && jetonCache.valeur && Date.now() < jetonCache.expire) return jetonCache.valeur;
-  const r = await fetch(c.comptes + "/oauth/v2/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      client_id: c.clientId,
-      client_secret: c.clientSecret,
-      refresh_token: c.refreshToken,
-    }),
-  });
+  let r;
+  try {
+    r = await fetch(c.comptes + "/oauth/v2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: c.clientId,
+        client_secret: c.clientSecret,
+        refresh_token: c.refreshToken,
+      }),
+      signal: delaiSignal(DELAI_HTTP_MS),
+    });
+  } catch (e) {
+    throw messageDelai("Zoho OAuth", DELAI_HTTP_MS, e);
+  }
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.access_token) {
     throw new Error("Zoho OAuth : " + (j.error || "HTTP " + r.status) + " — vérifie client ID/secret/refresh token (région " + c.region + ").");
@@ -69,10 +76,18 @@ async function jetonAcces(force) {
 async function appel(chemin, options = {}, deuxieme) {
   const c = config();
   if (!c) throw new Error("Zoho Sign non configuré (client ID, secret et refresh token requis — Paramètres → Signature électronique).");
-  const r = await fetch(c.api + chemin, {
-    ...options,
-    headers: { Authorization: "Zoho-oauthtoken " + (await jetonAcces(deuxieme)), ...(options.headers || {}) },
-  });
+  // Envoi/mise à jour de document (multipart) : delai plus large, le PDF peut peser plusieurs Mo.
+  const delaiMs = options.document ? DELAI_UPLOAD_MS : DELAI_HTTP_MS;
+  let r;
+  try {
+    r = await fetch(c.api + chemin, {
+      ...options,
+      headers: { Authorization: "Zoho-oauthtoken " + (await jetonAcces(deuxieme)), ...(options.headers || {}) },
+      signal: delaiSignal(delaiMs),
+    });
+  } catch (e) {
+    throw messageDelai("Zoho Sign", delaiMs, e);
+  }
   if (r.status === 401 && !deuxieme) return appel(chemin, options, true);
   const type = r.headers.get("content-type") || "";
   if (!r.ok) {
@@ -108,16 +123,22 @@ async function echangerCode(code) {
     throw new Error("Renseigne et enregistre d'abord le client ID et le client secret Zoho.");
   }
   const region = DOMAINES[s.zohoRegion] ? s.zohoRegion : "eu";
-  const r = await fetch(DOMAINES[region].comptes + "/oauth/v2/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      client_id: s.zohoClientId,
-      client_secret: s.zohoClientSecret,
-      code: String(code || "").trim(),
-    }),
-  });
+  let r;
+  try {
+    r = await fetch(DOMAINES[region].comptes + "/oauth/v2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: s.zohoClientId,
+        client_secret: s.zohoClientSecret,
+        code: String(code || "").trim(),
+      }),
+      signal: delaiSignal(DELAI_HTTP_MS),
+    });
+  } catch (e) {
+    throw messageDelai("Zoho OAuth", DELAI_HTTP_MS, e);
+  }
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.refresh_token) {
     throw new Error("Échange refusé : " + (j.error || "HTTP " + r.status) +
@@ -159,7 +180,7 @@ async function creerEnveloppe(params) {
       })),
     },
   }));
-  const brouillon = await appel("/requests", { method: "POST", body: creation });
+  const brouillon = await appel("/requests", { method: "POST", body: creation, document: true });
   const demande = brouillon.requests || {};
   const idExterne = String(demande.request_id || "");
   if (!idExterne) throw new Error("Zoho Sign n'a pas renvoyé d'identifiant de demande.");
@@ -227,13 +248,13 @@ async function statutEnveloppe(idExterne) {
 }
 
 async function telechargerSigne(idExterne) {
-  return appel("/requests/" + idExterne + "/pdf");
+  return appel("/requests/" + idExterne + "/pdf", { document: true });
 }
 
 // Certificat de complétion Zoho = dossier de preuve (horodatages, IP, e-mails).
 async function telechargerPreuve(idExterne) {
   try {
-    return await appel("/requests/" + idExterne + "/completioncertificate");
+    return await appel("/requests/" + idExterne + "/completioncertificate", { document: true });
   } catch (e) {
     return null;
   }

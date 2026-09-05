@@ -20,6 +20,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { DELAI_HTTP_MS, DELAI_UPLOAD_MS, delaiSignal, messageDelai } = require("../httpDelai");
 
 const SECRETS_PATH = path.join(__dirname, "..", "..", "data", "secrets.json");
 
@@ -41,15 +42,23 @@ function config() {
 async function appel(chemin, options = {}) {
   const c = config();
   if (!c) throw new Error("Yousign non configuré (clé API absente — Paramètres → Signature électronique).");
-  const r = await fetch(c.base + chemin, {
-    ...options,
-    headers: {
-      Authorization: "Bearer " + c.cle,
-      ...(options.corps ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers || {}),
-    },
-    body: options.corps ? JSON.stringify(options.corps) : options.body,
-  });
+  // Envoi de document (multipart) : delai plus large, le PDF peut peser plusieurs Mo.
+  const delaiMs = options.document ? DELAI_UPLOAD_MS : DELAI_HTTP_MS;
+  let r;
+  try {
+    r = await fetch(c.base + chemin, {
+      ...options,
+      headers: {
+        Authorization: "Bearer " + c.cle,
+        ...(options.corps ? { "Content-Type": "application/json" } : {}),
+        ...(options.headers || {}),
+      },
+      body: options.corps ? JSON.stringify(options.corps) : options.body,
+      signal: delaiSignal(delaiMs),
+    });
+  } catch (e) {
+    throw messageDelai("Yousign", delaiMs, e);
+  }
   if (!r.ok) {
     let detail = "";
     try { const j = await r.json(); detail = j.detail || (j.errors && JSON.stringify(j.errors)) || j.title || ""; } catch (e) {}
@@ -108,7 +117,7 @@ async function creerEnveloppe(params) {
   const forme = new FormData();
   forme.append("file", new Blob([params.pdf], { type: "application/pdf" }), params.nomFichier || "contrat.pdf");
   forme.append("nature", "signable_document");
-  const doc = await appel("/signature_requests/" + sr.id + "/documents", { method: "POST", body: forme });
+  const doc = await appel("/signature_requests/" + sr.id + "/documents", { method: "POST", body: forme, document: true });
 
   // 3. Les signataires, DANS L'ORDRE (rang 1 = co-contractant d'abord),
   //    chacun avec son champ de signature posé sur le cadre du PDF.
@@ -158,13 +167,13 @@ async function statutEnveloppe(idExterne) {
 }
 
 async function telechargerSigne(idExterne) {
-  return appel("/signature_requests/" + idExterne + "/documents/download");
+  return appel("/signature_requests/" + idExterne + "/documents/download", { document: true });
 }
 
 // Dossier de preuve (audit trail) : LA pièce à conserver avec le PDF signé.
 async function telechargerPreuve(idExterne) {
   try {
-    return await appel("/signature_requests/" + idExterne + "/audit_trails/download");
+    return await appel("/signature_requests/" + idExterne + "/audit_trails/download", { document: true });
   } catch (e) {
     return null; // selon l'offre, la preuve se télécharge par signataire — non bloquant
   }

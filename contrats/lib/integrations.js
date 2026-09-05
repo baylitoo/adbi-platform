@@ -9,6 +9,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { DELAI_HTTP_MS, delaiSignal, messageDelai } = require("./httpDelai");
 
 const SECRETS_PATH = path.join(__dirname, "..", "data", "secrets.json");
 
@@ -98,7 +99,12 @@ function normalizeSiren(q) {
 
 async function lookupPappers(siren, token) {
   const url = `https://api.pappers.fr/v2/entreprise?api_token=${encodeURIComponent(token)}&siren=${siren}`;
-  const r = await fetch(url);
+  let r;
+  try {
+    r = await fetch(url, { signal: delaiSignal(DELAI_HTTP_MS) });
+  } catch (e) {
+    throw messageDelai("Pappers", DELAI_HTTP_MS, e);
+  }
   if (!r.ok) {
     let detail = "";
     try { const j = await r.json(); detail = j.error || j.message || ""; } catch (e) {}
@@ -126,9 +132,15 @@ async function lookupPappers(siren, token) {
 async function lookupInsee(siren, apiKey) {
   // API Sirene 3.11 (portail api.insee.fr) — clé passée en en-tête.
   const url = `https://api.insee.fr/api-sirene/3.11/siret?q=siren:${siren}%20AND%20etablissementSiege:true&nombre=1`;
-  const r = await fetch(url, {
-    headers: { "X-INSEE-Api-Key-Integration": apiKey, Accept: "application/json" },
-  });
+  let r;
+  try {
+    r = await fetch(url, {
+      headers: { "X-INSEE-Api-Key-Integration": apiKey, Accept: "application/json" },
+      signal: delaiSignal(DELAI_HTTP_MS),
+    });
+  } catch (e) {
+    throw messageDelai("INSEE", DELAI_HTTP_MS, e);
+  }
   if (!r.ok) {
     if (r.status === 401 || r.status === 403) throw new Error("Clé INSEE invalide ou non habilitée.");
     if (r.status === 404) throw new Error("Aucun établissement trouvé pour ce SIREN/SIRET.");
@@ -151,7 +163,7 @@ async function lookupInsee(siren, apiKey) {
   try {
     const r2 = await fetch(
       `https://api.insee.fr/api-sirene/3.11/siret?q=siren:${siren}&champs=siret,etatAdministratifEtablissement&nombre=1000`,
-      { headers: { "X-INSEE-Api-Key-Integration": apiKey, Accept: "application/json" } }
+      { headers: { "X-INSEE-Api-Key-Integration": apiKey, Accept: "application/json" }, signal: delaiSignal(DELAI_HTTP_MS) }
     );
     if (r2.ok) {
       const d2 = await r2.json();
@@ -243,7 +255,12 @@ function mapRechercheEntreprise(e) {
 async function lookupRechercheEntreprises(query) {
   const q = String(query || "").replace(/\D/g, "");
   const url = `https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(q)}&page=1&per_page=1`;
-  const r = await fetch(url, { headers: { Accept: "application/json" } });
+  let r;
+  try {
+    r = await fetch(url, { headers: { Accept: "application/json" }, signal: delaiSignal(DELAI_HTTP_MS) });
+  } catch (e) {
+    throw messageDelai("API Recherche d'entreprises", DELAI_HTTP_MS, e);
+  }
   if (!r.ok) throw new Error("API Recherche d'entreprises : HTTP " + r.status);
   const d = await r.json();
   const e = (d.results || [])[0];
@@ -257,7 +274,12 @@ async function searchCompanies(query, limit) {
   if (q.length < 2) throw new Error("Saisir un nom de société (2 caractères min.) ou un SIREN/SIRET.");
   const per = Math.min(Math.max(parseInt(limit, 10) || 8, 1), 15);
   const url = `https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(q)}&page=1&per_page=${per}`;
-  const r = await fetch(url, { headers: { Accept: "application/json" } });
+  let r;
+  try {
+    r = await fetch(url, { headers: { Accept: "application/json" }, signal: delaiSignal(DELAI_HTTP_MS) });
+  } catch (e) {
+    throw messageDelai("API Recherche d'entreprises", DELAI_HTTP_MS, e);
+  }
   if (!r.ok) throw new Error("API Recherche d'entreprises : HTTP " + r.status);
   const d = await r.json();
   return (d.results || []).map(mapRechercheEntreprise);
