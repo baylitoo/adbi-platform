@@ -194,6 +194,16 @@ app.post("/api/export/pptx", async (req, res) => {
   }
 });
 
+// Plafond sur le nombre de profils UNIQUES d'un livret. Cote client, la
+// selection vient de cases a cocher dans l'historique (etat.selection est deja
+// un Set), donc un usage reel ne depasse jamais quelques dizaines de profils —
+// ce plafond est la pour un corps de requete forge, pas pour l'usage normal.
+// Sans lui, un seul identifiant valide repete des milliers de fois passe le
+// filtre `filter(Boolean)` (il EXISTE, juste duplique) et fait generer a
+// buildLivret autant de slides (image + mesure de texte chacune), bloquant
+// le service entier (mono-process, pas de pool de workers) — voir issue #68.
+const LIVRET_MAX_PROFILS = Number(process.env.LIVRET_MAX_PROFILS) || 200;
+
 /**
  * POST /api/export/livret  { ids: [...], options }
  * Assemble un seul .pptx : page de garde puis une slide par consultant.
@@ -202,9 +212,21 @@ app.post("/api/export/pptx", async (req, res) => {
  */
 app.post("/api/export/livret", async (req, res) => {
   try {
-    const { ids, options } = req.body || {};
-    if (!Array.isArray(ids) || !ids.length) {
+    const { ids: idsBruts, options } = req.body || {};
+    if (!Array.isArray(idsBruts) || !idsBruts.length) {
       return res.status(400).json({ error: "Aucun profil sélectionné." });
+    }
+    // Dedoublonnage AVANT le plafond : un meme identifiant repete plusieurs
+    // fois (par erreur cote client, ou forge) ne doit compter qu'une fois —
+    // sinon le plafond se contourne trivialement en repetant un seul id valide.
+    const ids = [...new Set(idsBruts)].filter((id) => typeof id === "string" && id);
+    if (!ids.length) {
+      return res.status(400).json({ error: "Aucun profil sélectionné." });
+    }
+    if (ids.length > LIVRET_MAX_PROFILS) {
+      return res.status(400).json({
+        error: `Trop de profils pour un seul livret (${ids.length}, max ${LIVRET_MAX_PROFILS}) — genere-le en plusieurs lots.`,
+      });
     }
 
     const fiches = await Promise.all(ids.map((id) => db.get(id)));
