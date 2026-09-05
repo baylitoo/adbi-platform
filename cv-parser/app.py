@@ -1443,26 +1443,49 @@ def process_cv(file_path, jeton=None) -> dict:
 # écrans qui listent/recherchent toute la CVthèque (pas un cache : chaque
 # appel relit la table).
 
+# ── Verrou par fiche (issue #53) ─────────────────────────────────────────────
+# Plusieurs routes font get_cv -> traitement (souvent un appel LLM de
+# plusieurs dizaines de secondes) -> save_cv, et save_cv remplace la fiche
+# entière (core/cvstore_pg.py) : deux écritures concurrentes sur la même
+# fiche se traduisaient par un "lost update" silencieux, la plus lente à
+# finir écrasant l'autre avec une copie lue avant elle. Le process Flask
+# tourne mono-instance mais threaded=True (app.run(..., threaded=True) plus
+# bas, CMD ["python", "app.py"] dans le Dockerfile — pas de gunicorn/uwsgi),
+# donc un verrou en mémoire par cv_id suffit à sérialiser ces sections
+# critiques sans avoir besoin d'un verrou au niveau de la base.
+_verrous_cv: dict[str, threading.Lock] = {}
+_verrous_cv_meta = threading.Lock()
+
+
+def _verrou_cv(cv_id: str) -> threading.Lock:
+    with _verrous_cv_meta:
+        verrou = _verrous_cv.get(cv_id)
+        if verrou is None:
+            verrou = _verrous_cv[cv_id] = threading.Lock()
+        return verrou
+
 
 def _enrich_cv_background(cv_id: str) -> None:
-    """Background thread: call LLM and update the stored CV without blocking upload."""
+    """Background thread: call LLM and update the stored CV without blocking upload.
+
+    Tout le cycle lecture -> appel LLM -> écriture est protégé par le verrou
+    de la fiche (issue #53) : sans lui, une modification faite par
+    l'utilisateur (PATCH, "Enrichir", "Adapter au poste") pendant que ce
+    thread attend le LLM était silencieusement écrasée à la sauvegarde
+    finale, celle-ci partant d'une copie lue avant l'appel LLM.
+    """
     try:
-        cv = cvstore_pg.get_cv(cv_id)
-        if cv is None:
-            print(f"[WARN] _enrich_cv_background : CV {cv_id} introuvable.")
-            return
-        experience = cv.get("experience", [])
-        if not experience:
+        with _verrou_cv(cv_id):
             cv = cvstore_pg.get_cv(cv_id)
-            if cv is not None:
+            if cv is None:
+                print(f"[WARN] _enrich_cv_background : CV {cv_id} introuvable.")
+                return
+            experience = cv.get("experience", [])
+            if not experience:
                 cv["llm_enriched"] = True
                 cvstore_pg.save_cv(cv_id, cv)
-            return
-        enriched = llm_enrich_experiences(experience)
-        # Reload to preserve any edits made by the user during enrichment
-        cv = cvstore_pg.get_cv(cv_id)
-        if cv is not None:
-            cv["experience"] = enriched
+                return
+            cv["experience"] = llm_enrich_experiences(experience)
             cv["llm_enriched"] = True
             cvstore_pg.save_cv(cv_id, cv)
     except Exception:
@@ -1812,35 +1835,36 @@ def reanalyser_cv(file_id):
     bibliothèques peut être complétée plus tard, en un clic, sans re-déposer
     le document. La progression passe par le même jeton que le dépôt.
     """
-    fiche = cvstore_pg.get_cv(file_id)
-    if not fiche:
-        return jsonify({"error": "CV introuvable"}), 404
+    with _verrou_cv(file_id):
+        fiche = cvstore_pg.get_cv(file_id)
+        if not fiche:
+            return jsonify({"error": "CV introuvable"}), 404
 
-    ext = fiche.get("ext") or Path(fiche.get("filename", "")).suffix or ".pdf"
-    file_path = UPLOAD_DIR / f"{file_id}{ext}"
-    if not file_path.exists():
-        return jsonify({"error": "Fichier d'origine absent du poste : re-déposez le document."}), 404
+        ext = fiche.get("ext") or Path(fiche.get("filename", "")).suffix or ".pdf"
+        file_path = UPLOAD_DIR / f"{file_id}{ext}"
+        if not file_path.exists():
+            return jsonify({"error": "Fichier d'origine absent du poste : re-déposez le document."}), 404
 
-    jeton = (request.form.get("jeton") or "").strip()[:64]
-    try:
-        cv_data = process_cv(file_path, jeton=jeton)
-    except Exception as exc:
-        traceback.print_exc()
-        return jsonify({"error": f"Ré-analyse impossible : {exc}"}), 500
+        jeton = (request.form.get("jeton") or "").strip()[:64]
+        try:
+            cv_data = process_cv(file_path, jeton=jeton)
+        except Exception as exc:
+            traceback.print_exc()
+            return jsonify({"error": f"Ré-analyse impossible : {exc}"}), 500
 
-    llm_parsed = cv_data.pop("llm_parsed", False)
-    # L'identité de la fiche ne change pas : id, fichier, dates, empreinte.
-    for cle in ("id", "filename", "ext", "uploaded_at", "empreinte"):
-        if fiche.get(cle) is not None:
-            cv_data[cle] = fiche[cle]
-    if not cv_data.get("name"):
-        cv_data["name"] = fiche.get("name", "")
-    cv_data["stored_at"] = datetime.now().isoformat()
-    cv_data["llm_enriched"] = llm_parsed
-    cv_data["bilan_adbi"] = bilan_adbi(cv_data)
-    cv_data.pop("_timing", None)
+        llm_parsed = cv_data.pop("llm_parsed", False)
+        # L'identité de la fiche ne change pas : id, fichier, dates, empreinte.
+        for cle in ("id", "filename", "ext", "uploaded_at", "empreinte"):
+            if fiche.get(cle) is not None:
+                cv_data[cle] = fiche[cle]
+        if not cv_data.get("name"):
+            cv_data["name"] = fiche.get("name", "")
+        cv_data["stored_at"] = datetime.now().isoformat()
+        cv_data["llm_enriched"] = llm_parsed
+        cv_data["bilan_adbi"] = bilan_adbi(cv_data)
+        cv_data.pop("_timing", None)
 
-    cvstore_pg.save_cv(file_id, cv_data)
+        cvstore_pg.save_cv(file_id, cv_data)
     noter_progression(jeton, 100, "Terminé")
     return jsonify({
         "ok": True,
@@ -2031,9 +2055,6 @@ def cv_detail(cv_id):
 @app.route("/api/cvs/<cv_id>", methods=["PATCH"])
 @require_auth
 def update_cv(cv_id):
-    cv = cvstore_pg.get_cv(cv_id)
-    if cv is None:
-        abort(404)
     updates = request.json or {}
     # Always store years_experience as int
     if "years_experience" in updates:
@@ -2041,10 +2062,14 @@ def update_cv(cv_id):
             updates["years_experience"] = int(updates["years_experience"])
         except (ValueError, TypeError):
             updates["years_experience"] = 0
-    for key, val in updates.items():
-        cv[key] = val
-    cv["updated_at"] = datetime.now().isoformat()
-    cvstore_pg.save_cv(cv_id, cv)
+    with _verrou_cv(cv_id):
+        cv = cvstore_pg.get_cv(cv_id)
+        if cv is None:
+            abort(404)
+        for key, val in updates.items():
+            cv[key] = val
+        cv["updated_at"] = datetime.now().isoformat()
+        cvstore_pg.save_cv(cv_id, cv)
     return jsonify({"success": True})
 
 
@@ -2863,81 +2888,84 @@ def translate_cv(cv_id):
 @require_auth
 def enrich_cv_endpoint(cv_id):
     """Enrich CV bullet points and descriptions using LLM."""
-    cv = cvstore_pg.get_cv(cv_id)
-    if cv is None:
-        abort(404)
+    with _verrou_cv(cv_id):
+        cv = cvstore_pg.get_cv(cv_id)
+        if cv is None:
+            abort(404)
 
-    snippet = json.dumps({k: cv.get(k) for k in ("title", "experience", "skills", "interests")},
-                         ensure_ascii=False, indent=2)[:8000]
-    prompt = (
-        "Tu es un expert en rédaction de CVs professionnels.\n"
-        "Améliore ce CV en :\n"
-        "1. Rendant les descriptions plus percutantes (verbes d'action forts)\n"
-        "2. Quantifiant les réalisations si possible (ex: 'réduction de 30 %')\n"
-        "3. Ajoutant des mots-clés métier pertinents dans les compétences\n"
-        "4. Complétant les champs vides si tu peux les inférer du contexte\n"
-        "N'invente pas d'entreprises ni de dates.\n"
-        "Retourne UNIQUEMENT l'objet JSON avec les mêmes clés, aucun texte autour.\n\n"
-        + snippet
-    )
-    try:
-        content, _service = llm_chat([{"role": "user", "content": prompt}],
-                                     max_tokens=3000, temperature=0.3, timeout=90)
-        content = content.strip()
-        if content.startswith("```"):
-            content = "\n".join(l for l in content.split("\n") if not l.startswith("```")).strip()
-        enriched = json.loads(re.search(r"\{[\s\S]*\}", content).group(0))
-        for k in ("title", "experience", "skills", "interests"):
-            if enriched.get(k):
-                cv[k] = enriched[k]
-        cv["enriched"] = True
-        cvstore_pg.save_cv(cv_id, cv)
-        return jsonify({"success": True})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        snippet = json.dumps({k: cv.get(k) for k in ("title", "experience", "skills", "interests")},
+                             ensure_ascii=False, indent=2)[:8000]
+        prompt = (
+            "Tu es un expert en rédaction de CVs professionnels.\n"
+            "Améliore ce CV en :\n"
+            "1. Rendant les descriptions plus percutantes (verbes d'action forts)\n"
+            "2. Quantifiant les réalisations si possible (ex: 'réduction de 30 %')\n"
+            "3. Ajoutant des mots-clés métier pertinents dans les compétences\n"
+            "4. Complétant les champs vides si tu peux les inférer du contexte\n"
+            "N'invente pas d'entreprises ni de dates.\n"
+            "Retourne UNIQUEMENT l'objet JSON avec les mêmes clés, aucun texte autour.\n\n"
+            + snippet
+        )
+        try:
+            content, _service = llm_chat([{"role": "user", "content": prompt}],
+                                         max_tokens=3000, temperature=0.3, timeout=90)
+            content = content.strip()
+            if content.startswith("```"):
+                content = "\n".join(l for l in content.split("\n") if not l.startswith("```")).strip()
+            enriched = json.loads(re.search(r"\{[\s\S]*\}", content).group(0))
+            for k in ("title", "experience", "skills", "interests"):
+                if enriched.get(k):
+                    cv[k] = enriched[k]
+            cv["enriched"] = True
+            cvstore_pg.save_cv(cv_id, cv)
+            return jsonify({"success": True})
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/cvs/<cv_id>/adapt", methods=["POST"])
 @require_auth
 def adapt_cv(cv_id):
     """Adapt CV to a given job posting using LLM. Saves result directly."""
-    cv = cvstore_pg.get_cv(cv_id)
-    if cv is None:
-        abort(404)
     job_posting = (request.json or {}).get("job_posting", "").strip()
     if not job_posting:
         return jsonify({"error": "Fiche de poste manquante"}), 400
 
-    cv_snippet = json.dumps({k: cv.get(k) for k in ("title", "experience", "skills", "interests", "education")},
-                            ensure_ascii=False, indent=2)[:6000]
-    prompt = (
-        "Tu es un expert en recrutement et en optimisation de CVs.\n"
-        "Adapte ce CV pour le poste décrit dans la fiche ci-dessous :\n"
-        "- Réorganise et reformule les compétences pour matcher les mots-clés du poste\n"
-        "- Mets en avant les expériences les plus pertinentes\n"
-        "- Adapte le titre professionnel si nécessaire\n"
-        "- N'invente aucune expérience ni compétence absente du CV original\n"
-        "Retourne UNIQUEMENT l'objet JSON adapté, même structure, aucun texte autour.\n\n"
-        f"FICHE DE POSTE :\n{job_posting[:3000]}\n\n"
-        f"CV ACTUEL :\n{cv_snippet}"
-    )
-    try:
-        content, _service = llm_chat([{"role": "user", "content": prompt}],
-                                     max_tokens=3000, temperature=0.2, timeout=90)
-        content = content.strip()
-        if content.startswith("```"):
-            content = "\n".join(l for l in content.split("\n") if not l.startswith("```")).strip()
-        adapted = json.loads(re.search(r"\{[\s\S]*\}", content).group(0))
-        for k in ("title", "experience", "skills", "interests"):
-            if adapted.get(k):
-                cv[k] = adapted[k]
-        cv["adapted_to_job"] = True
-        cvstore_pg.save_cv(cv_id, cv)
-        return jsonify({"success": True})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+    with _verrou_cv(cv_id):
+        cv = cvstore_pg.get_cv(cv_id)
+        if cv is None:
+            abort(404)
+
+        cv_snippet = json.dumps({k: cv.get(k) for k in ("title", "experience", "skills", "interests", "education")},
+                                ensure_ascii=False, indent=2)[:6000]
+        prompt = (
+            "Tu es un expert en recrutement et en optimisation de CVs.\n"
+            "Adapte ce CV pour le poste décrit dans la fiche ci-dessous :\n"
+            "- Réorganise et reformule les compétences pour matcher les mots-clés du poste\n"
+            "- Mets en avant les expériences les plus pertinentes\n"
+            "- Adapte le titre professionnel si nécessaire\n"
+            "- N'invente aucune expérience ni compétence absente du CV original\n"
+            "Retourne UNIQUEMENT l'objet JSON adapté, même structure, aucun texte autour.\n\n"
+            f"FICHE DE POSTE :\n{job_posting[:3000]}\n\n"
+            f"CV ACTUEL :\n{cv_snippet}"
+        )
+        try:
+            content, _service = llm_chat([{"role": "user", "content": prompt}],
+                                         max_tokens=3000, temperature=0.2, timeout=90)
+            content = content.strip()
+            if content.startswith("```"):
+                content = "\n".join(l for l in content.split("\n") if not l.startswith("```")).strip()
+            adapted = json.loads(re.search(r"\{[\s\S]*\}", content).group(0))
+            for k in ("title", "experience", "skills", "interests"):
+                if adapted.get(k):
+                    cv[k] = adapted[k]
+            cv["adapted_to_job"] = True
+            cvstore_pg.save_cv(cv_id, cv)
+            return jsonify({"success": True})
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
