@@ -1,7 +1,7 @@
 """api/matching_bp.py — Lancement du matching + récupération des résultats."""
 from flask import Blueprint, jsonify, request
 
-from core.auth import require_auth, get_current_user
+from core.auth import require_auth, get_current_user, check_need_access
 from core.activity_pg import log_event
 from core.cvstore_pg import get_cv
 from core.database_pg import (
@@ -19,6 +19,7 @@ def launch_match(need_id: str):
     need = get_need(need_id)
     if not need:
         return jsonify({"error": "Besoin introuvable"}), 404
+    check_need_access(need)
 
     try:
         limit = int(request.args.get("limit", 50))
@@ -52,6 +53,7 @@ def get_results(need_id: str):
     need = get_need(need_id)
     if not need:
         return jsonify({"error": "Besoin introuvable"}), 404
+    check_need_access(need)
 
     rows = get_match_results(need_id)
     if not rows:
@@ -87,6 +89,7 @@ def get_detail(need_id: str, candidate_id: str):
     need = get_need(need_id)
     if not need:
         return jsonify({"error": "Besoin introuvable"}), 404
+    check_need_access(need)
 
     match = get_match_result(need_id, candidate_id)
     if not match:

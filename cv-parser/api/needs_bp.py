@@ -1,7 +1,7 @@
 """api/needs_bp.py — CRUD des besoins clients."""
 from flask import Blueprint, jsonify, request
 
-from core.auth import require_auth, get_current_user
+from core.auth import require_auth, get_current_user, check_need_access
 from core.database_pg import (
     insert_need, get_need, list_needs, update_need, delete_need,
 )
@@ -97,7 +97,7 @@ def get_one(need_id: str):
     need = get_need(need_id)
     if not need:
         return jsonify({"error": "Besoin introuvable"}), 404
-    _check_access(need)
+    check_need_access(need)
     return jsonify(need)
 
 
@@ -122,15 +122,6 @@ def remove_need(need_id: str):
     need = get_need(need_id)
     if not need:
         return jsonify({"error": "Besoin introuvable"}), 404
-    _check_access(need)
+    check_need_access(need)
     delete_need(need_id)
     return jsonify({"ok": True})
-
-
-def _check_access(need: dict):
-    user = get_current_user()
-    if user.get("role") == "superuser":
-        return
-    if need.get("created_by") != user.get("sub"):
-        from flask import abort
-        abort(403)
