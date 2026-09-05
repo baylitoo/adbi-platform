@@ -252,6 +252,19 @@ app.post("/api/export/livret", async (req, res) => {
   }
 });
 
+// Plafond sur la longueur d'une fiche de poste collee dans le matching. Une
+// vraie fiche tient en quelques Ko ; ce plafond est la pour un corps de
+// requete force (curl direct sur l'API), pas pour l'usage normal via l'UI.
+// Sans lui, seule la limite globale du corps JSON (25 Mo, server.js plus
+// haut) s'applique : analyserOffre() lance ~600 motifs de detection de
+// technologies sur tout le texte, PUIS une seconde fois par segment de
+// phrase (ponderer(), lib/matching.js) — un texte de quelques Mo bloque deja
+// plusieurs secondes le processus (mono-thread, sans pool de workers), et un
+// texte proche de la limite du corps (25 Mo) bloque plus de 10 secondes,
+// pendant lesquelles le service entier ne repond plus a aucune requete.
+// Voir issue #70 (mesures a l'appui) — meme famille que #68 (livret).
+const MATCHING_OFFRE_MAX = Number(process.env.MATCHING_OFFRE_MAX) || 40000;
+
 /**
  * POST /api/matching  { offre }
  * Classe tout le vivier par adequation a une fiche de poste.
@@ -260,6 +273,11 @@ app.post("/api/matching", async (req, res) => {
   try {
     const offre = String((req.body || {}).offre || "").trim();
     if (offre.length < 15) return res.status(400).json({ error: "Fiche de poste trop courte." });
+    if (offre.length > MATCHING_OFFRE_MAX) {
+      return res.status(400).json({
+        error: `Fiche de poste trop longue (${offre.length} caracteres, max ${MATCHING_OFFRE_MAX}) — collez le texte de l'annonce, pas un document entier.`,
+      });
+    }
 
     const matching = require("./lib/matching");
     const resumes = await db.list();
