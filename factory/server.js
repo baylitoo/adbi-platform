@@ -328,14 +328,51 @@ async function testerModeleLlm(modele) {
   return ms;
 }
 
-async function lireCorpsJson(req) {
-  let brut = "";
-  for await (const bloc of req) brut += bloc;
-  try {
-    return JSON.parse(brut || "{}");
-  } catch (e) {
-    return {};
-  }
+// Le seul appelant (POST /api/llm/tester) envoie {"modele": "..."} : quelques
+// octets. Sans plafond, un corps arbitrairement volumineux serait accumulé
+// intégralement en mémoire avant même le JSON.parse — voir coffre/server.js
+// (CORPS_MAX, lireCorps) qui applique déjà cette discipline sur ses routes.
+const CORPS_JSON_MAX = 8 * 1024;
+
+function erreurCorpsTropVolumineux() {
+  const err = new Error("Corps de requête trop volumineux.");
+  err.code = 413;
+  return err;
+}
+
+function lireCorpsJson(req) {
+  return new Promise((resoudre, rejeter) => {
+    // Content-Length annoncé au-delà du plafond : on rejette avant même de
+    // lire un octet (réponse propre, rien n'est accumulé).
+    const annonce = Number(req.headers["content-length"]);
+    if (Number.isFinite(annonce) && annonce > CORPS_JSON_MAX) {
+      return rejeter(erreurCorpsTropVolumineux());
+    }
+
+    const morceaux = [];
+    let taille = 0;
+    req.on("data", (bloc) => {
+      taille += bloc.length;
+      // Garde-fou si Content-Length est absent, mensonger ou en chunked : on
+      // arrête d'accumuler dès le dépassement (mémoire bornée), même si la
+      // rupture de connexion qui suit est moins propre qu'un 413 lu par le
+      // client — même compromis que coffre/server.js (lireCorps).
+      if (taille > CORPS_JSON_MAX) {
+        rejeter(erreurCorpsTropVolumineux());
+        req.destroy();
+        return;
+      }
+      morceaux.push(bloc);
+    });
+    req.on("end", () => {
+      try {
+        resoudre(JSON.parse(Buffer.concat(morceaux).toString("utf8") || "{}"));
+      } catch (e) {
+        resoudre({});
+      }
+    });
+    req.on("error", (err) => rejeter(err));
+  });
 }
 
 function servirFichier(rep, chemin) {
@@ -401,7 +438,15 @@ const serveur = http.createServer(async (req, rep) => {
 
   if (chemin === "/api/llm/tester" && req.method === "POST") {
     if (!LLM_BASE_URL) return repondreJson(rep, 200, { ok: false, erreur: "Passerelle non configurée (ADBI_LLM_BASE_URL)." });
-    const corps = await lireCorpsJson(req);
+    let corps;
+    try {
+      corps = await lireCorpsJson(req);
+    } catch (err) {
+      // err.code peut être un code système ("ECONNRESET" si le client coupe
+      // la connexion en cours de lecture, via req.on("error", rejeter)) :
+      // writeHead exige un entier, on ne relaie donc que notre propre 413.
+      return repondreJson(rep, err.code === 413 ? 413 : 400, { ok: false, erreur: err.message });
+    }
     const modele = (corps.modele || LLM_MODELES[0] || "").trim();
     if (!modele) return repondreJson(rep, 200, { ok: false, erreur: "Aucun modèle à tester." });
     try {
