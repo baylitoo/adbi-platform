@@ -1,0 +1,242 @@
+{
+  "request_id": "req-fixture-0001",
+  "schema_name": "contract",
+  "model_profile": "nuextract3_ollama",
+  "document_hash": "sha256:fixture",
+  "result": {
+    "document_type": "contract",
+    "extraction_notes": [
+      "low confidence on lieu_execution"
+    ],
+    "numero_contrat": {
+      "value": "01-06-2026",
+      "evidence_ids": [
+        "e1"
+      ],
+      "confidence": 0.94
+    },
+    "date_redaction": {
+      "value": "2026-01-05",
+      "evidence_ids": [
+        "e2"
+      ],
+      "confidence": 0.9
+    },
+    "lieu_redaction": {
+      "value": "Paris",
+      "evidence_ids": [],
+      "confidence": 0.7
+    },
+    "st_nom": {
+      "value": "SUND INDUSTRY SYSTEM",
+      "evidence_ids": [
+        "e3"
+      ],
+      "confidence": 0.97
+    },
+    "st_adresse": {
+      "value": "60 rue Francois 1er, 75008 Paris",
+      "evidence_ids": [],
+      "confidence": 0.85
+    },
+    "st_siren": {
+      "value": "941091316",
+      "evidence_ids": [],
+      "confidence": 0.99
+    },
+    "st_siret": {
+      "value": "94109131600013",
+      "evidence_ids": [],
+      "confidence": 0.99
+    },
+    "st_representant": {
+      "value": "Monsieur Corentin CALVO",
+      "evidence_ids": [],
+      "confidence": 0.88
+    },
+    "st_forme_juridique": {
+      "value": "SAS au capital de 1 000 EUR",
+      "evidence_ids": [],
+      "confidence": 0.6
+    },
+    "st_qualite": {
+      "value": "President",
+      "evidence_ids": [],
+      "confidence": 0.8
+    },
+    "consultant_nom": {
+      "value": "Corentin Calvo",
+      "evidence_ids": [],
+      "confidence": 0.91
+    },
+    "consultant_fonction": {
+      "value": "Developpeur Full Stack",
+      "evidence_ids": [],
+      "confidence": 0.75
+    },
+    "client_final": {
+      "value": "Groupe Accor",
+      "evidence_ids": [],
+      "confidence": 0.93
+    },
+    "nature_travaux": {
+      "value": "Developpement full stack de la plateforme de reservation",
+      "evidence_ids": [],
+      "confidence": 0.7
+    },
+    "lieu_execution": {
+      "value": "82 rue Henry Farman, 92130 Issy-les-Moulineaux",
+      "evidence_ids": [],
+      "confidence": 0.65
+    },
+    "date_debut": {
+      "value": "01/02/2026",
+      "evidence_ids": [],
+      "confidence": 0.8
+    },
+    "date_fin": {
+      "value": "2026-12-31",
+      "evidence_ids": [],
+      "confidence": 0.8
+    },
+    "tjm": {
+      "amount": "450",
+      "currency": "EUR",
+      "evidence_ids": [],
+      "confidence": 0.9
+    },
+    "delai_paiement": {
+      "value": "45",
+      "evidence_ids": [],
+      "confidence": 0.5
+    }
+  },
+  "validation": {
+    "valid": true,
+    "errors": [],
+    "warnings": []
+  },
+  "usage": null,
+  "latency_ms": 123456,
+  "dynamic_schema": {
+    "document_type": "contract",
+    "fields": [
+      {
+        "name": "numero_contrat",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "date_redaction",
+        "type": "date",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "lieu_redaction",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_nom",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_adresse",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_siren",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_siret",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_representant",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_forme_juridique",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_qualite",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "consultant_nom",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "consultant_fonction",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "client_final",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "nature_travaux",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "lieu_execution",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "date_debut",
+        "type": "date",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "date_fin",
+        "type": "date",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "tjm",
+        "type": "money",
+        "description": "TJM en euros HT / jour",
+        "fields": []
+      },
+      {
+        "name": "delai_paiement",
+        "type": "number",
+        "description": "Delai de paiement en jours",
+        "fields": []
+      }
+    ]
+  },
+  "routing": null,
+  "response_format_style": "json_schema"
+}
