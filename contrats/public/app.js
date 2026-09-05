@@ -974,6 +974,18 @@ async function persistRef() {
   const r = await fetch("/api/referentiels", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state.ref),
   });
+  if (r.status === 409) {
+    // Quelqu'un d'autre a sauvegardé le référentiel depuis notre dernier
+    // chargement : notre écriture est refusée (voir lib/referentiels.js,
+    // issue #84) plutôt que d'écraser silencieusement son changement. On se
+    // resynchronise sur l'état serveur ; la modification en cours ici est
+    // perdue et doit être refaite par l'utilisateur après relecture.
+    const body = await r.json().catch(() => ({}));
+    if (body && body.referentiels) state.ref = body.referentiels;
+    renderReferentiels();
+    refreshRefLists();
+    throw new Error((body && body.error) || "Référentiel modifié entre-temps — page resynchronisée, réessaie ton changement.");
+  }
   if (!r.ok) throw new Error("HTTP " + r.status);
   state.ref = await r.json();
 }

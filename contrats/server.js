@@ -357,7 +357,13 @@ app.get("/api/test/:provider", async (req, res) => {
 app.get("/api/referentiels", (req, res) => res.json(referentiels.load()));
 app.post("/api/referentiels", (req, res) => {
   try { res.json(referentiels.save(req.body || {})); }
-  catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+  catch (e) {
+    // Conflit de version (issue #84) : quelqu'un d'autre a sauvegardé entre
+    // la lecture et cet envoi — on renvoie l'état courant pour que le client
+    // se resynchronise, plutôt que d'écraser silencieusement son travail.
+    if (e.code === "REF_CONFLICT") return res.status(409).json({ error: e.message, referentiels: e.actuel });
+    console.error(e); res.status(500).json({ error: e.message });
+  }
 });
 
 // ---------- Fichiers stockés par contrat ----------
