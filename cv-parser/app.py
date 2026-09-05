@@ -105,6 +105,22 @@ app.register_blueprint(needs_bp)
 app.register_blueprint(matching_bp)
 app.register_blueprint(settings_bp)
 
+# ── Initialisation au chargement du module ────────────────────────────────────
+# Faite ICI (pas seulement dans le bloc `if __name__ == "__main__":` plus bas)
+# car Gunicorn importe ce fichier comme un module (`app:app`, voir Dockerfile
+# et gunicorn.conf.py) et n'exécute jamais ce bloc : sans ce déplacement, le
+# schéma PostgreSQL et le superuser par défaut n'auraient plus été créés du
+# tout en conteneur. Les deux fonctions sont idempotentes (schema.sql en
+# `CREATE TABLE IF NOT EXISTS`, superuser créé seulement si `list_users()` est
+# vide) — sûres à appeler à chaque démarrage de processus, `python app.py`
+# comme Gunicorn.
+init_schema()                 # Crée les tables PostgreSQL si absentes (DATABASE_URL requise)
+ensure_default_superuser()    # Crée admin@adbi.fr si aucun utilisateur
+
+if not AUTH_ACTIVE:
+    print("[AUTH] ⚠ Authentification DÉSACTIVÉE (ADBI_AUTH != on) — "
+          "à réserver au poste local, jamais à un déploiement exposé.")
+
 # ── Context processor Jinja2 ─────────────────────────────────────────────────
 @app.context_processor
 def inject_user():
@@ -1458,11 +1474,15 @@ def process_cv(file_path, jeton=None) -> dict:
 # plusieurs dizaines de secondes) -> save_cv, et save_cv remplace la fiche
 # entière (core/cvstore_pg.py) : deux écritures concurrentes sur la même
 # fiche se traduisaient par un "lost update" silencieux, la plus lente à
-# finir écrasant l'autre avec une copie lue avant elle. Le process Flask
-# tourne mono-instance mais threaded=True (app.run(..., threaded=True) plus
-# bas, CMD ["python", "app.py"] dans le Dockerfile — pas de gunicorn/uwsgi),
-# donc un verrou en mémoire par cv_id suffit à sérialiser ces sections
-# critiques sans avoir besoin d'un verrou au niveau de la base.
+# finir écrasant l'autre avec une copie lue avant elle. Le process reste
+# mono-instance mais multi-thread — que ce soit le serveur de dev Flask
+# (`app.run(..., threaded=True)`, plus bas, `python app.py` en local) ou
+# Gunicorn en conteneur (`gunicorn.conf.py` : un seul worker, plusieurs
+# threads `gthread` — précisément pour garder ce verrou en mémoire valable ;
+# plusieurs workers Gunicorn, processus séparés sans mémoire partagée,
+# réintroduiraient le même lost update entre deux workers) —, donc un verrou
+# en mémoire par cv_id suffit à sérialiser ces sections critiques sans avoir
+# besoin d'un verrou au niveau de la base.
 _verrous_cv: dict[str, threading.Lock] = {}
 _verrous_cv_meta = threading.Lock()
 
@@ -2986,13 +3006,13 @@ def adapt_cv(cv_id):
 
 
 if __name__ == "__main__":
-    # ── Initialisation au démarrage ───────────────────────────────────────────
-    init_schema()                 # Crée les tables PostgreSQL si absentes (DATABASE_URL requise)
-    ensure_default_superuser()    # Crée admin@adbi.fr si aucun utilisateur
-
-    if not AUTH_ACTIVE:
-        print("[AUTH] ⚠ Authentification DÉSACTIVÉE (ADBI_AUTH != on) — "
-              "à réserver au poste local, jamais à un déploiement exposé.")
+    # ── Lancement local uniquement ────────────────────────────────────────────
+    # `python app.py` reste le chemin de développement (serveur de dev Flask,
+    # confortable pour le rechargement et le débogueur local). L'image Docker
+    # ne passe plus par ici : son CMD lance Gunicorn directement sur le module
+    # `app` (voir Dockerfile et gunicorn.conf.py), donc ce bloc n'y est jamais
+    # exécuté — init_schema()/ensure_default_superuser() ont donc été déplacés
+    # plus haut, au chargement du module, pour tourner dans les deux cas.
 
     # Rechargement automatique DÉSACTIVÉ par défaut. Le veilleur de Werkzeug
     # surveillait aussi site-packages : torch, torchvision et jusqu'aux modules
