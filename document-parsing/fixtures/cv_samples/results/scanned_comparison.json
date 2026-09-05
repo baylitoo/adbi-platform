@@ -1,0 +1,27 @@
+{
+  "cv_parser": {
+    "name": "Compare Scanned",
+    "title": "",
+    "email": "",
+    "phone": "",
+    "linkedin": "",
+    "location": "",
+    "experience": [],
+    "education": [],
+    "skills": [],
+    "languages": [],
+    "_meta": {
+      "llm_parsed": false,
+      "docling_used": true,
+      "parsing_mode": "scanned",
+      "wall_s": 54.193
+    }
+  },
+  "docie": {
+    "_error": "skipped"
+  },
+  "comparison": {
+    "cv_parser_error": null,
+    "docie_error": "skipped"
+  }
+}
