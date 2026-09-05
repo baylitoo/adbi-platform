@@ -4,7 +4,7 @@ settings_bp.py — Paramétrage, gestion utilisateurs, invitations, activité, p
 import secrets
 from datetime import datetime, timezone, timedelta
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 
 import requests as _requests
 import llm_cascade
@@ -12,8 +12,10 @@ from config import PROVIDERS, get_active_llm, set_active_llm
 from core.auth import (
     require_auth, require_superuser, get_current_user,
     list_users, get_user_by_id, update_user, delete_user,
-    create_user, verify_password, AUTH_ACTIVE,
+    create_user, verify_password,
+    create_access_token, create_refresh_token,
 )
+from api.auth_bp import _set_cookies
 from core.activity_pg import get_events, get_user_stats
 # Alias : évite le conflit avec les routes create_invite()/get_invite_info()
 # définies plus bas dans ce même module.
@@ -445,4 +447,16 @@ def update_profile():
         update_user(current["sub"], updates)
     if new_pw is not None:
         update_user(current["sub"], {"password": new_pw})
+        # update_user()/auth_pg révoque déjà tous les refresh tokens de
+        # l'utilisateur dès qu'un mot de passe change (self-service ici, ou
+        # remise à zéro par un superuser via PATCH /api/auth/users/<id>) :
+        # un cookie de session volé avant ce changement ne doit pas continuer
+        # à fonctionner après. On ré-émet donc une paire access/refresh pour
+        # que l'auteur du changement, lui, reste connecté — sans quoi il
+        # perdrait sa propre session au prochain appel.
+        user = get_user_by_id(current["sub"])
+        access = create_access_token(user)
+        refresh = create_refresh_token(user)
+        resp = make_response(jsonify({"success": True}))
+        return _set_cookies(resp, access, refresh)
     return jsonify({"success": True})

@@ -1,0 +1,513 @@
+{
+  "document_hash": "sha256:778587c2371f94eb3f638c72b822d23fbfd6ffed5d275f8a3866d3d4c23de670",
+  "dynamic_schema": {
+    "document_type": "resume",
+    "fields": [
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "years_experience",
+        "type": "number"
+      },
+      {
+        "fields": [
+          {
+            "name": "email",
+            "type": "string"
+          },
+          {
+            "name": "phone",
+            "type": "string"
+          },
+          {
+            "name": "linkedin",
+            "type": "string"
+          },
+          {
+            "name": "github",
+            "type": "string"
+          },
+          {
+            "name": "location",
+            "type": "string"
+          }
+        ],
+        "name": "contact",
+        "type": "object"
+      },
+      {
+        "fields": [
+          {
+            "name": "company",
+            "type": "string"
+          },
+          {
+            "name": "title",
+            "type": "string"
+          },
+          {
+            "name": "start_date",
+            "type": "date"
+          },
+          {
+            "name": "end_date",
+            "type": "date"
+          },
+          {
+            "name": "location",
+            "type": "string"
+          },
+          {
+            "name": "description",
+            "type": "string"
+          },
+          {
+            "description": "Stack technique / environnement technologique de la mission",
+            "name": "env_technique",
+            "type": "string"
+          }
+        ],
+        "name": "experience",
+        "type": "list"
+      },
+      {
+        "fields": [
+          {
+            "name": "degree",
+            "type": "string"
+          },
+          {
+            "name": "institution",
+            "type": "string"
+          },
+          {
+            "name": "year",
+            "type": "string"
+          }
+        ],
+        "name": "education",
+        "type": "list"
+      },
+      {
+        "fields": [
+          {
+            "name": "category",
+            "type": "string"
+          },
+          {
+            "fields": [
+              {
+                "name": "item",
+                "type": "string"
+              }
+            ],
+            "name": "items",
+            "type": "list"
+          }
+        ],
+        "name": "skills",
+        "type": "list"
+      },
+      {
+        "fields": [
+          {
+            "name": "language",
+            "type": "string"
+          },
+          {
+            "name": "level",
+            "type": "string"
+          }
+        ],
+        "name": "languages",
+        "type": "list"
+      },
+      {
+        "fields": [
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "issuer",
+            "type": "string"
+          },
+          {
+            "name": "year",
+            "type": "string"
+          }
+        ],
+        "name": "certifications",
+        "type": "list"
+      },
+      {
+        "fields": [
+          {
+            "name": "interest",
+            "type": "string"
+          }
+        ],
+        "name": "interests",
+        "type": "list"
+      }
+    ]
+  },
+  "latency_ms": 285014,
+  "model_profile": "nuextract3_local_127",
+  "request_id": "a4d541df-26e5-4420-bcd6-deb50d73202b",
+  "response_format_style": "none",
+  "result": {
+    "certifications": [],
+    "contact": {
+      "email": {
+        "confidence": 1,
+        "evidence_ids": [
+          "b1_2_2d6e2913e597"
+        ],
+        "value": "camille.beranger@example.fr"
+      },
+      "github": {
+        "confidence": 0,
+        "evidence_ids": [],
+        "value": ""
+      },
+      "linkedin": {
+        "confidence": 0,
+        "evidence_ids": [],
+        "value": ""
+      },
+      "location": {
+        "confidence": 1,
+        "evidence_ids": [
+          "b1_2_2d6e2913e597"
+        ],
+        "value": "Lyon, France"
+      },
+      "phone": {
+        "confidence": 1,
+        "evidence_ids": [
+          "b1_2_2d6e2913e597"
+        ],
+        "value": "06 12 34 56 78"
+      }
+    },
+    "document_type": "resume",
+    "education": [
+      {
+        "degree": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_13_14efc0397814"
+          ],
+          "value": "Master Informatique"
+        },
+        "institution": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_13_14efc0397814"
+          ],
+          "value": "Université Claude Bernard Lyon 1"
+        },
+        "year": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_13_14efc0397814"
+          ],
+          "value": "2019"
+        }
+      }
+    ],
+    "experience": [
+      {
+        "company": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_4_a31dbc691b32"
+          ],
+          "value": "Numelia"
+        },
+        "description": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_6_e2fa977d56a2",
+            "b1_7_f3274944e193"
+          ],
+          "value": "Conception et développement d'une plateforme SaaS de gestion de stocks pour PME. Mise en place de l'API REST et du frontend React."
+        },
+        "end_date": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_5_3b4a20b5daa4"
+          ],
+          "value": "Aujourd'hui"
+        },
+        "env_technique": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_8_2138cddc313d"
+          ],
+          "value": "Python, Django, PostgreSQL, React, Docker"
+        },
+        "location": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_2_2d6e2913e597"
+          ],
+          "value": "Lyon"
+        },
+        "start_date": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_5_3b4a20b5daa4"
+          ],
+          "value": "Mars 2022"
+        },
+        "title": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_1_50b1f2dc9678"
+          ],
+          "value": "Développeuse Full-Stack"
+        }
+      },
+      {
+        "company": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_9_d985382b9e15"
+          ],
+          "value": "Studio Pixelia"
+        },
+        "description": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_11_e7d0ffe7e1ec"
+          ],
+          "value": "Développement de sites vitrines et e-commerce pour des clients locaux. Intégration HTML/CSS et scripts JavaScript."
+        },
+        "end_date": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_10_2d2ffb7ca7d6"
+          ],
+          "value": "Février 2022"
+        },
+        "env_technique": {
+          "confidence": 0.8276,
+          "evidence_ids": [
+            "b1_11_e7d0ffe7e1ec"
+          ],
+          "value": "HTML/CSS, JavaScript"
+        },
+        "location": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_2_2d6e2913e597"
+          ],
+          "value": "Lyon"
+        },
+        "start_date": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_10_2d2ffb7ca7d6"
+          ],
+          "value": "Septembre 2019"
+        },
+        "title": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_9_d985382b9e15"
+          ],
+          "value": "Développeuse Web"
+        }
+      }
+    ],
+    "extraction_notes": [],
+    "interests": null,
+    "languages": [
+      {
+        "language": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_19_689cd7ed0322"
+          ],
+          "value": "Français"
+        },
+        "level": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_19_689cd7ed0322"
+          ],
+          "value": "natif"
+        }
+      },
+      {
+        "language": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_20_25eca60ffc85"
+          ],
+          "value": "Anglais"
+        },
+        "level": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_20_25eca60ffc85"
+          ],
+          "value": "courant"
+        }
+      }
+    ],
+    "name": {
+      "confidence": 1,
+      "evidence_ids": [
+        "b1_0_43d2a3b91a38"
+      ],
+      "value": "Camille Béranger"
+    },
+    "skills": [
+      {
+        "category": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_15_c8be0cb20df3"
+          ],
+          "value": "Langages"
+        },
+        "items": [
+          {
+            "item": {
+              "confidence": 1,
+              "evidence_ids": [
+                "b1_15_c8be0cb20df3"
+              ],
+              "value": "Python"
+            }
+          },
+          {
+            "item": {
+              "confidence": 1,
+              "evidence_ids": [
+                "b1_15_c8be0cb20df3"
+              ],
+              "value": "JavaScript"
+            }
+          },
+          {
+            "item": {
+              "confidence": 1,
+              "evidence_ids": [
+                "b1_15_c8be0cb20df3"
+              ],
+              "value": "SQL"
+            }
+          }
+        ]
+      },
+      {
+        "category": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_16_91ece0eb156e"
+          ],
+          "value": "Frameworks"
+        },
+        "items": [
+          {
+            "item": {
+              "confidence": 1,
+              "evidence_ids": [
+                "b1_16_91ece0eb156e"
+              ],
+              "value": "Django"
+            }
+          },
+          {
+            "item": {
+              "confidence": 1,
+              "evidence_ids": [
+                "b1_16_91ece0eb156e"
+              ],
+              "value": "React"
+            }
+          },
+          {
+            "item": {
+              "confidence": 1,
+              "evidence_ids": [
+                "b1_16_91ece0eb156e"
+              ],
+              "value": "Node.js"
+            }
+          }
+        ]
+      },
+      {
+        "category": {
+          "confidence": 1,
+          "evidence_ids": [
+            "b1_17_aad337022bdc"
+          ],
+          "value": "Outils"
+        },
+        "items": [
+          {
+            "item": {
+              "confidence": 1,
+              "evidence_ids": [
+                "b1_17_aad337022bdc"
+              ],
+              "value": "Docker"
+            }
+          },
+          {
+            "item": {
+              "confidence": 1,
+              "evidence_ids": [
+                "b1_17_aad337022bdc"
+              ],
+              "value": "Git"
+            }
+          },
+          {
+            "item": {
+              "confidence": 1,
+              "evidence_ids": [
+                "b1_17_aad337022bdc"
+              ],
+              "value": "Jenkins"
+            }
+          }
+        ]
+      }
+    ],
+    "title": {
+      "confidence": 1,
+      "evidence_ids": [
+        "b1_1_50b1f2dc9678"
+      ],
+      "value": "Développeuse Full-Stack"
+    },
+    "years_experience": null
+  },
+  "routing": null,
+  "schema_name": "resume",
+  "usage": {
+    "completion_tokens": 1149,
+    "prompt_tokens": 1023,
+    "total_tokens": 2172
+  },
+  "validation": {
+    "errors": [],
+    "valid": true,
+    "warnings": []
+  },
+  "_wall_s": 1275.88,
+  "_wall_s_note": "wall clock from studio_event_owners.created_at -> extraction_run_results.created_at (DB timestamps); includes queueing behind a concurrent duplicate retry event, not pure inference time -- see latency_ms for that."
+}

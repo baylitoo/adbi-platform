@@ -1,0 +1,133 @@
+{
+  "name": "Thomas Verrier",
+  "title": "",
+  "years_experience": 0,
+  "contact": {
+    "email": "thomas.verrier@example.fr",
+    "phone": "07 89 12 34 56",
+    "linkedin": "",
+    "github": "",
+    "location": ""
+  },
+  "experience": [],
+  "education": [
+    {
+      "title": "Septembre 2016 - Août 2018",
+      "subtitle": "",
+      "period": "",
+      "description": ""
+    },
+    {
+      "title": "Diplôme d'Ingénieur, spécialité Informatique -- INSA Rennes, 2016",
+      "subtitle": "",
+      "period": "",
+      "description": ""
+    },
+    {
+      "title": "Développement de sites web sur mesure pour des clients PME, du cahier des charges à la mise en production.",
+      "subtitle": "",
+      "period": "",
+      "description": ""
+    },
+    {
+      "title": "Licence Informatique -- Université Rennes 1, 2013",
+      "subtitle": "",
+      "period": "",
+      "description": ""
+    },
+    {
+      "title": "Environnement technique : PHP, Symfony, MySQL, jQuery, Bootstrap",
+      "subtitle": "",
+      "period": "",
+      "description": ""
+    },
+    {
+      "title": "COMPETENCES",
+      "subtitle": "",
+      "period": "",
+      "description": ""
+    },
+    {
+      "title": "Cloud et Infra : AWS, Docker, Kubernetes, Terraform, Ansible",
+      "subtitle": "",
+      "period": "",
+      "description": ""
+    },
+    {
+      "title": "Langages : Python, PHP, JavaScript, Bash",
+      "subtitle": "",
+      "period": "",
+      "description": ""
+    },
+    {
+      "title": "Bases de données : PostgreSQL, MySQL, MongoDB, Redis",
+      "subtitle": "",
+      "period": "",
+      "description": ""
+    },
+    {
+      "title": "CI/CD et Monitoring : GitLab CI, Jenkins, Prometheus, Grafana",
+      "subtitle": "",
+      "period": "",
+      "description": ""
+    }
+  ],
+  "skills": [],
+  "languages": [
+    {
+      "language": "Français",
+      "level": "natif"
+    },
+    {
+      "language": "Anglais",
+      "level": "courant"
+    },
+    {
+      "language": "Espagnol",
+      "level": "notions"
+    }
+  ],
+  "projects": [],
+  "certifications": [],
+  "interests": [],
+  "html_content": "",
+  "skills_flat": [],
+  "skills_raw_flat": [],
+  "llm_parsed": false,
+  "docling_used": false,
+  "parsing_mode": "digital",
+  "_timing": {
+    "extract_s": 1.267,
+    "clean_s": 0.001,
+    "llm_s": 0.02,
+    "normalize_s": 0.001,
+    "total_s": 1.29
+  },
+  "llm_service": "",
+  "extraction": "bibliothèques",
+  "bilan_adbi": {
+    "rubriques": {
+      "Nom": 1,
+      "Titre / poste": 0,
+      "Années d'expérience": 0,
+      "Contact": 2,
+      "Compétences techniques": 0,
+      "Expériences": 0,
+      "Formations": 10,
+      "Certifications": 0,
+      "Langues": 3,
+      "Centres d'intérêt": 0
+    },
+    "manquantes": [
+      "Titre / poste",
+      "Années d'expérience",
+      "Compétences techniques",
+      "Expériences",
+      "Certifications",
+      "Centres d'intérêt"
+    ],
+    "exploitable": false
+  },
+  "parse_warning": "L'extraction par bibliothèques est incomplète (titre, expériences, compétences) et aucun service IA n'a répondu. Relancez l'analyse depuis la fiche quand un service répond, ou complétez à la main.",
+  "_wall_s": 1.29
+}

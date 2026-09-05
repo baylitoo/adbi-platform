@@ -26,6 +26,10 @@ const HOTE = process.env.ADBI_HOTE || "127.0.0.1";
 const RACINE = __dirname;
 const PUBLIC = path.join(RACINE, "public");
 const LOGS = path.join(RACINE, "logs");
+// Plafond du journal d'un module (voir demarrerModule) : au-dela, on repart
+// d'un fichier vide au prochain demarrage plutot que de le laisser grossir
+// indefiniment au fil des redemarrages.
+const JOURNAL_MAX_OCTETS = 2 * 1024 * 1024; // 2 Mo
 
 // ── Configuration des modules ────────────────────────────────────────────────
 
@@ -186,7 +190,15 @@ async function demarrerModule(m) {
   const deja = processus.get(m.id);
   if (!deja || deja.tue) {
     fs.mkdirSync(LOGS, { recursive: true });
-    const journal = fs.openSync(path.join(LOGS, `${m.id}.log`), "a");
+    const cheminJournal = path.join(LOGS, `${m.id}.log`);
+    // Repart d'un journal vide si le precedent a depasse le plafond : sans ca,
+    // un module redemarre regulierement (ou qui log en continu) fait grossir
+    // ce fichier sans fin — et dernieresLignes() le relit ENTIEREMENT en
+    // memoire au moindre echec de demarrage.
+    try {
+      if (fs.statSync(cheminJournal).size > JOURNAL_MAX_OCTETS) fs.truncateSync(cheminJournal, 0);
+    } catch (e) {}
+    const journal = fs.openSync(cheminJournal, "a");
 
     const lancement = commandeModule(m);
     const enfant = spawn(lancement.commande, lancement.arguments, {
@@ -199,6 +211,14 @@ async function demarrerModule(m) {
       // shell sous Windows : permet d'appeler un lanceur du PATH (py, python…).
       shell: process.platform === "win32" && lancement.commande !== process.execPath,
     });
+    // spawn() duplique le descripteur pour l'enfant : celui-ci a desormais sa
+    // propre copie, et rien ne ferme jamais celle-ci cote Factory (Node ne le
+    // fait pas automatiquement pour un fd ouvert "a la main" et passe en
+    // stdio). Sans ce close, chaque redemarrage d'un module fuit un
+    // descripteur — a la longue (un module instable relance souvent), le
+    // process Factory finit par epuiser sa limite de descripteurs (EMFILE) et
+    // ne peut plus rien demarrer ni servir la moindre requete.
+    try { fs.closeSync(journal); } catch (e) {}
     enfant.tue = false;
     enfant.on("exit", (code) => {
       enfant.tue = true;
