@@ -89,6 +89,16 @@ from api.settings_bp  import settings_bp
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 
+# ── Plafond de taille de corps de requête ────────────────────────────────────
+# Sans ceci, Flask/Werkzeug acceptent un corps de taille arbitraire : un CV de
+# plusieurs Go déposé via /api/upload s'écrirait intégralement sous
+# uploads/ (volume Docker persistant, docker-compose.yml) avant même d'être
+# regardé. one-pager applique déjà un plafond équivalent sur sa route
+# d'import de CV (express.json({ limit: "25mb" })) — même discipline ici.
+# Un dépassement lève RequestEntityTooLarge (413), rattrapée par
+# handle_exception ci-dessous qui répond en JSON comme le reste de l'API.
+app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 20 Mo
+
 # ── Enregistrement des blueprints ─────────────────────────────────────────────
 app.register_blueprint(auth_bp)
 app.register_blueprint(needs_bp)
@@ -1699,7 +1709,14 @@ def upload_cv():
     # telle quelle, instantanément. On ne réutilise qu'une analyse RICHE :
     # une fiche restée incomplète mérite une nouvelle chance.
     import hashlib
-    empreinte = hashlib.sha256(file_path.read_bytes()).hexdigest()
+    hacheur = hashlib.sha256()
+    with open(file_path, "rb") as _f:
+        # Lecture par blocs plutôt que read_bytes() : même sous le plafond de
+        # MAX_CONTENT_LENGTH, un fichier de plusieurs dizaines de Mo n'a pas
+        # besoin d'être entièrement dupliqué en mémoire pour être haché.
+        for bloc in iter(lambda: _f.read(1 << 20), b""):
+            hacheur.update(bloc)
+    empreinte = hacheur.hexdigest()
     source_cache = None
     try:
         for existante in cvstore_pg.list_cvs().values():
