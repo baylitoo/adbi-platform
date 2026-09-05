@@ -1,0 +1,135 @@
+{
+  "request_id": "req-fixture-kbis-edge-0001",
+  "schema_name": "kbis",
+  "model_profile": "nuextract3_ollama",
+  "document_hash": "sha256:req-fixture-kbis-edge-0001",
+  "result": {
+    "document_type": "kbis",
+    "extraction_notes": [
+      "company_name illisible sur ce scan",
+      "registration_date en toutes lettres, non normalisee"
+    ],
+    "company_name": {
+      "value": null,
+      "evidence_ids": [],
+      "confidence": 0.0
+    },
+    "siren": {
+      "value": "123456789",
+      "evidence_ids": [],
+      "confidence": 0.9
+    },
+    "siret_siege": null,
+    "legal_form": null,
+    "share_capital": {
+      "amount": "5000.00",
+      "currency": "USD",
+      "evidence_ids": [],
+      "confidence": 0.6
+    },
+    "registration_date": {
+      "value": "le 12 mars 2019",
+      "evidence_ids": [],
+      "confidence": 0.2
+    },
+    "issued_date": {
+      "value": "2026-09-01",
+      "evidence_ids": [
+        "e9"
+      ],
+      "confidence": 0.9
+    },
+    "rcs_number": {
+      "value": "",
+      "evidence_ids": [],
+      "confidence": 0.1
+    },
+    "registered_address": null,
+    "activity_code": null,
+    "legal_representative": {
+      "value": "Madame Jane DOE, Presidente",
+      "evidence_ids": [],
+      "confidence": 0.75
+    }
+  },
+  "validation": {
+    "valid": true,
+    "errors": [],
+    "warnings": []
+  },
+  "usage": null,
+  "latency_ms": 98765,
+  "dynamic_schema": {
+    "document_type": "kbis",
+    "fields": [
+      {
+        "name": "company_name",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "siren",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "siret_siege",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "legal_form",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "share_capital",
+        "type": "money",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "registration_date",
+        "type": "date",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "issued_date",
+        "type": "date",
+        "description": "Date d'edition/delivrance du Kbis",
+        "fields": []
+      },
+      {
+        "name": "rcs_number",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "registered_address",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "activity_code",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "legal_representative",
+        "type": "string",
+        "description": null,
+        "fields": []
+      }
+    ]
+  },
+  "routing": null,
+  "response_format_style": "json_schema"
+}

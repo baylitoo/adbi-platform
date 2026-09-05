@@ -1,0 +1,156 @@
+{
+  "request_id": "req-fixture-kbis-0001",
+  "schema_name": "kbis",
+  "model_profile": "nuextract3_ollama",
+  "document_hash": "sha256:req-fixture-kbis-0001",
+  "result": {
+    "document_type": "kbis",
+    "extraction_notes": [
+      "low confidence on activity_code"
+    ],
+    "company_name": {
+      "value": "SUND INDUSTRY SYSTEM",
+      "evidence_ids": [
+        "e1"
+      ],
+      "confidence": 0.97
+    },
+    "siren": {
+      "value": "941091316",
+      "evidence_ids": [
+        "e2"
+      ],
+      "confidence": 0.99
+    },
+    "siret_siege": {
+      "value": "94109131600013",
+      "evidence_ids": [
+        "e2"
+      ],
+      "confidence": 0.99
+    },
+    "legal_form": {
+      "value": "SAS",
+      "evidence_ids": [],
+      "confidence": 0.9
+    },
+    "share_capital": {
+      "amount": "1000",
+      "currency": "EUR",
+      "evidence_ids": [],
+      "confidence": 0.85
+    },
+    "registration_date": {
+      "value": "2019-03-12",
+      "evidence_ids": [],
+      "confidence": 0.8
+    },
+    "issued_date": {
+      "value": "04/09/2026",
+      "evidence_ids": [
+        "e3"
+      ],
+      "confidence": 0.92
+    },
+    "rcs_number": {
+      "value": "941 091 316 RCS Paris",
+      "evidence_ids": [],
+      "confidence": 0.88
+    },
+    "registered_address": {
+      "value": "60 rue Francois 1er, 75008 Paris",
+      "evidence_ids": [],
+      "confidence": 0.85
+    },
+    "activity_code": {
+      "value": "6202A",
+      "evidence_ids": [],
+      "confidence": 0.7
+    },
+    "legal_representative": {
+      "value": "Monsieur Corentin CALVO",
+      "evidence_ids": [],
+      "confidence": 0.88
+    }
+  },
+  "validation": {
+    "valid": true,
+    "errors": [],
+    "warnings": []
+  },
+  "usage": null,
+  "latency_ms": 98765,
+  "dynamic_schema": {
+    "document_type": "kbis",
+    "fields": [
+      {
+        "name": "company_name",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "siren",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "siret_siege",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "legal_form",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "share_capital",
+        "type": "money",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "registration_date",
+        "type": "date",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "issued_date",
+        "type": "date",
+        "description": "Date d'edition/delivrance du Kbis",
+        "fields": []
+      },
+      {
+        "name": "rcs_number",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "registered_address",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "activity_code",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "legal_representative",
+        "type": "string",
+        "description": null,
+        "fields": []
+      }
+    ]
+  },
+  "routing": null,
+  "response_format_style": "json_schema"
+}
