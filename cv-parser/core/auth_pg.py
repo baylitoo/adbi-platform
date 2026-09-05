@@ -129,6 +129,16 @@ def update_user(user_id: str, updates: dict) -> dict:
         vals.append(user_id)
         with get_conn() as con:
             con.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", vals)
+
+    # Un mot de passe changé (self-service ou remise à zéro par un superuser)
+    # doit invalider les sessions existantes : sinon un refresh token déjà
+    # entre de mauvaises mains (cookie volé, poste partagé) continue de
+    # fonctionner jusqu'à ses 7 jours d'expiration, alors même que l'action
+    # censée « couper l'accès » vient d'avoir lieu. Voir issue du changement
+    # de mot de passe qui ne révoque pas les refresh tokens.
+    if updates.get("password"):
+        revoke_all_user_tokens(user_id)
+
     return _public(get_user_by_id(user_id))
 
 
