@@ -55,9 +55,9 @@ async function save(record) {
      RETURNING *`,
     [
       record.id,
-      record.master.identity.full_name || "",
-      record.master.identity.title || "",
-      record.master.source.filename || "",
+      (record.master.identity && record.master.identity.full_name) || "",
+      (record.master.identity && record.master.identity.title) || "",
+      (record.master.source && record.master.source.filename) || "",
       record.hash || "",
       JSON.stringify(record.master),
       JSON.stringify(record.options || {}),
