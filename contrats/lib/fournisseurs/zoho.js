@@ -78,30 +78,32 @@ async function appel(chemin, options = {}, deuxieme) {
   if (!c) throw new Error("Zoho Sign non configuré (client ID, secret et refresh token requis — Paramètres → Signature électronique).");
   // Envoi/mise à jour de document (multipart) : delai plus large, le PDF peut peser plusieurs Mo.
   const delaiMs = options.document ? DELAI_UPLOAD_MS : DELAI_HTTP_MS;
-  let r;
+  // Le signal couvre aussi la LECTURE du corps (r.json()/arrayBuffer()) : un
+  // fournisseur qui répond vite en-têtes mais dont le corps se bloque doit
+  // être rattrapé ici aussi, pas seulement un fetch() qui ne répond jamais.
   try {
-    r = await fetch(c.api + chemin, {
+    const r = await fetch(c.api + chemin, {
       ...options,
       headers: { Authorization: "Zoho-oauthtoken " + (await jetonAcces(deuxieme)), ...(options.headers || {}) },
       signal: delaiSignal(delaiMs),
     });
+    if (r.status === 401 && !deuxieme) return await appel(chemin, options, true);
+    const type = r.headers.get("content-type") || "";
+    if (!r.ok) {
+      let detail = "";
+      try { const j = await r.json(); detail = j.message || j.error_description || ""; } catch (e) {}
+      throw new Error("Zoho Sign HTTP " + r.status + (detail ? " — " + detail : ""));
+    }
+    if (type.includes("json")) {
+      const j = await r.json();
+      // Zoho renvoie parfois 200 avec {status:"failure"} : on le traite en erreur.
+      if (j && j.status === "failure") throw new Error("Zoho Sign — " + (j.message || "échec"));
+      return j;
+    }
+    return Buffer.from(await r.arrayBuffer());
   } catch (e) {
     throw messageDelai("Zoho Sign", delaiMs, e);
   }
-  if (r.status === 401 && !deuxieme) return appel(chemin, options, true);
-  const type = r.headers.get("content-type") || "";
-  if (!r.ok) {
-    let detail = "";
-    try { const j = await r.json(); detail = j.message || j.error_description || ""; } catch (e) {}
-    throw new Error("Zoho Sign HTTP " + r.status + (detail ? " — " + detail : ""));
-  }
-  if (type.includes("json")) {
-    const j = await r.json();
-    // Zoho renvoie parfois 200 avec {status:"failure"} : on le traite en erreur.
-    if (j && j.status === "failure") throw new Error("Zoho Sign — " + (j.message || "échec"));
-    return j;
-  }
-  return Buffer.from(await r.arrayBuffer());
 }
 
 // Bouton « Tester » : liste une demande — valide OAuth + région + portée.

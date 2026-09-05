@@ -44,9 +44,12 @@ async function appel(chemin, options = {}) {
   if (!c) throw new Error("Yousign non configuré (clé API absente — Paramètres → Signature électronique).");
   // Envoi de document (multipart) : delai plus large, le PDF peut peser plusieurs Mo.
   const delaiMs = options.document ? DELAI_UPLOAD_MS : DELAI_HTTP_MS;
-  let r;
+  // Le signal couvre aussi la LECTURE du corps (r.json()/arrayBuffer()) : un
+  // fournisseur qui répond vite en-têtes mais dont le corps se bloque
+  // (PDF qui ne finit jamais d'arriver) doit être rattrapé ici aussi, pas
+  // seulement un fetch() qui ne répond jamais du tout.
   try {
-    r = await fetch(c.base + chemin, {
+    const r = await fetch(c.base + chemin, {
       ...options,
       headers: {
         Authorization: "Bearer " + c.cle,
@@ -56,18 +59,18 @@ async function appel(chemin, options = {}) {
       body: options.corps ? JSON.stringify(options.corps) : options.body,
       signal: delaiSignal(delaiMs),
     });
+    if (!r.ok) {
+      let detail = "";
+      try { const j = await r.json(); detail = j.detail || (j.errors && JSON.stringify(j.errors)) || j.title || ""; } catch (e) {}
+      if (r.status === 401) throw new Error("Clé API Yousign invalide (mode " + c.mode + ").");
+      throw new Error("Yousign HTTP " + r.status + (detail ? " — " + detail : ""));
+    }
+    const type = r.headers.get("content-type") || "";
+    if (type.includes("json")) return await r.json();
+    return Buffer.from(await r.arrayBuffer());
   } catch (e) {
     throw messageDelai("Yousign", delaiMs, e);
   }
-  if (!r.ok) {
-    let detail = "";
-    try { const j = await r.json(); detail = j.detail || (j.errors && JSON.stringify(j.errors)) || j.title || ""; } catch (e) {}
-    if (r.status === 401) throw new Error("Clé API Yousign invalide (mode " + c.mode + ").");
-    throw new Error("Yousign HTTP " + r.status + (detail ? " — " + detail : ""));
-  }
-  const type = r.headers.get("content-type") || "";
-  if (type.includes("json")) return r.json();
-  return Buffer.from(await r.arrayBuffer());
 }
 
 // Bouton « Tester » : un appel authentifié léger suffit à valider clé + mode.

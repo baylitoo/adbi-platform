@@ -99,91 +99,97 @@ function normalizeSiren(q) {
 
 async function lookupPappers(siren, token) {
   const url = `https://api.pappers.fr/v2/entreprise?api_token=${encodeURIComponent(token)}&siren=${siren}`;
-  let r;
+  // Le signal couvre aussi la LECTURE du corps (r.json()) : un fournisseur
+  // qui répond vite en-têtes mais dont le corps se bloque doit être
+  // rattrapé ici aussi, pas seulement un fetch() qui ne répond jamais.
   try {
-    r = await fetch(url, { signal: delaiSignal(DELAI_HTTP_MS) });
+    const r = await fetch(url, { signal: delaiSignal(DELAI_HTTP_MS) });
+    if (!r.ok) {
+      let detail = "";
+      try { const j = await r.json(); detail = j.error || j.message || ""; } catch (e) {}
+      if (r.status === 401 || r.status === 403) throw new Error("Clé Pappers invalide ou expirée.");
+      if (r.status === 404) throw new Error("Aucune société trouvée pour ce SIREN/SIRET.");
+      throw new Error("Pappers : HTTP " + r.status + (detail ? " — " + detail : ""));
+    }
+    const d = await r.json();
+    const siege = d.siege || {};
+    const adresse = [siege.adresse_ligne_1, siege.adresse_ligne_2].filter(Boolean).join(" ");
+    const ville = [siege.code_postal, siege.ville].filter(Boolean).join(" ");
+    const reps = Array.isArray(d.representants) ? d.representants : [];
+    const rep = reps.find((x) => x && (x.qualite || x.nom_complet)) || reps[0];
+    const repNom = rep ? (rep.nom_complet || [rep.prenom, rep.nom].filter(Boolean).join(" ")).trim() : "";
+    return {
+      stNom: d.denomination || d.nom_entreprise || "",
+      stAdresse: [adresse, ville].filter(Boolean).join(", "),
+      stSiren: siren,
+      stSiret: siege.siret || "",
+      stRepresentant: repNom + (rep && rep.qualite ? " (" + rep.qualite + ")" : ""),
+      _source: "Pappers",
+    };
   } catch (e) {
     throw messageDelai("Pappers", DELAI_HTTP_MS, e);
   }
-  if (!r.ok) {
-    let detail = "";
-    try { const j = await r.json(); detail = j.error || j.message || ""; } catch (e) {}
-    if (r.status === 401 || r.status === 403) throw new Error("Clé Pappers invalide ou expirée.");
-    if (r.status === 404) throw new Error("Aucune société trouvée pour ce SIREN/SIRET.");
-    throw new Error("Pappers : HTTP " + r.status + (detail ? " — " + detail : ""));
-  }
-  const d = await r.json();
-  const siege = d.siege || {};
-  const adresse = [siege.adresse_ligne_1, siege.adresse_ligne_2].filter(Boolean).join(" ");
-  const ville = [siege.code_postal, siege.ville].filter(Boolean).join(" ");
-  const reps = Array.isArray(d.representants) ? d.representants : [];
-  const rep = reps.find((x) => x && (x.qualite || x.nom_complet)) || reps[0];
-  const repNom = rep ? (rep.nom_complet || [rep.prenom, rep.nom].filter(Boolean).join(" ")).trim() : "";
-  return {
-    stNom: d.denomination || d.nom_entreprise || "",
-    stAdresse: [adresse, ville].filter(Boolean).join(", "),
-    stSiren: siren,
-    stSiret: siege.siret || "",
-    stRepresentant: repNom + (rep && rep.qualite ? " (" + rep.qualite + ")" : ""),
-    _source: "Pappers",
-  };
 }
 
 async function lookupInsee(siren, apiKey) {
   // API Sirene 3.11 (portail api.insee.fr) — clé passée en en-tête.
   const url = `https://api.insee.fr/api-sirene/3.11/siret?q=siren:${siren}%20AND%20etablissementSiege:true&nombre=1`;
-  let r;
+  // Le signal couvre aussi la LECTURE du corps (r.json()) : un fournisseur
+  // qui répond vite en-têtes mais dont le corps se bloque doit être
+  // rattrapé ici aussi, pas seulement un fetch() qui ne répond jamais.
   try {
-    r = await fetch(url, {
+    const r = await fetch(url, {
       headers: { "X-INSEE-Api-Key-Integration": apiKey, Accept: "application/json" },
       signal: delaiSignal(DELAI_HTTP_MS),
     });
+    if (!r.ok) {
+      if (r.status === 401 || r.status === 403) throw new Error("Clé INSEE invalide ou non habilitée.");
+      if (r.status === 404) throw new Error("Aucun établissement trouvé pour ce SIREN/SIRET.");
+      throw new Error("INSEE : HTTP " + r.status);
+    }
+    const d = await r.json();
+    const et = (d.etablissements || [])[0];
+    if (!et) throw new Error("Aucun établissement trouvé.");
+    const u = et.uniteLegale || {};
+    const a = et.adresseEtablissement || {};
+    const nom = u.denominationUniteLegale ||
+      [u.prenom1UniteLegale, u.nomUniteLegale].filter(Boolean).join(" ");
+    const adresse = [a.numeroVoieEtablissement, a.typeVoieEtablissement, a.libelleVoieEtablissement]
+      .filter(Boolean).join(" ");
+    const ville = [a.codePostalEtablissement, a.libelleCommuneEtablissement].filter(Boolean).join(" ");
+    const etat = u.etatAdministratifUniteLegale === "C" ? "cessée" : "active";
+
+    // Établissements : on compte les fermés pour signaler d'éventuelles fermetures.
+    // Information secondaire, non bloquante : toute erreur (y compris un délai
+    // dépassé) est ignorée, elle a son propre budget de temps.
+    let fermes = null, total = null;
+    try {
+      const r2 = await fetch(
+        `https://api.insee.fr/api-sirene/3.11/siret?q=siren:${siren}&champs=siret,etatAdministratifEtablissement&nombre=1000`,
+        { headers: { "X-INSEE-Api-Key-Integration": apiKey, Accept: "application/json" }, signal: delaiSignal(DELAI_HTTP_MS) }
+      );
+      if (r2.ok) {
+        const d2 = await r2.json();
+        const arr = d2.etablissements || [];
+        total = (d2.header && d2.header.total) || arr.length;
+        fermes = arr.filter((e) => e.etatAdministratifEtablissement === "F").length;
+      }
+    } catch (e) { /* information secondaire : on ignore en cas d'échec */ }
+
+    return {
+      stNom: nom || "",
+      stAdresse: [adresse, ville].filter(Boolean).join(", "),
+      stSiren: siren,
+      stSiret: et.siret || "",
+      stRepresentant: "", // l'INSEE ne fournit pas le représentant légal
+      etat,
+      etablissementsFermes: fermes,
+      etablissementsTotal: total,
+      _source: "INSEE",
+    };
   } catch (e) {
     throw messageDelai("INSEE", DELAI_HTTP_MS, e);
   }
-  if (!r.ok) {
-    if (r.status === 401 || r.status === 403) throw new Error("Clé INSEE invalide ou non habilitée.");
-    if (r.status === 404) throw new Error("Aucun établissement trouvé pour ce SIREN/SIRET.");
-    throw new Error("INSEE : HTTP " + r.status);
-  }
-  const d = await r.json();
-  const et = (d.etablissements || [])[0];
-  if (!et) throw new Error("Aucun établissement trouvé.");
-  const u = et.uniteLegale || {};
-  const a = et.adresseEtablissement || {};
-  const nom = u.denominationUniteLegale ||
-    [u.prenom1UniteLegale, u.nomUniteLegale].filter(Boolean).join(" ");
-  const adresse = [a.numeroVoieEtablissement, a.typeVoieEtablissement, a.libelleVoieEtablissement]
-    .filter(Boolean).join(" ");
-  const ville = [a.codePostalEtablissement, a.libelleCommuneEtablissement].filter(Boolean).join(" ");
-  const etat = u.etatAdministratifUniteLegale === "C" ? "cessée" : "active";
-
-  // Établissements : on compte les fermés pour signaler d'éventuelles fermetures.
-  let fermes = null, total = null;
-  try {
-    const r2 = await fetch(
-      `https://api.insee.fr/api-sirene/3.11/siret?q=siren:${siren}&champs=siret,etatAdministratifEtablissement&nombre=1000`,
-      { headers: { "X-INSEE-Api-Key-Integration": apiKey, Accept: "application/json" }, signal: delaiSignal(DELAI_HTTP_MS) }
-    );
-    if (r2.ok) {
-      const d2 = await r2.json();
-      const arr = d2.etablissements || [];
-      total = (d2.header && d2.header.total) || arr.length;
-      fermes = arr.filter((e) => e.etatAdministratifEtablissement === "F").length;
-    }
-  } catch (e) { /* information secondaire : on ignore en cas d'échec */ }
-
-  return {
-    stNom: nom || "",
-    stAdresse: [adresse, ville].filter(Boolean).join(", "),
-    stSiren: siren,
-    stSiret: et.siret || "",
-    stRepresentant: "", // l'INSEE ne fournit pas le représentant légal
-    etat,
-    etablissementsFermes: fermes,
-    etablissementsTotal: total,
-    _source: "INSEE",
-  };
 }
 
 // Forme juridique à partir du code « catégorie juridique » INSEE (nature_juridique).
@@ -255,17 +261,19 @@ function mapRechercheEntreprise(e) {
 async function lookupRechercheEntreprises(query) {
   const q = String(query || "").replace(/\D/g, "");
   const url = `https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(q)}&page=1&per_page=1`;
-  let r;
+  // Le signal couvre aussi la LECTURE du corps (r.json()) : un fournisseur
+  // qui répond vite en-têtes mais dont le corps se bloque doit être
+  // rattrapé ici aussi, pas seulement un fetch() qui ne répond jamais.
   try {
-    r = await fetch(url, { headers: { Accept: "application/json" }, signal: delaiSignal(DELAI_HTTP_MS) });
+    const r = await fetch(url, { headers: { Accept: "application/json" }, signal: delaiSignal(DELAI_HTTP_MS) });
+    if (!r.ok) throw new Error("API Recherche d'entreprises : HTTP " + r.status);
+    const d = await r.json();
+    const e = (d.results || [])[0];
+    if (!e) throw new Error("Aucune entreprise trouvée pour ce SIREN/SIRET.");
+    return mapRechercheEntreprise(e);
   } catch (e) {
     throw messageDelai("API Recherche d'entreprises", DELAI_HTTP_MS, e);
   }
-  if (!r.ok) throw new Error("API Recherche d'entreprises : HTTP " + r.status);
-  const d = await r.json();
-  const e = (d.results || [])[0];
-  if (!e) throw new Error("Aucune entreprise trouvée pour ce SIREN/SIRET.");
-  return mapRechercheEntreprise(e);
 }
 
 // Recherche multi-résultats par SIREN/SIRET OU par nom (raison sociale).
@@ -274,15 +282,15 @@ async function searchCompanies(query, limit) {
   if (q.length < 2) throw new Error("Saisir un nom de société (2 caractères min.) ou un SIREN/SIRET.");
   const per = Math.min(Math.max(parseInt(limit, 10) || 8, 1), 15);
   const url = `https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(q)}&page=1&per_page=${per}`;
-  let r;
+  // Le signal couvre aussi la LECTURE du corps (r.json()) : cf. lookupRechercheEntreprises.
   try {
-    r = await fetch(url, { headers: { Accept: "application/json" }, signal: delaiSignal(DELAI_HTTP_MS) });
+    const r = await fetch(url, { headers: { Accept: "application/json" }, signal: delaiSignal(DELAI_HTTP_MS) });
+    if (!r.ok) throw new Error("API Recherche d'entreprises : HTTP " + r.status);
+    const d = await r.json();
+    return (d.results || []).map(mapRechercheEntreprise);
   } catch (e) {
     throw messageDelai("API Recherche d'entreprises", DELAI_HTTP_MS, e);
   }
-  if (!r.ok) throw new Error("API Recherche d'entreprises : HTTP " + r.status);
-  const d = await r.json();
-  return (d.results || []).map(mapRechercheEntreprise);
 }
 
 async function getCompany(q) {
