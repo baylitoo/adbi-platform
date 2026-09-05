@@ -442,7 +442,10 @@ const serveur = http.createServer(async (req, rep) => {
     try {
       corps = await lireCorpsJson(req);
     } catch (err) {
-      return repondreJson(rep, err.code || 400, { ok: false, erreur: err.message });
+      // err.code peut être un code système ("ECONNRESET" si le client coupe
+      // la connexion en cours de lecture, via req.on("error", rejeter)) :
+      // writeHead exige un entier, on ne relaie donc que notre propre 413.
+      return repondreJson(rep, err.code === 413 ? 413 : 400, { ok: false, erreur: err.message });
     }
     const modele = (corps.modele || LLM_MODELES[0] || "").trim();
     if (!modele) return repondreJson(rep, 200, { ok: false, erreur: "Aucun modèle à tester." });
