@@ -1,0 +1,242 @@
+{
+  "cv_parser": {
+    "name": "Camille Béranger",
+    "title": "",
+    "email": "camille.beranger@example.fr",
+    "phone": "06 12 34 56 78",
+    "linkedin": "",
+    "location": "",
+    "experience": [],
+    "education": [],
+    "skills": [],
+    "languages": [
+      {
+        "language": "Français",
+        "level": "natif"
+      },
+      {
+        "language": "Anglais",
+        "level": "courant"
+      }
+    ],
+    "_meta": {
+      "llm_parsed": false,
+      "docling_used": false,
+      "parsing_mode": "digital",
+      "wall_s": 0.275
+    }
+  },
+  "docie": {
+    "name": "Camille Béranger",
+    "title": "Développeuse Full-Stack",
+    "email": "camille.beranger@example.fr",
+    "phone": "06 12 34 56 78",
+    "linkedin": "",
+    "location": "Lyon, France",
+    "experience": [
+      {
+        "company": "Numelia",
+        "title": "Développeuse Full-Stack",
+        "period": "Mars 2022 - Aujourd'hui",
+        "env_technique": "Python, Django, PostgreSQL, React, Docker",
+        "description": "Conception et développement d'une plateforme SaaS de gestion de stocks pour PME. Mise en place de l'API REST et du frontend React."
+      },
+      {
+        "company": "Studio Pixelia",
+        "title": "Développeuse Web",
+        "period": "Septembre 2019 - Février 2022",
+        "env_technique": "HTML/CSS, JavaScript",
+        "description": "Développement de sites vitrines et e-commerce pour des clients locaux. Intégration HTML/CSS et scripts JavaScript."
+      }
+    ],
+    "education": [
+      {
+        "degree": "Master Informatique",
+        "institution": "Université Claude Bernard Lyon 1",
+        "period": "2019"
+      }
+    ],
+    "skills": [
+      "Django",
+      "Docker",
+      "Git",
+      "JavaScript",
+      "Jenkins",
+      "Node.js",
+      "Python",
+      "React",
+      "SQL"
+    ],
+    "languages": [
+      {
+        "language": "Français",
+        "level": "natif"
+      },
+      {
+        "language": "Anglais",
+        "level": "courant"
+      }
+    ],
+    "_meta": {
+      "model_profile": "nuextract3_local_127",
+      "latency_ms": 285014,
+      "validation": {
+        "errors": [],
+        "valid": true,
+        "warnings": []
+      },
+      "wall_s": 1275.88
+    }
+  },
+  "comparison": {
+    "fields": [
+      {
+        "field": "name",
+        "cv_parser": "Camille Béranger",
+        "docie": "Camille Béranger",
+        "verdict": "agree"
+      },
+      {
+        "field": "title",
+        "cv_parser": "",
+        "docie": "Développeuse Full-Stack",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "email",
+        "cv_parser": "camille.beranger@example.fr",
+        "docie": "camille.beranger@example.fr",
+        "verdict": "agree"
+      },
+      {
+        "field": "phone",
+        "cv_parser": "06 12 34 56 78",
+        "docie": "06 12 34 56 78",
+        "verdict": "agree"
+      },
+      {
+        "field": "linkedin",
+        "cv_parser": "",
+        "docie": "",
+        "verdict": "both_empty"
+      },
+      {
+        "field": "location",
+        "cv_parser": "",
+        "docie": "Lyon, France",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "experience[0].company",
+        "cv_parser": "",
+        "docie": "Numelia",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "experience[0].title",
+        "cv_parser": "",
+        "docie": "Développeuse Full-Stack",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "experience[0].period",
+        "cv_parser": "",
+        "docie": "Mars 2022 - Aujourd'hui",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "experience[0].env_technique",
+        "cv_parser": "",
+        "docie": "Python, Django, PostgreSQL, React, Docker",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "experience[0].description",
+        "cv_parser": "",
+        "docie": "Conception et développement d'une plateforme SaaS de gestion de stocks pour PME. Mise en place de l'API REST et du frontend React.",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "experience[1].company",
+        "cv_parser": "",
+        "docie": "Studio Pixelia",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "experience[1].title",
+        "cv_parser": "",
+        "docie": "Développeuse Web",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "experience[1].period",
+        "cv_parser": "",
+        "docie": "Septembre 2019 - Février 2022",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "experience[1].env_technique",
+        "cv_parser": "",
+        "docie": "HTML/CSS, JavaScript",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "experience[1].description",
+        "cv_parser": "",
+        "docie": "Développement de sites vitrines et e-commerce pour des clients locaux. Intégration HTML/CSS et scripts JavaScript.",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "education[0].degree",
+        "cv_parser": "",
+        "docie": "Master Informatique",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "education[0].institution",
+        "cv_parser": "",
+        "docie": "Université Claude Bernard Lyon 1",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "education[0].period",
+        "cv_parser": "",
+        "docie": "2019",
+        "verdict": "docie_only"
+      },
+      {
+        "field": "skills (set)",
+        "cv_parser": [],
+        "docie": [
+          "Django",
+          "Docker",
+          "Git",
+          "JavaScript",
+          "Jenkins",
+          "Node.js",
+          "Python",
+          "React",
+          "SQL"
+        ],
+        "verdict": "docie_only",
+        "cv_parser_only_items": [],
+        "docie_only_items": [
+          "Django",
+          "Docker",
+          "Git",
+          "JavaScript",
+          "Jenkins",
+          "Node.js",
+          "Python",
+          "React",
+          "SQL"
+        ]
+      }
+    ],
+    "counts": {
+      "agree": 3,
+      "docie_only": 16,
+      "both_empty": 1
+    }
+  }
+}
