@@ -177,7 +177,11 @@ def require_auth(f):
             if _is_api():
                 return jsonify({"error": "Compte désactivé"}), 403
             return redirect("/login")
-        g.current_user = payload
+        # Le rôle exposé aux routes vient de la base, pas du JWT : sinon un
+        # utilisateur rétrogradé depuis 'superuser' garde les branches
+        # "superuser voit tout" (ex. needs_bp.get_needs) tant que son ancien
+        # token n'a pas expiré — voir issue #76.
+        g.current_user = {**payload, "role": user.get("role", payload.get("role"))}
         return f(*args, **kwargs)
     return decorated
 
@@ -194,7 +198,14 @@ def require_superuser(f):
         payload = verify_access_token(token)
         if not payload:
             return jsonify({"error": "Token invalide ou expiré"}), 401
-        if payload.get("role") != "superuser":
+        # Le rôle et l'état actif doivent venir de la base, pas du JWT : un
+        # superuser rétrogradé ou désactivé après émission du token ne doit
+        # pas garder ses droits d'admin jusqu'à l'expiration de celui-ci
+        # (jusqu'à ACCESS_TOKEN_EXPIRE_MINUTES) — voir issue #76.
+        user = get_user_by_id(payload["sub"])
+        if not user or not user.get("is_active"):
+            return jsonify({"error": "Compte désactivé"}), 403
+        if user.get("role") != "superuser":
             return jsonify({"error": "Accès réservé aux super-utilisateurs"}), 403
         g.current_user = payload
         return f(*args, **kwargs)
