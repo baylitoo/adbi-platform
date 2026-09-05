@@ -164,3 +164,29 @@ def set_active_llm(provider: str, model: str = "") -> dict:
 # d'une dizaine. Le gain de vitesse ne valait pas cette perte. 24 000 (~7 000
 # jetons) reste très en deçà des 128 000 de contexte des modèles utilisés.
 MAX_LLM_CHARS = 24_000
+
+# ── Bornes sur les besoins clients (api/needs_bp.py) ─────────────────────────
+#
+# `core/matcher.py::run_matching` relit CHAQUE champ texte du besoin pour
+# CHAQUE CV de la CVthèque (SequenceMatcher, correspondance de mots-clés par
+# sous-chaîne...) : un besoin sans borne haute transforme
+# POST /api/needs/<id>/match en calcul CPU non borné (issue #72). Mesuré
+# (50 CV synthétiques, run_matching appelé directement) :
+#   titre normal (25 car., 3 compétences)        ->   0,05 s
+#   titre de ~118 000 caractères                 ->   6,7 s
+#   titre de ~500 000 caractères                 ->  29,2 s
+#   5 000 required_skills (aucune ne matche)     -> 220,6 s
+# cv-parser tourne en un seul worker Gunicorn (gthread) : un tel calcul garde
+# le GIL et bloque de fait tout le process pendant son exécution.
+NEED_SHORT_MAX = int(os.environ.get("ADBI_NEED_SHORT_MAX", "300"))
+# title, seniority, location, remote, contract_type, budget, start_date
+
+NEED_TEXT_MAX = int(os.environ.get("ADBI_NEED_TEXT_MAX", "20000"))
+# context, notes, raw_text, client, sector — une vraie fiche de poste tient
+# large dans cette limite (comparer à MATCHING_OFFRE_MAX = 40000 côté one-pager).
+
+NEED_LIST_MAX = int(os.environ.get("ADBI_NEED_LIST_MAX", "60"))
+# nombre d'entrées : required_skills, bonus_skills, languages
+
+NEED_ITEM_MAX = int(os.environ.get("ADBI_NEED_ITEM_MAX", "100"))
+# longueur (caractères) de chaque entrée de ces listes

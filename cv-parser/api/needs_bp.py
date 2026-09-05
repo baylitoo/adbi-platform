@@ -5,8 +5,63 @@ from core.auth import require_auth, get_current_user
 from core.database_pg import (
     insert_need, get_need, list_needs, update_need, delete_need,
 )
+from config import NEED_SHORT_MAX, NEED_TEXT_MAX, NEED_LIST_MAX, NEED_ITEM_MAX
 
 needs_bp = Blueprint("needs", __name__, url_prefix="/api/needs")
+
+# Champs courts (intitulé, statut...) : bornés à NEED_SHORT_MAX.
+_CHAMPS_COURTS = ("title", "seniority", "location", "remote", "contract_type",
+                  "budget", "start_date")
+# Champs texte libre (fiche de poste collée, contexte de mission...) : bornés
+# à NEED_TEXT_MAX, plus large.
+_CHAMPS_TEXTE = ("context", "notes", "raw_text", "client", "sector")
+# Listes relues par core/matcher.py pour chaque CV de la CVthèque : bornées
+# en nombre d'entrées ET en longueur par entrée.
+_CHAMPS_LISTE = ("required_skills", "bonus_skills", "languages")
+
+
+def _longueur_entree(champ: str, item) -> int:
+    """Longueur textuelle d'une entrée de liste — `languages` peut porter des
+    objets `{"language": "..."}` plutôt que de simples chaînes."""
+    if isinstance(item, str):
+        return len(item)
+    if champ == "languages" and isinstance(item, dict):
+        return len(str(item.get("language") or item.get("name") or ""))
+    return len(str(item))
+
+
+def _valider_besoin(body: dict) -> str | None:
+    """Plafonne les champs d'un besoin AVANT tout enregistrement.
+
+    Sans cela, un besoin devient un vecteur de déni de service : voir
+    issue #72 — core/matcher.py::run_matching relit ces champs pour CHAQUE
+    CV de la CVthèque (SequenceMatcher, recherche de mots-clés par
+    sous-chaîne), sans aucune borne haute côté écriture jusqu'ici.
+    Renvoie un message d'erreur, ou None si le besoin est acceptable.
+    """
+    for cle in _CHAMPS_COURTS:
+        v = body.get(cle)
+        if isinstance(v, str) and len(v) > NEED_SHORT_MAX:
+            return f"Le champ '{cle}' dépasse {NEED_SHORT_MAX} caractères."
+
+    for cle in _CHAMPS_TEXTE:
+        v = body.get(cle)
+        if isinstance(v, str) and len(v) > NEED_TEXT_MAX:
+            return f"Le champ '{cle}' dépasse {NEED_TEXT_MAX} caractères."
+
+    for cle in _CHAMPS_LISTE:
+        v = body.get(cle)
+        if v is None:
+            continue
+        if not isinstance(v, list):
+            return f"Le champ '{cle}' doit être une liste."
+        if len(v) > NEED_LIST_MAX:
+            return f"Le champ '{cle}' accepte au plus {NEED_LIST_MAX} entrées."
+        for item in v:
+            if _longueur_entree(cle, item) > NEED_ITEM_MAX:
+                return f"Une entrée de '{cle}' dépasse {NEED_ITEM_MAX} caractères."
+
+    return None
 
 
 @needs_bp.get("")
@@ -29,6 +84,9 @@ def create_need():
     body = request.get_json(silent=True) or {}
     if not body.get("title"):
         return jsonify({"error": "Le champ 'title' est obligatoire"}), 400
+    erreur = _valider_besoin(body)
+    if erreur:
+        return jsonify({"error": erreur}), 400
     need = insert_need(body, created_by=user["sub"])
     return jsonify(need), 201
 
@@ -50,7 +108,10 @@ def patch_need(need_id: str):
     if not need:
         return jsonify({"error": "Besoin introuvable"}), 404
     _check_access(need)
-    body    = request.get_json(silent=True) or {}
+    body   = request.get_json(silent=True) or {}
+    erreur = _valider_besoin(body)
+    if erreur:
+        return jsonify({"error": erreur}), 400
     updated = update_need(need_id, body)
     return jsonify(updated)
 
