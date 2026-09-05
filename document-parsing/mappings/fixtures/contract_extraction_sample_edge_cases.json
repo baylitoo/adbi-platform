@@ -1,0 +1,217 @@
+{
+  "request_id": "req-fixture-edge-0001",
+  "schema_name": "contract",
+  "model_profile": "nuextract3_ollama",
+  "document_hash": "sha256:fixture-edge",
+  "result": {
+    "document_type": "contract",
+    "extraction_notes": [
+      "numero_contrat absent du document source",
+      "date_redaction ambigue, verifier manuellement"
+    ],
+    "numero_contrat": {
+      "value": null,
+      "evidence_ids": [],
+      "confidence": 0.0
+    },
+    "date_redaction": {
+      "value": "le 5 courant",
+      "evidence_ids": [],
+      "confidence": 0.2
+    },
+    "lieu_redaction": null,
+    "st_nom": {
+      "value": "ACME FREELANCE",
+      "evidence_ids": [
+        "e9"
+      ],
+      "confidence": 0.9
+    },
+    "st_adresse": null,
+    "st_siren": {
+      "value": "123456789",
+      "evidence_ids": [],
+      "confidence": 0.9
+    },
+    "st_siret": null,
+    "st_representant": {
+      "value": "Jane DOE",
+      "evidence_ids": [],
+      "confidence": 0.8
+    },
+    "st_forme_juridique": {
+      "value": "EI",
+      "evidence_ids": [],
+      "confidence": 0.5
+    },
+    "st_qualite": {
+      "value": "",
+      "evidence_ids": [],
+      "confidence": 0.1
+    },
+    "consultant_nom": {
+      "value": "Jane Doe",
+      "evidence_ids": [],
+      "confidence": 0.85
+    },
+    "consultant_fonction": null,
+    "client_final": {
+      "value": "Client Test SAS",
+      "evidence_ids": [],
+      "confidence": 0.8
+    },
+    "nature_travaux": null,
+    "lieu_execution": null,
+    "date_debut": {
+      "value": "2026-03-01",
+      "evidence_ids": [],
+      "confidence": 0.7
+    },
+    "date_fin": {
+      "value": "31/08/2026",
+      "evidence_ids": [],
+      "confidence": 0.7
+    },
+    "tjm": {
+      "amount": "500",
+      "currency": "USD",
+      "evidence_ids": [],
+      "confidence": 0.6
+    },
+    "delai_paiement": {
+      "value": "30.0",
+      "evidence_ids": [],
+      "confidence": 0.4
+    }
+  },
+  "validation": {
+    "valid": true,
+    "errors": [],
+    "warnings": [
+      "low overall confidence"
+    ]
+  },
+  "usage": null,
+  "latency_ms": 98765,
+  "dynamic_schema": {
+    "document_type": "contract",
+    "fields": [
+      {
+        "name": "numero_contrat",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "date_redaction",
+        "type": "date",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "lieu_redaction",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_nom",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_adresse",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_siren",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_siret",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_representant",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_forme_juridique",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "st_qualite",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "consultant_nom",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "consultant_fonction",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "client_final",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "nature_travaux",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "lieu_execution",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "date_debut",
+        "type": "date",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "date_fin",
+        "type": "date",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "tjm",
+        "type": "money",
+        "description": "TJM en euros HT / jour",
+        "fields": []
+      },
+      {
+        "name": "delai_paiement",
+        "type": "number",
+        "description": "Delai de paiement en jours",
+        "fields": []
+      }
+    ]
+  },
+  "routing": null,
+  "response_format_style": "json_schema"
+}
