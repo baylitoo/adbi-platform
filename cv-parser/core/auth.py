@@ -44,6 +44,7 @@ __all__ = [
     "revoke_refresh_token", "revoke_all_user_tokens",
     "ensure_default_superuser",
     "require_auth", "require_superuser", "get_current_user",
+    "check_need_access",
     "AUTH_ACTIVE",
 ]
 
@@ -203,3 +204,20 @@ def require_superuser(f):
 
 def get_current_user() -> dict | None:
     return getattr(g, "current_user", None)
+
+
+# ── Contrôle d'accès aux besoins (needs) ──────────────────────────────────────
+#
+# Règle : un 'user' ne voit/modifie que les besoins qu'il a créés, un
+# 'superuser' voit tout (voir api/needs_bp.py, get_needs). Centralisé ici pour
+# que api/matching_bp.py (qui lit/lance le matching des mêmes besoins par le
+# même need_id) applique exactement la même règle — avant ce partage, seul
+# needs_bp.py la vérifiait, ce qui permettait à n'importe quel utilisateur
+# authentifié de lire/lancer le matching d'un besoin d'autrui (issue #74).
+def check_need_access(need: dict) -> None:
+    user = get_current_user()
+    if user and user.get("role") == "superuser":
+        return
+    if not user or need.get("created_by") != user.get("sub"):
+        from flask import abort
+        abort(403)
