@@ -12,6 +12,81 @@ const taxo = require("./taxonomy");
 const fonc = require("./fonctionnel");
 const { scoreAll } = require("./score");
 
+/**
+ * Filet de securite defensif : comble les champs qu'un `cv_master` mal forme
+ * pourrait omettre, avant que score.js et le reste de cette chaine ne les
+ * consomment sans garde-fou (`.join`, `.map`, `.filter`, acces en chaine...).
+ *
+ * lib/extract.js garantit deja ces tableaux — memes vides — pour tout CV issu
+ * d'un import normal. Ce filet ne couvre que ce qui echappe a ce chemin : un
+ * import d'une version anterieure du format, un enregistrement modifie a la
+ * main, ou un appel direct de l'API avec un objet partiel. C'est une pure
+ * normalisation de securite : un `cv_master` deja complet en ressort
+ * identique.
+ */
+function normaliserCvMaster(cv) {
+  const c = cv && typeof cv === "object" ? cv : {};
+  const contact = c.contact && typeof c.contact === "object" ? c.contact : {};
+
+  return {
+    ...c,
+    identity: { full_name: "", initials: "", trigram: "", title: "", seniority_years: 0, ...(c.identity || {}) },
+    contact: {
+      email: "", phone: "", phone_display: "", linkedin: "", github: "",
+      mobility: "", work_mode: "", availability: "", driving_license: false,
+      ...contact,
+      location: { city: "", region: "", country: "", ...(contact.location || {}) },
+    },
+    summary: { raw: "", condensed: "", ...(c.summary || {}) },
+    // L'identifiant sert de cle a `layout.dropped` et aux listes keep/drop de
+    // l'utilisateur : sans repli, une mission sans id ne peut plus etre reintegree.
+    experiences: (Array.isArray(c.experiences) ? c.experiences : []).map((e, k) => {
+      const norm = normaliserExperience(e);
+      return { ...norm, id: norm.id || `exp_${k + 1}` };
+    }),
+    skills: (Array.isArray(c.skills) ? c.skills : []).map((g) => ({
+      label: "",
+      ...(g && typeof g === "object" ? g : {}),
+      items: Array.isArray(g && g.items) ? g.items : [],
+    })),
+    // Une entree sans nom exploitable est ecartee plutot que forcee a "" : une
+    // pastille vide dans le gabarit serait pire qu'une pastille en moins.
+    technologies: (Array.isArray(c.technologies) ? c.technologies : [])
+      .filter((t) => t && typeof t.name === "string" && t.name)
+      .map((t) => ({ weight: 0, occurrences: 0, last_used: null, ...t })),
+    education: (Array.isArray(c.education) ? c.education : []).map((e) => ({
+      degree: "", institution: "", location: "", end_year: null, level: "",
+      ...(e && typeof e === "object" ? e : {}),
+    })),
+    certifications: (Array.isArray(c.certifications) ? c.certifications : []).map((cert) => ({
+      name: "", year: null, issuer: "",
+      ...(cert && typeof cert === "object" ? cert : {}),
+    })),
+    languages: (Array.isArray(c.languages) ? c.languages : []).map((l) => ({
+      name: "", level: "", self_described: "", certification: "",
+      ...(l && typeof l === "object" ? l : {}),
+    })),
+    interests: Array.isArray(c.interests) ? c.interests : [],
+  };
+}
+
+/** Une mission normalisee : mêmes champs que lib/extract.js#buildExperience, jamais absents. */
+function normaliserExperience(e) {
+  const x = e && typeof e === "object" ? e : {};
+  return {
+    role: "", mission: "", company: "", end_client: "", via: "", contract_type: "",
+    location: "", start_date: null, end_date: null, is_current: false, duration_months: null,
+    context: "", confidence: 0,
+    ...x,
+    highlights: (Array.isArray(x.highlights) ? x.highlights : []).map((h) =>
+      h && typeof h === "object"
+        ? { text: "", has_metric: false, score: 0, ...h }
+        : { text: String(h || ""), has_metric: false, score: 0 }
+    ),
+    tech_stack: Array.isArray(x.tech_stack) ? x.tech_stack : [],
+  };
+}
+
 /** Budgets du gabarit ADBI (slide 16:9). */
 const GABARIT = {
   adbi_16_9: {
@@ -66,7 +141,7 @@ function build(cv, options = {}) {
 
   const G = GABARIT[opt.template] || GABARIT.adbi_16_9;
   const facteur = DENSITE[opt.density] || 1;
-  const scored = scoreAll(deepCopy(cv), opt.targetJob);
+  const scored = scoreAll(deepCopy(normaliserCvMaster(cv)), opt.targetJob);
   const dropped = [];
 
   // ------------------------------------------------------------- En-tete --
@@ -423,4 +498,4 @@ function deacc(s) {
   return N.deaccent(String(s || "")).toLowerCase().trim();
 }
 
-module.exports = { build, GABARIT, DENSITE, cheminBadge };
+module.exports = { build, GABARIT, DENSITE, cheminBadge, normaliserCvMaster };
