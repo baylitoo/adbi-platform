@@ -19,6 +19,12 @@ const templatesPerso = require("./lib/templates-perso");
 const fournisseurs = require("./lib/fournisseurs");
 
 const PORT = Number(process.env.PORT) || 4100;
+// Local par defaut (poste de dev) ; le Dockerfile passe ADBI_HOTE=0.0.0.0 —
+// sans ca, "127.0.0.1" a l'interieur du conteneur n'est PAS atteignable via
+// le port publie ("-p 4100:4100" arrive sur l'interface externe, pas la
+// loopback), meme si le HEALTHCHECK (execute dans le meme conteneur) semble
+// fonctionner (meme correctif que one-pager/factory/coffre, PR #38/#41).
+const HOTE = process.env.ADBI_HOTE || "127.0.0.1";
 // DATABASE_URL est REQUISE (issue #14, PR B) : ce service ne sait plus parler
 // qu'à PostgreSQL — plus de repli sql.js/fichier. Échec net et explicite au
 // démarrage plutôt qu'une erreur tardive au premier appel de route.
@@ -849,9 +855,9 @@ app.post("/api/contracts/supprimer", async (req, res) => {
 db.init()
   .then(() => templatesPerso.init())
   .then(() => {
-    app.listen(PORT, () => {
+    app.listen(PORT, HOTE, () => {
       console.log("\n  ADBI - Generateur de contrats");
-      console.log("  -> http://localhost:" + PORT + "\n");
+      console.log("  -> http://" + HOTE + ":" + PORT + "\n");
     });
   })
   .catch((e) => { console.error("Erreur init DB:", e); process.exit(1); });
