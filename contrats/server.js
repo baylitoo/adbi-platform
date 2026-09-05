@@ -465,6 +465,39 @@ app.post("/api/signatures", async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
+// ── Verrou par demande (issue #55) ───────────────────────────────────────────
+// synchroniserDemandeExterne lit une demande, interroge le fournisseur externe
+// (appel HTTP potentiellement long) puis réécrit la ligne ENTIÈRE via
+// db.sauverDemande (UPDATE signatures SET donnees=... — sans verrou ni
+// contrôle de version). Deux déclenchements concurrents sur la MÊME demande —
+// le bouton « Synchroniser » et le webhook du fournisseur, ou deux livraisons
+// du même webhook (les fournisseurs redélivrent en cas de doute) — peuvent
+// tous deux lire l'état d'avant, muter chacun leur copie (journal, statuts,
+// archivage du signé/preuve) et écrire : le dernier à écrire efface
+// silencieusement le travail de l'autre, y compris des entrées du `journal`
+// documenté comme VALEUR PROBANTE et reproduit sur le certificat de
+// signature. Même remède que le lost update de cv-parser (issue #53/#54) :
+// un verrou en mémoire par identifiant de demande, cohérent avec le process
+// Node mono-instance de ce service, qui sérialise tout le cycle
+// lecture -> appel fournisseur -> écriture — la (re)lecture de la demande se
+// fait DANS le verrou, pas seulement l'appel externe, sinon le second
+// arrivant travaillerait quand même sur une copie périmée.
+const verrousDemande = new Map();
+
+function avecVerrouDemande(id, tache) {
+  const precedent = verrousDemande.get(id) || Promise.resolve();
+  const courant = precedent.catch(() => {}).then(tache);
+  verrousDemande.set(id, courant);
+  // Nettoyage du registre une fois cette tâche terminée (succès ou échec),
+  // sur une branche distincte qui avale l'erreur : ne doit jamais produire de
+  // rejet non intercepté, `courant` (retourné à l'appelant) reste la seule
+  // promesse dont l'échec compte pour lui.
+  courant.catch(() => {}).finally(() => {
+    if (verrousDemande.get(id) === courant) verrousDemande.delete(id);
+  });
+  return courant;
+}
+
 // Synchronisation d'une demande EXTERNE : statut, signataires, et à la fin
 // téléchargement du PDF signé + du dossier de preuve, archivés dans le dossier.
 async function synchroniserDemandeExterne(d) {
@@ -500,14 +533,25 @@ async function synchroniserDemandeExterne(d) {
   return d;
 }
 
+// Point d'entrée verrouillé : recharge la demande DANS le verrou puis la
+// synchronise si elle a un fournisseur externe. Renvoie la demande à jour
+// (fraîchement relue, éventuellement synchronisée), ou null si elle n'existe
+// plus (supprimée entre-temps).
+function synchroniserDemandeExterneParId(id) {
+  return avecVerrouDemande(id, async () => {
+    const d = await db.chargerDemande(id);
+    if (!d) return null;
+    if (d.fournisseur === "local") return d;
+    return synchroniserDemandeExterne(d);
+  });
+}
+
 app.post("/api/signatures/:id/synchroniser", async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
-    const d = await db.chargerDemande(id);
+    const d = await synchroniserDemandeExterneParId(id);
     if (!d) return res.status(404).json({ error: "Demande introuvable" });
-    if (d.fournisseur === "local") return res.json({ ok: true, demande: vueDemande(d) });
-    await synchroniserDemandeExterne(d);
     res.json({ ok: true, demande: vueDemande(d) });
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
@@ -539,9 +583,14 @@ app.post("/webhooks/signature", async (req, res) => {
       idExterne = String(corps.requests.request_id);
     }
     if (!idExterne) return;
+    // La recherche par id externe se fait hors verrou (simple lecture) ; seule
+    // la synchronisation elle-même (relecture + appel fournisseur + écriture)
+    // passe par synchroniserDemandeExterneParId, verrouillée par demande —
+    // deux livraisons du même webhook, ou ce webhook et le bouton manuel,
+    // sérialisent alors sur la même demande au lieu de s'écraser l'un l'autre.
     const demandes = await db.chargerDemandes();
     const d = demandes.find((x) => x.externe && x.externe.id === idExterne);
-    if (d) await synchroniserDemandeExterne(d);
+    if (d) await synchroniserDemandeExterneParId(d.id);
   } catch (e) {
     console.error("[webhook signature]", e.message);
   }
