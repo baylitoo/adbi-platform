@@ -107,7 +107,7 @@ def patch_need(need_id: str):
     need = get_need(need_id)
     if not need:
         return jsonify({"error": "Besoin introuvable"}), 404
-    _check_access(need)
+    check_need_access(need)
     body   = request.get_json(silent=True) or {}
     erreur = _valider_besoin(body)
     if erreur:
