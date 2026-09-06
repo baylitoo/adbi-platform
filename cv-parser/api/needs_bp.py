@@ -1,4 +1,6 @@
 """api/needs_bp.py — CRUD des besoins clients."""
+import math
+
 from flask import Blueprint, jsonify, request
 
 from core.auth import require_auth, get_current_user, check_need_access
@@ -18,6 +20,14 @@ _CHAMPS_TEXTE = ("context", "notes", "raw_text", "client", "sector")
 # Listes relues par core/matcher.py pour chaque CV de la CVthèque : bornées
 # en nombre d'entrées ET en longueur par entrée.
 _CHAMPS_LISTE = ("required_skills", "bonus_skills", "languages")
+# Champs numériques : core/database_pg.py les caste en int/float à l'écriture
+# (insert_need ET update_need) mais un cast raté y remonte comme une erreur
+# SQL brute (500). On valide ici en amont pour renvoyer un 400 propre — et au
+# passage un bool JSON (`true`/`false`) est accepté par int()/float() sans
+# lever d'erreur (int(True) == 1) : on le rejette explicitement pour éviter
+# qu'une valeur "vraie" de ce genre finisse silencieusement stockée comme 1.
+_CHAMPS_ENTIERS = ("min_years",)
+_CHAMPS_DECIMAUX = ("prix_achat", "prix_vente")
 
 
 def _longueur_entree(champ: str, item) -> int:
@@ -60,6 +70,30 @@ def _valider_besoin(body: dict) -> str | None:
         for item in v:
             if _longueur_entree(cle, item) > NEED_ITEM_MAX:
                 return f"Une entrée de '{cle}' dépasse {NEED_ITEM_MAX} caractères."
+
+    for cle in _CHAMPS_ENTIERS:
+        v = body.get(cle)
+        if isinstance(v, bool):
+            return f"Le champ '{cle}' doit être un nombre entier."
+        if v is None:
+            continue
+        try:
+            int(v)
+        except (TypeError, ValueError):
+            return f"Le champ '{cle}' doit être un nombre entier."
+
+    for cle in _CHAMPS_DECIMAUX:
+        v = body.get(cle)
+        if isinstance(v, bool):
+            return f"Le champ '{cle}' doit être un nombre."
+        if v is None:
+            continue
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return f"Le champ '{cle}' doit être un nombre."
+        if not math.isfinite(f):
+            return f"Le champ '{cle}' doit être un nombre fini."
 
     return None
 
