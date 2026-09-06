@@ -388,6 +388,18 @@ def test_llm_chaine():
 @require_auth
 def get_profile():
     current = get_current_user()
+    if not AUTH_ACTIVE:
+        # Mode local (ADBI_AUTH != on) : g.current_user est la pseudo-identité
+        # UTILISATEUR_LOCAL (core/auth.py), qui ne correspond à aucune ligne
+        # de la table users — get_user_by_id() y renverrait toujours None.
+        # On répond directement à partir d'elle plutôt que de faire échouer
+        # cette lecture (voir issue #80).
+        return jsonify({
+            "id":        current["sub"],
+            "email":     current["email"],
+            "full_name": current.get("full_name", ""),
+            "role":      current["role"],
+        })
     u = get_user_by_id(current["sub"])
     if not u:
         return jsonify({"error": "Utilisateur introuvable"}), 404
@@ -403,6 +415,12 @@ def get_profile():
 @require_auth
 def update_profile():
     current = get_current_user()
+    if not AUTH_ACTIVE:
+        # Même raison qu'en GET ci-dessus : "local" n'est l'id d'aucun
+        # utilisateur réel, update_user()/get_user_by_id() planteraient
+        # (KeyError / AttributeError non rattrapées, voir issue #80) au lieu
+        # de modifier quoi que ce soit de sensé.
+        return jsonify({"error": "Profil non modifiable en mode local (authentification désactivée, ADBI_AUTH)."}), 400
     data = request.json or {}
     updates = {}
 
