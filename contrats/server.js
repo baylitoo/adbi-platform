@@ -374,12 +374,61 @@ app.post("/api/document/analyze", async (req, res) => {
   catch (e) { console.error(e); res.status(400).json({ error: e.message }); }
 });
 
+// ── Frein sur les appels amont des connecteurs de signature ─────────────────
+// GET /api/test/:provider (branche yousign/zoho, ci-dessous) et POST
+// /api/signatures/:id/synchroniser (plus bas) sont publics et sans
+// authentification, contrairement à /api/settings (exigerCodeParametres) —
+// même trou que la recherche société (#132/#133), jamais porté ici : chaque
+// appel relayait un test ou un statutEnveloppe/téléchargement RÉEL vers
+// Yousign/Zoho Sign, sans aucune limite. Contrairement au SIREN de #132
+// (paramètre libre), l'identifiant de demande est borné aux demandes
+// réellement créées, mais un balayage de ces identifiants épuiserait quand
+// même le quota/la limite de débit du fournisseur, cassant la signature
+// électronique pour l'usage légitime (création d'enveloppe, webhook de statut).
+//
+// Cache court (5 s — la synchronisation doit rester quasi temps réel pour
+// « est-ce signé ? », contrairement aux 60 s tolérables pour une fiche
+// société) + coalescence des appels concurrents identiques, ET plafond
+// glissant par fournisseur (comme #133) car l'identifiant de demande varie
+// d'un appel à l'autre — un cache seul ne freinerait pas un balayage.
+const CACHE_FOURNISSEUR_MS = 5000;
+const PLAFOND_FOURNISSEUR = 20; // appels amont / fournisseur / fenêtre
+const FENETRE_PLAFOND_MS = 60000;
+const cacheAppelsFournisseur = new Map(); // cle -> { expire, promesse }
+const historiqueAppelsFournisseur = new Map(); // fournisseur -> [horodatages]
+
+function avecCacheEtPlafond(fournisseur, cle, tache) {
+  const maintenant = Date.now();
+  const entree = cacheAppelsFournisseur.get(cle);
+  if (entree && entree.expire > maintenant) return entree.promesse;
+
+  const horodatages = (historiqueAppelsFournisseur.get(fournisseur) || [])
+    .filter((t) => maintenant - t < FENETRE_PLAFOND_MS);
+  if (horodatages.length >= PLAFOND_FOURNISSEUR) {
+    const err = new Error("Trop d'appels vers " + fournisseur + " — réessaie dans quelques instants.");
+    err.status = 429;
+    return Promise.reject(err);
+  }
+  horodatages.push(maintenant);
+  historiqueAppelsFournisseur.set(fournisseur, horodatages);
+
+  const promesse = Promise.resolve().then(tache);
+  cacheAppelsFournisseur.set(cle, { expire: maintenant + CACHE_FOURNISSEUR_MS, promesse });
+  // Un échec ne doit pas rester en cache : le prochain appel doit pouvoir réessayer.
+  promesse.catch(() => cacheAppelsFournisseur.delete(cle));
+  return promesse;
+}
+
 app.get("/api/test/:provider", async (req, res) => {
   try {
-    if (req.params.provider === "yousign") return res.json(await fournisseurs.externe("yousign").verifier());
-    if (req.params.provider === "zoho") return res.json(await fournisseurs.externe("zoho").verifier());
+    if (req.params.provider === "yousign") {
+      return res.json(await avecCacheEtPlafond("yousign", "test:yousign", () => fournisseurs.externe("yousign").verifier()));
+    }
+    if (req.params.provider === "zoho") {
+      return res.json(await avecCacheEtPlafond("zoho", "test:zoho", () => fournisseurs.externe("zoho").verifier()));
+    }
     res.json(await testProvider(req.params.provider));
-  } catch (e) { res.status(500).json({ ok: false, message: e.message }); }
+  } catch (e) { res.status(e.status || 500).json({ ok: false, message: e.message }); }
 });
 
 // Référentiels (clients + valideurs CRA + lieux, managers)
@@ -617,7 +666,11 @@ function synchroniserDemandeExterneParId(id) {
     const d = await db.chargerDemande(id);
     if (!d) return null;
     if (d.fournisseur === "local") return d;
-    return synchroniserDemandeExterne(d);
+    // Cache + plafond partagés avec /api/test/:provider (voir avecCacheEtPlafond
+    // ci-dessus) : sans eux, POST /api/signatures/:id/synchroniser — public,
+    // sans authentification — relayait un statutEnveloppe/téléchargement RÉEL
+    // vers Yousign/Zoho à chaque appel, y compris un même id spammé ou balayé.
+    return avecCacheEtPlafond(d.fournisseur, "sync:" + d.fournisseur + ":" + id, () => synchroniserDemandeExterne(d));
   });
 }
 
@@ -628,7 +681,7 @@ app.post("/api/signatures/:id/synchroniser", async (req, res) => {
     const d = await synchroniserDemandeExterneParId(id);
     if (!d) return res.status(404).json({ error: "Demande introuvable" });
     res.json({ ok: true, demande: vueDemande(d) });
-  } catch (e) { res.status(502).json({ error: e.message }); }
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
 });
 
 // ── File des webhooks dont le TRAITEMENT a échoué ────────────────────────────
