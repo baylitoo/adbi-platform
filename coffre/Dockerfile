@@ -7,13 +7,21 @@
 FROM node:22-bookworm-slim
 
 WORKDIR /app
-COPY . .
+COPY --chown=node:node . .
 
 ENV NODE_ENV=production
 # Sans ca, server.js lie 127.0.0.1 (defaut poste de dev) : injoignable via le
 # port publie du conteneur malgre "-p 4300:4300" (voir server.js).
 ENV ADBI_HOTE=0.0.0.0
 EXPOSE 4300
+
+# Ne jamais tourner en root dans le conteneur (issue #136) : node:22-bookworm-slim
+# fournit deja l'utilisateur non-privilegie "node" (uid 1000). /app/data est
+# recree ici pour le cas sans bind-mount (build/test local) ; quand le volume
+# hote existe deja (docker-compose.yml), chown -R ./coffre/data vers 1000:1000
+# avant le premier demarrage sur un hote deja provisionne en root.
+RUN mkdir -p /app/data && chown -R node:node /app
+USER node
 
 # data/cle-locale.bin est monté en volume : SA PERTE REND IRRÉCUPÉRABLES tous
 # les documents "protégés" émis (voir README.md) — à sauvegarder comme les
