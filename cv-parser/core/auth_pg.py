@@ -121,7 +121,8 @@ def update_user(user_id: str, updates: dict) -> dict:
         if k in _ALLOWED_UPDATE_FIELDS:
             fields.append(f"{k} = %s")
             vals.append(v)
-    if updates.get("password"):
+    changement_mdp = bool(updates.get("password"))
+    if changement_mdp:
         fields.append("password_hash = %s")
         vals.append(bcrypt.hashpw(updates["password"].encode(), bcrypt.gensalt()).decode())
 
@@ -129,25 +130,47 @@ def update_user(user_id: str, updates: dict) -> dict:
         vals.append(user_id)
         with get_conn() as con:
             con.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", vals)
-
-    # Un mot de passe changé (self-service ou remise à zéro par un superuser)
-    # doit invalider les sessions existantes : sinon un refresh token déjà
-    # entre de mauvaises mains (cookie volé, poste partagé) continue de
-    # fonctionner jusqu'à ses 7 jours d'expiration, alors même que l'action
-    # censée « couper l'accès » vient d'avoir lieu. Voir issue du changement
-    # de mot de passe qui ne révoque pas les refresh tokens.
-    if updates.get("password"):
-        revoke_all_user_tokens(user_id)
+            # Un mot de passe changé (self-service ou remise à zéro par un
+            # superuser) doit invalider les sessions existantes : sinon un
+            # refresh token déjà entre de mauvaises mains (cookie volé, poste
+            # partagé) continue de fonctionner jusqu'à ses 7 jours
+            # d'expiration, alors même que l'action censée « couper l'accès »
+            # vient d'avoir lieu. Fait sur LA MÊME connexion (donc la même
+            # transaction) que l'UPDATE du mot de passe ci-dessus : get_conn()
+            # ouvre une connexion par appel (voir core/pg.py), donc deux `with
+            # get_conn()` séparés seraient deux transactions indépendantes —
+            # un échec (connexion, panne passagère) entre les deux laisserait
+            # le mot de passe changé mais les anciens refresh tokens toujours
+            # valides. Ici : les deux réussissent ou aucun des deux (rollback
+            # psycopg si `con.execute` lève avant la sortie du `with`).
+            if changement_mdp:
+                _revoquer_tokens_sur(con, user_id)
 
     return _public(get_user_by_id(user_id))
+
+
+def _revoquer_tokens_sur(con, user_id: str) -> None:
+    """Révoque tous les refresh tokens d'un utilisateur SUR LA CONNEXION
+    fournie — pour que ce soit dans la même transaction qu'une autre écriture
+    (changement de mot de passe, suppression du compte). Voir revoke_all_user_tokens
+    pour l'appel autonome (sa propre connexion/transaction)."""
+    con.execute(
+        "UPDATE refresh_tokens SET revoked = true WHERE user_id = %s", (user_id,)
+    )
 
 
 def delete_user(user_id: str) -> None:
     if not get_user_by_id(user_id):
         raise KeyError("Utilisateur introuvable")
+    # Révocation des tokens ET suppression du compte sur LA MÊME connexion —
+    # voir le commentaire équivalent dans update_user : sans ça, un compte
+    # supprimé mais dont l'échec de révocation (panne passagère) laisserait
+    # ses refresh tokens valides jusqu'à 7 jours, y compris pour un user_id
+    # qui n'existe plus (pas de FOREIGN KEY refresh_tokens -> users, voir
+    # core/schema.sql).
     with get_conn() as con:
+        _revoquer_tokens_sur(con, user_id)
         con.execute("DELETE FROM users WHERE id = %s", (user_id,))
-    revoke_all_user_tokens(user_id)
 
 
 def verify_password(password: str, pw_hash: str) -> bool:
@@ -194,10 +217,11 @@ def revoke_refresh_token(jti: str) -> None:
 
 
 def revoke_all_user_tokens(user_id: str) -> None:
+    """Appel autonome (sa propre connexion/transaction). Pour révoquer dans la
+    MÊME transaction qu'une autre écriture (changement de mot de passe,
+    suppression du compte), voir _revoquer_tokens_sur."""
     with get_conn() as con:
-        con.execute(
-            "UPDATE refresh_tokens SET revoked = true WHERE user_id = %s", (user_id,)
-        )
+        _revoquer_tokens_sur(con, user_id)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
