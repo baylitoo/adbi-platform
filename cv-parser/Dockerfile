@@ -32,6 +32,22 @@ ENV PYTHONUNBUFFERED=1
 ENV ADBI_HOTE=0.0.0.0
 EXPOSE 5000
 
+# Ne jamais tourner en root dans le conteneur (issue #136) : contrairement aux
+# images node:*, python:3.14-slim n'a pas d'utilisateur applicatif tout prêt —
+# on le crée ici. -m crée aussi son $HOME (/home/adbi) : Docling/HuggingFace y
+# téléchargent leurs modèles au runtime (voir en-tête de ce fichier) sous
+# $HOME/.cache — sans $HOME accessible en écriture, le thread de préchauffage
+# (_init_converter, lancé en tâche de fond à l'import d'app.py) échoue
+# silencieusement et chaque analyse de CV casse. /app/data, /app/uploads et
+# /app/cv_output sont recrés ici pour le cas sans bind-mount (build/test
+# local) ; quand les volumes hôte existent déjà (docker-compose.yml), chown -R
+# ces dossiers vers 1000:1000 avant le premier démarrage sur un hôte déjà
+# provisionné en root.
+RUN useradd -r -u 1000 -m -d /home/adbi adbi \
+    && mkdir -p /app/data /app/uploads /app/cv_output \
+    && chown -R adbi:adbi /app /home/adbi
+USER adbi
+
 # /api/sante fait un vrai SELECT 1 contre PostgreSQL (voir core/pg.py::ping)
 # — /api/status ne vérifie que la chaîne de passerelles LLM et restait vert
 # même base injoignable (issue #88).
