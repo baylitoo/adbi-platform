@@ -182,17 +182,70 @@ async function remove(id) {
   await pilote().query("DELETE FROM cvs WHERE id = $1", [id]);
 }
 
-/** Recherche plein texte simple sur le contenu structuré (même comportement que lib/db.js). */
+/**
+ * Recherche plein texte simple sur le contenu structuré (même comportement
+ * que lib/db.js) : substring arbitraire sur tout le cv_master (nom, techno,
+ * client — voir placeholder du champ de recherche cote client dans
+ * public/index.html), pas seulement nom/titre.
+ *
+ * Le LIKE '%...%' ne peut pas utiliser un index B-tree classique. Sans
+ * index dedie, cette requete castait le JSONB entier de chaque fiche en
+ * texte a chaque appel — scan sequentiel complet, ~2-3 s sur 2000 fiches
+ * quel que soit le terme (voir issue #106), appele a CHAQUE frappe cote
+ * client (debounce 250 ms, public/app.js#chargerHistorique).
+ *
+ * lib/schema.sql cree un index GIN trigram (pg_trgm) sur LOWER(master::text)
+ * pour cette requete precise : l'expression ci-dessous doit rester
+ * IDENTIQUE a celle de l'index (LOWER(master::text)) pour que le
+ * planificateur Postgres puisse s'en servir — ne pas "simplifier" en ILIKE
+ * ou changer la casse sans mettre a jour schema.sql en meme temps.
+ */
 async function search(q) {
   const needle = String(q || "").trim();
   if (!needle) return list();
-  const { rows } = await pilote().query(
-    `SELECT ${RESUME_SELECT} FROM cvs
-     WHERE LOWER(master::text) LIKE '%' || LOWER($1) || '%'
-     ORDER BY maj_le DESC`,
-    [needle]
-  );
-  return rows;
+  // Sous la barre des 3 caracteres, le pattern LIKE '%x%' ou '%xy%' ne
+  // contient aucun trigramme complet : l'index GIN ci-dessus (base sur des
+  // trigrammes de 3 caracteres) ne peut pas le discriminer et Postgres doit
+  // rechecker la quasi-totalite des lignes candidates malgre l'index (voir
+  // issue #106, mesure : ~2.9 s a 2000 fiches, identique a avant l'index).
+  // Une lettre ou paire de lettres courante dans du texte francais (nom,
+  // titre, mission) matche de toute facon une grande partie de la CVtheque
+  // meme sans ce garde-fou — seules les combinaisons rares changent de
+  // resultat ici (liste complete au lieu du sous-ensemble filtre), et le
+  // trigram ne les aurait de toute facon pas rendues rapides. Changement de
+  // semantique assume : voir le corps de la PR (issue #106) pour la
+  // discussion et comment le retirer si ce compromis n'est pas souhaite.
+  if (needle.length < 3) return list();
+  // Le planificateur Postgres estime le cout de LOWER(master::text) LIKE ...
+  // comme un operateur quasi gratuit (cpu_operator_cost par defaut), sans
+  // tenir compte du cout reel d'un detoast + cast + comparaison sur un JSONB
+  // de plusieurs dizaines de Ko par ligne (voir issue #106). Meme avec
+  // l'index GIN trigram cree par lib/schema.sql, il continue donc de choisir
+  // un Seq Scan par defaut — mesure (EXPLAIN ANALYZE, 2000 fiches) : Seq
+  // Scan ~2.5-3.1 s contre Bitmap Heap Scan (via l'index) ~0.4 s pour un
+  // terme selectif et ~1 ms pour un terme absent. PostgreSQL n'offrant pas
+  // de hint de requete, la facon usuelle de corriger une sous-estimation de
+  // cout connue et locale a une requete est de desactiver le plan fautif —
+  // ici uniquement pour la duree de cette transaction (SET LOCAL), donc sans
+  // effet sur les autres requetes qui partagent le pool de connexions.
+  const client = await pilote().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL enable_seqscan = off");
+    const { rows } = await client.query(
+      `SELECT ${RESUME_SELECT} FROM cvs
+       WHERE LOWER(master::text) LIKE '%' || LOWER($1) || '%'
+       ORDER BY maj_le DESC`,
+      [needle]
+    );
+    await client.query("COMMIT");
+    return rows;
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 module.exports = { init, verifierConnexion, save, get, list, remove, search, findByHash };
