@@ -36,6 +36,18 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 DEFAULT_SUPERUSER_EMAIL    = os.environ.get("ADBI_SUPERUSER_EMAIL") or "admin@adbi.fr"
 DEFAULT_SUPERUSER_PASSWORD = os.environ.get("ADBI_SUPERUSER_PASSWORD") or "Adbi2025!"
 
+# ── Anti brute-force (POST /api/auth/login) ──────────────────────────────────
+#
+# Jusqu'ici, aucune limite : ni compteur d'échecs, ni délai, ni verrouillage.
+# bcrypt ralentit chaque vérification (~100 ms) mais ça ne freine pas un
+# attaquant qui envoie ses tentatives en parallèle (jusqu'à
+# ADBI_GUNICORN_THREADS=4 à la fois, voir gunicorn.conf.py) — un mot de passe
+# faible, ou le mot de passe par défaut ci-dessus si ADBI_SUPERUSER_PASSWORD
+# n'a jamais été posée, restait devinable en continu, sans jamais déclencher
+# le moindre frein côté serveur. Voir api/auth_bp.py::_trop_de_tentatives.
+LOGIN_MAX_ECHECS = int(os.environ.get("ADBI_LOGIN_MAX_ECHECS", "10"))
+LOGIN_FENETRE_S  = int(os.environ.get("ADBI_LOGIN_FENETRE_S", "300"))  # 5 min
+
 # ── LLM ───────────────────────────────────────────────────────────────────────
 #
 # OpenAI et OpenRouter ont été retirés le 2026-08-13 : leurs clés vivaient en
