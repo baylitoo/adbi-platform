@@ -132,6 +132,13 @@ _ALLOWED_UPDATE_FIELDS = {
 }
 
 _JSONB_FIELDS = {"required_skills", "bonus_skills", "languages"}
+# Colonnes numériques (INTEGER / REAL) : sans ce cast, une valeur string/bool/
+# liste envoyée par le client part telle quelle dans le paramètre SQL et
+# Postgres la rejette avec une erreur de type non gérée (500 brut) au lieu
+# d'un 400 propre — contrairement à insert_need() qui caste déjà ces mêmes
+# champs à l'écriture.
+_NUMERIC_INT_FIELDS = {"min_years"}
+_NUMERIC_FLOAT_FIELDS = {"prix_achat", "prix_vente"}
 
 
 def update_need(need_id: str, updates: dict) -> dict | None:
@@ -142,8 +149,14 @@ def update_need(need_id: str, updates: dict) -> dict | None:
     for k, v in updates.items():
         if k not in _ALLOWED_UPDATE_FIELDS:
             continue
+        if k in _JSONB_FIELDS:
+            v = Jsonb(v)
+        elif k in _NUMERIC_INT_FIELDS:
+            v = int(v or 0)
+        elif k in _NUMERIC_FLOAT_FIELDS:
+            v = float(v or 0)
         fields.append(f"{k} = %s")
-        vals.append(Jsonb(v) if k in _JSONB_FIELDS else v)
+        vals.append(v)
     if not fields:
         return existing
     vals.extend([_now(), need_id])
