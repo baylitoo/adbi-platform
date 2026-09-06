@@ -2129,6 +2129,21 @@ def _plafonner_cv(champs: dict) -> str | None:
 @app.route("/api/cvs", methods=["POST"])
 @require_auth
 def store_cv():
+    # POST est la route de CRÉATION (import) d'une fiche, pas une voie de
+    # modification : @require_auth (pas @require_superuser) l'ouvre à tout
+    # utilisateur authentifié, et la CVthèque n'a pas de notion de
+    # propriétaire par fiche. Sans contrôle sur l'`id` fourni par le client,
+    # cvstore_pg.save_cv (upsert inconditionnel) permettait à n'importe qui
+    # de remplacer intégralement une fiche EXISTANTE en devinant/réutilisant
+    # son id (obtenu p. ex. via GET /api/cvs, lui aussi non restreint) —
+    # aucune confirmation, aucun contrôle de version, aucune trace de
+    # l'écrasement (issue #100 ; différent de #82, qui portait sur les
+    # champs acceptés par PATCH, pas sur l'écrasement d'une fiche par POST).
+    # Aucun appelant réel de ce dépôt ne dépend de pouvoir écraser une fiche
+    # existante via POST : la création passe par /api/upload (id généré
+    # serveur, cv-parser/app.py) et la modification d'une fiche existante par
+    # PATCH /api/cvs/<id> (liste blanche de champs, issue #82). Un id fourni
+    # qui existe déjà est donc refusé plutôt que silencieusement remplacé.
     data = request.json
     if not data:
         return jsonify({"error": "Aucune donnée"}), 400
@@ -2137,7 +2152,13 @@ def store_cv():
         return jsonify({"error": erreur}), 400
     cid = data.get("id") or str(uuid.uuid4())
     data["stored_at"] = datetime.now().isoformat()
-    cvstore_pg.save_cv(cid, data)
+    # Atomique côté base (INSERT ... ON CONFLICT DO NOTHING) : pas de fenêtre
+    # de course entre une lecture d'existence et l'écriture.
+    if not cvstore_pg.create_cv(cid, data):
+        return jsonify({
+            "error": "Une fiche CV avec cet id existe déjà. "
+                     "Utilisez PATCH /api/cvs/<id> pour la modifier.",
+        }), 409
     return jsonify({"success": True, "id": cid})
 
 
