@@ -49,6 +49,21 @@ app.use(express.json({
 }));
 app.use(express.static(path.join(__dirname, "public")));
 
+// ---------- Santé ----------
+// Interrogée par le HEALTHCHECK Docker (voir Dockerfile) — auparavant sur
+// "/", qui ne fait que servir index.html en statique et ne dit donc rien de
+// la base. Ici, un SELECT 1 réel et borné dans le temps (db.pg.js) : si
+// PostgreSQL est injoignable, on répond 503 pour que Docker/Coolify cesse
+// de router du trafic vers un conteneur qui répondrait quand même en HTTP.
+app.get("/api/sante", async (req, res) => {
+  try {
+    await db.verifierConnexion();
+    res.json({ etat: "pret", base: "ok" });
+  } catch (e) {
+    res.status(503).json({ etat: "indisponible", base: "ko", erreur: e.message });
+  }
+});
+
 // ---------- Code d'accès aux Paramètres ----------
 // L'écran Paramètres (clés API, modèles de contrat, corbeille) est protégé par
 // un code, stocké dans data/code-parametres.txt (modifiable là, sans toucher au

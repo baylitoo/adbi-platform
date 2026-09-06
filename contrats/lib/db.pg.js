@@ -33,6 +33,15 @@ function pilote() {
       throw new Error("DATABASE_URL manquante — requise pour lib/db.pg.js");
     }
     pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    // Sans ce filet, une erreur sur un client IDLE du pool (connexion
+    // coupee pendant que rien ne l'utilise — Postgres injoignable puis
+    // relance pendant que le pool garde des clients au repos) remonte comme
+    // un evenement 'error' non gere sur le pool et fait planter tout le
+    // process Node (voir doc node-postgres, section Pool). Le pool retire
+    // lui-meme le client fautif ; logger suffit.
+    pool.on("error", (err) => {
+      console.error("[db.pg] erreur sur une connexion inactive du pool :", err.message);
+    });
   }
   return pool;
 }
@@ -46,6 +55,67 @@ async function init() {
   }
   await pretInit;
   return pilote();
+}
+
+// Timeout applique a la connexion et a la requete de verification — evite
+// qu'un Postgres joignable au TCP mais qui ne repond jamais (ex. conteneur
+// en pause) ne fasse pendre le HEALTHCHECK Docker au-dela de son propre
+// --timeout (voir Dockerfile).
+const TIMEOUT_VERIF_MS = 3000;
+
+function avecTimeout(promesse, ms, etape) {
+  return new Promise((resolve, reject) => {
+    const minuteur = setTimeout(
+      () => reject(new Error(`Postgres ne repond pas (timeout ${etape})`)),
+      ms
+    );
+    promesse.then(
+      (v) => { clearTimeout(minuteur); resolve(v); },
+      (e) => { clearTimeout(minuteur); reject(e); }
+    );
+  });
+}
+
+/**
+ * Verifie que PostgreSQL repond reellement — pas seulement que le process
+ * Node est vivant. Utilisee par la route /api/sante que le HEALTHCHECK
+ * Docker interroge (voir server.js et Dockerfile) : sans elle, un Postgres
+ * injoignable (partition reseau, conteneur OOM-killed puis en redemarrage)
+ * laissait le HEALTHCHECK toujours vert tant que le process Express restait
+ * vivant, alors que chaque requete touchant la base echouait deja.
+ *
+ * Client emprunte au pool applicatif (pas de pool separe) mais toujours
+ * rendu ou detruit avant de retourner — jamais laisse en circulation.
+ * Sur echec de la requete, le client est detruit via release(err) plutot
+ * que rendu au pool (une requete encore en vol ne doit jamais y revenir).
+ * Sur timeout de la CONNEXION elle-meme, la promesse de connexion sous-
+ * jacente reste vivante (rien ne peut interrompre pg au milieu d'un
+ * connect()) : si elle finit par aboutir apres coup (Postgres qui revient
+ * pendant la fenetre de timeout), le client obtenu est immediatement
+ * detruit au lieu de rester emprunte au pool pour toujours — sinon, une
+ * panne Postgres assez longue epuise `pool.max` clients un par cycle de
+ * HEALTHCHECK (30s) et /api/sante reste indisponible meme apres le retour
+ * de Postgres.
+ */
+async function verifierConnexion() {
+  const connexion = pilote().connect();
+  let client;
+  try {
+    client = await avecTimeout(connexion, TIMEOUT_VERIF_MS, "connexion");
+  } catch (e) {
+    connexion.then(
+      (c) => c.release(new Error("client arrive apres le timeout de connexion")),
+      () => {}
+    );
+    throw e;
+  }
+  try {
+    await avecTimeout(client.query("SELECT 1"), TIMEOUT_VERIF_MS, "requete");
+  } catch (e) {
+    client.release(e);
+    throw e;
+  }
+  client.release();
 }
 
 // Parse une valeur si elle est encore une chaine JSON (piege du double-encodage
@@ -330,6 +400,7 @@ async function reinitialiserTemplatesPerso(type) {
 
 module.exports = {
   init,
+  verifierConnexion,
   // contrats
   sauverContrat, mettreAJourContrat, contratExiste, listerContrats, obtenirContrat,
   marquerSigne, retirerSigne, definirStatutContrat, importerContrat, supprimerContrats,

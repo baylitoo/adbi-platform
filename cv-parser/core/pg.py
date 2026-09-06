@@ -49,3 +49,32 @@ def init_schema() -> None:
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
     with get_conn() as con:
         con.execute(schema)
+
+
+# Timeout court (connexion ET requête) — utilisé par /api/sante, interrogée
+# par le HEALTHCHECK Docker toutes les 30s (voir Dockerfile) : ne doit jamais
+# pendre au-delà du --timeout du HEALTHCHECK si Postgres est joignable au TCP
+# mais ne répond jamais (ex. conteneur en pause).
+PING_TIMEOUT_S = 3
+
+
+def ping() -> None:
+    """Vérifie que PostgreSQL répond réellement — pas seulement que le
+    process gunicorn est vivant.
+
+    Connexion dédiée et de courte durée (pas de pool ici, voir get_conn) :
+    connect_timeout de libpq borne l'établissement TCP et l'authentification,
+    mais pas une requête envoyée sur une connexion déjà établie (cas d'un
+    conteneur Postgres "gelé" — ex. `docker pause` — qui accepte le TCP sans
+    jamais répondre au protocole) : statement_timeout côté session borne donc
+    aussi le SELECT 1 lui-même. Une base en pause ou injoignable échoue ainsi
+    proprement au bout de PING_TIMEOUT_S plutôt que de pendre indéfiniment.
+    Lève une exception si la base ne répond pas ; ne retourne rien sinon.
+    """
+    with psycopg.connect(
+        database_url(),
+        connect_timeout=PING_TIMEOUT_S,
+        options=f"-c statement_timeout={PING_TIMEOUT_S * 1000}",
+        row_factory=dict_row,
+    ) as con:
+        con.execute("SELECT 1")
