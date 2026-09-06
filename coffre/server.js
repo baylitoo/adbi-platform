@@ -417,6 +417,30 @@ function nettoyerNom(nom) {
   return base.replace(/[<>:"|?*\x00-\x1f]/g, "_").trim() || "document";
 }
 
+/**
+ * Évite qu'un chemin déjà présent dans `entrees` n'écrase silencieusement le
+ * précédent (deux fichiers différents ajoutés sous le même nom, par exemple
+ * via deux sélections successives depuis des dossiers distincts) : ajoute un
+ * suffixe " (2)", " (3)", … avant l'extension, à la manière d'un explorateur
+ * de fichiers, jusqu'à trouver un chemin libre.
+ */
+function nommerSansCollision(entrees, chemin) {
+  if (!entrees.has(chemin)) return chemin;
+  const pos = chemin.lastIndexOf("/");
+  const dossier = pos >= 0 ? chemin.slice(0, pos + 1) : "";
+  const feuille = pos >= 0 ? chemin.slice(pos + 1) : chemin;
+  const pointExt = feuille.lastIndexOf(".");
+  const base = pointExt > 0 ? feuille.slice(0, pointExt) : feuille;
+  const ext = pointExt > 0 ? feuille.slice(pointExt) : "";
+  let n = 2;
+  let candidat;
+  do {
+    candidat = dossier + base + " (" + n + ")" + ext;
+    n++;
+  } while (entrees.has(candidat));
+  return candidat;
+}
+
 function repondreJson(rep, code, donnees) {
   const corps = JSON.stringify(donnees);
   rep.writeHead(code, {
@@ -669,10 +693,11 @@ const serveur = http.createServer(async (req, rep) => {
       let position = 4 + tailleManifeste;
       for (const f of manifeste.fichiers || []) {
         const taille = Number(f.taille);
-        const cheminEntree = String(f.chemin || "fichier")
+        const nettoye = String(f.chemin || "")
           .replace(/\\/g, "/")
           .replace(/^\/+/, "")
           .replace(/[.][.]/g, "_");
+        const cheminEntree = nommerSansCollision(entrees, nettoye || "fichier");
         if (!Number.isFinite(taille) || taille < 0 || position + taille > corps.length) {
           throw new ErreurCoffre(400, "Manifeste incohérent.");
         }
