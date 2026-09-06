@@ -34,15 +34,46 @@ function load() {
         managers: Array.isArray(d.managers) ? d.managers : [],
         signataires: Array.isArray(d.signataires) ? d.signataires : [],
         soustraitants: Array.isArray(d.soustraitants) ? d.soustraitants : [],
+        // Révision du fichier : voir save() plus bas — sert au contrôle de
+        // concurrence optimiste (issue #84), pas de sens fonctionnel sinon.
+        _rev: Number.isInteger(d._rev) ? d._rev : 0,
       };
     }
   } catch (e) { /* fichier corrompu : on repart du défaut */ }
   // Première utilisation : on sème le fichier avec les valeurs par défaut.
-  try { fs.writeFileSync(FILE, JSON.stringify(DEFAULT, null, 2)); } catch (e) {}
-  return JSON.parse(JSON.stringify(DEFAULT));
+  const seed = { ...DEFAULT, _rev: 0 };
+  try { ecrireAtomique(JSON.stringify(seed, null, 2)); } catch (e) {}
+  return JSON.parse(JSON.stringify(seed));
+}
+
+// Écriture atomique (fichier temporaire + rename) : évite qu'un crash en
+// plein `writeFileSync` laisse `referentiels.json` tronqué — auquel cas
+// load() le jugerait corrompu et re-sèmerait le défaut, perdant tout.
+function ecrireAtomique(contenu) {
+  const tmp = FILE + ".tmp" + process.pid;
+  fs.writeFileSync(tmp, contenu);
+  fs.renameSync(tmp, FILE);
+}
+
+// Conflit de version : la page qui poste tenait un instantané plus vieux que
+// le fichier courant (quelqu'un d'autre a sauvegardé entre-temps). On rejette
+// plutôt que d'écraser silencieusement son ajout/suppression — voir issue #84.
+class ConflitReferentiel extends Error {
+  constructor(actuel) {
+    super("Le référentiel a été modifié entre-temps par quelqu'un d'autre — recharge et réessaie.");
+    this.code = "REF_CONFLICT";
+    this.actuel = actuel;
+  }
 }
 
 function save(data) {
+  // Relit toujours depuis le disque (pas de cache mémoire) : la révision de
+  // référence pour la comparaison est celle réellement sur disque à l'instant
+  // de l'écriture, pas une copie potentiellement obsolète.
+  const courant = load();
+  const revEnvoyee = Number.isInteger(data && data._rev) ? data._rev : -1;
+  if (revEnvoyee !== courant._rev) throw new ConflitReferentiel(courant);
+
   const clean = {
     clients: (Array.isArray(data && data.clients) ? data.clients : []).map((c) => ({
       nom: String(c.nom || "").trim(),
@@ -72,9 +103,10 @@ function save(data) {
       qualite: String(e.qualite || "").trim(),
       email: String(e.email || "").trim(),
     })).filter((e) => e.nom),
+    _rev: courant._rev + 1,
   };
-  fs.writeFileSync(FILE, JSON.stringify(clean, null, 2));
+  ecrireAtomique(JSON.stringify(clean, null, 2));
   return clean;
 }
 
-module.exports = { load, save };
+module.exports = { load, save, ConflitReferentiel };
