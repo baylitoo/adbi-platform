@@ -382,11 +382,23 @@ app.post("/api/referentiels", (req, res) => {
 });
 
 // ---------- Fichiers stockés par contrat ----------
+// path.basename NE bloque PAS ".." (il ne fait que retirer les séparateurs :
+// path.basename("..") === "..") — un segment ":base"/":nom" valant ".." passait
+// donc intact à path.join et en ressortait hors de GENERES_DIR (issue #116).
+// On exige ici un segment "plat" (ni "." ni ".." ni séparateur) ET on vérifie
+// en plus que le chemin résolu reste sous GENERES_DIR, comme le fait déjà
+// factory/server.js pour ses fichiers statiques.
+function segmentFichier(s) {
+  const v = String(s || "");
+  return v && v !== "." && v !== ".." && v === path.basename(v) ? v : "";
+}
+
 app.get("/api/fichiers/:base", (req, res) => {
   try {
-    const base = path.basename(req.params.base);
+    const base = segmentFichier(req.params.base);
+    if (!base) return res.status(400).json({ error: "Identifiant de contrat invalide." });
     const d = path.join(GENERES_DIR, base);
-    if (!fs.existsSync(d)) return res.json([]);
+    if (!d.startsWith(GENERES_DIR + path.sep) || !fs.existsSync(d)) return res.json([]);
     const rows = fs.readdirSync(d).map((nom) => {
       const st = fs.statSync(path.join(d, nom));
       return { nom, taille: st.size, modifieLe: st.mtime.toISOString() };
@@ -396,9 +408,13 @@ app.get("/api/fichiers/:base", (req, res) => {
 });
 
 app.get("/api/fichiers/:base/:nom", (req, res) => {
-  // path.basename bloque toute traversée (../) ; on ne sert que le dossier du contrat.
-  const chemin = path.join(GENERES_DIR, path.basename(req.params.base), path.basename(req.params.nom));
-  if (!fs.existsSync(chemin)) return res.status(404).json({ error: "Fichier introuvable" });
+  const base = segmentFichier(req.params.base);
+  const nom = segmentFichier(req.params.nom);
+  if (!base || !nom) return res.status(404).json({ error: "Fichier introuvable" });
+  const chemin = path.join(GENERES_DIR, base, nom);
+  if (!chemin.startsWith(GENERES_DIR + path.sep) || !fs.existsSync(chemin)) {
+    return res.status(404).json({ error: "Fichier introuvable" });
+  }
   res.download(chemin);
 });
 
