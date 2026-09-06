@@ -134,6 +134,46 @@ app.post("/api/import", async (req, res) => {
 
 // --------------------------------------------------------------- CRUD -----
 
+// Plafonds sur la TAILLE d'un cv_master ecrit ou transmis directement (POST
+// /api/cvs, /api/onepager, /api/export/pptx). Une vraie fiche extraite tient
+// en quelques dizaines d'experiences et une poignee de realisations chacune ;
+// ces plafonds sont la pour un corps de requete forge, pas pour l'usage
+// normal — meme famille que MATCHING_OFFRE_MAX / LIVRET_MAX_PROFILS ci-dessous.
+//
+// Sans eux, POST /api/cvs n'exigeait que `master.identity` : un cv_master
+// force avec des dizaines de milliers d'"experiences"/"highlights" (sous le
+// plafond global du corps JSON, 25 Mo) passait tel quel et etait PERSISTE en
+// base (JSONB, aucune contrainte de taille — lib/db.pg.js). Le degat ne
+// s'arretait pas a cette requete : lib/matching.js#profil() retraite
+// l'integralite de `experiences` de CHAQUE fiche a CHAQUE appel de
+// POST /api/matching (son cache est un WeakMap indexe sur l'objet, jamais
+// reutilise puisque chaque requete relit une copie fraiche depuis la base).
+// Une seule fiche empoisonnee degradait alors TOUTE recherche future, pour
+// tout utilisateur, indefiniment. Mesure : une fiche a 12 000 experiences
+// (20,8 Mo) fait passer un /api/matching normal de quelques dizaines de ms a
+// plus de 20 secondes. Le meme cv_master, transmis sans passer par la base a
+// /api/onepager ou /api/export/pptx, bloque aussi lib/onepager.js#build()
+// (scoreAll() traite tout `experiences` avant le troncage `.slice()`). Voir
+// issue #96 — meme famille que #68/#70, mais sur l'ecriture, pas la requete
+// d'export.
+const CV_MAX_EXPERIENCES = Number(process.env.CV_MAX_EXPERIENCES) || 150;
+const CV_MAX_HIGHLIGHTS_PAR_EXPERIENCE = Number(process.env.CV_MAX_HIGHLIGHTS_PAR_EXPERIENCE) || 60;
+
+/** Renvoie un message d'erreur si le cv_master depasse les plafonds, sinon null. */
+function erreurTailleCvMaster(master) {
+  const experiences = Array.isArray(master && master.experiences) ? master.experiences : [];
+  if (experiences.length > CV_MAX_EXPERIENCES) {
+    return `Trop d'expériences dans la fiche (${experiences.length}, max ${CV_MAX_EXPERIENCES}).`;
+  }
+  for (const e of experiences) {
+    const n = Array.isArray(e && e.highlights) ? e.highlights.length : 0;
+    if (n > CV_MAX_HIGHLIGHTS_PAR_EXPERIENCE) {
+      return `Trop de réalisations sur une mission (${n}, max ${CV_MAX_HIGHLIGHTS_PAR_EXPERIENCE}).`;
+    }
+  }
+  return null;
+}
+
 app.get("/api/cvs", async (req, res) => {
   try {
     res.json(await db.search(req.query.q));
@@ -158,6 +198,8 @@ app.post("/api/cvs", async (req, res) => {
   try {
     const { id, hash, master, options } = req.body || {};
     if (!master || !master.identity) return res.status(400).json({ error: "Données invalides." });
+    const erreur = erreurTailleCvMaster(master);
+    if (erreur) return res.status(400).json({ error: erreur });
     res.json(await db.save({ id: id || crypto.randomUUID(), hash, master, options }));
   } catch (e) {
     console.error("[save]", e);
@@ -182,6 +224,8 @@ app.post("/api/onepager", (req, res) => {
   try {
     const { master, options } = req.body || {};
     if (!master) return res.status(400).json({ error: "cv_master manquant." });
+    const erreur = erreurTailleCvMaster(master);
+    if (erreur) return res.status(400).json({ error: erreur });
     res.json(build(master, options || {}));
   } catch (e) {
     console.error("[onepager]", e);
@@ -192,6 +236,10 @@ app.post("/api/onepager", (req, res) => {
 app.post("/api/export/pptx", async (req, res) => {
   try {
     const { master, options, op: opAffiche } = req.body || {};
+    if (master) {
+      const erreur = erreurTailleCvMaster(master);
+      if (erreur) return res.status(400).json({ error: erreur });
+    }
     // L'apercu transmet le dossier tel qu'il l'affiche : c'est lui qui fait foi.
     // Le recalcul serveur ne sert que de repli (appel direct a l'API).
     const op = opAffiche && Array.isArray(opAffiche.experiences)
