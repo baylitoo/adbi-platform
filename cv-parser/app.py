@@ -2111,16 +2111,49 @@ def cv_detail(cv_id):
     return render_template("cv_detail.html", cv=cv, linked_cvs=linked_cvs)
 
 
+# Champs que l'écran d'édition (cv_detail.html::collectData) envoie réellement.
+# Tout le reste (empreinte, llm_enriched, id, filename...) est un champ géré par
+# le serveur : le laisser passer permettait à un PATCH quelconque d'écraser ces
+# champs internes avec une valeur arbitraire — notamment `empreinte`, utilisée
+# telle quelle par le cache de déduplication à l'upload (une fiche fabriquée
+# aurait alors été servie pour un futur dépôt du document dont on connaît le
+# SHA-256), ou de changer le TYPE d'un champ (ex. "experience" en chaîne au
+# lieu d'une liste), ce qui fait planter sans filet les routes qui itèrent
+# dessus (GET /cv/<id>/adbi, /api/cvs/<id>/dossier.<format>).
+CHAMPS_MODIFIABLES_CV = {
+    "name", "title", "years_experience", "contact",
+    "experience", "education", "skills", "languages",
+    "interests", "certifications",
+}
+# Champs dont la forme attendue est une liste d'objets : une chaîne ou un
+# nombre glissé ici casserait tout code qui fait `for x in champ: x.get(...)`.
+LISTES_DE_DICTS_CV = {"experience", "education", "skills", "languages", "certifications"}
+
+
 @app.route("/api/cvs/<cv_id>", methods=["PATCH"])
 @require_auth
 def update_cv(cv_id):
-    updates = request.json or {}
-    # Always store years_experience as int
+    brut = request.json or {}
+    # Liste blanche + contrôle de type minimal — volontairement PAS
+    # normalize_cv_data() : celle-ci recalcule/laisse tomber des champs et
+    # changerait la sémantique d'une simple édition manuelle depuis l'écran.
+    updates = {k: v for k, v in brut.items() if k in CHAMPS_MODIFIABLES_CV}
     if "years_experience" in updates:
         try:
             updates["years_experience"] = int(updates["years_experience"])
         except (ValueError, TypeError):
             updates["years_experience"] = 0
+    if "contact" in updates and not isinstance(updates["contact"], dict):
+        del updates["contact"]
+    if "interests" in updates:
+        valeur = updates["interests"]
+        if not isinstance(valeur, list) or not all(isinstance(x, str) for x in valeur):
+            del updates["interests"]
+    for champ in LISTES_DE_DICTS_CV:
+        if champ in updates:
+            valeur = updates[champ]
+            if not isinstance(valeur, list) or not all(isinstance(x, dict) for x in valeur):
+                del updates[champ]
     with _verrou_cv(cv_id):
         cv = cvstore_pg.get_cv(cv_id)
         if cv is None:
