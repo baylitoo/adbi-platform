@@ -7,6 +7,7 @@ npm-debug.log
 data/secrets.json
 data/contrats.sqlite
 data/code-parametres.txt
+data/webhooks-en-echec.json
 
 # Divers
 .git
