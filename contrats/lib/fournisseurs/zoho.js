@@ -38,7 +38,13 @@ function config() {
   if (!clientId || !clientSecret || !refreshToken) return null;
   const regionDemandee = process.env.ZOHO_REGION || s.zohoRegion;
   const region = DOMAINES[regionDemandee] ? regionDemandee : "eu";
-  return { clientId, clientSecret, refreshToken, region, ...DOMAINES[region] };
+  return {
+    clientId, clientSecret, refreshToken, region, ...DOMAINES[region],
+    // Zoho Sign signe ses webhooks en HMAC-SHA256 base64, en-tête
+    // X-ZS-WEBHOOK-SIGNATURE (secret défini côté « Paramètres du webhook » de
+    // la demande Zoho Sign) — voir server.js, route /webhooks/signature.
+    webhookSecret: process.env.ZOHO_WEBHOOK_SECRET || s.zohoWebhookSecret || "",
+  };
 }
 
 // Cache de l'access token (1 h chez Zoho) — rafraîchi 5 min avant l'échéance.

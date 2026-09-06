@@ -396,11 +396,23 @@ app.post("/api/referentiels", (req, res) => {
 });
 
 // ---------- Fichiers stockés par contrat ----------
+// path.basename NE bloque PAS ".." (il ne fait que retirer les séparateurs :
+// path.basename("..") === "..") — un segment ":base"/":nom" valant ".." passait
+// donc intact à path.join et en ressortait hors de GENERES_DIR (issue #116).
+// On exige ici un segment "plat" (ni "." ni ".." ni séparateur) ET on vérifie
+// en plus que le chemin résolu reste sous GENERES_DIR, comme le fait déjà
+// factory/server.js pour ses fichiers statiques.
+function segmentFichier(s) {
+  const v = String(s || "");
+  return v && v !== "." && v !== ".." && v === path.basename(v) ? v : "";
+}
+
 app.get("/api/fichiers/:base", (req, res) => {
   try {
-    const base = path.basename(req.params.base);
+    const base = segmentFichier(req.params.base);
+    if (!base) return res.status(400).json({ error: "Identifiant de contrat invalide." });
     const d = path.join(GENERES_DIR, base);
-    if (!fs.existsSync(d)) return res.json([]);
+    if (!d.startsWith(GENERES_DIR + path.sep) || !fs.existsSync(d)) return res.json([]);
     const rows = fs.readdirSync(d).map((nom) => {
       const st = fs.statSync(path.join(d, nom));
       return { nom, taille: st.size, modifieLe: st.mtime.toISOString() };
@@ -410,9 +422,13 @@ app.get("/api/fichiers/:base", (req, res) => {
 });
 
 app.get("/api/fichiers/:base/:nom", (req, res) => {
-  // path.basename bloque toute traversée (../) ; on ne sert que le dossier du contrat.
-  const chemin = path.join(GENERES_DIR, path.basename(req.params.base), path.basename(req.params.nom));
-  if (!fs.existsSync(chemin)) return res.status(404).json({ error: "Fichier introuvable" });
+  const base = segmentFichier(req.params.base);
+  const nom = segmentFichier(req.params.nom);
+  if (!base || !nom) return res.status(404).json({ error: "Fichier introuvable" });
+  const chemin = path.join(GENERES_DIR, base, nom);
+  if (!chemin.startsWith(GENERES_DIR + path.sep) || !fs.existsSync(chemin)) {
+    return res.status(404).json({ error: "Fichier introuvable" });
+  }
   res.download(chemin);
 });
 
@@ -488,7 +504,31 @@ app.post("/api/signatures", async (req, res) => {
       demande.fournisseur = actif;
       demande.externe = { id: env.idExterne, signataires: env.signataires || [] };
       signatures.journaliser(demande, "Enveloppe créée chez " + actif + " (réf. " + env.idExterne + ") — invitations envoyées par le fournisseur");
-      await db.sauverDemande(demande);
+      // À ce stade le fournisseur a DÉJÀ activé l'enveloppe et envoyé les
+      // invitations/OTP aux vrais signataires — ce n'est plus annulable
+      // silencieusement. Un échec de sauvegarde ICI (panne DB passagère,
+      // pool épuisé…) ne doit surtout pas retomber dans le catch générique
+      // ci-dessous : celui-ci blâme le "Connecteur" (message pensé pour un
+      // échec CHEZ le fournisseur, ex. clé API invalide) alors que le
+      // fournisseur a réussi — l'utilisateur irait vérifier sa clé API pour
+      // rien, puis relancerait "Envoyer pour signature", créant une SECONDE
+      // enveloppe et un second jeu d'invitations pour le même contrat. Sans
+      // ligne enregistrée, `env.idExterne` est aussi la SEULE trace qui
+      // reste de cette enveloppe (aucun id de demande, rien dans /api/signatures) :
+      // on la journalise et on la renvoie explicitement plutôt que de la perdre.
+      try {
+        await db.sauverDemande(demande);
+      } catch (eSauvegarde) {
+        console.error(
+          "[signatures] Enveloppe " + actif + " " + env.idExterne + " créée et activée " +
+          "(invitations déjà envoyées) mais NON enregistrée dans ADBI Contrats : " + eSauvegarde.message
+        );
+        return res.status(500).json({
+          error: "Le document a été envoyé pour signature chez " + actif + " (référence " + env.idExterne +
+            ") et les invitations sont déjà parties, mais l'enregistrement dans ADBI Contrats a échoué (" +
+            eSauvegarde.message + "). Ne relancez pas l'envoi : contactez un administrateur avec cette référence.",
+        });
+      }
       res.json({
         ok: true,
         demande: vueDemande(demande),
@@ -706,10 +746,23 @@ async function rejouerEchecsWebhooks() {
 app.post("/webhooks/signature", async (req, res) => {
   res.status(200).json({ ok: true }); // répondre vite : le traitement suit
   try {
-    // Format Yousign : {data:{signature_request:{id}}} + en-tête HMAC vérifié si
-    // le secret est configuré. Format Zoho Sign : {requests:{request_id}}.
+    // Format Yousign : {data:{signature_request:{id}}} + en-tête HMAC
+    // (X-Yousign-Signature-256, hex) vérifié si le secret est configuré.
+    // Format Zoho Sign : {requests:{request_id}} + en-tête HMAC
+    // (X-ZS-Webhook-Signature, base64) vérifié si le secret est configuré.
     // Dans tous les cas le contenu N'EST PAS cru : on relit l'API du fournisseur.
+    //
+    // `fournisseurWebhook` est déterminé UNE FOIS ici à partir de la forme du
+    // corps, et sert ensuite à la fois à choisir QUEL secret vérifier et à
+    // filtrer la recherche de la demande (voir plus bas) : sans ce filtre, un
+    // attaquant qui connaît l'id externe d'UNE demande Yousign pouvait
+    // l'envoyer emballé dans la forme Zoho ({requests:{request_id}}) — le
+    // code ne consultait alors JAMAIS le secret webhook Yousign configuré
+    // (branche `else if`, jamais atteinte pour cette forme), et la recherche
+    // ci-dessous ne filtrait pas non plus par fournisseur : la vérification
+    // HMAC de l'administrateur était donc totalement contournable.
     const corps = req.body || {};
+    let fournisseurWebhook = null;
     let idExterne = corps.data && corps.data.signature_request && corps.data.signature_request.id;
     let fournisseurWebhook;
     if (idExterne) {
@@ -719,12 +772,13 @@ app.post("/webhooks/signature", async (req, res) => {
       if (cfg && cfg.webhookSecret) {
         const attendu = crypto.createHmac("sha256", cfg.webhookSecret).update(req.rawBody || Buffer.alloc(0)).digest("hex");
         const recu = String(req.headers["x-yousign-signature-256"] || "").replace(/^sha256=/, "");
-        if (!recu || !crypto.timingSafeEqual(Buffer.from(attendu), Buffer.from(recu.padEnd(attendu.length).slice(0, attendu.length)))) {
+        if (!hmacCorrespond(recu, attendu)) {
           console.error("[webhook signature] HMAC Yousign invalide — événement ignoré");
           return;
         }
       }
     } else if (corps.requests && corps.requests.request_id) {
+      fournisseurWebhook = "zoho";
       idExterne = String(corps.requests.request_id);
       fournisseurWebhook = "zoho";
     }

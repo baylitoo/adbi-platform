@@ -662,7 +662,14 @@ async function deleteNeed(id) {
 async function goMatch(needId) {
   showToast('Matching en cours…');
   const r = await fetch(`/api/needs/${needId}/match`, { method: 'POST', credentials: 'include' });
-  if (!r.ok) { showToast('Erreur lors du matching', true); return; }
+  if (!r.ok) {
+    // 503 (issue #94, api/matching_bp.py) : trop de matchings deja en cours —
+    // le corps porte un message explicite ("reessayez dans quelques
+    // secondes"), plus utile qu'un message generique.
+    const d = await r.json().catch(() => ({}));
+    showToast(d.error || 'Erreur lors du matching', true);
+    return;
+  }
   const d = await r.json();
   showToast(`${d.total_matched} profils analysés`);
   setTimeout(() => window.location.href = `/rapprochement?need_id=${needId}`, 800);

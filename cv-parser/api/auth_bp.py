@@ -1,8 +1,14 @@
 """api/auth_bp.py — Routes d'authentification JWT."""
+import threading
+import time
 from datetime import timezone, datetime
+
 from flask import Blueprint, jsonify, request, make_response, redirect
 
-from config import ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
+from config import (
+    ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS,
+    LOGIN_MAX_ECHECS, LOGIN_FENETRE_S,
+)
 from core.activity_pg import log_event
 from core.auth import (
     get_user_by_email, get_user_by_id, list_users,
@@ -14,6 +20,70 @@ from core.auth import (
 )
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
+
+
+# ── Anti brute-force ──────────────────────────────────────────────────────────
+#
+# cv-parser tourne en un seul worker Gunicorn, plusieurs threads (voir
+# gunicorn.conf.py) : un compteur en mémoire de process suffit, comme
+# `_verrous_cv` (app.py) — mais comme lui, il lui faut son propre verrou :
+# plusieurs threads peuvent lire/modifier ce dict en même temps (deux
+# tentatives de connexion concurrentes), et un accès non protégé pouvait
+# lever un KeyError (clé purgée par un thread pendant qu'un autre la lisait)
+# qui tombait dans le filet Exception général (voir app.py::handle_exception)
+# et renvoyait un 500 exposant la clé (IP + e-mail) au client.
+#
+# Clé (IP, e-mail) plutôt qu'e-mail seul : verrouiller sur l'e-mail seul
+# permettrait à n'importe qui de bloquer le compte d'un tiers rien qu'en
+# connaissant son adresse. En déploiement (derrière le reverse proxy Coolify,
+# voir docs/deploiement-coolify.md), request.remote_addr est l'IP du proxy
+# pour toutes les requêtes tant qu'aucun ProxyFix ne lit X-Forwarded-For —
+# absent ici, et volontairement pas ajouté : cet en-tête est fourni par le
+# client et se falsifie, ce qui rendrait la limite contournable à volonté. La
+# clé se réduit donc en pratique à l'e-mail dans ce cas ; le compromis reste
+# préférable à une absence totale de limite.
+_echecs_login: dict[str, list[float]] = {}
+_echecs_login_verrou = threading.Lock()
+
+
+def _cle_login(ip: str, email: str) -> str:
+    # Email tronqué : un attaquant qui ferait varier une chaîne arbitraire à
+    # chaque tentative ne doit pas pouvoir faire grossir ce dict sans borne.
+    return f"{ip}|{email.strip().lower()[:200]}"
+
+
+def _trop_de_tentatives(ip: str, email: str) -> bool:
+    """True si (ip, email) a atteint LOGIN_MAX_ECHECS échecs dans la fenêtre."""
+    cle = _cle_login(ip, email)
+    maintenant = time.time()
+    with _echecs_login_verrou:
+        horodatages = [t for t in _echecs_login.get(cle, []) if maintenant - t < LOGIN_FENETRE_S]
+        if horodatages:
+            _echecs_login[cle] = horodatages
+        else:
+            _echecs_login.pop(cle, None)
+        return len(horodatages) >= LOGIN_MAX_ECHECS
+
+
+def _enregistrer_echec(ip: str, email: str) -> None:
+    cle = _cle_login(ip, email)
+    with _echecs_login_verrou:
+        _echecs_login.setdefault(cle, []).append(time.time())
+        # Garde-fou mémoire : un attaquant qui ferait varier l'e-mail à
+        # chaque tentative pourrait sinon faire grossir ce dict indéfiniment.
+        # Purge large (pas par clé) plutôt qu'un compteur exact — suffisant
+        # ici, comme le repli sur fichier vide de factory/server.js
+        # (JOURNAL_MAX_OCTETS).
+        if len(_echecs_login) > 5000:
+            maintenant = time.time()
+            for autre_cle in list(_echecs_login):
+                if all(maintenant - t >= LOGIN_FENETRE_S for t in _echecs_login[autre_cle]):
+                    _echecs_login.pop(autre_cle, None)
+
+
+def _oublier_echecs(ip: str, email: str) -> None:
+    with _echecs_login_verrou:
+        _echecs_login.pop(_cle_login(ip, email), None)
 
 
 def _set_cookies(resp, access_token: str, refresh_token: str):
@@ -42,16 +112,24 @@ def login():
     body = request.get_json(silent=True) or {}
     email    = (body.get("email") or "").strip()
     password = body.get("password") or ""
+    ip       = request.remote_addr or "?"
 
     if not email or not password:
         return jsonify({"error": "Email et mot de passe requis"}), 400
 
+    if _trop_de_tentatives(ip, email):
+        return jsonify({
+            "error": "Trop de tentatives — réessayez dans quelques minutes.",
+        }), 429
+
     user = get_user_by_email(email)
     if not user or not verify_password(password, user.get("password_hash", "")):
+        _enregistrer_echec(ip, email)
         return jsonify({"error": "Identifiants invalides"}), 401
     if not user.get("is_active", True):
         return jsonify({"error": "Compte désactivé"}), 403
 
+    _oublier_echecs(ip, email)
     access  = create_access_token(user)
     refresh = create_refresh_token(user)
     public  = {k: v for k, v in user.items() if k != "password_hash"}

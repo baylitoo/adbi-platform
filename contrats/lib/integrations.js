@@ -46,7 +46,7 @@ function saveSettings(body) {
   if (["yousign", "zoho"].includes(body.fournisseurSignature)) cur.fournisseurSignature = body.fournisseurSignature;
   if (["sandbox", "production"].includes(body.yousignMode)) cur.yousignMode = body.yousignMode;
   if (["eu", "com", "in"].includes(body.zohoRegion)) cur.zohoRegion = body.zohoRegion;
-  ["yousignCleApi", "yousignWebhookSecret", "zohoClientId", "zohoClientSecret"].forEach((k) => {
+  ["yousignCleApi", "yousignWebhookSecret", "zohoClientId", "zohoClientSecret", "zohoWebhookSecret"].forEach((k) => {
     if (typeof body[k] !== "string") return;
     const v = body[k].trim();
     if (v) cur[k] = v;
@@ -83,6 +83,7 @@ function settingsStatus() {
     zohoRegion: (process.env.ZOHO_REGION || s.zohoRegion) || "eu",
     zohoIdentifiants: !!(val("ZOHO_CLIENT_ID", "zohoClientId") && val("ZOHO_CLIENT_SECRET", "zohoClientSecret")),
     zohoConfigure: !!(val("ZOHO_CLIENT_ID", "zohoClientId") && val("ZOHO_CLIENT_SECRET", "zohoClientSecret") && val("ZOHO_REFRESH_TOKEN", "zohoRefreshToken")),
+    zohoWebhook: !!val("ZOHO_WEBHOOK_SECRET", "zohoWebhookSecret"),
   };
 }
 

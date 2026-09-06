@@ -112,7 +112,19 @@ def ensure_default_superuser():
             role="superuser",
             full_name="Admin ADBI",
         )
-        print(f"[AUTH] ✓ Superuser créé : {DEFAULT_SUPERUSER_EMAIL}  /  {DEFAULT_SUPERUSER_PASSWORD}")
+        # Le mot de passe ne doit JAMAIS apparaître en clair dans les logs
+        # (stdout du conteneur, agrégé par Docker/Coolify et souvent conservé
+        # ou expédié vers un tiers) — voir issue superuser-password-in-logs.
+        # On indique seulement sa provenance : ADBI_SUPERUSER_PASSWORD quand
+        # elle est posée, sinon le défaut de développement documenté dans
+        # config.py (jamais à utiliser tel quel en déploiement exposé).
+        source = (
+            "ADBI_SUPERUSER_PASSWORD"
+            if os.environ.get("ADBI_SUPERUSER_PASSWORD")
+            else "défaut de développement (voir config.py, à changer en prod)"
+        )
+        print(f"[AUTH] ✓ Superuser créé : {DEFAULT_SUPERUSER_EMAIL}  "
+              f"(mot de passe : {source})")
 
 
 # ── Helpers request ───────────────────────────────────────────────────────────
