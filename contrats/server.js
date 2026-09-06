@@ -474,7 +474,31 @@ app.post("/api/signatures", async (req, res) => {
       demande.fournisseur = actif;
       demande.externe = { id: env.idExterne, signataires: env.signataires || [] };
       signatures.journaliser(demande, "Enveloppe créée chez " + actif + " (réf. " + env.idExterne + ") — invitations envoyées par le fournisseur");
-      await db.sauverDemande(demande);
+      // À ce stade le fournisseur a DÉJÀ activé l'enveloppe et envoyé les
+      // invitations/OTP aux vrais signataires — ce n'est plus annulable
+      // silencieusement. Un échec de sauvegarde ICI (panne DB passagère,
+      // pool épuisé…) ne doit surtout pas retomber dans le catch générique
+      // ci-dessous : celui-ci blâme le "Connecteur" (message pensé pour un
+      // échec CHEZ le fournisseur, ex. clé API invalide) alors que le
+      // fournisseur a réussi — l'utilisateur irait vérifier sa clé API pour
+      // rien, puis relancerait "Envoyer pour signature", créant une SECONDE
+      // enveloppe et un second jeu d'invitations pour le même contrat. Sans
+      // ligne enregistrée, `env.idExterne` est aussi la SEULE trace qui
+      // reste de cette enveloppe (aucun id de demande, rien dans /api/signatures) :
+      // on la journalise et on la renvoie explicitement plutôt que de la perdre.
+      try {
+        await db.sauverDemande(demande);
+      } catch (eSauvegarde) {
+        console.error(
+          "[signatures] Enveloppe " + actif + " " + env.idExterne + " créée et activée " +
+          "(invitations déjà envoyées) mais NON enregistrée dans ADBI Contrats : " + eSauvegarde.message
+        );
+        return res.status(500).json({
+          error: "Le document a été envoyé pour signature chez " + actif + " (référence " + env.idExterne +
+            ") et les invitations sont déjà parties, mais l'enregistrement dans ADBI Contrats a échoué (" +
+            eSauvegarde.message + "). Ne relancez pas l'envoi : contactez un administrateur avec cette référence.",
+        });
+      }
       res.json({
         ok: true,
         demande: vueDemande(demande),
