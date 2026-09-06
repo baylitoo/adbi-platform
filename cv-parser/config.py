@@ -190,3 +190,24 @@ NEED_LIST_MAX = int(os.environ.get("ADBI_NEED_LIST_MAX", "60"))
 
 NEED_ITEM_MAX = int(os.environ.get("ADBI_NEED_ITEM_MAX", "100"))
 # longueur (caractères) de chaque entrée de ces listes
+
+# ── Concurrence sur le matching (api/matching_bp.py) ─────────────────────────
+#
+# Les plafonds ci-dessus (issue #72) bornent le PIRE cas (payload hostile),
+# mais même un besoin parfaitement légitime, dans ces plafonds, reste un
+# calcul CPU pur en Python (SequenceMatcher, recherches de sous-chaînes) qui
+# grandit avec la taille de la CVthèque ELLE-MÊME — pas un payload qu'on
+# pourrait plafonner. Mesuré (issue #93bis) : ~1000 CV synthétiques, besoin à
+# la taille max autorisée -> ~8 s pour un seul run_matching(). cv-parser tourne
+# en un seul worker Gunicorn à plusieurs threads (`gthread`, voir
+# gunicorn.conf.py) : ces threads partagent un seul GIL, donc 4 calculs de ce
+# type lancés en parallèle ne se contentent pas de saturer les 4 threads, ils
+# se sérialisent sur le GIL et ralentissent chacun d'autant — mesuré : 4
+# requêtes /match concurrentes prennent ~49 s CHACUNE (vs ~8 s isolée), et une
+# requête sans rapport (GET /api/auth/me, lancée 0,4 s après) reste bloquée
+# derrière elles pendant la totalité de ces ~49 s, faute de thread Gunicorn
+# libre pour la traiter. Un simple sémaphore, non bloquant (429 immédiat si
+# saturé plutôt qu'une file d'attente qui garderait le thread occupé), plafonne
+# le nombre de matchings concurrents à MOINS que le nombre de threads — pour
+# garder au moins un thread disponible aux autres routes (login, CRUD...).
+MATCHING_MAX_CONCURRENT = int(os.environ.get("ADBI_MATCHING_MAX_CONCURRENT", "2"))
