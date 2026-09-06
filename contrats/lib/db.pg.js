@@ -261,11 +261,33 @@ async function chargerDemande(id) {
   return ligneVersDemande(rows[0]);
 }
 
-async function chargerDemandes() {
-  const { rows } = await pilote().query("SELECT id, donnees FROM signatures ORDER BY id DESC");
+// `limite` : comme listerContrats() ci-dessus — sans borne, cette requête
+// ramène le JSONB complet de CHAQUE demande de signature jamais créée à
+// chaque appel (issue #146 : mesuré 8000 demandes ≈ 23 Mo / ~600 ms par
+// appel, contre ~0,5 Mo / ~30 ms avec LIMIT 200). GET /api/signatures — appelé à
+// CHAQUE chargement de page (public/app.js::init) — passe cette limite ; le
+// webhook (recherche par externe.id sur tout l'historique) reste sans borne
+// pour ne pas perdre une demande ancienne encore en cours de signature.
+// Dans les deux cas, `payload` (valeurs/options du contrat, jamais relu ici)
+// est retiré du JSONB transféré : il représente ~la moitié du volume par
+// ligne et aucun des deux appelants ne s'en sert (chargerDemande(id) le
+// renvoie toujours en entier pour la régénération de PDF/certificat).
+async function chargerDemandes(limite) {
+  const { rows } = await pilote().query(
+    limite
+      ? "SELECT id, donnees - 'payload' AS donnees FROM signatures ORDER BY id DESC LIMIT $1"
+      : "SELECT id, donnees - 'payload' AS donnees FROM signatures ORDER BY id DESC",
+    limite ? [limite] : []
+  );
   return rows.map(ligneVersDemande);
 }
 
+// ATTENTION : un objet renvoye par chargerDemandes() (ci-dessus) n'a plus de
+// `payload` (retire cote requete) — ne jamais le repasser tel quel a
+// sauverDemande(), qui l'ecrirait comme absent/undefined et effacerait le
+// payload du contrat en base. Les deux appelants actuels de chargerDemandes()
+// sont en lecture seule ; releger via chargerDemande(id) (singulier, complet)
+// avant toute ecriture.
 async function sauverDemande(d) {
   // Garde-fou (voir en-tete du fichier) : payload doit etre un objet avant
   // d'ecrire en JSONB, jamais une chaine de JSON. nouvelleDemande() ne
