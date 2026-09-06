@@ -151,22 +151,31 @@ async function findByHash(hash) {
   return rows[0] ? get(rows[0].id) : null;
 }
 
-function resume(r) {
-  const { master, ...reste } = r;
-  const m = master || {};
-  return {
-    ...reste,
-    trigramme: (m.identity && m.identity.trigram) || "",
-    missions: (m.experiences || []).length,
-    anciennete: (m.identity && m.identity.seniority_years) || 0,
-  };
-}
+// Le resume affiche par l'historique (trigramme/missions/anciennete) ne
+// depend que de 3 valeurs scalaires de `master`, jamais du cv_master entier —
+// ces valeurs sont donc extraites ICI, en SQL, plutot que de faire remonter
+// la colonne `master` (JSONB, jusqu'a CV_MAX_EXPERIENCES * CV_MAX_HIGHLIGHTS_
+// PAR_EXPERIENCE de contenu, voir issue #96) jusqu'a Node pour n'en garder que
+// ces 3 champs. Sans ca, list()/search() (route GET /api/cvs, appelee a
+// CHAQUE frappe dans la recherche de l'historique, cote client — voir
+// public/app.js#chargerHistorique, debounce 250 ms) transferaient et
+// deserialisaient le cv_master COMPLET de CHAQUE fiche de la CVtheque, a
+// chaque appel : mesure, avec 2000 fiches a une taille realiste (~50 Ko de
+// master chacune, cf. cap #96), ce SELECT * passe de ~90 ms (100 fiches) a
+// 2,2-3,7 s (2000 fiches) — un cout qui grandit avec le NOMBRE de CV, pas
+// leur taille individuelle (deja plafonnee), et qui degrade la recherche
+// pour tout le monde a mesure que la CVtheque grandit.
+const RESUME_SELECT = `
+  id, nom, titre, fichier, cree_le, maj_le,
+  COALESCE(master #>> '{identity,trigram}', '') AS trigramme,
+  CASE WHEN jsonb_typeof(master->'experiences') = 'array'
+       THEN jsonb_array_length(master->'experiences') ELSE 0 END AS missions,
+  COALESCE(NULLIF(master #> '{identity,seniority_years}', 'null'::jsonb), '0'::jsonb) AS anciennete
+`;
 
 async function list() {
-  const { rows } = await pilote().query(
-    "SELECT id, nom, titre, fichier, cree_le, maj_le, master FROM cvs ORDER BY maj_le DESC"
-  );
-  return rows.map(resume);
+  const { rows } = await pilote().query(`SELECT ${RESUME_SELECT} FROM cvs ORDER BY maj_le DESC`);
+  return rows;
 }
 
 async function remove(id) {
@@ -178,12 +187,12 @@ async function search(q) {
   const needle = String(q || "").trim();
   if (!needle) return list();
   const { rows } = await pilote().query(
-    `SELECT id, nom, titre, fichier, cree_le, maj_le, master FROM cvs
+    `SELECT ${RESUME_SELECT} FROM cvs
      WHERE LOWER(master::text) LIKE '%' || LOWER($1) || '%'
      ORDER BY maj_le DESC`,
     [needle]
   );
-  return rows.map(resume);
+  return rows;
 }
 
 module.exports = { init, verifierConnexion, save, get, list, remove, search, findByHash };
