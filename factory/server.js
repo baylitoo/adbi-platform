@@ -348,6 +348,37 @@ async function testerModeleLlm(modele) {
   return ms;
 }
 
+// POST /api/llm/tester est public et sans authentification (voyant IA de la
+// page d'accueil, voir README § Voyant IA) : n'importe qui atteignant
+// outils.adbi.fr peut le boucler. Sans regroupement, chaque appel déclenche
+// un appel amont à la passerelle — la MÊME passerelle (ADBI_LLM_BASE_URL) que
+// cv-parser utilise pour l'extraction/le matching (voir docker-compose.yml) :
+// un simple flot de requêtes sature la file d'inférence interne (ou la
+// facturation, si le fournisseur est externe) pour tout le monde. On
+// regroupe les tests concurrents d'un même modèle en un seul appel amont
+// (`testsLlmEnCours`) et on garde le dernier résultat quelques secondes
+// (`testsLlmCache`) : un boucleur ne coûte plus qu'un appel amont par modèle
+// et par fenêtre, quel que soit son débit. Les échecs ne sont pas mis en
+// cache pour que le voyant reflète un rétablissement sans attendre le TTL.
+const TEST_LLM_CACHE_MS = 15 * 1000;
+const testsLlmEnCours = new Map(); // modele -> Promise<ms>
+const testsLlmCache = new Map();   // modele -> { ms, expire }
+
+function testerModeleLlmMisEnCache(modele) {
+  const enCache = testsLlmCache.get(modele);
+  if (enCache && enCache.expire > Date.now()) return Promise.resolve(enCache.ms);
+
+  let tache = testsLlmEnCours.get(modele);
+  if (!tache) {
+    tache = testerModeleLlm(modele).finally(() => testsLlmEnCours.delete(modele));
+    testsLlmEnCours.set(modele, tache);
+  }
+  return tache.then((ms) => {
+    testsLlmCache.set(modele, { ms, expire: Date.now() + TEST_LLM_CACHE_MS });
+    return ms;
+  });
+}
+
 // Le seul appelant (POST /api/llm/tester) envoie {"modele": "..."} : quelques
 // octets. Sans plafond, un corps arbitrairement volumineux serait accumulé
 // intégralement en mémoire avant même le JSON.parse — voir coffre/server.js
@@ -469,8 +500,14 @@ const serveur = http.createServer(async (req, rep) => {
     }
     const modele = (corps.modele || LLM_MODELES[0] || "").trim();
     if (!modele) return repondreJson(rep, 200, { ok: false, erreur: "Aucun modèle à tester." });
+    // N'accepte que la chaîne configurée (ADBI_LLM_MODELS) : la route est
+    // publique, sans ce filtre elle relaierait un modèle arbitraire choisi
+    // par l'appelant vers la passerelle.
+    if (!LLM_MODELES.includes(modele)) {
+      return repondreJson(rep, 200, { ok: false, modele, erreur: "Modèle non configuré." });
+    }
     try {
-      const ms = await testerModeleLlm(modele);
+      const ms = await testerModeleLlmMisEnCache(modele);
       return repondreJson(rep, 200, { ok: true, modele, ms });
     } catch (e) {
       return repondreJson(rep, 200, { ok: false, modele, erreur: e.message });
