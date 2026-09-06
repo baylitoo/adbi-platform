@@ -2168,7 +2168,34 @@ def update_cv(cv_id):
 @app.route("/api/cvs/<cv_id>", methods=["DELETE"])
 @require_auth
 def delete_cv(cv_id):
-    cvstore_pg.delete_cv(cv_id)
+    # Le verrou de la fiche (issue #53) protège aussi ceci : sans lui, un
+    # enrich/adapt/translate déjà en cours (get_cv fait avant ce DELETE) peut
+    # sauver sa copie APRÈS la suppression et ressusciter la ligne — dont le
+    # fichier sur disque vient d'être supprimé, laissant la fiche "vivante"
+    # 404 sur la visionneuse (route /upload/<file_id>).
+    with _verrou_cv(cv_id):
+        cv = cvstore_pg.get_cv(cv_id)
+        if cv is None:
+            # Idempotent : suppression d'un id déjà absent, pas d'erreur.
+            return jsonify({"success": True})
+        ext = cv.get("ext", "")
+        cvstore_pg.delete_cv(cv_id)
+        # Le fichier uploadé (uploads/<id><ext>, volume Docker persistant)
+        # n'était jamais nettoyé : chaque suppression de fiche laissait le
+        # document original s'accumuler indéfiniment sur disque. `ext` vient
+        # de la fiche en base (jamais du PATCH — absent de
+        # CHAMPS_MODIFIABLES_CV) donc pas de traversée de chemin possible ;
+        # on ne supprime que si le nom obtenu reste bien dans UPLOAD_DIR.
+        if ext:
+            fichier = (UPLOAD_DIR / f"{cv_id}{ext}").resolve()
+            try:
+                if fichier.parent == UPLOAD_DIR.resolve() and fichier.is_file():
+                    fichier.unlink()
+            except OSError as exc:
+                # Best-effort : la fiche est déjà supprimée en base, un échec
+                # de nettoyage disque ne doit pas faire échouer la requête
+                # (comportement identique à avant ce correctif, au pire).
+                print(f"[WARN] delete_cv({cv_id}) : échec suppression fichier {fichier} : {exc}")
     return jsonify({"success": True})
 
 
