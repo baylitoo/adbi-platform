@@ -360,7 +360,7 @@ app.post("/api/settings", exigerCodeParametres, (req, res) => {
 
 app.post("/api/lookup", async (req, res) => {
   try { res.json(await getCompany(req.body && req.body.q)); }
-  catch (e) { res.status(400).json({ error: e.message }); }
+  catch (e) { res.status(e.status || 400).json({ error: e.message }); }
 });
 
 app.post("/api/search", async (req, res) => {
