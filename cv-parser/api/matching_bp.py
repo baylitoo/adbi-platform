@@ -1,6 +1,9 @@
 """api/matching_bp.py — Lancement du matching + récupération des résultats."""
+import threading
+
 from flask import Blueprint, jsonify, request
 
+from config import MATCHING_MAX_CONCURRENT
 from core.auth import require_auth, get_current_user, check_need_access
 from core.activity_pg import log_event
 from core.cvstore_pg import get_cv
@@ -10,6 +13,14 @@ from core.database_pg import (
 from core.matcher import run_matching
 
 matching_bp = Blueprint("matching", __name__, url_prefix="/api/needs")
+
+# Plafonne le nombre de run_matching() concurrents — voir config.py pour la
+# mesure qui motive ce sémaphore (GIL + calcul CPU pur non bornable par un
+# plafond de payload, contrairement à issue #72). Non bloquant à dessein :
+# un thread Gunicorn qui attendrait ici resterait occupé et aggraverait
+# exactement le problème qu'on corrige (moins de threads libres pour les
+# autres routes) — on refuse tout de suite (503) plutôt que de mettre en file.
+_matching_semaphore = threading.Semaphore(MATCHING_MAX_CONCURRENT)
 
 
 @matching_bp.post("/<need_id>/match")
@@ -25,8 +36,19 @@ def launch_match(need_id: str):
         limit = int(request.args.get("limit", 50))
     except (TypeError, ValueError):
         limit = 50
-    limit   = max(1, min(limit, 500))
-    results = run_matching(need, limit=limit)
+    limit = max(1, min(limit, 500))
+
+    if not _matching_semaphore.acquire(blocking=False):
+        return jsonify({
+            "error": (
+                f"Trop de matchings en cours ({MATCHING_MAX_CONCURRENT} max en "
+                "parallèle) — réessayez dans quelques secondes."
+            )
+        }), 503
+    try:
+        results = run_matching(need, limit=limit)
+    finally:
+        _matching_semaphore.release()
 
     upsert_match_results(need_id, results)
 
