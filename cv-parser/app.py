@@ -1616,6 +1616,13 @@ def api_status():
             "rang": etat.get("rang"),
             "total": etat.get("total"),
         })
+    # 503, pas 200 : le corps distinguait déjà api_ok true/false, mais le code
+    # HTTP restait toujours un succès — un appelant qui ne lit que le code
+    # (supervision externe, `curl -f`, etc.) voyait une chaîne LLM en panne
+    # comme un service sain. Les deux seuls lecteurs internes de cette route
+    # (templates/index.html, templates/cv_detail.html) font
+    # `fetch(...).then(r => r.json())` sans jamais tester `r.ok` : ils ne sont
+    # pas affectés, `fetch().json()` ne rejette pas sur 4xx/5xx. Voir issue #90.
     return jsonify({
         "api_ok": False,
         "provider": "interne",
@@ -1624,7 +1631,7 @@ def api_status():
         "error": f"Aucun des {etat.get('total')} services de la chaîne ne répond",
         "conseil": ("Vérifiez que la passerelle d'inférence interne (ADBI_LLM_BASE_URL) "
                     "est configurée et joignable."),
-    })
+    }), 503
 
 
 @app.url_defaults
