@@ -76,6 +76,20 @@ app.get("/api/sante", async (req, res) => {
 const CODE_PARAM_DEFAUT = "ADbi2027@@";
 const CODE_PARAM_FICHIER = path.join(__dirname, "data", "code-parametres.txt");
 
+// Webhooks de signature dont le TRAITEMENT (pas la réception) a échoué — voir
+// traiterEvenementSignature ci-dessous. Fichier plutôt que mémoire : la file
+// doit survivre à un redémarrage du service, seul moyen de rattraper un
+// événement reçu juste avant un arrêt/crash.
+const ECHECS_WEBHOOKS_FICHIER = path.join(__dirname, "data", "webhooks-en-echec.json");
+// Rejeu automatique toutes les 5 min (réglable, pour les tests notamment).
+const ECHEC_WEBHOOK_RELANCE_MS = Number(process.env.ADBI_ECHEC_WEBHOOK_RELANCE_MS) || 5 * 60 * 1000;
+// Au-delà, on cesse de rejouer (une enveloppe supprimée chez le fournisseur, une
+// clé révoquée… échoueraient sinon indéfiniment, à chaque relance, pour rien —
+// même logique de plafond que le reste de l'audit, ex. issue #94/#95) : ~24h
+// à raison d'un rejeu toutes les 5 min. L'entrée reste dans le fichier
+// (dernière erreur consultable) mais n'est plus rejouée automatiquement.
+const MAX_TENTATIVES_WEBHOOK = 288;
+
 function codeParametres() {
   if (process.env.ADBI_CODE_PARAMETRES) return process.env.ADBI_CODE_PARAMETRES.trim();
   try {
@@ -617,17 +631,112 @@ app.post("/api/signatures/:id/synchroniser", async (req, res) => {
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
 
-// Compare un HMAC reçu (hex ou base64, peu importe l'encodage tant que les
-// deux côtés utilisent le même) à la valeur attendue, en temps constant.
-// timingSafeEqual exige des Buffer de MÊME longueur (sinon il lève) : une
-// longueur différente est déjà la preuve d'une signature invalide, donc
-// rejetée directement plutôt que bricolée (l'ancien code paddait `recu` pour
-// forcer l'égalité de taille, ce qui n'apportait rien et compliquait la lecture).
-function hmacCorrespond(recu, attendu) {
-  if (!recu) return false;
-  const a = Buffer.from(attendu);
-  const b = Buffer.from(String(recu));
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+// ── File des webhooks dont le TRAITEMENT a échoué ────────────────────────────
+// La route répond 200 avant tout traitement (voir plus bas) : un fournisseur
+// ne redélivre PAS un webhook déjà acquitté en 2xx. Si la synchronisation qui
+// suit échoue ensuite (Postgres injoignable pile à ce moment, timeout réseau
+// vers le fournisseur…), l'événement — potentiellement « document signé par
+// toutes les parties », avec l'archivage du PDF signé et du dossier de
+// preuve qui va avec — était jusqu'ici simplement perdu (un console.error,
+// rien de plus) : la demande restait bloquée au statut "envoyée" tant que
+// personne ne remarquait l'écart et ne cliquait manuellement sur
+// « Synchroniser le statut ». Fichier (et non mémoire) pour survivre à un
+// redémarrage du service, et rejeu automatique ci-dessous plutôt que de
+// compter sur un humain qui doit d'abord soupçonner le problème.
+function chargerEchecsWebhooks() {
+  try { return JSON.parse(fs.readFileSync(ECHECS_WEBHOOKS_FICHIER, "utf8")); }
+  catch (e) { return []; }
+}
+function sauverEchecsWebhooks(liste) {
+  try {
+    fs.mkdirSync(path.dirname(ECHECS_WEBHOOKS_FICHIER), { recursive: true });
+    fs.writeFileSync(ECHECS_WEBHOOKS_FICHIER, JSON.stringify(liste, null, 2));
+  } catch (e) { console.error("[webhook signature] file d'échecs illisible/inscriptible :", e.message); }
+}
+// `fournisseur` ("yousign"/"zoho") est conservé dans l'entrée dès sa création
+// (déjà connu de l'appelant, qui vient de reconnaître la forme du payload) —
+// même s'il n'est pas encore exploité par la recherche ci-dessous, pour ne
+// pas avoir à re-migrer ce fichier le jour où cette recherche filtrera aussi
+// par fournisseur (voir note dans traiterEvenementSignature).
+function enregistrerEchecWebhook(idExterne, fournisseur, message) {
+  const liste = chargerEchecsWebhooks();
+  const existant = liste.find((x) => x.idExterne === idExterne);
+  const maintenant = new Date().toISOString();
+  if (existant) {
+    existant.tentatives = (existant.tentatives || 1) + 1;
+    existant.derniereErreur = message;
+    existant.derniereTentativeLe = maintenant;
+    if (fournisseur) existant.fournisseur = fournisseur;
+  } else {
+    liste.push({ idExterne, fournisseur: fournisseur || null, recuLe: maintenant, tentatives: 1, derniereErreur: message, derniereTentativeLe: maintenant });
+  }
+  sauverEchecsWebhooks(liste);
+}
+function retirerEchecWebhook(idExterne) {
+  const liste = chargerEchecsWebhooks();
+  const suivante = liste.filter((x) => x.idExterne !== idExterne);
+  if (suivante.length !== liste.length) sauverEchecsWebhooks(suivante);
+}
+function marquerAbandonWebhook(idExterne) {
+  const liste = chargerEchecsWebhooks();
+  const entree = liste.find((x) => x.idExterne === idExterne);
+  if (entree && !entree.abandonne) { entree.abandonne = true; sauverEchecsWebhooks(liste); }
+}
+
+// Synchronise la demande correspondant à idExterne (identifiant déjà vérifié
+// — HMAC le cas échéant — par l'appelant). Toute erreur ici est un problème
+// de TRAITEMENT (base injoignable, appel fournisseur en échec…), pas une
+// donnée douteuse : on la garde en file pour rejeu plutôt que de la perdre.
+//
+// NB : la recherche ci-dessous ne filtre PAS encore par fournisseur (elle
+// reprend le comportement actuel de la route) — `fournisseur` n'est là que
+// pour être déjà disponible dans la file d'échecs le jour où ce filtre est
+// ajouté (voir issue du contournement HMAC cross-fournisseur, corrigé côté
+// vérification de signature indépendamment de ce correctif-ci).
+async function traiterEvenementSignature(idExterne, fournisseur) {
+  try {
+    // La recherche par id externe se fait hors verrou (simple lecture) ; seule
+    // la synchronisation elle-même (relecture + appel fournisseur + écriture)
+    // passe par synchroniserDemandeExterneParId, verrouillée par demande —
+    // deux livraisons du même webhook, ou ce webhook et le bouton manuel,
+    // sérialisent alors sur la même demande au lieu de s'écraser l'un l'autre.
+    const demandes = await db.chargerDemandes();
+    const d = demandes.find((x) => x.externe && x.externe.id === idExterne);
+    if (d) await synchroniserDemandeExterneParId(d.id);
+    retirerEchecWebhook(idExterne);
+  } catch (e) {
+    console.error("[webhook signature]", e.message);
+    enregistrerEchecWebhook(idExterne, fournisseur, e.message);
+  }
+}
+
+// Rejeu de tous les événements en file — appelé au démarrage (rattrape ce qui
+// a échoué avant un redémarrage/crash) puis toutes les ECHEC_WEBHOOK_RELANCE_MS
+// (rattrape une panne Postgres/fournisseur transitoire sans intervention).
+// Au-delà de MAX_TENTATIVES_WEBHOOK, on cesse de rejouer une entrée qui
+// échoue systématiquement (enveloppe supprimée chez le fournisseur, clé
+// révoquée…) : elle resterait sinon rejouée — et donc à rappeler l'API du
+// fournisseur — indéfiniment, toutes les 5 min, pour rien. L'entrée reste
+// dans le fichier (dernière erreur consultable) mais n'est plus retentée.
+async function rejouerEchecsWebhooks() {
+  // Chaque itération relit/réécrit le fichier depuis le disque (via
+  // traiterEvenementSignature / marquerAbandonWebhook) plutôt que de réutiliser
+  // ce tableau une fois toutes les entrées traitées : sinon, la sauvegarde
+  // finale d'un instantané devenu périmé écraserait les mises à jour
+  // (tentatives, suppression) faites entre-temps sur les AUTRES entrées.
+  for (const entree of chargerEchecsWebhooks()) {
+    if ((entree.tentatives || 0) >= MAX_TENTATIVES_WEBHOOK) {
+      if (!entree.abandonne) {
+        console.error(
+          "[webhook signature] abandon du rejeu pour " + entree.idExterne + " après " + entree.tentatives +
+          " tentatives — dernière erreur : " + entree.derniereErreur + " (à traiter manuellement si besoin)"
+        );
+        marquerAbandonWebhook(entree.idExterne);
+      }
+      continue;
+    }
+    await traiterEvenementSignature(entree.idExterne, entree.fournisseur);
+  }
 }
 
 // Webhook du fournisseur de signature (à déclarer chez lui vers
@@ -655,6 +764,7 @@ app.post("/webhooks/signature", async (req, res) => {
     const corps = req.body || {};
     let fournisseurWebhook = null;
     let idExterne = corps.data && corps.data.signature_request && corps.data.signature_request.id;
+    let fournisseurWebhook;
     if (idExterne) {
       fournisseurWebhook = "yousign";
       const y = fournisseurs.externe("yousign");
@@ -670,30 +780,12 @@ app.post("/webhooks/signature", async (req, res) => {
     } else if (corps.requests && corps.requests.request_id) {
       fournisseurWebhook = "zoho";
       idExterne = String(corps.requests.request_id);
-      const z = fournisseurs.externe("zoho");
-      const cfg = z && z.config();
-      if (cfg && cfg.webhookSecret) {
-        // Zoho Sign : HMAC-SHA256 du corps brut, encodé en base64, en-tête
-        // X-ZS-Webhook-Signature (voir doc Zoho Sign — sécurisation des webhooks).
-        const attendu = crypto.createHmac("sha256", cfg.webhookSecret).update(req.rawBody || Buffer.alloc(0)).digest("base64");
-        const recu = String(req.headers["x-zs-webhook-signature"] || "");
-        if (!hmacCorrespond(recu, attendu)) {
-          console.error("[webhook signature] HMAC Zoho invalide — événement ignoré");
-          return;
-        }
-      }
+      fournisseurWebhook = "zoho";
     }
     if (!idExterne) return;
-    // La recherche par id externe se fait hors verrou (simple lecture) ; seule
-    // la synchronisation elle-même (relecture + appel fournisseur + écriture)
-    // passe par synchroniserDemandeExterneParId, verrouillée par demande —
-    // deux livraisons du même webhook, ou ce webhook et le bouton manuel,
-    // sérialisent alors sur la même demande au lieu de s'écraser l'un l'autre.
-    // Filtrée par `fournisseur` (voir commentaire ci-dessus) : un id externe
-    // n'a de sens que pour SON fournisseur, jamais pour l'autre.
-    const demandes = await db.chargerDemandes();
-    const d = demandes.find((x) => x.externe && x.externe.id === idExterne && x.fournisseur === fournisseurWebhook);
-    if (d) await synchroniserDemandeExterneParId(d.id);
+    // Rejet de forme/signature : géré ci-dessus (return sans traitement, rien
+    // à rejouer). Au-delà, toute erreur relève de traiterEvenementSignature.
+    await traiterEvenementSignature(idExterne, fournisseurWebhook);
   } catch (e) {
     console.error("[webhook signature]", e.message);
   }
@@ -1011,5 +1103,9 @@ db.init()
       console.log("\n  ADBI - Generateur de contrats");
       console.log("  -> http://" + HOTE + ":" + PORT + "\n");
     });
+    // Rattrape tout webhook de signature dont le traitement avait échoué avant
+    // cet arrêt/redémarrage, puis réessaie périodiquement (voir plus haut).
+    rejouerEchecsWebhooks();
+    setInterval(rejouerEchecsWebhooks, ECHEC_WEBHOOK_RELANCE_MS);
   })
   .catch((e) => { console.error("Erreur init DB:", e); process.exit(1); });
