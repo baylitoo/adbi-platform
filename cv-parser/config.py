@@ -190,3 +190,32 @@ NEED_LIST_MAX = int(os.environ.get("ADBI_NEED_LIST_MAX", "60"))
 
 NEED_ITEM_MAX = int(os.environ.get("ADBI_NEED_ITEM_MAX", "100"))
 # longueur (caractères) de chaque entrée de ces listes
+
+# ── Bornes sur les fiches CV (api/cvs, POST /api/cvs et PATCH /api/cvs/<id>) ─
+#
+# Même risque que #72, dans l'autre sens : core/matcher.py::_score_skills
+# compare CHAQUE compétence requise du besoin (bornée à NEED_LIST_MAX par
+# #72) à CHAQUE compétence du candidat (SequenceMatcher par paire) — mais
+# candidate_skills (dérivé de `skills` via skills_normalizer.skills_to_flat,
+# qui aplatit `skills[].items`) n'a jamais été borné côté écriture :
+# POST /api/cvs n'avait aucune validation, PATCH /api/cvs/<id> vérifie le
+# TYPE des champs (issue #82) mais pas leur taille. Mesuré (run_matching
+# appelé directement, 20 CV normaux + 1 CV empoisonné, need à 5
+# required_skills) :
+#   skills normal (3-5 compétences)         ->  0,005 s (vivier entier)
+#   1 CV avec 20 000 items dans `skills`    ->  0,79 s
+#   1 CV avec 150 000 items dans `skills`   ->  8,6 s
+#   1 CV avec 400 000 items dans `skills`   -> 24,0 s
+# (un corps JSON de 400 000 items tient sous ~5 Mo, largement sous
+# MAX_CONTENT_LENGTH = 20 Mo) — issue #98. Plafonds choisis très au-dessus de
+# ce qu'une carrière réelle produit (aucune fiche de la CVthèque de
+# développement ne s'en approche) : le coût mesuré à ces valeurs reste
+# négligeable (500 items ~ 0,02 s d'après la mesure ci-dessus), la marge sert
+# uniquement à ne jamais gêner une édition manuelle légitime depuis l'écran
+# CV (cv_detail.html::collectData renvoie la fiche ENTIÈRE à chaque
+# sauvegarde, pas seulement le champ modifié).
+CV_LIST_MAX = int(os.environ.get("ADBI_CV_LIST_MAX", "300"))
+# nombre d'entrées : experience, education, languages, certifications, interests
+
+CV_SKILLS_FLAT_MAX = int(os.environ.get("ADBI_CV_SKILLS_FLAT_MAX", "500"))
+# nombre total de compétences après aplatissement (skills_normalizer.skills_to_flat)

@@ -59,6 +59,7 @@ except ImportError:
 # ── Config centralisée ────────────────────────────────────────────────────────
 from config import (
     UPLOAD_DIR, MAX_LLM_CHARS,
+    CV_LIST_MAX, CV_SKILLS_FLAT_MAX,
     get_active_llm, set_active_llm,
 )
 
@@ -2093,12 +2094,47 @@ def search_cvs():
     return jsonify(results)
 
 
+# Champs liste relus par core/matcher.py pour CHAQUE CV de la CVthèque à
+# CHAQUE appel de matching (SequenceMatcher, aplatissement de skills...) :
+# bornés en nombre d'entrées, même discipline que les besoins clients côté
+# #72 (voir config.py::CV_LIST_MAX/CV_SKILLS_FLAT_MAX — issue #98). `skills`
+# est en plus vérifié après aplatissement (skills_to_flat) : c'est
+# `candidate_skills`, comparé par paire (SequenceMatcher) à chaque compétence
+# requise d'un besoin dans core/matcher.py::_score_skills, le vrai vecteur de
+# coût — un nombre raisonnable de groupes `skills` peut cacher un nombre
+# déraisonnable d'`items` aplatis.
+CHAMPS_LISTE_CV = {"experience", "education", "languages", "certifications", "interests"}
+
+
+def _plafonner_cv(champs: dict) -> str | None:
+    """Vérifie les tailles des champs liste d'une fiche CV AVANT écriture
+    (POST /api/cvs, PATCH /api/cvs/<id>). Renvoie un message d'erreur, ou
+    None si la fiche est acceptable — voir issue #98."""
+    for champ in CHAMPS_LISTE_CV:
+        valeur = champs.get(champ)
+        if isinstance(valeur, list) and len(valeur) > CV_LIST_MAX:
+            return f"Le champ '{champ}' accepte au plus {CV_LIST_MAX} entrées."
+    skills = champs.get("skills")
+    if isinstance(skills, list):
+        if len(skills) > CV_LIST_MAX:
+            return f"Le champ 'skills' accepte au plus {CV_LIST_MAX} entrées."
+        if not all(isinstance(g, dict) for g in skills):
+            return "Le champ 'skills' doit être une liste d'objets {category, items}."
+        if len(skills_to_flat(skills)) > CV_SKILLS_FLAT_MAX:
+            return (f"Le nombre total de compétences dépasse "
+                    f"{CV_SKILLS_FLAT_MAX} une fois aplaties.")
+    return None
+
+
 @app.route("/api/cvs", methods=["POST"])
 @require_auth
 def store_cv():
     data = request.json
     if not data:
         return jsonify({"error": "Aucune donnée"}), 400
+    erreur = _plafonner_cv(data)
+    if erreur:
+        return jsonify({"error": erreur}), 400
     cid = data.get("id") or str(uuid.uuid4())
     data["stored_at"] = datetime.now().isoformat()
     cvstore_pg.save_cv(cid, data)
@@ -2182,6 +2218,9 @@ def update_cv(cv_id):
             valeur = updates[champ]
             if not isinstance(valeur, list) or not all(isinstance(x, dict) for x in valeur):
                 del updates[champ]
+    erreur = _plafonner_cv(updates)
+    if erreur:
+        return jsonify({"error": erreur}), 400
     with _verrou_cv(cv_id):
         cv = cvstore_pg.get_cv(cv_id)
         if cv is None:
