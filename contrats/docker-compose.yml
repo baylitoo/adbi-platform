@@ -25,3 +25,10 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL est requise (connexion PostgreSQL, voir README.md)}
     restart: unless-stopped
+    # Issue #138 : même plafond que le service `contrats` du docker-compose.yml
+    # RACINE — sans lui, un pic mémoire ici n'est pas contenu au conteneur et
+    # peut affamer l'hôte entier (voir ce fichier pour le détail du risque).
+    deploy:
+      resources:
+        limits:
+          memory: 512m

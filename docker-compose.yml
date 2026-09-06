@@ -32,6 +32,17 @@ services:
     # ports:
     #   - "127.0.0.1:5432:5432"
     restart: unless-stopped
+    # Issue #138 : sans plafond mémoire, un service applicatif qui fuit ou
+    # explose en mémoire (voir cv-parser ci-dessous) peut affamer tout l'hôte
+    # et faire tomber postgres via l'OOM killer du noyau — au pire moment
+    # (écriture en cours). Postgres est ici la VICTIME potentielle, pas la
+    # source du risque : plafond volontairement généreux plutôt qu'ajusté au
+    # plus juste, pour ne jamais le faire tuer par manque de marge légitime
+    # (cache partagé, connexions concurrentes des 3 services qui l'utilisent).
+    deploy:
+      resources:
+        limits:
+          memory: 1g
 
   factory:
     build: ./factory
@@ -48,6 +59,13 @@ services:
       - coffre
       - cv-parser
     restart: unless-stopped
+    # Issue #138 : aucun des 5 services n'avait de plafond ressources — voir
+    # le commentaire sur `postgres` ci-dessus pour le risque. factory ne fait
+    # que relayer/agréger, empreinte mémoire modeste attendue.
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   contrats:
     build: ./contrats
@@ -82,6 +100,11 @@ services:
       ZOHO_REFRESH_TOKEN: ${ZOHO_REFRESH_TOKEN:-}
       ZOHO_REGION: ${ZOHO_REGION:-eu}
     restart: unless-stopped
+    # Issue #138 : voir le commentaire sur `postgres` ci-dessus.
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   one-pager:
     build: ./one-pager
@@ -97,6 +120,11 @@ services:
       PORT: 4200
       DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_one_pager
     restart: unless-stopped
+    # Issue #138 : voir le commentaire sur `postgres` ci-dessus.
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   coffre:
     build: ./coffre
@@ -111,6 +139,11 @@ services:
     environment:
       ADBI_COFFRE_PORT: 4300
     restart: unless-stopped
+    # Issue #138 : voir le commentaire sur `postgres` ci-dessus.
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   cv-parser:
     build: ./cv-parser
@@ -140,6 +173,22 @@ services:
       ADBI_LLM_MODEL: ${ADBI_LLM_MODEL:-}
       ADBI_LLM_MODELS: ${ADBI_LLM_MODELS:-}
     restart: unless-stopped
+    # Issue #138 : ce service concentre le vrai risque. Un seul worker
+    # Gunicorn, `threads = 4` (voir gunicorn.conf.py) partageant le même
+    # process — jusqu'à 4 analyses Docling/torch concurrentes (modèles de
+    # mise en page + OCR, chargés une fois en mémoire du process) sur des
+    # PDF de 20 Mo chacun (MAX_CONTENT_LENGTH, app.py). Sans plafond, un pic
+    # mémoire ici (PDF pathologique, rafale de dépôts) n'est pas contenu au
+    # conteneur : il peut affamer l'hôte entier et faire tuer par l'OOM
+    # killer n'importe quel autre conteneur (postgres en premier lieu),
+    # au lieu de faire échouer proprement la seule analyse en cause.
+    # Valeur volontairement large et NON validée contre un vrai pic Docling
+    # en production — c'est le point de réglage de l'exploitant si besoin
+    # (voir issue #138) : à surveiller, pas à réduire à l'aveugle.
+    deploy:
+      resources:
+        limits:
+          memory: 6g
 
 volumes:
   postgres-data:
