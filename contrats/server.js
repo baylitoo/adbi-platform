@@ -855,7 +855,9 @@ app.post("/api/zoho/echanger-code", exigerCodeParametres, async (req, res) => {
 // (Relances et délais sont gérés PAR LE FOURNISSEUR : rappels automatiques
 // Yousign, expiration fixée à la création de l'enveloppe.)
 app.get("/api/signatures", async (req, res) => {
-  try { res.json((await db.chargerDemandes()).map(vueDemande)); }
+  // Bornée comme /api/contrats (listerContrats) : voir le commentaire de
+  // chargerDemandes() dans lib/db.pg.js.
+  try { res.json((await db.chargerDemandes(200)).map(vueDemande)); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
