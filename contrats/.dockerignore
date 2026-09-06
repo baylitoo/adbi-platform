@@ -3,10 +3,22 @@ node_modules
 npm-debug.log
 *.zip
 
-# Fichiers propres a une machine (jamais dans l'image)
-data/secrets.json
-data/contrats.sqlite
-data/code-parametres.txt
+# data/ est un volume monte a l'execution (docker-compose.yml, et documente
+# comme donnees reelles persistantes dans docs/deploiement-coolify.md) : le
+# contenu copie ici par "COPY . ." ne sert donc jamais au conteneur, mais
+# reste dans le layer de l'image (cache/historique de build) meme apres
+# coup, y compris s'il est ensuite supprime du disque. Exclure fichier par
+# fichier (secrets.json, contrats.sqlite, code-parametres.txt) oubliait
+# data/contrats-generes/ : sur un redeploiement ("docker compose up -d
+# --build" sur un hote qui a deja tourne — build context et source du volume
+# sont le MEME dossier), ce sous-dossier contient les PDF de contrats deja
+# generes/signes (donnees clients reelles, jamais recreables) et se
+# retrouvait copie tel quel dans l'image — y compris apres une suppression
+# via /api/corbeille/purger ou DELETE /api/contracts/:id, qui n'efface que le
+# disque, jamais les layers d'images deja construites. Exclusion large,
+# comme cv-parser (data, uploads, cv_output) et one-pager (data) : rien sous
+# data/ n'est necessaire au build, tout y arrive par le volume.
+data
 
 # Divers
 .git
