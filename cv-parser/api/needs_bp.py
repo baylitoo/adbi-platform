@@ -5,6 +5,7 @@ from core.auth import require_auth, get_current_user, check_need_access
 from core.database_pg import (
     insert_need, get_need, list_needs, update_need, delete_need,
 )
+from core.models import NeedStatus
 from config import NEED_SHORT_MAX, NEED_TEXT_MAX, NEED_LIST_MAX, NEED_ITEM_MAX
 
 needs_bp = Blueprint("needs", __name__, url_prefix="/api/needs")
@@ -18,6 +19,12 @@ _CHAMPS_TEXTE = ("context", "notes", "raw_text", "client", "sector")
 # Listes relues par core/matcher.py pour chaque CV de la CVthèque : bornées
 # en nombre d'entrées ET en longueur par entrée.
 _CHAMPS_LISTE = ("required_skills", "bonus_skills", "languages")
+# `status` a bien une énumération dédiée (core/models.py::NeedStatus), mais
+# cette route travaille sur des dicts bruts sans jamais passer par les
+# modèles Pydantic (NeedCreate/NeedUpdate — non utilisés ailleurs dans le
+# code) : rien ne la fait respecter avant ce correctif. `insert_need()` fixe
+# toujours "active" à la création (POST), donc seul PATCH est concerné.
+_STATUTS_VALIDES = {s.value for s in NeedStatus}
 
 
 def _longueur_entree(champ: str, item) -> int:
@@ -60,6 +67,13 @@ def _valider_besoin(body: dict) -> str | None:
         for item in v:
             if _longueur_entree(cle, item) > NEED_ITEM_MAX:
                 return f"Une entrée de '{cle}' dépasse {NEED_ITEM_MAX} caractères."
+
+    statut = body.get("status")
+    if statut is not None and (not isinstance(statut, str) or statut not in _STATUTS_VALIDES):
+        return (
+            "Le champ 'status' doit être l'une des valeurs : "
+            + ", ".join(sorted(_STATUTS_VALIDES)) + "."
+        )
 
     return None
 
