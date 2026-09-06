@@ -1346,6 +1346,31 @@ def extraction_suffisante(data: dict):
     return (not manques), manques
 
 
+def fichier_upload(identifiant: str, ext: str):
+    """Chemin d'un fichier uploadé, borné à UPLOAD_DIR.
+
+    `identifiant` (id de fiche CV) et `ext` peuvent tous deux provenir d'une
+    source non maîtrisée (segment d'URL, ou champ `ext` d'une fiche créée par
+    POST /api/cvs — aucune liste blanche ne le protège aujourd'hui, voir
+    CHAMPS_MODIFIABLES_CV, qui n'est appliquée qu'au PATCH) : un simple
+    `UPLOAD_DIR / f"{identifiant}{ext}"` NE CONTIENT PAS le résultat dans
+    UPLOAD_DIR. pathlib traite un composant contenant un segment ".." comme
+    une simple concaténation (on ressort du dossier), et un composant qui
+    RESSEMBLE à un chemin absolu (ex. "C:\\Windows\\win.ini") remplace
+    carrément le dossier de base — même trou que GET /api/file/<file_id>,
+    mais atteint ici par /api/cv/<id>/reanalyser (le contenu du fichier ciblé
+    fuite via l'extraction de texte, sauvegardée puis relisible dans la
+    fiche) et /api/cvs/<id>/translate (COPIE du fichier ciblé sous un nouvel
+    id sûr, qui redevient alors accessible via GET /api/file/<nouvel-id>,
+    même après correction de la route de téléchargement — issue #118). On
+    exige donc ici que le chemin RÉSOLU reste un enfant direct de UPLOAD_DIR,
+    comme delete_cv (issue #86) le fait déjà. Renvoie le Path si le fichier
+    existe et reste sous UPLOAD_DIR, sinon None.
+    """
+    p = (UPLOAD_DIR / f"{identifiant}{ext}").resolve()
+    return p if p.parent == UPLOAD_DIR.resolve() and p.is_file() else None
+
+
 def process_cv(file_path, jeton=None) -> dict:
     """Pipeline CV : extraction → nettoyage → LLM → normalisation.
     Chaque étape est chronométrée et les durées sont retournées dans cv_data['_timing'].
@@ -1928,8 +1953,8 @@ def reanalyser_cv(file_id):
             return jsonify({"error": "CV introuvable"}), 404
 
         ext = fiche.get("ext") or Path(fiche.get("filename", "")).suffix or ".pdf"
-        file_path = UPLOAD_DIR / f"{file_id}{ext}"
-        if not file_path.exists():
+        file_path = fichier_upload(file_id, ext)
+        if not file_path:
             return jsonify({"error": "Fichier d'origine absent du poste : re-déposez le document."}), 404
 
         jeton = (request.form.get("jeton") or "").strip()[:64]
@@ -3020,8 +3045,8 @@ def translate_cv(cv_id):
 
     # Copy the original uploaded file so the PDF viewer still works
     orig_ext = original.get("ext", ".pdf")
-    src_file = UPLOAD_DIR / f"{cv_id}{orig_ext}"
-    if src_file.exists():
+    src_file = fichier_upload(cv_id, orig_ext)
+    if src_file:
         dst_file = UPLOAD_DIR / f"{new_id}{orig_ext}"
         shutil.copy2(src_file, dst_file)
         new_cv["ext"]      = orig_ext
