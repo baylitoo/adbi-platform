@@ -197,7 +197,7 @@ NEED_ITEM_MAX = int(os.environ.get("ADBI_NEED_ITEM_MAX", "100"))
 # mais même un besoin parfaitement légitime, dans ces plafonds, reste un
 # calcul CPU pur en Python (SequenceMatcher, recherches de sous-chaînes) qui
 # grandit avec la taille de la CVthèque ELLE-MÊME — pas un payload qu'on
-# pourrait plafonner. Mesuré (issue #93bis) : ~1000 CV synthétiques, besoin à
+# pourrait plafonner. Mesuré (issue #94) : ~1000 CV synthétiques, besoin à
 # la taille max autorisée -> ~8 s pour un seul run_matching(). cv-parser tourne
 # en un seul worker Gunicorn à plusieurs threads (`gthread`, voir
 # gunicorn.conf.py) : ces threads partagent un seul GIL, donc 4 calculs de ce
