@@ -213,9 +213,12 @@ async function analyserFichierPdf(fichier) {
   // L'empreinte est stable ; la référence, elle, n'est attribuée qu'à la
   // génération — analyser un document sans le protéger ne doit pas remplir le
   // registre.
-  etat.empreinte = COFFRE_DETECTEURS.empreinteDocument(
-    fichier.name + ":" + etat.octets.byteLength
-  );
+  // Calculée sur le CONTENU réel du fichier (voir issue #109) : se fier au nom
+  // + à la taille faisait confondre deux CV différents partageant un nom
+  // générique ("CV.pdf") et un nombre d'octets identique (gabarit commun) —
+  // le second déposé écrasait alors silencieusement le document conservé du
+  // premier sous la même référence.
+  etat.empreinte = COFFRE_DETECTEURS.empreinteDocument(new Uint8Array(etat.octets));
   etat.reference = "";
   annoncerReference();
 

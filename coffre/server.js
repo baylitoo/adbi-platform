@@ -563,10 +563,13 @@ const serveur = http.createServer(async (req, rep) => {
       if (corps.length === 0) throw new ErreurCoffre(400, "Fichier vide.");
 
       const charge = anonymiser ? null : await chiffrer(corps, nom, motDePasse);
-      // L'empreinte est tirée du nom d'origine et de la taille ; le registre en
-      // déduit la référence, ou rend celle déjà attribuée à ce document.
+      // L'empreinte est tirée du CONTENU du document (voir issue #109 : se
+      // fier au nom + à la taille faisait confondre deux fichiers différents
+      // partageant un nom générique et un nombre d'octets identique — le
+      // registre en déduit la référence, ou rend celle déjà attribuée à ce
+      // document si les octets sont bien les mêmes.
       const attribution = attribuerReference({
-        empreinte: DETECTEURS.empreinteDocument(nom + ":" + corps.length),
+        empreinte: DETECTEURS.empreinteDocument(corps),
         nom: nom,
         format: "Word",
         mode: anonymiser ? "anonymisé" : "protégé",
