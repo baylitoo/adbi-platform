@@ -617,6 +617,19 @@ app.post("/api/signatures/:id/synchroniser", async (req, res) => {
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
 
+// Compare un HMAC reçu (hex ou base64, peu importe l'encodage tant que les
+// deux côtés utilisent le même) à la valeur attendue, en temps constant.
+// timingSafeEqual exige des Buffer de MÊME longueur (sinon il lève) : une
+// longueur différente est déjà la preuve d'une signature invalide, donc
+// rejetée directement plutôt que bricolée (l'ancien code paddait `recu` pour
+// forcer l'égalité de taille, ce qui n'apportait rien et compliquait la lecture).
+function hmacCorrespond(recu, attendu) {
+  if (!recu) return false;
+  const a = Buffer.from(attendu);
+  const b = Buffer.from(String(recu));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 // Webhook du fournisseur de signature (à déclarer chez lui vers
 // http(s)://<hôte>/webhooks/signature). Vérification HMAC si un secret est
 // configuré ; sinon le webhook déclenche simplement une synchronisation —
@@ -624,24 +637,51 @@ app.post("/api/signatures/:id/synchroniser", async (req, res) => {
 app.post("/webhooks/signature", async (req, res) => {
   res.status(200).json({ ok: true }); // répondre vite : le traitement suit
   try {
-    // Format Yousign : {data:{signature_request:{id}}} + en-tête HMAC vérifié si
-    // le secret est configuré. Format Zoho Sign : {requests:{request_id}}.
+    // Format Yousign : {data:{signature_request:{id}}} + en-tête HMAC
+    // (X-Yousign-Signature-256, hex) vérifié si le secret est configuré.
+    // Format Zoho Sign : {requests:{request_id}} + en-tête HMAC
+    // (X-ZS-Webhook-Signature, base64) vérifié si le secret est configuré.
     // Dans tous les cas le contenu N'EST PAS cru : on relit l'API du fournisseur.
+    //
+    // `fournisseurWebhook` est déterminé UNE FOIS ici à partir de la forme du
+    // corps, et sert ensuite à la fois à choisir QUEL secret vérifier et à
+    // filtrer la recherche de la demande (voir plus bas) : sans ce filtre, un
+    // attaquant qui connaît l'id externe d'UNE demande Yousign pouvait
+    // l'envoyer emballé dans la forme Zoho ({requests:{request_id}}) — le
+    // code ne consultait alors JAMAIS le secret webhook Yousign configuré
+    // (branche `else if`, jamais atteinte pour cette forme), et la recherche
+    // ci-dessous ne filtrait pas non plus par fournisseur : la vérification
+    // HMAC de l'administrateur était donc totalement contournable.
     const corps = req.body || {};
+    let fournisseurWebhook = null;
     let idExterne = corps.data && corps.data.signature_request && corps.data.signature_request.id;
     if (idExterne) {
+      fournisseurWebhook = "yousign";
       const y = fournisseurs.externe("yousign");
       const cfg = y && y.config();
       if (cfg && cfg.webhookSecret) {
         const attendu = crypto.createHmac("sha256", cfg.webhookSecret).update(req.rawBody || Buffer.alloc(0)).digest("hex");
         const recu = String(req.headers["x-yousign-signature-256"] || "").replace(/^sha256=/, "");
-        if (!recu || !crypto.timingSafeEqual(Buffer.from(attendu), Buffer.from(recu.padEnd(attendu.length).slice(0, attendu.length)))) {
+        if (!hmacCorrespond(recu, attendu)) {
           console.error("[webhook signature] HMAC Yousign invalide — événement ignoré");
           return;
         }
       }
     } else if (corps.requests && corps.requests.request_id) {
+      fournisseurWebhook = "zoho";
       idExterne = String(corps.requests.request_id);
+      const z = fournisseurs.externe("zoho");
+      const cfg = z && z.config();
+      if (cfg && cfg.webhookSecret) {
+        // Zoho Sign : HMAC-SHA256 du corps brut, encodé en base64, en-tête
+        // X-ZS-Webhook-Signature (voir doc Zoho Sign — sécurisation des webhooks).
+        const attendu = crypto.createHmac("sha256", cfg.webhookSecret).update(req.rawBody || Buffer.alloc(0)).digest("base64");
+        const recu = String(req.headers["x-zs-webhook-signature"] || "");
+        if (!hmacCorrespond(recu, attendu)) {
+          console.error("[webhook signature] HMAC Zoho invalide — événement ignoré");
+          return;
+        }
+      }
     }
     if (!idExterne) return;
     // La recherche par id externe se fait hors verrou (simple lecture) ; seule
@@ -649,8 +689,10 @@ app.post("/webhooks/signature", async (req, res) => {
     // passe par synchroniserDemandeExterneParId, verrouillée par demande —
     // deux livraisons du même webhook, ou ce webhook et le bouton manuel,
     // sérialisent alors sur la même demande au lieu de s'écraser l'un l'autre.
+    // Filtrée par `fournisseur` (voir commentaire ci-dessus) : un id externe
+    // n'a de sens que pour SON fournisseur, jamais pour l'autre.
     const demandes = await db.chargerDemandes();
-    const d = demandes.find((x) => x.externe && x.externe.id === idExterne);
+    const d = demandes.find((x) => x.externe && x.externe.id === idExterne && x.fournisseur === fournisseurWebhook);
     if (d) await synchroniserDemandeExterneParId(d.id);
   } catch (e) {
     console.error("[webhook signature]", e.message);
