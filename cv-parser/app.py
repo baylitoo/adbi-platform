@@ -76,7 +76,7 @@ from core.auth import (
 # importé en module (cvstore_pg.get_cv, ...) pour ne pas entrer en conflit
 # avec les routes de ce fichier qui portent les mêmes noms
 # (get_cv, list_cvs, delete_cv).
-from core.pg import init_schema
+from core.pg import init_schema, ping as _pg_ping
 from core.activity_pg import log_event as _log
 from core import cvstore_pg
 
@@ -1573,6 +1573,27 @@ def _conseil_erreur(code: int, provider: str) -> str:
     if code and code >= 500:
         return "Panne cote fournisseur : reessayez plus tard."
     return ""
+
+
+@app.route("/api/sante")
+def api_sante():
+    """
+    PostgreSQL répond-il réellement ?
+
+    Interrogée par le HEALTHCHECK Docker (voir Dockerfile) — auparavant sur
+    /api/status, qui ne vérifie que la chaîne de passerelles LLM (voir
+    api_status ci-dessous), jamais la base. Sans ce contrôle, un Postgres
+    injoignable (partition réseau, conteneur OOM-killed puis en
+    redémarrage) laissait le HEALTHCHECK toujours vert tant que gunicorn
+    restait vivant, alors que /api/cvs et consorts échouaient déjà tous.
+    Pas de @require_auth : le HEALTHCHECK Docker n'a pas de session, comme
+    /api/status.
+    """
+    try:
+        _pg_ping()
+        return jsonify({"etat": "pret", "base": "ok"})
+    except Exception as e:
+        return jsonify({"etat": "indisponible", "base": "ko", "erreur": str(e)}), 503
 
 
 @app.route("/api/status")

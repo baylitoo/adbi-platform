@@ -32,8 +32,11 @@ ENV PYTHONUNBUFFERED=1
 ENV ADBI_HOTE=0.0.0.0
 EXPOSE 5000
 
+# /api/sante fait un vrai SELECT 1 contre PostgreSQL (voir core/pg.py::ping)
+# — /api/status ne vérifie que la chaîne de passerelles LLM et restait vert
+# même base injoignable (issue #88).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
-    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','5000')+'/api/status', timeout=4)" || exit 1
+    CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','5000')+'/api/sante', timeout=4)" || exit 1
 
 # Serveur de production Gunicorn (issue #61 — le serveur de dev Flask n'est
 # pas conçu pour être exposé) plutôt que `python app.py` : configuration dans

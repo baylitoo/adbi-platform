@@ -27,7 +27,10 @@ ENV NODE_ENV=production
 ENV ADBI_HOTE=0.0.0.0
 EXPOSE 4100
 
+# /api/sante fait un vrai SELECT 1 contre PostgreSQL (voir lib/db.pg.js et
+# server.js) — "/" ne fait que servir index.html en statique et restait vert
+# meme base injoignable (issue #88).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4100)+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+    CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4100)+'/api/sante').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "server.js"]
