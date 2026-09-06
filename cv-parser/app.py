@@ -1965,9 +1965,17 @@ def reanalyser_cv(file_id):
 @app.route("/api/file/<file_id>")
 @require_auth
 def serve_file(file_id):
+    # Le convertisseur <file_id> de Flask n'exclut que le "/" : un "\" y passe
+    # sans encombre, et sous Windows (déploiement "poste", cf. modules.json)
+    # pathlib le traite comme un séparateur de répertoire. Sans le garde-fou
+    # ci-dessous, file_id="..\\..\\contrats\\data\\contrats-generes\\X\\Y"
+    # (envoyé encodé en "..%5C..%5C...") fait sortir le chemin d'UPLOAD_DIR et
+    # renvoie n'importe quel .pdf/.doc/.docx du poste. Même remède que
+    # delete_cv (issue #86) : on exige que le fichier résolu reste bien un
+    # enfant DIRECT d'UPLOAD_DIR.
     for ext in [".pdf", ".doc", ".docx"]:
-        fp = UPLOAD_DIR / f"{file_id}{ext}"
-        if fp.exists():
+        fp = (UPLOAD_DIR / f"{file_id}{ext}").resolve()
+        if fp.parent == UPLOAD_DIR.resolve() and fp.is_file():
             return send_file(fp)
     abort(404)
 
