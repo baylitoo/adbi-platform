@@ -656,10 +656,26 @@ function bandeau(pres, s, o) {
 
 // --------------------------------------------------------------- Outillage ---
 
+// Racine sous laquelle une reference-fichier DOIT rester : voir image().
+const DOSSIER_PUBLIC = path.join(__dirname, "..", "public");
+
 /**
  * Resout une reference d'image en source pptxgenjs. Renvoie null si le format
  * n'est pas rasterise ou si le fichier n'existe pas : PowerPoint affiche un
  * cadre vide (voire refuse le fichier) pour un SVG sans repli PNG.
+ *
+ * `ref` peut venir directement du corps d'une requete cliente : POST
+ * /api/export/pptx accepte un `op` deja construit (voir server.js, "l'apercu
+ * fait foi"), et op.visual.portrait/logo/badges n'est alors PAS repasse par
+ * build() — rien ne garantit qu'il s'agit d'une simple photo en data URI
+ * (seul format legitime, voir lib/onepager.js) plutot que d'un chemin. Un
+ * chemin du type "../../../../ailleurs/fichier.png" survivait auparavant au
+ * path.join ci-dessous (qui ne fait que CONCATENER, pas contenir) et pouvait
+ * faire lire puis reembarquer dans le .pptx exporte n'importe quel fichier
+ * .png/.jpg/.gif du disque, hors de public/ — meme categorie de trou que
+ * l'aurait ete /adbi-theme.css sans le controle `cible.startsWith(PUBLIC)` de
+ * factory/server.js. On applique ici le meme garde-fou : le chemin resolu
+ * doit rester sous public/, sans quoi la reference est ignoree comme absente.
  */
 function image(ref) {
   const src = typeof ref === "string" ? ref.trim() : "";
@@ -670,7 +686,9 @@ function image(ref) {
   }
   if (!/\.(png|jpe?g|gif)$/i.test(src)) return null;
 
-  const abs = path.join(__dirname, "..", "public", src.replace(/^[\\/]+/, ""));
+  const abs = path.join(DOSSIER_PUBLIC, src.replace(/^[\\/]+/, ""));
+  const racine = DOSSIER_PUBLIC + path.sep;
+  if (abs !== DOSSIER_PUBLIC && !abs.startsWith(racine)) return null;
   try {
     if (!fs.statSync(abs).isFile()) return null;
   } catch (_) {
