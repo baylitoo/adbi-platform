@@ -59,6 +59,7 @@ except ImportError:
 # ── Config centralisée ────────────────────────────────────────────────────────
 from config import (
     UPLOAD_DIR, MAX_LLM_CHARS,
+    CV_LIST_MAX, CV_SKILLS_FLAT_MAX,
     get_active_llm, set_active_llm,
 )
 
@@ -1346,6 +1347,31 @@ def extraction_suffisante(data: dict):
     return (not manques), manques
 
 
+def fichier_upload(identifiant: str, ext: str):
+    """Chemin d'un fichier uploadé, borné à UPLOAD_DIR.
+
+    `identifiant` (id de fiche CV) et `ext` peuvent tous deux provenir d'une
+    source non maîtrisée (segment d'URL, ou champ `ext` d'une fiche créée par
+    POST /api/cvs — aucune liste blanche ne le protège aujourd'hui, voir
+    CHAMPS_MODIFIABLES_CV, qui n'est appliquée qu'au PATCH) : un simple
+    `UPLOAD_DIR / f"{identifiant}{ext}"` NE CONTIENT PAS le résultat dans
+    UPLOAD_DIR. pathlib traite un composant contenant un segment ".." comme
+    une simple concaténation (on ressort du dossier), et un composant qui
+    RESSEMBLE à un chemin absolu (ex. "C:\\Windows\\win.ini") remplace
+    carrément le dossier de base — même trou que GET /api/file/<file_id>,
+    mais atteint ici par /api/cv/<id>/reanalyser (le contenu du fichier ciblé
+    fuite via l'extraction de texte, sauvegardée puis relisible dans la
+    fiche) et /api/cvs/<id>/translate (COPIE du fichier ciblé sous un nouvel
+    id sûr, qui redevient alors accessible via GET /api/file/<nouvel-id>,
+    même après correction de la route de téléchargement — issue #118). On
+    exige donc ici que le chemin RÉSOLU reste un enfant direct de UPLOAD_DIR,
+    comme delete_cv (issue #86) le fait déjà. Renvoie le Path si le fichier
+    existe et reste sous UPLOAD_DIR, sinon None.
+    """
+    p = (UPLOAD_DIR / f"{identifiant}{ext}").resolve()
+    return p if p.parent == UPLOAD_DIR.resolve() and p.is_file() else None
+
+
 def process_cv(file_path, jeton=None) -> dict:
     """Pipeline CV : extraction → nettoyage → LLM → normalisation.
     Chaque étape est chronométrée et les durées sont retournées dans cv_data['_timing'].
@@ -1928,8 +1954,8 @@ def reanalyser_cv(file_id):
             return jsonify({"error": "CV introuvable"}), 404
 
         ext = fiche.get("ext") or Path(fiche.get("filename", "")).suffix or ".pdf"
-        file_path = UPLOAD_DIR / f"{file_id}{ext}"
-        if not file_path.exists():
+        file_path = fichier_upload(file_id, ext)
+        if not file_path:
             return jsonify({"error": "Fichier d'origine absent du poste : re-déposez le document."}), 404
 
         jeton = (request.form.get("jeton") or "").strip()[:64]
@@ -1965,9 +1991,17 @@ def reanalyser_cv(file_id):
 @app.route("/api/file/<file_id>")
 @require_auth
 def serve_file(file_id):
+    # Le convertisseur <file_id> de Flask n'exclut que le "/" : un "\" y passe
+    # sans encombre, et sous Windows (déploiement "poste", cf. modules.json)
+    # pathlib le traite comme un séparateur de répertoire. Sans le garde-fou
+    # ci-dessous, file_id="..\\..\\contrats\\data\\contrats-generes\\X\\Y"
+    # (envoyé encodé en "..%5C..%5C...") fait sortir le chemin d'UPLOAD_DIR et
+    # renvoie n'importe quel .pdf/.doc/.docx du poste. Même remède que
+    # delete_cv (issue #86) : on exige que le fichier résolu reste bien un
+    # enfant DIRECT d'UPLOAD_DIR.
     for ext in [".pdf", ".doc", ".docx"]:
-        fp = UPLOAD_DIR / f"{file_id}{ext}"
-        if fp.exists():
+        fp = (UPLOAD_DIR / f"{file_id}{ext}").resolve()
+        if fp.parent == UPLOAD_DIR.resolve() and fp.is_file():
             return send_file(fp)
     abort(404)
 
@@ -2093,15 +2127,71 @@ def search_cvs():
     return jsonify(results)
 
 
+# Champs liste relus par core/matcher.py pour CHAQUE CV de la CVthèque à
+# CHAQUE appel de matching (SequenceMatcher, aplatissement de skills...) :
+# bornés en nombre d'entrées, même discipline que les besoins clients côté
+# #72 (voir config.py::CV_LIST_MAX/CV_SKILLS_FLAT_MAX — issue #98). `skills`
+# est en plus vérifié après aplatissement (skills_to_flat) : c'est
+# `candidate_skills`, comparé par paire (SequenceMatcher) à chaque compétence
+# requise d'un besoin dans core/matcher.py::_score_skills, le vrai vecteur de
+# coût — un nombre raisonnable de groupes `skills` peut cacher un nombre
+# déraisonnable d'`items` aplatis.
+CHAMPS_LISTE_CV = {"experience", "education", "languages", "certifications", "interests"}
+
+
+def _plafonner_cv(champs: dict) -> str | None:
+    """Vérifie les tailles des champs liste d'une fiche CV AVANT écriture
+    (POST /api/cvs, PATCH /api/cvs/<id>). Renvoie un message d'erreur, ou
+    None si la fiche est acceptable — voir issue #98."""
+    for champ in CHAMPS_LISTE_CV:
+        valeur = champs.get(champ)
+        if isinstance(valeur, list) and len(valeur) > CV_LIST_MAX:
+            return f"Le champ '{champ}' accepte au plus {CV_LIST_MAX} entrées."
+    skills = champs.get("skills")
+    if isinstance(skills, list):
+        if len(skills) > CV_LIST_MAX:
+            return f"Le champ 'skills' accepte au plus {CV_LIST_MAX} entrées."
+        if not all(isinstance(g, dict) for g in skills):
+            return "Le champ 'skills' doit être une liste d'objets {category, items}."
+        if len(skills_to_flat(skills)) > CV_SKILLS_FLAT_MAX:
+            return (f"Le nombre total de compétences dépasse "
+                    f"{CV_SKILLS_FLAT_MAX} une fois aplaties.")
+    return None
+
+
 @app.route("/api/cvs", methods=["POST"])
 @require_auth
 def store_cv():
+    # POST est la route de CRÉATION (import) d'une fiche, pas une voie de
+    # modification : @require_auth (pas @require_superuser) l'ouvre à tout
+    # utilisateur authentifié, et la CVthèque n'a pas de notion de
+    # propriétaire par fiche. Sans contrôle sur l'`id` fourni par le client,
+    # cvstore_pg.save_cv (upsert inconditionnel) permettait à n'importe qui
+    # de remplacer intégralement une fiche EXISTANTE en devinant/réutilisant
+    # son id (obtenu p. ex. via GET /api/cvs, lui aussi non restreint) —
+    # aucune confirmation, aucun contrôle de version, aucune trace de
+    # l'écrasement (issue #100 ; différent de #82, qui portait sur les
+    # champs acceptés par PATCH, pas sur l'écrasement d'une fiche par POST).
+    # Aucun appelant réel de ce dépôt ne dépend de pouvoir écraser une fiche
+    # existante via POST : la création passe par /api/upload (id généré
+    # serveur, cv-parser/app.py) et la modification d'une fiche existante par
+    # PATCH /api/cvs/<id> (liste blanche de champs, issue #82). Un id fourni
+    # qui existe déjà est donc refusé plutôt que silencieusement remplacé.
     data = request.json
     if not data:
         return jsonify({"error": "Aucune donnée"}), 400
+    erreur = _plafonner_cv(data)
+    if erreur:
+        return jsonify({"error": erreur}), 400
     cid = data.get("id") or str(uuid.uuid4())
     data["stored_at"] = datetime.now().isoformat()
-    cvstore_pg.save_cv(cid, data)
+    # Atomique côté base (INSERT ... ON CONFLICT DO NOTHING) : pas de fenêtre
+    # de course entre une lecture d'existence et l'écriture.
+    if not cvstore_pg.create_cv(cid, data):
+        return jsonify({
+            "error": "Une fiche CV avec cet id existe déjà. "
+                     "Utilisez PATCH /api/cvs/<id> pour la modifier.",
+        }), 409
     return jsonify({"success": True, "id": cid})
 
 
@@ -2182,6 +2272,9 @@ def update_cv(cv_id):
             valeur = updates[champ]
             if not isinstance(valeur, list) or not all(isinstance(x, dict) for x in valeur):
                 del updates[champ]
+    erreur = _plafonner_cv(updates)
+    if erreur:
+        return jsonify({"error": erreur}), 400
     with _verrou_cv(cv_id):
         cv = cvstore_pg.get_cv(cv_id)
         if cv is None:
@@ -3020,8 +3113,8 @@ def translate_cv(cv_id):
 
     # Copy the original uploaded file so the PDF viewer still works
     orig_ext = original.get("ext", ".pdf")
-    src_file = UPLOAD_DIR / f"{cv_id}{orig_ext}"
-    if src_file.exists():
+    src_file = fichier_upload(cv_id, orig_ext)
+    if src_file:
         dst_file = UPLOAD_DIR / f"{new_id}{orig_ext}"
         shutil.copy2(src_file, dst_file)
         new_cv["ext"]      = orig_ext

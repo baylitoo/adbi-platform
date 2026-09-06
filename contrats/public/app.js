@@ -1567,6 +1567,8 @@ async function loadSettings() {
     $("#setZohoClientId").placeholder = s.zohoIdentifiants ? "•••••• (enregistré — retaper pour changer)" : "depuis api-console.zoho.eu (Self Client)";
     $("#setZohoClientSecret").value = "";
     $("#setZohoClientSecret").placeholder = s.zohoIdentifiants ? "•••••• (enregistré)" : "depuis api-console.zoho.eu";
+    $("#setZohoWebhook").value = "";
+    $("#setZohoWebhook").placeholder = s.zohoWebhook ? "•••••• (enregistré)" : "pour vérifier l'authenticité des webhooks (X-ZS-Webhook-Signature)";
     ETAT_CONNECTEURS = s;
     majEtatConnecteur();
     // SMTP : hôte/port/utilisateur/expéditeur ré-affichés (pas le mot de passe).
@@ -1589,6 +1591,7 @@ async function saveSettings() {
   body.zohoRegion = $("#setZohoRegion").value;
   if ($("#setZohoClientId").value.trim()) body.zohoClientId = $("#setZohoClientId").value.trim();
   if ($("#setZohoClientSecret").value.trim()) body.zohoClientSecret = $("#setZohoClientSecret").value.trim();
+  if ($("#setZohoWebhook").value.trim()) body.zohoWebhookSecret = $("#setZohoWebhook").value.trim();
   const st = $("#setStatus");
   st.textContent = "Enregistrement…"; st.style.color = "var(--muted)";
   try {

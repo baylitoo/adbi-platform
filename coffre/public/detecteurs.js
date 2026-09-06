@@ -515,19 +515,43 @@ var COFFRE_DETECTEURS = (function () {
   var ALPHABET = "ACDEFGHJKMNPQRTUVWXYZ2346789";
 
   /**
-   * Empreinte stable d'un document : 4 caractères tirés de son nom et de sa
-   * taille. C'est la partie qui ne change jamais — elle sert à reconnaître un
-   * document déjà traité, même des mois plus tard.
+   * Empreinte stable d'un document : 4 caractères tirés du CONTENU du fichier
+   * (octets bruts, Buffer côté serveur / Uint8Array côté navigateur). C'est la
+   * partie qui ne change jamais — elle sert à reconnaître un document déjà
+   * traité, même des mois plus tard, et à lui attribuer TOUJOURS la même
+   * référence (voir attribuerReference côté serveur).
+   *
+   * Avant correctif (issue #109), l'empreinte se calculait sur `nom + ":" +
+   * taille` : deux documents totalement différents mais partageant un nom de
+   * fichier générique ("CV.pdf", "dossier-competences.docx") et un nombre
+   * d'octets identique (fréquent avec des gabarits communs) recevaient
+   * exactement la même empreinte, donc la même référence — le registre
+   * confondait alors les deux documents, et le second déposé ÉCRASAIT
+   * silencieusement le document conservé du premier (voir rangerDocument/
+   * server.js). Hacher le contenu réel, et non plus seulement son nom et sa
+   * taille, élimine cette confusion garantie tout en préservant le
+   * comportement voulu : un même fichier redéposé (mêmes octets) retrouve
+   * bien la même empreinte.
+   *
+   * Échantillonnage (au lieu de parcourir chaque octet) : un document peut
+   * peser plusieurs dizaines de Mo, et cette fonction doit rester instantanée.
    */
-  function empreinteDocument(graine) {
+  function empreinteDocument(octets) {
+    var n = (octets && octets.length) || 0;
+    var pas = n > 65536 ? Math.ceil(n / 65536) : 1;
     var h1 = 0x811c9dc5;
     var h2 = 0x01000193;
-    var s = String(graine || "");
-    for (var i = 0; i < s.length; i++) {
-      h1 = (h1 ^ s.charCodeAt(i)) >>> 0;
+    var rang = 0;
+    for (var i = 0; i < n; i += pas, rang++) {
+      var c = octets[i];
+      h1 = (h1 ^ c) >>> 0;
       h1 = (h1 * 0x01000193) >>> 0;
-      h2 = (h2 + s.charCodeAt(i) * (i + 7)) >>> 0;
+      h2 = (h2 + c * (rang + 7)) >>> 0;
     }
+    // La taille reste mêlée au résultat : un échantillonnage identique sur
+    // deux tailles différentes ne doit pas produire la même empreinte.
+    h1 = (h1 ^ n) >>> 0;
+    h2 = (h2 + n * 97) >>> 0;
     var melange = (h1 ^ h2) >>> 0;
     var code = "";
     for (var k = 0; k < 4; k++) {

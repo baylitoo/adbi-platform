@@ -76,6 +76,20 @@ app.get("/api/sante", async (req, res) => {
 const CODE_PARAM_DEFAUT = "ADbi2027@@";
 const CODE_PARAM_FICHIER = path.join(__dirname, "data", "code-parametres.txt");
 
+// Webhooks de signature dont le TRAITEMENT (pas la réception) a échoué — voir
+// traiterEvenementSignature ci-dessous. Fichier plutôt que mémoire : la file
+// doit survivre à un redémarrage du service, seul moyen de rattraper un
+// événement reçu juste avant un arrêt/crash.
+const ECHECS_WEBHOOKS_FICHIER = path.join(__dirname, "data", "webhooks-en-echec.json");
+// Rejeu automatique toutes les 5 min (réglable, pour les tests notamment).
+const ECHEC_WEBHOOK_RELANCE_MS = Number(process.env.ADBI_ECHEC_WEBHOOK_RELANCE_MS) || 5 * 60 * 1000;
+// Au-delà, on cesse de rejouer (une enveloppe supprimée chez le fournisseur, une
+// clé révoquée… échoueraient sinon indéfiniment, à chaque relance, pour rien —
+// même logique de plafond que le reste de l'audit, ex. issue #94/#95) : ~24h
+// à raison d'un rejeu toutes les 5 min. L'entrée reste dans le fichier
+// (dernière erreur consultable) mais n'est plus rejouée automatiquement.
+const MAX_TENTATIVES_WEBHOOK = 288;
+
 function codeParametres() {
   if (process.env.ADBI_CODE_PARAMETRES) return process.env.ADBI_CODE_PARAMETRES.trim();
   try {
@@ -346,7 +360,7 @@ app.post("/api/settings", exigerCodeParametres, (req, res) => {
 
 app.post("/api/lookup", async (req, res) => {
   try { res.json(await getCompany(req.body && req.body.q)); }
-  catch (e) { res.status(400).json({ error: e.message }); }
+  catch (e) { res.status(e.status || 400).json({ error: e.message }); }
 });
 
 app.post("/api/search", async (req, res) => {
@@ -360,12 +374,61 @@ app.post("/api/document/analyze", async (req, res) => {
   catch (e) { console.error(e); res.status(400).json({ error: e.message }); }
 });
 
+// ── Frein sur les appels amont des connecteurs de signature ─────────────────
+// GET /api/test/:provider (branche yousign/zoho, ci-dessous) et POST
+// /api/signatures/:id/synchroniser (plus bas) sont publics et sans
+// authentification, contrairement à /api/settings (exigerCodeParametres) —
+// même trou que la recherche société (#132/#133), jamais porté ici : chaque
+// appel relayait un test ou un statutEnveloppe/téléchargement RÉEL vers
+// Yousign/Zoho Sign, sans aucune limite. Contrairement au SIREN de #132
+// (paramètre libre), l'identifiant de demande est borné aux demandes
+// réellement créées, mais un balayage de ces identifiants épuiserait quand
+// même le quota/la limite de débit du fournisseur, cassant la signature
+// électronique pour l'usage légitime (création d'enveloppe, webhook de statut).
+//
+// Cache court (5 s — la synchronisation doit rester quasi temps réel pour
+// « est-ce signé ? », contrairement aux 60 s tolérables pour une fiche
+// société) + coalescence des appels concurrents identiques, ET plafond
+// glissant par fournisseur (comme #133) car l'identifiant de demande varie
+// d'un appel à l'autre — un cache seul ne freinerait pas un balayage.
+const CACHE_FOURNISSEUR_MS = 5000;
+const PLAFOND_FOURNISSEUR = 20; // appels amont / fournisseur / fenêtre
+const FENETRE_PLAFOND_MS = 60000;
+const cacheAppelsFournisseur = new Map(); // cle -> { expire, promesse }
+const historiqueAppelsFournisseur = new Map(); // fournisseur -> [horodatages]
+
+function avecCacheEtPlafond(fournisseur, cle, tache) {
+  const maintenant = Date.now();
+  const entree = cacheAppelsFournisseur.get(cle);
+  if (entree && entree.expire > maintenant) return entree.promesse;
+
+  const horodatages = (historiqueAppelsFournisseur.get(fournisseur) || [])
+    .filter((t) => maintenant - t < FENETRE_PLAFOND_MS);
+  if (horodatages.length >= PLAFOND_FOURNISSEUR) {
+    const err = new Error("Trop d'appels vers " + fournisseur + " — réessaie dans quelques instants.");
+    err.status = 429;
+    return Promise.reject(err);
+  }
+  horodatages.push(maintenant);
+  historiqueAppelsFournisseur.set(fournisseur, horodatages);
+
+  const promesse = Promise.resolve().then(tache);
+  cacheAppelsFournisseur.set(cle, { expire: maintenant + CACHE_FOURNISSEUR_MS, promesse });
+  // Un échec ne doit pas rester en cache : le prochain appel doit pouvoir réessayer.
+  promesse.catch(() => cacheAppelsFournisseur.delete(cle));
+  return promesse;
+}
+
 app.get("/api/test/:provider", async (req, res) => {
   try {
-    if (req.params.provider === "yousign") return res.json(await fournisseurs.externe("yousign").verifier());
-    if (req.params.provider === "zoho") return res.json(await fournisseurs.externe("zoho").verifier());
+    if (req.params.provider === "yousign") {
+      return res.json(await avecCacheEtPlafond("yousign", "test:yousign", () => fournisseurs.externe("yousign").verifier()));
+    }
+    if (req.params.provider === "zoho") {
+      return res.json(await avecCacheEtPlafond("zoho", "test:zoho", () => fournisseurs.externe("zoho").verifier()));
+    }
     res.json(await testProvider(req.params.provider));
-  } catch (e) { res.status(500).json({ ok: false, message: e.message }); }
+  } catch (e) { res.status(e.status || 500).json({ ok: false, message: e.message }); }
 });
 
 // Référentiels (clients + valideurs CRA + lieux, managers)
@@ -382,11 +445,23 @@ app.post("/api/referentiels", (req, res) => {
 });
 
 // ---------- Fichiers stockés par contrat ----------
+// path.basename NE bloque PAS ".." (il ne fait que retirer les séparateurs :
+// path.basename("..") === "..") — un segment ":base"/":nom" valant ".." passait
+// donc intact à path.join et en ressortait hors de GENERES_DIR (issue #116).
+// On exige ici un segment "plat" (ni "." ni ".." ni séparateur) ET on vérifie
+// en plus que le chemin résolu reste sous GENERES_DIR, comme le fait déjà
+// factory/server.js pour ses fichiers statiques.
+function segmentFichier(s) {
+  const v = String(s || "");
+  return v && v !== "." && v !== ".." && v === path.basename(v) ? v : "";
+}
+
 app.get("/api/fichiers/:base", (req, res) => {
   try {
-    const base = path.basename(req.params.base);
+    const base = segmentFichier(req.params.base);
+    if (!base) return res.status(400).json({ error: "Identifiant de contrat invalide." });
     const d = path.join(GENERES_DIR, base);
-    if (!fs.existsSync(d)) return res.json([]);
+    if (!d.startsWith(GENERES_DIR + path.sep) || !fs.existsSync(d)) return res.json([]);
     const rows = fs.readdirSync(d).map((nom) => {
       const st = fs.statSync(path.join(d, nom));
       return { nom, taille: st.size, modifieLe: st.mtime.toISOString() };
@@ -396,9 +471,13 @@ app.get("/api/fichiers/:base", (req, res) => {
 });
 
 app.get("/api/fichiers/:base/:nom", (req, res) => {
-  // path.basename bloque toute traversée (../) ; on ne sert que le dossier du contrat.
-  const chemin = path.join(GENERES_DIR, path.basename(req.params.base), path.basename(req.params.nom));
-  if (!fs.existsSync(chemin)) return res.status(404).json({ error: "Fichier introuvable" });
+  const base = segmentFichier(req.params.base);
+  const nom = segmentFichier(req.params.nom);
+  if (!base || !nom) return res.status(404).json({ error: "Fichier introuvable" });
+  const chemin = path.join(GENERES_DIR, base, nom);
+  if (!chemin.startsWith(GENERES_DIR + path.sep) || !fs.existsSync(chemin)) {
+    return res.status(404).json({ error: "Fichier introuvable" });
+  }
   res.download(chemin);
 });
 
@@ -474,7 +553,31 @@ app.post("/api/signatures", async (req, res) => {
       demande.fournisseur = actif;
       demande.externe = { id: env.idExterne, signataires: env.signataires || [] };
       signatures.journaliser(demande, "Enveloppe créée chez " + actif + " (réf. " + env.idExterne + ") — invitations envoyées par le fournisseur");
-      await db.sauverDemande(demande);
+      // À ce stade le fournisseur a DÉJÀ activé l'enveloppe et envoyé les
+      // invitations/OTP aux vrais signataires — ce n'est plus annulable
+      // silencieusement. Un échec de sauvegarde ICI (panne DB passagère,
+      // pool épuisé…) ne doit surtout pas retomber dans le catch générique
+      // ci-dessous : celui-ci blâme le "Connecteur" (message pensé pour un
+      // échec CHEZ le fournisseur, ex. clé API invalide) alors que le
+      // fournisseur a réussi — l'utilisateur irait vérifier sa clé API pour
+      // rien, puis relancerait "Envoyer pour signature", créant une SECONDE
+      // enveloppe et un second jeu d'invitations pour le même contrat. Sans
+      // ligne enregistrée, `env.idExterne` est aussi la SEULE trace qui
+      // reste de cette enveloppe (aucun id de demande, rien dans /api/signatures) :
+      // on la journalise et on la renvoie explicitement plutôt que de la perdre.
+      try {
+        await db.sauverDemande(demande);
+      } catch (eSauvegarde) {
+        console.error(
+          "[signatures] Enveloppe " + actif + " " + env.idExterne + " créée et activée " +
+          "(invitations déjà envoyées) mais NON enregistrée dans ADBI Contrats : " + eSauvegarde.message
+        );
+        return res.status(500).json({
+          error: "Le document a été envoyé pour signature chez " + actif + " (référence " + env.idExterne +
+            ") et les invitations sont déjà parties, mais l'enregistrement dans ADBI Contrats a échoué (" +
+            eSauvegarde.message + "). Ne relancez pas l'envoi : contactez un administrateur avec cette référence.",
+        });
+      }
       res.json({
         ok: true,
         demande: vueDemande(demande),
@@ -563,7 +666,11 @@ function synchroniserDemandeExterneParId(id) {
     const d = await db.chargerDemande(id);
     if (!d) return null;
     if (d.fournisseur === "local") return d;
-    return synchroniserDemandeExterne(d);
+    // Cache + plafond partagés avec /api/test/:provider (voir avecCacheEtPlafond
+    // ci-dessus) : sans eux, POST /api/signatures/:id/synchroniser — public,
+    // sans authentification — relayait un statutEnveloppe/téléchargement RÉEL
+    // vers Yousign/Zoho à chaque appel, y compris un même id spammé ou balayé.
+    return avecCacheEtPlafond(d.fournisseur, "sync:" + d.fournisseur + ":" + id, () => synchroniserDemandeExterne(d));
   });
 }
 
@@ -574,36 +681,73 @@ app.post("/api/signatures/:id/synchroniser", async (req, res) => {
     const d = await synchroniserDemandeExterneParId(id);
     if (!d) return res.status(404).json({ error: "Demande introuvable" });
     res.json({ ok: true, demande: vueDemande(d) });
-  } catch (e) { res.status(502).json({ error: e.message }); }
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
 });
 
-// Webhook du fournisseur de signature (à déclarer chez lui vers
-// http(s)://<hôte>/webhooks/signature). Vérification HMAC si un secret est
-// configuré ; sinon le webhook déclenche simplement une synchronisation —
-// AUCUNE donnée du webhook n'est crue sur parole, on relit l'API.
-app.post("/webhooks/signature", async (req, res) => {
-  res.status(200).json({ ok: true }); // répondre vite : le traitement suit
+// ── File des webhooks dont le TRAITEMENT a échoué ────────────────────────────
+// La route répond 200 avant tout traitement (voir plus bas) : un fournisseur
+// ne redélivre PAS un webhook déjà acquitté en 2xx. Si la synchronisation qui
+// suit échoue ensuite (Postgres injoignable pile à ce moment, timeout réseau
+// vers le fournisseur…), l'événement — potentiellement « document signé par
+// toutes les parties », avec l'archivage du PDF signé et du dossier de
+// preuve qui va avec — était jusqu'ici simplement perdu (un console.error,
+// rien de plus) : la demande restait bloquée au statut "envoyée" tant que
+// personne ne remarquait l'écart et ne cliquait manuellement sur
+// « Synchroniser le statut ». Fichier (et non mémoire) pour survivre à un
+// redémarrage du service, et rejeu automatique ci-dessous plutôt que de
+// compter sur un humain qui doit d'abord soupçonner le problème.
+function chargerEchecsWebhooks() {
+  try { return JSON.parse(fs.readFileSync(ECHECS_WEBHOOKS_FICHIER, "utf8")); }
+  catch (e) { return []; }
+}
+function sauverEchecsWebhooks(liste) {
   try {
-    // Format Yousign : {data:{signature_request:{id}}} + en-tête HMAC vérifié si
-    // le secret est configuré. Format Zoho Sign : {requests:{request_id}}.
-    // Dans tous les cas le contenu N'EST PAS cru : on relit l'API du fournisseur.
-    const corps = req.body || {};
-    let idExterne = corps.data && corps.data.signature_request && corps.data.signature_request.id;
-    if (idExterne) {
-      const y = fournisseurs.externe("yousign");
-      const cfg = y && y.config();
-      if (cfg && cfg.webhookSecret) {
-        const attendu = crypto.createHmac("sha256", cfg.webhookSecret).update(req.rawBody || Buffer.alloc(0)).digest("hex");
-        const recu = String(req.headers["x-yousign-signature-256"] || "").replace(/^sha256=/, "");
-        if (!recu || !crypto.timingSafeEqual(Buffer.from(attendu), Buffer.from(recu.padEnd(attendu.length).slice(0, attendu.length)))) {
-          console.error("[webhook signature] HMAC Yousign invalide — événement ignoré");
-          return;
-        }
-      }
-    } else if (corps.requests && corps.requests.request_id) {
-      idExterne = String(corps.requests.request_id);
-    }
-    if (!idExterne) return;
+    fs.mkdirSync(path.dirname(ECHECS_WEBHOOKS_FICHIER), { recursive: true });
+    fs.writeFileSync(ECHECS_WEBHOOKS_FICHIER, JSON.stringify(liste, null, 2));
+  } catch (e) { console.error("[webhook signature] file d'échecs illisible/inscriptible :", e.message); }
+}
+// `fournisseur` ("yousign"/"zoho") est conservé dans l'entrée dès sa création
+// (déjà connu de l'appelant, qui vient de reconnaître la forme du payload) —
+// même s'il n'est pas encore exploité par la recherche ci-dessous, pour ne
+// pas avoir à re-migrer ce fichier le jour où cette recherche filtrera aussi
+// par fournisseur (voir note dans traiterEvenementSignature).
+function enregistrerEchecWebhook(idExterne, fournisseur, message) {
+  const liste = chargerEchecsWebhooks();
+  const existant = liste.find((x) => x.idExterne === idExterne);
+  const maintenant = new Date().toISOString();
+  if (existant) {
+    existant.tentatives = (existant.tentatives || 1) + 1;
+    existant.derniereErreur = message;
+    existant.derniereTentativeLe = maintenant;
+    if (fournisseur) existant.fournisseur = fournisseur;
+  } else {
+    liste.push({ idExterne, fournisseur: fournisseur || null, recuLe: maintenant, tentatives: 1, derniereErreur: message, derniereTentativeLe: maintenant });
+  }
+  sauverEchecsWebhooks(liste);
+}
+function retirerEchecWebhook(idExterne) {
+  const liste = chargerEchecsWebhooks();
+  const suivante = liste.filter((x) => x.idExterne !== idExterne);
+  if (suivante.length !== liste.length) sauverEchecsWebhooks(suivante);
+}
+function marquerAbandonWebhook(idExterne) {
+  const liste = chargerEchecsWebhooks();
+  const entree = liste.find((x) => x.idExterne === idExterne);
+  if (entree && !entree.abandonne) { entree.abandonne = true; sauverEchecsWebhooks(liste); }
+}
+
+// Synchronise la demande correspondant à idExterne (identifiant déjà vérifié
+// — HMAC le cas échéant — par l'appelant). Toute erreur ici est un problème
+// de TRAITEMENT (base injoignable, appel fournisseur en échec…), pas une
+// donnée douteuse : on la garde en file pour rejeu plutôt que de la perdre.
+//
+// NB : la recherche ci-dessous ne filtre PAS encore par fournisseur (elle
+// reprend le comportement actuel de la route) — `fournisseur` n'est là que
+// pour être déjà disponible dans la file d'échecs le jour où ce filtre est
+// ajouté (voir issue du contournement HMAC cross-fournisseur, corrigé côté
+// vérification de signature indépendamment de ce correctif-ci).
+async function traiterEvenementSignature(idExterne, fournisseur) {
+  try {
     // La recherche par id externe se fait hors verrou (simple lecture) ; seule
     // la synchronisation elle-même (relecture + appel fournisseur + écriture)
     // passe par synchroniserDemandeExterneParId, verrouillée par demande —
@@ -612,6 +756,89 @@ app.post("/webhooks/signature", async (req, res) => {
     const demandes = await db.chargerDemandes();
     const d = demandes.find((x) => x.externe && x.externe.id === idExterne);
     if (d) await synchroniserDemandeExterneParId(d.id);
+    retirerEchecWebhook(idExterne);
+  } catch (e) {
+    console.error("[webhook signature]", e.message);
+    enregistrerEchecWebhook(idExterne, fournisseur, e.message);
+  }
+}
+
+// Rejeu de tous les événements en file — appelé au démarrage (rattrape ce qui
+// a échoué avant un redémarrage/crash) puis toutes les ECHEC_WEBHOOK_RELANCE_MS
+// (rattrape une panne Postgres/fournisseur transitoire sans intervention).
+// Au-delà de MAX_TENTATIVES_WEBHOOK, on cesse de rejouer une entrée qui
+// échoue systématiquement (enveloppe supprimée chez le fournisseur, clé
+// révoquée…) : elle resterait sinon rejouée — et donc à rappeler l'API du
+// fournisseur — indéfiniment, toutes les 5 min, pour rien. L'entrée reste
+// dans le fichier (dernière erreur consultable) mais n'est plus retentée.
+async function rejouerEchecsWebhooks() {
+  // Chaque itération relit/réécrit le fichier depuis le disque (via
+  // traiterEvenementSignature / marquerAbandonWebhook) plutôt que de réutiliser
+  // ce tableau une fois toutes les entrées traitées : sinon, la sauvegarde
+  // finale d'un instantané devenu périmé écraserait les mises à jour
+  // (tentatives, suppression) faites entre-temps sur les AUTRES entrées.
+  for (const entree of chargerEchecsWebhooks()) {
+    if ((entree.tentatives || 0) >= MAX_TENTATIVES_WEBHOOK) {
+      if (!entree.abandonne) {
+        console.error(
+          "[webhook signature] abandon du rejeu pour " + entree.idExterne + " après " + entree.tentatives +
+          " tentatives — dernière erreur : " + entree.derniereErreur + " (à traiter manuellement si besoin)"
+        );
+        marquerAbandonWebhook(entree.idExterne);
+      }
+      continue;
+    }
+    await traiterEvenementSignature(entree.idExterne, entree.fournisseur);
+  }
+}
+
+// Webhook du fournisseur de signature (à déclarer chez lui vers
+// http(s)://<hôte>/webhooks/signature). Vérification HMAC si un secret est
+// configuré ; sinon le webhook déclenche simplement une synchronisation —
+// AUCUNE donnée du webhook n'est crue sur parole, on relit l'API.
+app.post("/webhooks/signature", async (req, res) => {
+  res.status(200).json({ ok: true }); // répondre vite : le traitement suit
+  try {
+    // Format Yousign : {data:{signature_request:{id}}} + en-tête HMAC
+    // (X-Yousign-Signature-256, hex) vérifié si le secret est configuré.
+    // Format Zoho Sign : {requests:{request_id}} + en-tête HMAC
+    // (X-ZS-Webhook-Signature, base64) vérifié si le secret est configuré.
+    // Dans tous les cas le contenu N'EST PAS cru : on relit l'API du fournisseur.
+    //
+    // `fournisseurWebhook` est déterminé UNE FOIS ici à partir de la forme du
+    // corps, et sert ensuite à la fois à choisir QUEL secret vérifier et à
+    // filtrer la recherche de la demande (voir plus bas) : sans ce filtre, un
+    // attaquant qui connaît l'id externe d'UNE demande Yousign pouvait
+    // l'envoyer emballé dans la forme Zoho ({requests:{request_id}}) — le
+    // code ne consultait alors JAMAIS le secret webhook Yousign configuré
+    // (branche `else if`, jamais atteinte pour cette forme), et la recherche
+    // ci-dessous ne filtrait pas non plus par fournisseur : la vérification
+    // HMAC de l'administrateur était donc totalement contournable.
+    const corps = req.body || {};
+    let fournisseurWebhook = null;
+    let idExterne = corps.data && corps.data.signature_request && corps.data.signature_request.id;
+    let fournisseurWebhook;
+    if (idExterne) {
+      fournisseurWebhook = "yousign";
+      const y = fournisseurs.externe("yousign");
+      const cfg = y && y.config();
+      if (cfg && cfg.webhookSecret) {
+        const attendu = crypto.createHmac("sha256", cfg.webhookSecret).update(req.rawBody || Buffer.alloc(0)).digest("hex");
+        const recu = String(req.headers["x-yousign-signature-256"] || "").replace(/^sha256=/, "");
+        if (!hmacCorrespond(recu, attendu)) {
+          console.error("[webhook signature] HMAC Yousign invalide — événement ignoré");
+          return;
+        }
+      }
+    } else if (corps.requests && corps.requests.request_id) {
+      fournisseurWebhook = "zoho";
+      idExterne = String(corps.requests.request_id);
+      fournisseurWebhook = "zoho";
+    }
+    if (!idExterne) return;
+    // Rejet de forme/signature : géré ci-dessus (return sans traitement, rien
+    // à rejouer). Au-delà, toute erreur relève de traiterEvenementSignature.
+    await traiterEvenementSignature(idExterne, fournisseurWebhook);
   } catch (e) {
     console.error("[webhook signature]", e.message);
   }
@@ -628,7 +855,9 @@ app.post("/api/zoho/echanger-code", exigerCodeParametres, async (req, res) => {
 // (Relances et délais sont gérés PAR LE FOURNISSEUR : rappels automatiques
 // Yousign, expiration fixée à la création de l'enveloppe.)
 app.get("/api/signatures", async (req, res) => {
-  try { res.json((await db.chargerDemandes()).map(vueDemande)); }
+  // Bornée comme /api/contrats (listerContrats) : voir le commentaire de
+  // chargerDemandes() dans lib/db.pg.js.
+  try { res.json((await db.chargerDemandes(200)).map(vueDemande)); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -929,5 +1158,9 @@ db.init()
       console.log("\n  ADBI - Generateur de contrats");
       console.log("  -> http://" + HOTE + ":" + PORT + "\n");
     });
+    // Rattrape tout webhook de signature dont le traitement avait échoué avant
+    // cet arrêt/redémarrage, puis réessaie périodiquement (voir plus haut).
+    rejouerEchecsWebhooks();
+    setInterval(rejouerEchecsWebhooks, ECHEC_WEBHOOK_RELANCE_MS);
   })
   .catch((e) => { console.error("Erreur init DB:", e); process.exit(1); });

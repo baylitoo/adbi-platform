@@ -28,7 +28,7 @@ from core.pg import get_conn, init_schema
 
 __all__ = [
     "init_db", "load_db", "save_db",
-    "get_cv", "list_cvs", "save_cv", "delete_cv",
+    "get_cv", "list_cvs", "save_cv", "create_cv", "delete_cv",
 ]
 
 
@@ -79,6 +79,34 @@ def save_cv(cv_id: str, record: dict) -> None:
             """,
             (cv_id, name, email, Jsonb(record), now, now),
         )
+
+
+def create_cv(cv_id: str, record: dict) -> bool:
+    """Insère une NOUVELLE fiche — contrairement à save_cv (upsert
+    inconditionnel, ON CONFLICT DO UPDATE), n'écrase JAMAIS une fiche dont
+    l'id existe déjà (ON CONFLICT DO NOTHING). Utilisée par POST /api/cvs
+    (issue #100) : la création passe historiquement par un id généré côté
+    serveur (/api/upload), et POST /api/cvs ne doit pas permettre à un
+    utilisateur quelconque d'écraser silencieusement une fiche existante en
+    devinant/réutilisant son id — PATCH /api/cvs/<id> (issue #82, liste
+    blanche de champs) reste la voie légitime pour modifier une fiche.
+    Le INSERT ... ON CONFLICT DO NOTHING est atomique côté base : pas de
+    fenêtre de course entre une lecture (get_cv) et l'écriture.
+    Renvoie True si la fiche a été créée, False si `cv_id` existait déjà
+    (rien n'a été modifié dans ce cas)."""
+    name = str(record.get("name") or "")
+    email = str((record.get("contact") or {}).get("email") or "")
+    now = datetime.now(timezone.utc)
+    with get_conn() as con:
+        cur = con.execute(
+            """
+            INSERT INTO cvs (id, name, email, data, cree_le, maj_le)
+            VALUES (%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (cv_id, name, email, Jsonb(record), now, now),
+        )
+        return cur.rowcount > 0
 
 
 def delete_cv(cv_id: str) -> bool:

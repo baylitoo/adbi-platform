@@ -46,7 +46,7 @@ function saveSettings(body) {
   if (["yousign", "zoho"].includes(body.fournisseurSignature)) cur.fournisseurSignature = body.fournisseurSignature;
   if (["sandbox", "production"].includes(body.yousignMode)) cur.yousignMode = body.yousignMode;
   if (["eu", "com", "in"].includes(body.zohoRegion)) cur.zohoRegion = body.zohoRegion;
-  ["yousignCleApi", "yousignWebhookSecret", "zohoClientId", "zohoClientSecret"].forEach((k) => {
+  ["yousignCleApi", "yousignWebhookSecret", "zohoClientId", "zohoClientSecret", "zohoWebhookSecret"].forEach((k) => {
     if (typeof body[k] !== "string") return;
     const v = body[k].trim();
     if (v) cur[k] = v;
@@ -83,6 +83,7 @@ function settingsStatus() {
     zohoRegion: (process.env.ZOHO_REGION || s.zohoRegion) || "eu",
     zohoIdentifiants: !!(val("ZOHO_CLIENT_ID", "zohoClientId") && val("ZOHO_CLIENT_SECRET", "zohoClientSecret")),
     zohoConfigure: !!(val("ZOHO_CLIENT_ID", "zohoClientId") && val("ZOHO_CLIENT_SECRET", "zohoClientSecret") && val("ZOHO_REFRESH_TOKEN", "zohoRefreshToken")),
+    zohoWebhook: !!val("ZOHO_WEBHOOK_SECRET", "zohoWebhookSecret"),
   };
 }
 
@@ -95,6 +96,73 @@ function normalizeSiren(q) {
   if (digits.length === 14) return digits.slice(0, 9);   // SIRET -> SIREN
   if (digits.length === 9) return digits;
   throw new Error("Saisir un SIREN (9 chiffres) ou un SIRET (14 chiffres).");
+}
+
+// ---------------------------------------------------------------------
+// Garde-fou anti-emballement — Pappers/INSEE uniquement.
+//
+// /api/lookup et /api/test/:provider (server.js) sont PUBLICS et SANS
+// AUTHENTIFICATION (contrairement a /api/settings, protegee par
+// exigerCodeParametres) : sans ceci, chaque appel relayait un appel amont
+// REEL vers Pappers ou l'INSEE des que la source configuree est l'une des
+// deux (voir getCompany ci-dessous) — un simple flot de requetes suffit a
+// epuiser un quota payant ou a faire bannir la cle, exactement le scenario
+// deja corrige cote factory pour /api/llm/tester (issue #130/PR #131).
+//
+// Meme remede : regrouper les appels identiques en un seul appel amont
+// (cache court + coalescence des appels concurrents, cle = fournisseur +
+// SIREN) ET plafonner le nombre d'appels amont par fournisseur et par
+// fenetre glissante — le plafond couvre aussi le cas ou l'appelant varie le
+// SIREN a chaque appel (la seule mise en cache ne suffirait pas alors,
+// contrairement au cas factory ou le modele teste est fixe).
+const CACHE_TTL_MS = 60_000;
+const cacheAppels = new Map();   // "fournisseur:siren" -> { valeur, expire }
+const appelsEnCours = new Map(); // "fournisseur:siren" -> Promise en vol
+
+const PLAFOND_FENETRE_MS = 60_000;
+const PLAFOND_APPELS = { pappers: 20, insee: 20 };
+const horodatagesAppels = { pappers: [], insee: [] };
+
+function verifierPlafond(fournisseur) {
+  const maintenant = Date.now();
+  const horodatages = horodatagesAppels[fournisseur];
+  while (horodatages.length && maintenant - horodatages[0] > PLAFOND_FENETRE_MS) horodatages.shift();
+  if (horodatages.length >= PLAFOND_APPELS[fournisseur]) {
+    const err = new Error(
+      (fournisseur === "pappers" ? "Pappers" : "INSEE") +
+      " : trop de requêtes (quota interne atteint), réessayer dans une minute."
+    );
+    err.status = 429;
+    throw err;
+  }
+  horodatages.push(maintenant);
+}
+
+// N'applique le cache/plafond qu'aux fournisseurs payants — la source par
+// defaut (gouv.fr) est gratuite et sans quota, aucun garde-fou necessaire.
+function avecCacheEtPlafond(fournisseur, siren, fabrique) {
+  const cle = fournisseur + ":" + siren;
+  const maintenant = Date.now();
+  const entree = cacheAppels.get(cle);
+  if (entree && entree.expire > maintenant) return Promise.resolve(entree.valeur);
+  if (appelsEnCours.has(cle)) return appelsEnCours.get(cle);
+  verifierPlafond(fournisseur);
+  const p = fabrique()
+    .then((valeur) => {
+      // Purge les entrees expirees avant d'en ajouter une nouvelle : sans
+      // ca, un appelant qui varie le SIREN a chaque appel (justement le cas
+      // que le plafond ci-dessus vise) ferait grossir cacheAppels sans fin,
+      // une entree expiree n'etant jamais retiree autrement qu'a la lecture.
+      // Le plafond borne deja le nombre d'ENTREES CREEES par minute (<=20
+      // par fournisseur) : cette purge garde donc la map a une taille de cet
+      // ordre au lieu de croitre indefiniment.
+      for (const [k, v] of cacheAppels) if (v.expire <= Date.now()) cacheAppels.delete(k);
+      cacheAppels.set(cle, { valeur, expire: Date.now() + CACHE_TTL_MS });
+      return valeur;
+    })
+    .finally(() => appelsEnCours.delete(cle));
+  appelsEnCours.set(cle, p);
+  return p;
 }
 
 async function lookupPappers(siren, token) {
@@ -297,10 +365,12 @@ async function getCompany(q) {
   const siren = normalizeSiren(q); // valide le format (9 ou 14 chiffres)
   const status = settingsStatus();
   if (status.source === "insee" && key("inseeApiKey", "INSEE_API_KEY")) {
-    return lookupInsee(siren, key("inseeApiKey", "INSEE_API_KEY"));
+    const apiKey = key("inseeApiKey", "INSEE_API_KEY");
+    return avecCacheEtPlafond("insee", siren, () => lookupInsee(siren, apiKey));
   }
   if (status.source === "pappers" && key("pappersApiKey", "PAPPERS_API_KEY")) {
-    return lookupPappers(siren, key("pappersApiKey", "PAPPERS_API_KEY"));
+    const token = key("pappersApiKey", "PAPPERS_API_KEY");
+    return avecCacheEtPlafond("pappers", siren, () => lookupPappers(siren, token));
   }
   return lookupRechercheEntreprises(siren); // défaut : gratuit, sans clé
 }
@@ -317,13 +387,15 @@ async function testProvider(name) {
     if (name === "insee") {
       const k = key("inseeApiKey", "INSEE_API_KEY");
       if (!k) return { ok: false, message: "Clé non configurée." };
-      await lookupInsee("552120222", k); // SIREN Danone : société connue, test de lecture
+      // SIREN Danone (societe connue, test de lecture) : passe par le meme
+      // cache/plafond que getCompany, route publique /api/test/:provider oblige.
+      await avecCacheEtPlafond("insee", "552120222", () => lookupInsee("552120222", k));
       return { ok: true, message: "Connecté." };
     }
     if (name === "pappers") {
       const t = key("pappersApiKey", "PAPPERS_API_KEY");
       if (!t) return { ok: false, message: "Clé non configurée." };
-      await lookupPappers("552120222", t);
+      await avecCacheEtPlafond("pappers", "552120222", () => lookupPappers("552120222", t));
       return { ok: true, message: "Connecté." };
     }
     return { ok: false, message: "Fournisseur inconnu." };
