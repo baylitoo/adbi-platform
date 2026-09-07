@@ -25,6 +25,7 @@ import threading
 import requests
 
 from config import DATA_DIR, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, get_active_llm
+from llm_url import chat_endpoint
 
 # Session partagée : les connexions TLS sont réutilisées entre les appels
 # (sondage puis envoi réel vers le même hôte) au lieu d'être renégociées.
@@ -166,6 +167,7 @@ def _nettoyer(texte: str) -> str:
 
 
 def _appel(url, cle, modele, messages, max_tokens, temperature, timeout, json_mode):
+    url = chat_endpoint(url)
     corps = {
         "model": modele,
         "messages": messages,
@@ -459,7 +461,7 @@ def tester_entree(entree: dict, timeout: int = 20) -> dict:
         entetes = {"Content-Type": "application/json"}
         if entree.get("cle"):
             entetes["Authorization"] = f"Bearer {entree['cle']}"
-        reponse = _session.post(entree["url"], headers=entetes, json=corps, timeout=timeout)
+        reponse = _session.post(chat_endpoint(entree["url"]), headers=entetes, json=corps, timeout=timeout)
         reponse.raise_for_status()
         return {"ok": True, "detail": "répond",
                 "ms": round((time.perf_counter() - debut) * 1000)}

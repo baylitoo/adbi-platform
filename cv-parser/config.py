@@ -203,6 +203,10 @@ NEED_LIST_MAX = int(os.environ.get("ADBI_NEED_LIST_MAX", "60"))
 NEED_ITEM_MAX = int(os.environ.get("ADBI_NEED_ITEM_MAX", "100"))
 # longueur (caractères) de chaque entrée de ces listes
 
+# Concurrence du matching : garder des threads libres pour les autres routes.
+# Définition restaurée depuis le correctif #94, perdue lors des fusions.
+MATCHING_MAX_CONCURRENT = int(os.environ.get("ADBI_MATCHING_MAX_CONCURRENT", "2"))
+
 # ── Bornes sur les fiches CV (api/cvs, POST /api/cvs et PATCH /api/cvs/<id>) ─
 #
 # Même risque que #72, dans l'autre sens : core/matcher.py::_score_skills

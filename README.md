@@ -14,12 +14,19 @@ Le module **ADBI Gestion n'est pas dans ce dépôt** (outil interne, non déploy
 
 ## Déployer
 
-### Docker (recommandé — Coolify ou tout hôte Docker)
+### Coolify (production)
+
+Déployer `master` avec le fichier standard `docker-compose.yml`. Saisir les secrets
+directement dans l'interface Coolify : aucun fichier `.env` à déployer.
+Voir [le guide DocIE et Coolify](docs/coolify-docie.md) pour les domaines, volumes
+persistants, variables requises et protections d'accès avant ouverture publique.
+
+### Docker local
 
 ```bash
 git clone <URL_DE_CE_DEPOT> adbi-platform && cd adbi-platform
 cp .env.example .env      # renseigner les variables REQUIS (voir le fichier)
-docker compose up -d --build
+docker compose -f docker-compose.local.yml up -d --build
 # → Factory sur http://localhost:4000
 ```
 
@@ -28,9 +35,10 @@ docker compose up -d --build
 PostgreSQL (une base par service, voir `infra/postgres/`). Sous Coolify,
 importer ce dépôt comme *docker-compose resource* : les variables
 d'environnement se posent dans l'interface, un domaine par service. La base
-Postgres est provisionnée et **consommée par contrats** depuis sa bascule
-(issue #14) ; cv-parser et one-pager gardent pour l'instant leur stockage
-fichier (SQLite/JSON) — migration en cours, service par service.
+Postgres est consommée par contrats, cv-parser et one-pager. Le fichier
+`docker-compose.local.yml` conserve les ports locaux et les bind mounts historiques.
+Ne pas basculer une installation existante vers les volumes de production sans
+migrer ses données.
 
 ### Serveur classique (systemd, un seul hôte)
 

@@ -63,7 +63,7 @@ interne ADBI, envoi SMTP).
 | One pager | **ADBI OnePager** | 4200 | Node + Express | `one-pager/` |
 | Coffre | **ADBI Coffre** | 4300 | Node + Express, crypto natif | `coffre/` |
 | Calculatrice | **ADBI Calculator** | — (statique) | HTML/JS servie par la Factory | `factory/public/modules` |
-| CV Parser | **ADBI Parser** | 5000 | Python 3.14 + Flask + Docling | `cv-parser/` |
+| CV Parser | **ADBI Parser** | 5000 | Python 3.14 + Flask + client DocIE | `cv-parser/` |
 
 ---
 
@@ -227,25 +227,26 @@ d'une demande = liens morts immédiatement.
 
 ## 4. ADBI Parser (port 5000)
 
-Extraction structurée de CV, **bibliothèques d'abord, IA seulement si besoin**.
+Extraction et OCR délégués au service DocIE auto-hébergé.
+Le parser n'installe plus Docling/Torch et ne précharge aucun modèle.
 
 ```
 dépôt CV ──► empreinte SHA-256 ── déjà connue ? ──► fiche reprise (~0,5 s)
                 │ non
                 ▼
-        extraction LOCALE (Docling, OCR désactivé, singleton préchargé)
-                │
-        extraction_suffisante ? (nom, titre, ≥2 exp, ≥5 compétences)
-                │ oui → fiche servie sans IA
-                │ non
+        POST DocIE /v1/studio/extract (dynamic_schema_name: resume)
+                │ PDF : content_b64 ; DOCX : text (paragraphes/tableaux)
                 ▼
-        Passerelle d'inférence interne ADBI UNIQUEMENT (choix documenté dans
-        llm_cascade.py — ne jamais réintroduire OpenAI/OpenRouter/OVHcloud) :
-        sondage par vagues de 3, budget temps global, progression réelle par
-        jeton (plus de faux 88 %)
+        GET /v1/studio/runs/{event_id} → output persistant
+                ▼
+        normalisation ADBI → PostgreSQL et exports
 ```
 - Import par lot : 2 envois parallèles. Bouton « Relancer l'analyse » par fiche.
-- Base locale + dossiers de compétences générés.
+- Configuration : DOCIE_BASE_URL (URL racine sans /v1), DOCIE_API_KEY,
+  DOCIE_SCHEMA_NAME, DOCIE_MODEL_PROFILE, DOCIE_OCR_BACKEND,
+  DOCIE_TIMEOUT_SECONDS. Voir cv-parser/README.md pour le contrat complet.
+- Les fonctions de langage complémentaires gardent leur configuration ADBI_LLM_*.
+- Une panne distante est signalée ; une réanalyse échouée conserve la fiche existante.
 
 ## 5. ADBI OnePager (port 4200)
 CV → dossier de compétences ADBI en une page. Extraction 100 % locale.

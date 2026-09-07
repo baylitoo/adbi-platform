@@ -9,3 +9,6 @@ cv_database.json
 .git
 .gitignore
 .claude
+.env
+.env.*
+tests

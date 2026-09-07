@@ -28,16 +28,11 @@ bind = f"{hote}:{port}"
 #   - `_verrous_cv` (verrou par fiche CV, issue #53/PR #54) : sans mémoire
 #     partagée, deux workers Gunicorn pourraient à nouveau écraser la fiche
 #     l'un de l'autre — exactement le "lost update" que PR #54 a corrigé.
-#   - `_converter` (singleton DocumentConverter Docling, chargé une fois en
-#     tâche de fond au démarrage — import mesuré à ~59 s) : le charger dans
-#     plusieurs process multiplierait le temps de démarrage ET l'empreinte
-#     mémoire par worker, potentiellement lourde (voir factory/modules.docker.
-#     json : "delai": 90 pour cv-parser, le préchauffage Docling à lui seul).
 #   - `PROGRESSION_ANALYSES` (barre de progression de /api/upload) : un
 #     sondage qui atterrit sur un autre worker que celui qui traite l'upload
 #     ne verrait jamais l'avancement.
 # Plusieurs workers Gunicorn (processus séparés, prefork) casseraient donc
-# silencieusement ces trois choses. Un seul worker avec plusieurs threads
+# silencieusement ces deux choses. Un seul worker avec plusieurs threads
 # (`gthread`) reproduit le modèle actuel à l'identique (même mémoire de
 # process) tout en bénéficiant d'un vrai serveur de production : pool de
 # connexions, purge des clients lents, plus de débogueur exposable.
@@ -48,22 +43,11 @@ workers = 1
 # tout en restant confortable pour l'usage réel (dépôts de CV en rafale rares).
 threads = int(os.environ.get("ADBI_GUNICORN_THREADS", "4"))
 
-# Ne PAS activer `preload_app` : le thread de préchauffage Docling
-# (`threading.Thread(target=_init_converter, ...)` à l'import d'app.py) doit
-# démarrer APRÈS le fork, dans le worker qui servira les requêtes — avec
-# preload_app=True il démarrerait dans le master et ne survivrait pas au fork.
+# Les connexions PostgreSQL doivent être ouvertes dans le worker, après fork.
+preload_app = False
 
-# ── Timeout ────────────────────────────────────────────────────────────────
-# Avec un worker `gthread`, `timeout` n'interrompt PAS une requête lente en
-# tant que telle (le worker notifie l'arbiter indépendamment de chaque
-# thread de requête) : le vrai risque couvert ici est qu'une extension C
-# (Docling/torch, pendant l'extraction ou l'inférence) garde le GIL assez
-# longtemps pour bloquer cette notification et faire tuer le worker en plein
-# traitement — perdant une analyse en cours. Une analyse complète enchaîne
-# extraction Docling + appel(s) LLM : jusqu'à 75 s de budget de cascade
-# (app.py::llm_parse_cv) pour le parsing initial, jusqu'à 120 s pour un appel
-# de rapprochement — largement au-dessus du défaut Gunicorn (30 s). D'où une
-# marge large plutôt qu'un réglage au plus juste.
+# Le délai d'extraction est borné par DOCIE_TIMEOUT_SECONDS dans le client.
+# Le heartbeat Gunicorn reste indépendant des requêtes HTTP longues.
 timeout = int(os.environ.get("ADBI_GUNICORN_TIMEOUT", "240"))
 graceful_timeout = timeout
 

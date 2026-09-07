@@ -1,0 +1,217 @@
+{
+  "document_type": "adbi_resume",
+  "fields": [
+    {
+      "name": "name",
+      "type": "string",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "years_experience",
+      "type": "number",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "contact",
+      "type": "object",
+      "description": null,
+      "fields": [
+        {
+          "name": "email",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "phone",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "linkedin",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "github",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "location",
+          "type": "string",
+          "description": null,
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "experience",
+      "type": "list",
+      "description": null,
+      "fields": [
+        {
+          "name": "company",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "start_date",
+          "type": "date",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "end_date",
+          "type": "date",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "location",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "env_technique",
+          "type": "string",
+          "description": "Stack technique / environnement technologique de la mission",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "education",
+      "type": "list",
+      "description": null,
+      "fields": [
+        {
+          "name": "degree",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "institution",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "year",
+          "type": "string",
+          "description": null,
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "skills",
+      "type": "list",
+      "description": null,
+      "fields": [
+        {
+          "name": "category",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "items",
+          "type": "list",
+          "description": null,
+          "fields": [
+            {
+              "name": "item",
+              "type": "string",
+              "description": null,
+              "fields": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "languages",
+      "type": "list",
+      "description": null,
+      "fields": [
+        {
+          "name": "language",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "level",
+          "type": "string",
+          "description": null,
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "certifications",
+      "type": "list",
+      "description": null,
+      "fields": [
+        {
+          "name": "name",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "issuer",
+          "type": "string",
+          "description": null,
+          "fields": []
+        },
+        {
+          "name": "year",
+          "type": "string",
+          "description": null,
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "interests",
+      "type": "list",
+      "description": null,
+      "fields": [
+        {
+          "name": "interest",
+          "type": "string",
+          "description": null,
+          "fields": []
+        }
+      ]
+    }
+  ]
+}

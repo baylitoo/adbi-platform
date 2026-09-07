@@ -786,15 +786,16 @@ function deposer(liste) {
 function showParseSummary(data) {
   const s = data.parse_summary || {};
   const isDigital = s.mode === 'digital';
-  document.getElementById('modePill').textContent  = isDigital ? '📄 PDF digital' : '🔍 PDF scanné · OCR';
-  document.getElementById('modePill').className    = 'mode-pill ' + (isDigital ? 'digital' : 'scanned');
+  const isDocie = s.mode === 'docie';
+  document.getElementById('modePill').textContent  = isDocie ? '📄 Document analysé' : isDigital ? '📄 PDF digital' : '🔍 PDF scanné · OCR';
+  document.getElementById('modePill').className    = 'mode-pill ' + (isDigital || isDocie ? 'digital' : 'scanned');
   document.getElementById('parseName').textContent = s.name || data.name || '';
   let statsHtml = `${s.experiences} expérience${s.experiences>1?'s':''} · ${s.skills} compétence${s.skills>1?'s':''} · ${s.education} formation${s.education>1?'s':''}`;
   const t = s.timing || {};
   if (t.total_s) {
     const llmPct = t.llm_s ? Math.round(t.llm_s / t.total_s * 100) : 0;
     statsHtml += `<br><span style="font-size:10px;color:#9AAFC8;display:block;margin-top:5px">
-      ⏱ Total <strong>${t.total_s}s</strong> — LLM <strong style="color:${llmPct>80?'#EF4444':'#64748B'}">${t.llm_s}s</strong> (${llmPct}%)</span>`;
+      ⏱ Total <strong>${t.total_s}s</strong>${typeof t.llm_s === 'number' ? ` — LLM <strong>${t.llm_s}s</strong> (${llmPct}%)` : ''}</span>`;
   }
   document.getElementById('parseStats').innerHTML = statsHtml;
   document.getElementById('openDossierBtn').href = `/cv/${data.id}`;

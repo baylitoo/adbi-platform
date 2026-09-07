@@ -37,7 +37,17 @@ function chargerModules() {
   // replace(/^﻿/) : Notepad et PowerShell ajoutent un BOM qui casserait JSON.parse.
   const brut = fs.readFileSync(path.join(RACINE, "modules.json"), "utf8").replace(/^﻿/, "");
   try {
-    return JSON.parse(brut).modules;
+    const urls = { "one-pager": "ADBI_ONEPAGER_URL", contrats: "ADBI_CONTRATS_URL",
+      coffre: "ADBI_COFFRE_URL", "cv-parser": "ADBI_PARSER_URL" };
+    return JSON.parse(brut).modules.map(m => {
+      const override = process.env[urls[m.id]];
+      if (!override) return m;
+      const url = new URL(override);
+      if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) {
+        throw new Error("Invalid public module URL: " + m.id);
+      }
+      return { ...m, url: url.href };
+    });
   } catch (err) {
     console.error("\n  [ERREUR] modules.json est invalide : " + err.message + "\n");
     process.exit(1);
@@ -322,6 +332,9 @@ function repondreJson(rep, code, donnees) {
 // à chaque visiteur : la clé reste donc ici, côté serveur, et le navigateur ne
 // parle qu'à ces deux routes.
 const LLM_BASE_URL = (process.env.ADBI_LLM_BASE_URL || "").replace(/\/+$/, "");
+const LLM_CHAT_URL = !LLM_BASE_URL ? "" : LLM_BASE_URL.endsWith("/chat/completions")
+  ? LLM_BASE_URL
+  : LLM_BASE_URL + (/^https?:\/\/[^/]+$/i.test(LLM_BASE_URL) ? "/v1" : "") + "/chat/completions";
 const LLM_API_KEY = process.env.ADBI_LLM_API_KEY || "";
 const LLM_MODELES = (process.env.ADBI_LLM_MODELS || process.env.ADBI_LLM_MODEL || "")
   .split(",").map((s) => s.trim()).filter(Boolean);
@@ -330,7 +343,7 @@ async function testerModeleLlm(modele) {
   const entetes = { "Content-Type": "application/json" };
   if (LLM_API_KEY) entetes.Authorization = "Bearer " + LLM_API_KEY;
   const debut = Date.now();
-  const rep = await fetch(LLM_BASE_URL + "/chat/completions", {
+  const rep = await fetch(LLM_CHAT_URL, {
     method: "POST",
     headers: entetes,
     body: JSON.stringify({

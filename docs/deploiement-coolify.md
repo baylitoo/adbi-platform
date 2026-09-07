@@ -1,5 +1,9 @@
 # Déploiement Coolify (issue #18)
 
+Pour une nouvelle installation avec DocIE, utiliser désormais
+[le guide Coolify + DocIE](coolify-docie.md) et `docker-compose.yml`.
+Le document ci-dessous décrit le compose historique avec bind mounts.
+
 Complète `README.md` (chemin Docker générique) avec la config spécifique à
 Coolify : import du dépôt, domaines, variables d'environnement, réseau
 inter-services. Prérequis : `docker-compose.yml` (racine) et

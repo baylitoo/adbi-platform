@@ -28,12 +28,7 @@ for _flux in (sys.stdout, sys.stderr):
 from flask import Flask, request, jsonify, send_file, render_template, abort, redirect, g
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
-# Docling n'est volontairement PAS importé ici : cet import coûte à lui seul
-# près d'une minute (mesuré : 59 s), et il bloquait le démarrage de Flask alors
-# que le convertisseur est déjà construit en tâche de fond juste plus bas.
-# Il est donc fait dans _init_converter(), qui tourne dans son propre thread :
-# l'application répond en quelques secondes, et le premier CV déposé attend le
-# convertisseur si celui-ci n'est pas encore prêt (voir _get_converter).
+# L'extraction/OCR est effectuée par DocIE, sans runtime ML dans ce process.
 from skills_normalizer import normalize_skills, skills_to_flat, compute_skills_flat
 # Appel LLM avec chaîne de secours : si un service est en panne ou à court de
 # quota, le suivant prend le relais au lieu de faire échouer l'analyse.
@@ -167,60 +162,7 @@ def handle_exception(e):
     traceback.print_exc()
     return jsonify({"error": f"Erreur serveur : {str(e)}"}), 500
 
-_converter      = None          # Singleton DocumentConverter (chargé une seule fois)
-_converter_lock = threading.Lock()
 
-
-# ── Pré-chargement de Docling en arrière-plan au démarrage ───────────────────
-def _init_converter():
-    global _converter
-    try:
-        from docling.datamodel.pipeline_options import PdfPipelineOptions
-        from docling.datamodel.base_models import InputFormat
-        from docling.document_converter import DocumentConverter, PdfFormatOption
-
-        # OCR ACTIVÉ : ce convertisseur n'est jamais utilisé pour les CVs
-        # numériques (voir process_cv() — un CV avec couche texte passe par
-        # _extract_text_fast()/pdfplumber et ne touche pas à Docling). Il ne
-        # sert QUE de secours pour les PDF scannés/images, où l'OCR est la
-        # seule façon d'obtenir du texte. Le désactiver ici revenait à couper
-        # l'OCR sur le seul chemin qui en a besoin, et laissait un CV papier
-        # scanné ressortir vide, marqué inexploitable (issue #63).
-        opts = PdfPipelineOptions()
-        opts.do_ocr = True
-        opts.do_table_structure = False   # ralentit sans apporter grand-chose
-
-        _converter = DocumentConverter(
-            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}
-        )
-        print("[INFO] DocumentConverter prêt (OCR activé, tables désactivées).")
-    except Exception as e:
-        print(f"[WARN] Impossible d'initialiser le convertisseur optimisé ({e}) — nouvelle tentative en options minimales.")
-        try:
-            # Deuxième tentative : options minimales, OCR conservé (voir
-            # commentaire ci-dessus : c'est le seul chemin qui en a besoin).
-            from docling.datamodel.pipeline_options import PdfPipelineOptions
-            from docling.datamodel.base_models import InputFormat
-            from docling.document_converter import DocumentConverter, PdfFormatOption
-            opts2 = PdfPipelineOptions()
-            opts2.do_ocr             = True
-            opts2.do_table_structure = False
-            _converter = DocumentConverter(
-                format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts2)}
-            )
-            print("[INFO] DocumentConverter prêt (fallback, OCR activé).")
-        except Exception as e2:
-            print(f"[ERREUR] DocumentConverter inutilisable : {e2}")
-
-threading.Thread(target=_init_converter, daemon=True).start()
-
-def _get_converter() -> "DocumentConverter":   # annotation en texte : le type n'est importé qu'au chargement du thread
-    """Retourne le convertisseur singleton (attend s'il est encore en cours d'init)."""
-    if _converter is None:
-        with _converter_lock:
-            if _converter is None:
-                _init_converter()
-    return _converter
 
 SECTION_MAP = {
     "experience": [
@@ -1373,139 +1315,32 @@ def fichier_upload(identifiant: str, ext: str):
 
 
 def process_cv(file_path, jeton=None) -> dict:
-    """Pipeline CV : extraction → nettoyage → LLM → normalisation.
-    Chaque étape est chronométrée et les durées sont retournées dans cv_data['_timing'].
-    """
+    """Document → DocIE (extraction/OCR) → format CV ADBI."""
     import time
-    T = {}
-    file_path = Path(file_path)
-    html_content = ""
+    from docie_client import extract_resume
 
-    # ── Étape 1 : extraction texte rapide ───────────────────────────────────
-    t0 = time.perf_counter()
-    noter_progression(jeton, 8, "Lecture du document")
-    txt = _extract_text_fast(file_path)
-    T["extract_s"] = round(time.perf_counter() - t0, 3)
-    is_digital = bool(txt.strip())
-
-    if is_digital:
-        print(f"[PERF] Étape 1 extract    : {T['extract_s']:.2f}s — {len(txt)} chars (digital)")
-    else:
-        # ── Étape 2 : Docling fallback (PDF scanné) ───────────────────────
-        print("[INFO] PDF scanné — fallback Docling/OCR")
-        noter_progression(jeton, 22, "Document scanné : reconnaissance de texte (OCR)",
-                          "l'étape la plus longue, ~30 s")
-        t1 = time.perf_counter()
-        try:
-            converter = _get_converter()
-            if converter:
-                result = converter.convert(str(file_path))
-                try:
-                    txt = _to_str(result.document.export_to_text())
-                except Exception:
-                    pass
-                try:
-                    html_content = _to_str(result.document.export_to_html())
-                except Exception:
-                    pass
-        except Exception as e:
-            print(f"[WARN] Docling échoué : {e}")
-        T["docling_s"] = round(time.perf_counter() - t1, 3)
-        print(f"[PERF] Étape 2 docling    : {T['docling_s']:.2f}s — {len(txt)} chars")
-
-    # ── Étape 3 : nettoyage + troncature ────────────────────────────────────
-    t2 = time.perf_counter()
-    content_for_llm = clean_text_for_llm(txt)[:MAX_LLM_CHARS]
-    T["clean_s"] = round(time.perf_counter() - t2, 3)
-    print(f"[PERF] Étape 3 clean      : {T['clean_s']:.3f}s — {len(content_for_llm)} chars → LLM")
-    noter_progression(jeton, 55, "Analyse IA", "recherche d'un service disponible…")
-
-    # ── Étape 4 : LLM ────────────────────────────────────────────────────────
-    #
-    # Si aucun service ne répond, on NE PERD PAS le travail déjà fait. Avant
-    # cette reprise, l'échec du LLM faisait échouer tout le pipeline et le CV
-    # était enregistré vide, avec le nom du fichier en guise de nom — alors que
-    # le texte venait d'être extrait correctement. L'utilisateur se retrouvait
-    # devant une fiche à ressaisir entièrement, sans comprendre pourquoi.
-    # Bibliothèques d'abord : les règles locales lisent le document sans un
-    # seul appel réseau. On VÉRIFIE ensuite ce qu'elles ont récupéré ; l'IA
-    # n'est sollicitée que si la fiche est incomplète — un CV bien structuré
-    # ressort ainsi en ~2 s, et aucun document ne part vers un service
-    # externe sans nécessité.
-    t3 = time.perf_counter()
-    llm_ok = False
-    raw_data = extraction_locale(txt)
-    suffisante, manques = extraction_suffisante(raw_data)
-    if suffisante:
-        print("[PERF] Étape 4 locale     : extraction par bibliothèques suffisante — IA non sollicitée")
-        noter_progression(jeton, 88, "Extraction par bibliothèques complète", "IA non sollicitée")
-    else:
-        print(f"[INFO] extraction locale incomplète ({', '.join(manques)}) — appel IA.")
-        noter_progression(jeton, 58, "Analyse IA",
-                          "les bibliothèques n'ont pas tout : " + ", ".join(manques))
-        try:
-            raw_data = llm_parse_cv(
-                content_for_llm, txt,
-                progression=lambda texte: noter_progression(jeton, 62, "Analyse IA", texte),
-            )
-            llm_ok = True
-        except (LLMIndisponible, RuntimeError) as exc:
-            print(f"[WARN] LLM indisponible ({exc}) — on garde l'extraction par bibliothèques.")
-            noter_progression(jeton, 88, "Services IA indisponibles",
-                              "fiche issue des bibliothèques, à compléter à la main")
-    T["llm_s"] = round(time.perf_counter() - t3, 3)
-    print(f"[PERF] Étape 4 analyse    : {T['llm_s']:.2f}s ({'IA' if llm_ok else 'bibliothèques'})")
-
-    # ── Étape 5 : normalisation ──────────────────────────────────────────────
-    t4 = time.perf_counter()
+    started = time.perf_counter()
+    raw_data, metadata = extract_resume(
+        file_path,
+        progress=lambda detail: noter_progression(jeton, 55, "Analyse du CV", detail),
+    )
     noter_progression(jeton, 93, "Finalisation de la fiche")
-    cv_data = normalize_cv_data(raw_data, html_content)
-    T["normalize_s"] = round(time.perf_counter() - t4, 3)
-    T["total_s"] = round(time.perf_counter() - t0, 3)
-    print(f"[PERF] Étape 5 normalize  : {T['normalize_s']:.3f}s")
-    print(f"[PERF] ─── TOTAL pipeline : {T['total_s']:.2f}s ({'LLM=%d%%' % round(T['llm_s']/T['total_s']*100)})")
-
-    # Extraction insuffisante ET aucun service IA n'a pu compenser : c'est un
-    # échec réel (ex. PDF scanné dont même l'OCR ne récupère rien), pas un CV
-    # anonymisé — voir juste en dessous, cette distinction conditionne le
-    # secours par nom de fichier.
-    extraction_a_echoue = (not suffisante) and (not llm_ok)
-
-    # Dernier recours pour le nom : le nom du fichier — réservé aux documents
-    # dont l'extraction a par ailleurs réussi mais qui ne déclarent simplement
-    # aucune identité (dossier anonymisé, par exemple). Une extraction qui a
-    # échoué dans son ensemble ne doit PAS se voir attribuer un nom tiré du
-    # fichier : ça ressemble à une vraie donnée et masque silencieusement
-    # l'échec (une fiche à « Nom : Compare Scanné » a l'air normale, alors que
-    # rien n'a pu être lu dans le document).
-    if not cv_data.get("name") and not extraction_a_echoue:
-        depuis_fichier = nom_depuis_fichier(file_path)
-        if depuis_fichier:
-            cv_data["name"] = depuis_fichier
-            cv_data["name_source"] = "nom du fichier"
-            print(f"[INFO] Nom absent du document — repris du nom de fichier : {depuis_fichier}")
-
-    cv_data["llm_parsed"]    = llm_ok
-    cv_data["docling_used"]  = not is_digital
-    cv_data["parsing_mode"]  = "digital" if is_digital else "scanned"
-    cv_data["_timing"]       = T
-    # Quel service a réellement traité ce fichier — seulement si l'IA a servi :
-    # sinon on afficherait le service d'une analyse précédente.
-    cv_data["llm_service"]   = ((llm_cascade.dernier_service() or {}).get("service") or "") if llm_ok else ""
-    cv_data["extraction"]    = "ia" if llm_ok else "bibliothèques"
-    cv_data["bilan_adbi"]    = bilan_adbi(cv_data)
-    # Avertir SEULEMENT si la fiche est incomplète ET que l'IA n'a pas pu
-    # compléter : des bibliothèques qui suffisent sont le cas nominal, pas
-    # une anomalie.
-    if extraction_a_echoue:
-        cv_data["parse_warning"] = (
-            "L'extraction par bibliothèques est incomplète ("
-            + ", ".join(manques) +
-            ") et aucun service IA n'a répondu. Relancez l'analyse depuis la "
-            "fiche quand un service répond, ou complétez à la main."
-        )
+    cv_data = normalize_cv_data(raw_data)
+    cv_data.update({
+        "llm_parsed": True,
+        "docling_used": False,
+        "parsing_mode": "docie",
+        "extraction": "docie",
+        "llm_service": "DocIE / " + (metadata["model_profile"] or "défaut"),
+        "docie_event_id": metadata["event_id"],
+        "docie_validation": metadata["validation"],
+        "_timing": {"total_s": round(time.perf_counter() - started, 3)},
+    })
+    cv_data["bilan_adbi"] = bilan_adbi(cv_data)
+    validation = metadata["validation"]
+    if isinstance(validation, dict) and (validation.get("valid") is False or validation.get("warnings")):
+        cv_data["parse_warning"] = "DocIE signale des champs à vérifier. Relisez la fiche extraite."
     return cv_data
-
 
 # load_db()/save_db() ont été retirées (issue #15, PR B) : la CVthèque vit
 # désormais dans PostgreSQL (table cvs, core/cvstore_pg.py) et chaque route
@@ -1840,9 +1675,8 @@ def upload_cv():
         print(f"[ERREUR] process_cv échoué pour {file.filename} : {exc}")
         # Fallback minimal — le fichier est stocké, l'utilisateur peut éditer manuellement
         cv_data = {
-            # Le nom brut du fichier serait « document-youssef-harrach-chef-de-
-            # projet-… » : on en tire l'identité plutôt que de l'afficher tel quel.
-            "name": nom_depuis_fichier(file.filename) or Path(file.filename).stem,
+            # Une extraction échouée ne doit pas inventer une identité.
+            "name": "",
             "title": "",
             "years_experience": 0,
             "contact": {"email": "", "phone": "", "linkedin": "", "github": "", "location": ""},
@@ -1862,7 +1696,7 @@ def upload_cv():
     # seulement si l'extraction a par ailleurs réussi (pas de parse_warning) :
     # sinon ce serait la même invention de fausse donnée que dans process_cv()
     # (voir son commentaire), pour une fiche dont l'extraction a échoué.
-    if not cv_data.get("name") and not cv_data.get("parse_warning"):
+    if not cv_data.get("name") and not parse_warning and not cv_data.get("parse_warning"):
         depuis_fichier = nom_depuis_fichier(file.filename)
         if depuis_fichier:
             cv_data["name"] = depuis_fichier
@@ -1897,7 +1731,7 @@ def upload_cv():
         try:
             cv = cvstore_pg.get_cv(file_id)
             if cv is not None:
-                cv["llm_enriched"] = True
+                cv["llm_enriched"] = llm_parsed
                 cvstore_pg.save_cv(file_id, cv)
         except Exception:
             pass
