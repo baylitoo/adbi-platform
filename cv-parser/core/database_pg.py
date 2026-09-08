@@ -81,7 +81,17 @@ def insert_need(need: dict, created_by: str) -> dict:
                 Jsonb(need.get("required_skills") or []),
                 Jsonb(need.get("bonus_skills") or []),
                 need.get("seniority", ""),
-                int(need.get("min_years", 0)),
+                # `or 0` : un "min_years": null explicite (accepté par
+                # _valider_besoin — voir needs_bp.py::_CHAMPS_ENTIERS, qui
+                # traite None comme "pas de valeur") laisse la clé présente
+                # dans le dict avec une valeur None ; sans ce repli,
+                # need.get("min_years", 0) renvoie None (le défaut ne joue
+                # que si la clé est ABSENTE) et int(None) lève TypeError, non
+                # rattrapé par create_need() — 500 brut. update_need() et les
+                # deux champs prix_achat/prix_vente juste en dessous ont déjà
+                # ce repli ; seul celui-ci manquait (issue #144/#145 : promis
+                # pour "null -> 0" mais jamais appliqué à ce cast précis).
+                int(need.get("min_years", 0) or 0),
                 Jsonb(need.get("languages") or []),
                 need.get("location", ""),
                 need.get("remote", "flexible"),
