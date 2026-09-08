@@ -1,0 +1,30 @@
+[
+  {
+    "name": "flattened_agent_result",
+    "body": {
+      "id": "chatcmpl-test", "model": "spark-x2.5-1.7b",
+      "choices": [{"finish_reason": "stop", "message": {"content": "{\"document_type\":\"adbi_resume\",\"name\":\"Alice Dupont\",\"experience\":[],\"certifications\":null}"}}],
+      "usage": {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130},
+      "docie_agent": {"agent": "adbi_agent_1", "validation": {"valid": true, "errors": [], "warnings": []}, "queue_wait_ms": 125, "generation_ms": 400}
+    },
+    "expected_result": {"document_type": "adbi_resume", "name": "Alice Dupont", "experience": [], "certifications": null},
+    "schema_reported": true
+  },
+  {
+    "name": "wrapped_evidence_result",
+    "body": {
+      "model": "lfm2.5-2.6b",
+      "choices": [{"finish_reason": "stop", "message": {"content": "{\"schema_name\":\"adbi_resume\",\"result\":{\"name\":{\"value\":\"Alice Dupont\",\"confidence\":1,\"evidence_ids\":[\"b1\"]},\"experience\":[]},\"validation\":{\"valid\":false,\"errors\":[\"missing contact\"]}}"}}]
+    },
+    "expected_result": {"name": "Alice Dupont", "experience": []},
+    "schema_reported": true
+  },
+  {
+    "name": "unreported_schema_not_invented",
+    "body": {
+      "choices": [{"finish_reason": "stop", "message": {"content": "```json\n{\"name\":\"Alice Dupont\"}\n```"}}]
+    },
+    "expected_result": {"name": "Alice Dupont"},
+    "schema_reported": false
+  }
+]
