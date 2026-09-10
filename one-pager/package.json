@@ -4,7 +4,8 @@
   "description": "One pager - import d'un CV (PDF/Word/texte), extraction structuree, generation d'un dossier de competences one-page au format ADBI.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js"
   },
   "author": "ADBI",
   "license": "UNLICENSED",

@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "test": "node --test",
     "migrer-vers-postgres": "node scripts/migrer-vers-postgres.js"
   },
   "author": "ADBI",

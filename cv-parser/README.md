@@ -42,6 +42,26 @@ persistés ; un statut « Completed » seul ne suffit pas.
 Prévoir un délai de proxy suffisant pour les uploads/réanalyses synchrones.
 Après un timeout, le traitement DocIE peut encore continuer.
 
+### Bridge DocIE (issue #151)
+
+`docie_client.py` ci-dessus appelait DocIE directement, avant l'arrivée du
+bridge serveur partagé (`document-parsing/bridge/docie_bridge.py`, #150/#155),
+réutilisé par les autres consommateurs du même milestone. `DOCIE_EXTRACTION_ENABLED`
+(off par défaut — `docie_client.py` reste le chemin actif) bascule vers ce
+bridge pour les PDF/PNG/JPEG/WebP ; un `.docx` continue de passer par
+`docie_client.py` même bascule activée, le bridge n'ayant pas encore de
+contrat texte. Requiert alors `DOCIE_AGENT_RESUME` (nom de l'agent DocIE côté
+bridge) en plus de `DOCIE_BASE_URL`/`DOCIE_API_KEY` ci-dessus ; `DOCIE_ALLOW_HTTP=true`
+si `DOCIE_BASE_URL` n'est pas en HTTPS et pas en loopback (ex. `host.docker.internal`
+en local — le bridge refuse HTTP hors loopback par défaut). Un échec du
+bridge (timeout, erreur DocIE, mauvaise configuration) ne relance pas
+`docie_client.py` pour la même fiche — la fiche est stockée vide et éditable,
+avec un message d'erreur, comme pour tout échec d'extraction. Voir
+`docie_bridge_extraction.py` et `tests/test_docie_bridge_extraction.py`.
+`docie_client.py` n'est pas retiré par cette bascule (prévu par l'issue #154,
+une fois les trois services DocIE validés) ; c'est une migration réversible,
+pas un remplacement.
+
 Pour les scans, DocIE doit disposer d'un backend OCR opérationnel. Sur l'image
 DocIE locale utilisée ici, `pdf_text`/`liteparse` inclut le secours OCR, mais
 nécessite `TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata` dans

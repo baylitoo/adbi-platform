@@ -73,7 +73,14 @@ services:
           memory: 512m
 
   contrats:
-    build: ./contrats
+    # additional_contexts (Compose >= 2.17) : expose document-parsing/bridge/
+    # (bridge DocIE partagé) au Dockerfile via `COPY --from=bridge`, sans le
+    # dupliquer dans contrats/ (issue #153 — extraction Kbis optionnelle,
+    # voir contrats/lib/docie-extraction.js).
+    build:
+      context: ./contrats
+      additional_contexts:
+        bridge: ./document-parsing/bridge
     container_name: adbi-contrats
     ports:
       - "4100:4100"
@@ -91,6 +98,13 @@ services:
       # dépôt serait écrit dans data/code-parametres.txt — voir ARCHITECTURE.md.
       ADBI_CODE_PARAMETRES: ${ADBI_CODE_PARAMETRES:?ADBI_CODE_PARAMETRES est requis (voir .env.example) — jamais le défaut de développement en déploiement}
       PAPPERS_API_KEY: ${PAPPERS_API_KEY:-}
+      # Extraction Kbis via le bridge DocIE — désactivée par défaut (comportement
+      # local pdf-parse/tesseract.js inchangé). Voir contrats/lib/docie-extraction.js.
+      # Variable racine dédiée (CONTRATS_...), voir docker-compose.yml.
+      DOCIE_EXTRACTION_ENABLED: ${CONTRATS_DOCIE_EXTRACTION_ENABLED:-false}
+      DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
+      DOCIE_API_KEY: ${DOCIE_API_KEY:-}
+      DOCIE_AGENT_KBIS: ${DOCIE_AGENT_KBIS:-}
       INSEE_API_KEY: ${INSEE_API_KEY:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-}
@@ -112,7 +126,12 @@ services:
           memory: 512m
 
   one-pager:
-    build: ./one-pager
+    # Contexte a la racine (issue #152) : l'image embarque aussi le client
+    # bridge DocIE partage (document-parsing/bridge/docie-bridge.js, issue
+    # #150), hors de one-pager/ — voir one-pager/Dockerfile.
+    build:
+      context: .
+      dockerfile: one-pager/Dockerfile
     container_name: adbi-onepager
     ports:
       - "4200:4200"
@@ -124,6 +143,16 @@ services:
     environment:
       PORT: 4200
       DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_one_pager
+      # Bascule progressive vers le bridge DocIE partage (issue #152) — voir
+      # one-pager/.env.example. Desactive tant que ONEPAGER_DOCIE_EXTRACTION_ENABLED
+      # n'est pas explicitement mis a "true" : aucun changement de comportement
+      # par defaut. Les trois variables suivantes ne sont lues que si le
+      # drapeau est actif.
+      DOCIE_EXTRACTION_ENABLED: ${ONEPAGER_DOCIE_EXTRACTION_ENABLED:-false}
+      DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
+      DOCIE_API_KEY: ${DOCIE_API_KEY:-}
+      DOCIE_AGENT_RESUME: ${DOCIE_AGENT_RESUME:-}
+      DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-900}
     restart: unless-stopped
     # Issue #138 : voir le commentaire sur `postgres` ci-dessus.
     deploy:
@@ -151,7 +180,12 @@ services:
           memory: 512m
 
   cv-parser:
-    build: ./cv-parser
+    build:
+      context: ./cv-parser
+      additional_contexts:
+        # Bridge DocIE partagé (issue #151, #150/#155) : source unique dans
+        # document-parsing/bridge/, copiée dans l'image au build (Dockerfile).
+        bridge: ./document-parsing/bridge
     extra_hosts:
       - "host.docker.internal:host-gateway"
     container_name: adbi-cv-parser
@@ -173,6 +207,17 @@ services:
       DOCIE_MODEL_PROFILE: ${DOCIE_MODEL_PROFILE:-}
       DOCIE_OCR_BACKEND: ${DOCIE_OCR_BACKEND:-}
       DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-900}
+      # Bascule issue #151 : off par défaut, docie_client.py (ci-dessus) reste
+      # le chemin d'extraction. DOCIE_AGENT_RESUME n'est requis que si activée
+      # (nom de l'agent DocIE côté bridge, voir document-parsing/bridge/README.md).
+      # Variable racine dédiée (CVPARSER_...), voir docker-compose.yml.
+      DOCIE_EXTRACTION_ENABLED: ${CVPARSER_DOCIE_EXTRACTION_ENABLED:-false}
+      DOCIE_AGENT_RESUME: ${DOCIE_AGENT_RESUME:-}
+      # Le bridge refuse HTTP hors loopback par défaut (docie_bridge.py) ;
+      # dérogation explicite pour un réseau privé de confiance seulement.
+      # host.docker.internal (ci-dessus) n'est pas loopback vu du conteneur :
+      # nécessaire ici en local si DOCIE_EXTRACTION_ENABLED=true.
+      DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
       # Posé ICI, en dur — jamais via une variable .env optionnelle — pour
       # qu'exposer ce service via compose n'oublie jamais l'authentification
       # (voir factory/README.md § Authentification du CV Parser).
