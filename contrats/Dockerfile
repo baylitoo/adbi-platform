@@ -17,6 +17,18 @@ RUN npm ci --omit=dev
 # 2) Code de l'application
 COPY --chown=node:node . .
 
+# 3) Bridge DocIE partage (issue #153, extraction Kbis optionnelle derriere
+#    DOCIE_EXTRACTION_ENABLED — voir lib/docie-extraction.js). Le contexte de
+#    build additionnel "bridge" pointe vers document-parsing/bridge/ (hors du
+#    contexte ./contrats — voir docker-compose.yml racine et celui de ce
+#    dossier). Copie a la racine du systeme de fichiers de l'image, PAS sous
+#    /app : lib/docie-extraction.js resout /document-parsing/bridge via un
+#    chemin relatif depuis /app/lib (../../document-parsing/bridge), la meme
+#    profondeur qu'en checkout monorepo (contrats/lib -> document-parsing/bridge).
+#    Ce fichier partage n'est pas duplique dans contrats/ (cf. le README du
+#    bridge : "ne pas copier manuellement ces fichiers dans les modules").
+COPY --from=bridge --chown=node:node . /document-parsing/bridge
+
 # Les fichiers (referentiel, cle API, contrats generes) vivent dans
 # /app/data, monte comme volume pour persister hors du conteneur.
 # L'historique/signatures/corbeille/templates-perso vivent en PostgreSQL

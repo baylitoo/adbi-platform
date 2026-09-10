@@ -42,7 +42,15 @@ services:
           memory: 512m
 
   contrats:
-    build: ./contrats
+    # additional_contexts (Compose >= 2.17, cf. `docker compose version`) :
+    # expose document-parsing/bridge/ (bridge DocIE partagé, hors du contexte
+    # ./contrats) au Dockerfile via `COPY --from=bridge` — sans dupliquer ce
+    # fichier partagé dans contrats/ (issue #153, extraction Kbis optionnelle
+    # derrière DOCIE_EXTRACTION_ENABLED, voir contrats/lib/docie-extraction.js).
+    build:
+      context: ./contrats
+      additional_contexts:
+        bridge: ./document-parsing/bridge
     volumes:
       - contrats-data:/app/data
     depends_on:
@@ -53,6 +61,16 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_contrats
       ADBI_CODE_PARAMETRES: ${ADBI_CODE_PARAMETRES:?ADBI_CODE_PARAMETRES est requis (voir .env.example) — jamais le défaut de développement en déploiement}
       PAPPERS_API_KEY: ${PAPPERS_API_KEY:-}
+      # Extraction Kbis via le bridge DocIE — désactivée par défaut (comportement
+      # local pdf-parse/tesseract.js inchangé). Portée : pièce Kbis uniquement,
+      # voir contrats/lib/docie-extraction.js pour le détail et le gap de schéma.
+      # Variable racine dédiée (CONTRATS_...) : les autres migrations DocIE
+      # (cv-parser #151, one-pager #152) ont chacune la leur, pour activer un
+      # service à la fois sans basculer les autres involontairement.
+      DOCIE_EXTRACTION_ENABLED: ${CONTRATS_DOCIE_EXTRACTION_ENABLED:-false}
+      DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
+      DOCIE_API_KEY: ${DOCIE_API_KEY:-}
+      DOCIE_AGENT_KBIS: ${DOCIE_AGENT_KBIS:-}
       INSEE_API_KEY: ${INSEE_API_KEY:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-}

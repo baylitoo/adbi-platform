@@ -13,7 +13,9 @@ const { buildPdf, buildCertificatPdf } = require("./lib/render-pdf");
 const { buildChecklistPdf } = require("./lib/render-checklist");
 const { settingsStatus, saveSettings, getCompany, searchCompanies, testProvider } = require("./lib/integrations");
 const referentiels = require("./lib/referentiels");
-const { analyzeDocumentLocal } = require("./lib/docanalyze");
+// Analyse de pièces : locale par défaut, DocIE en option (issue #153) — voir
+// lib/docie-extraction.js pour le détail du flag et du repli.
+const { analyzeDocument } = require("./lib/docie-extraction");
 const signatures = require("./lib/signatures");
 const templatesPerso = require("./lib/templates-perso");
 const fournisseurs = require("./lib/fournisseurs");
@@ -368,9 +370,15 @@ app.post("/api/search", async (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-// Analyse LOCALE des pièces (Kbis/URSSAF) — sans LLM, sans envoi externe.
+// Analyse des pièces (Kbis/URSSAF...) — LOCALE par défaut (pdf-parse +
+// tesseract.js, sans LLM, sans envoi externe). Si DOCIE_EXTRACTION_ENABLED=true
+// ET pièce Kbis (seul type câblé côté bridge, voir lib/docie-extraction.js) :
+// extraction via le bridge DocIE partagé (document-parsing/bridge/), avec
+// envoi externe au service DocIE configuré et repli automatique sur l'analyse
+// locale en cas d'échec. Toutes les autres pièces (URSSAF, RIB, CNI, fiscale,
+// coordonnées) restent 100% locales quel que soit le flag.
 app.post("/api/document/analyze", async (req, res) => {
-  try { res.json(await analyzeDocumentLocal(req.body || {})); }
+  try { res.json(await analyzeDocument(req.body || {})); }
   catch (e) { console.error(e); res.status(400).json({ error: e.message }); }
 });
 
@@ -817,7 +825,6 @@ app.post("/webhooks/signature", async (req, res) => {
     const corps = req.body || {};
     let fournisseurWebhook = null;
     let idExterne = corps.data && corps.data.signature_request && corps.data.signature_request.id;
-    let fournisseurWebhook;
     if (idExterne) {
       fournisseurWebhook = "yousign";
       const y = fournisseurs.externe("yousign");
@@ -833,7 +840,6 @@ app.post("/webhooks/signature", async (req, res) => {
     } else if (corps.requests && corps.requests.request_id) {
       fournisseurWebhook = "zoho";
       idExterne = String(corps.requests.request_id);
-      fournisseurWebhook = "zoho";
     }
     if (!idExterne) return;
     // Rejet de forme/signature : géré ci-dessus (return sans traitement, rien
