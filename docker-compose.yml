@@ -64,7 +64,10 @@ services:
       # Extraction Kbis via le bridge DocIE — désactivée par défaut (comportement
       # local pdf-parse/tesseract.js inchangé). Portée : pièce Kbis uniquement,
       # voir contrats/lib/docie-extraction.js pour le détail et le gap de schéma.
-      DOCIE_EXTRACTION_ENABLED: ${DOCIE_EXTRACTION_ENABLED:-false}
+      # Variable racine dédiée (CONTRATS_...) : les autres migrations DocIE
+      # (cv-parser #151, one-pager #152) ont chacune la leur, pour activer un
+      # service à la fois sans basculer les autres involontairement.
+      DOCIE_EXTRACTION_ENABLED: ${CONTRATS_DOCIE_EXTRACTION_ENABLED:-false}
       DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
       DOCIE_API_KEY: ${DOCIE_API_KEY:-}
       DOCIE_AGENT_KBIS: ${DOCIE_AGENT_KBIS:-}
