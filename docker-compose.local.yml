@@ -44,6 +44,16 @@ services:
     container_name: adbi-factory
     ports:
       - "4000:4000"
+    # modules.docker.json (image par défaut) pointe les cartes du hub vers le
+    # domaine de production outils.adbi.fr — inatteignable en local. On monte
+    # modules.local.json (mêmes 'hote'/'port' internes, 'url' en localhost:port
+    # sur les ports publiés ci-dessus) par-dessus /app/modules.json. Sans effet
+    # sur docker-compose.yml (Coolify) : celui-ci route déjà via les variables
+    # ADBI_ONEPAGER_URL / ADBI_CONTRATS_URL / ADBI_COFFRE_URL / ADBI_PARSER_URL,
+    # lues par factory/server.js (chargerModules) et prioritaires sur le
+    # 'url' statique de modules.json — voir docker-compose.yml et .env.example.
+    volumes:
+      - ./factory/modules.local.json:/app/modules.json:ro
     environment:
       ADBI_LLM_BASE_URL: ${ADBI_LLM_BASE_URL:-}
       ADBI_LLM_API_KEY: ${ADBI_LLM_API_KEY:-}
