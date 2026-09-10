@@ -507,4 +507,8 @@ function isPdf(buffer) {
   return buffer && buffer.length > 4 && buffer.slice(0, 5).toString("latin1") === "%PDF-";
 }
 
-module.exports = { ingest, cleanText };
+// isPdf est exportee en plus de `ingest` : lib/import-pipeline.js (issue #152)
+// en a besoin pour decider si un fichier peut passer par le bridge DocIE
+// (PDF uniquement, voir document-parsing/bridge/README.md) avant de lire
+// l'integralite du document.
+module.exports = { ingest, cleanText, isPdf };

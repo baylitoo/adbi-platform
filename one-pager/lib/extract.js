@@ -1073,4 +1073,7 @@ function completeness(d) {
   return Math.round((checks.filter(Boolean).length / checks.length) * 100) / 100;
 }
 
-module.exports = { extract, RE_ROLE, estRole, splitList, dedupe, hasMetric };
+// seniorityYears et completeness sont exportees en plus de `extract` : la
+// voie d'extraction DocIE (lib/docie-extract.js, issue #152) en a besoin pour
+// calculer les memes metriques de qualite sans dupliquer cette logique.
+module.exports = { extract, RE_ROLE, estRole, splitList, dedupe, hasMetric, seniorityYears, completeness };
