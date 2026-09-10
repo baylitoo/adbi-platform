@@ -126,7 +126,10 @@ services:
       # Bascule issue #151 : off par défaut, docie_client.py (ci-dessus) reste
       # le chemin d'extraction. DOCIE_AGENT_RESUME n'est requis que si activée
       # (nom de l'agent DocIE côté bridge, voir document-parsing/bridge/README.md).
-      DOCIE_EXTRACTION_ENABLED: ${DOCIE_EXTRACTION_ENABLED:-false}
+      # Variable racine dédiée (CVPARSER_...) : les autres migrations DocIE
+      # (one-pager #152, contrats #153) ont chacune la leur, pour activer un
+      # service à la fois sans basculer les autres involontairement.
+      DOCIE_EXTRACTION_ENABLED: ${CVPARSER_DOCIE_EXTRACTION_ENABLED:-false}
       DOCIE_AGENT_RESUME: ${DOCIE_AGENT_RESUME:-}
       # Le bridge refuse HTTP hors loopback par défaut (docie_bridge.py) ;
       # dérogation explicite pour un réseau privé de confiance seulement.
