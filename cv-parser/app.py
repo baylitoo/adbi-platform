@@ -2031,17 +2031,52 @@ def store_cv():
     # serveur, cv-parser/app.py) et la modification d'une fiche existante par
     # PATCH /api/cvs/<id> (liste blanche de champs, issue #82). Un id fourni
     # qui existe déjà est donc refusé plutôt que silencieusement remplacé.
+    #
+    # Mais un id FRAIS n'était, jusqu'ici, protégé par rien de tout ça
+    # (issue #102) : `data` était écrit tel quel, permettant de fixer
+    # `empreinte` (poison du cache de dédup à l'upload, cf. le commentaire de
+    # CHAMPS_MODIFIABLES_CV plus bas) ou de fabriquer un statut d'extraction
+    # (`llm_enriched`, `extraction`, `bilan_adbi`) qui ne correspond à aucune
+    # extraction réelle. Même liste blanche que PATCH (`_filtrer_champs_cv`,
+    # issue #82) : une création manuelle/API n'a besoin que des mêmes champs
+    # de contenu qu'une édition, jamais des champs internes/calculés — ceux-
+    # ci reçoivent ici une valeur par défaut sûre reflétant qu'aucune
+    # extraction n'a eu lieu, silencieusement (même choix que PATCH : les
+    # champs hors liste blanche sont ignorés, pas rejetés).
     data = request.json
     if not data:
         return jsonify({"error": "Aucune donnée"}), 400
-    erreur = _plafonner_cv(data)
+    cid = data.get("id")
+    if cid is not None and not isinstance(cid, str):
+        return jsonify({"error": "'id' doit être une chaîne de caractères."}), 400
+    if not cid:
+        cid = str(uuid.uuid4())
+    cv_data = _filtrer_champs_cv(data)
+    if not cv_data:
+        return jsonify({"error": "Aucune donnée"}), 400
+    erreur = _plafonner_cv(cv_data)
     if erreur:
         return jsonify({"error": erreur}), 400
-    cid = data.get("id") or str(uuid.uuid4())
-    data["stored_at"] = datetime.now().isoformat()
+    now = datetime.now().isoformat()
+    cv_data.update({
+        "stored_at": now,
+        # Aucune extraction n'a réellement eu lieu pour une fiche créée via
+        # cette route (le pipeline de /api/upload est le seul à produire ces
+        # valeurs légitimement) : défauts francs plutôt que de faire
+        # confiance au client. `empreinte` est volontairement ABSENTE (pas
+        # mise à "", ni à une valeur par défaut) — un champ absent ne peut
+        # jamais matcher le SHA-256 d'un futur upload dans la boucle de cache
+        # (`existante.get("empreinte") != empreinte`, toujours vrai ici).
+        "llm_enriched": False,
+        "docling_used": False,
+        "extraction": "manuel",  # valeur distincte de "ia"/"bibliothèques"/"cache" (aucun lecteur actuel, juste traçabilité)
+    })
+    # Calculé côté serveur à partir du contenu réellement retenu (cv_data
+    # après liste blanche) — jamais depuis la valeur envoyée par le client.
+    cv_data["bilan_adbi"] = bilan_adbi(cv_data)
     # Atomique côté base (INSERT ... ON CONFLICT DO NOTHING) : pas de fenêtre
     # de course entre une lecture d'existence et l'écriture.
-    if not cvstore_pg.create_cv(cid, data):
+    if not cvstore_pg.create_cv(cid, cv_data):
         return jsonify({
             "error": "Une fiche CV avec cet id existe déjà. "
                      "Utilisez PATCH /api/cvs/<id> pour la modifier.",
@@ -2102,13 +2137,17 @@ CHAMPS_MODIFIABLES_CV = {
 LISTES_DE_DICTS_CV = {"experience", "education", "skills", "languages", "certifications"}
 
 
-@app.route("/api/cvs/<cv_id>", methods=["PATCH"])
-@require_auth
-def update_cv(cv_id):
-    brut = request.json or {}
-    # Liste blanche + contrôle de type minimal — volontairement PAS
-    # normalize_cv_data() : celle-ci recalcule/laisse tomber des champs et
-    # changerait la sémantique d'une simple édition manuelle depuis l'écran.
+def _filtrer_champs_cv(brut: dict) -> dict:
+    """Liste blanche + contrôle de type minimal sur un corps JSON de fiche
+    CV — partagée par la CRÉATION (`POST /api/cvs`, id frais, issue #102) et
+    la MODIFICATION (`PATCH /api/cvs/<id>`, issue #82) : les deux écrivent
+    dans la même table sans passer par `normalize_cv_data()` (qui
+    recalcule/laisse tomber des champs et changerait la sémantique d'une
+    simple saisie/édition manuelle), donc les deux ont besoin de la même
+    garde contre les champs internes/calculés (`empreinte`, `llm_enriched`,
+    `id`...) et les types inattendus (ex. "experience" en chaîne au lieu
+    d'une liste, qui fait planter sans filet GET /cv/<id>/adbi et
+    /api/cvs/<id>/dossier.<format>)."""
     updates = {k: v for k, v in brut.items() if k in CHAMPS_MODIFIABLES_CV}
     if "years_experience" in updates:
         try:
@@ -2126,6 +2165,14 @@ def update_cv(cv_id):
             valeur = updates[champ]
             if not isinstance(valeur, list) or not all(isinstance(x, dict) for x in valeur):
                 del updates[champ]
+    return updates
+
+
+@app.route("/api/cvs/<cv_id>", methods=["PATCH"])
+@require_auth
+def update_cv(cv_id):
+    brut = request.json or {}
+    updates = _filtrer_champs_cv(brut)
     erreur = _plafonner_cv(updates)
     if erreur:
         return jsonify({"error": erreur}), 400
