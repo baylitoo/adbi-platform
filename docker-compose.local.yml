@@ -153,6 +153,9 @@ services:
       DOCIE_API_KEY: ${DOCIE_API_KEY:-}
       DOCIE_AGENT_RESUME: ${DOCIE_AGENT_RESUME:-}
       DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-900}
+      # Le bridge refuse HTTP hors loopback par defaut ; derogation explicite
+      # pour un reseau prive de confiance seulement (meme var que cv-parser).
+      DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
     restart: unless-stopped
     # Issue #138 : voir le commentaire sur `postgres` ci-dessus.
     deploy:
