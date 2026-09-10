@@ -101,7 +101,12 @@ services:
           memory: 512m
 
   cv-parser:
-    build: ./cv-parser
+    build:
+      context: ./cv-parser
+      additional_contexts:
+        # Bridge DocIE partagé (issue #151, #150/#155) : source unique dans
+        # document-parsing/bridge/, copiée dans l'image au build (Dockerfile).
+        bridge: ./document-parsing/bridge
     volumes:
       - parser-data:/app/data
       - parser-uploads:/app/uploads
@@ -118,6 +123,17 @@ services:
       DOCIE_MODEL_PROFILE: ${DOCIE_MODEL_PROFILE:-lfm2.5-2.6b}
       DOCIE_OCR_BACKEND: ${DOCIE_OCR_BACKEND:-}
       DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-360}
+      # Bascule issue #151 : off par défaut, docie_client.py (ci-dessus) reste
+      # le chemin d'extraction. DOCIE_AGENT_RESUME n'est requis que si activée
+      # (nom de l'agent DocIE côté bridge, voir document-parsing/bridge/README.md).
+      # Variable racine dédiée (CVPARSER_...) : les autres migrations DocIE
+      # (one-pager #152, contrats #153) ont chacune la leur, pour activer un
+      # service à la fois sans basculer les autres involontairement.
+      DOCIE_EXTRACTION_ENABLED: ${CVPARSER_DOCIE_EXTRACTION_ENABLED:-false}
+      DOCIE_AGENT_RESUME: ${DOCIE_AGENT_RESUME:-}
+      # Le bridge refuse HTTP hors loopback par défaut (docie_bridge.py) ;
+      # dérogation explicite pour un réseau privé de confiance seulement.
+      DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
       ADBI_AUTH: "on"
       DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_cv_parser
       ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
