@@ -14,9 +14,7 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 
-const { ingest } = require("./lib/ingest");
-const { segment } = require("./lib/layout");
-const { extract } = require("./lib/extract");
+const { importerCv, ImportError } = require("./lib/import-pipeline");
 const { build, GABARIT, cheminBadge } = require("./lib/onepager");
 const { buildPptx, buildLivret } = require("./lib/render-pptx");
 const db = require("./lib/db.pg");
@@ -102,19 +100,10 @@ app.post("/api/import", async (req, res) => {
     }
 
     const t0 = Date.now();
-    const doc = await ingest(buffer, filename);
-
-    if (doc.scanned) {
-      return res.status(422).json({
-        error: "Ce PDF ne contient pas de texte : il s'agit probablement d'un scan ou d'une image. " +
-               "Exportez le CV en PDF texte ou en Word, puis réimportez-le.",
-      });
-    }
-    if (!doc.charCount) {
-      return res.status(422).json({ error: "Aucun texte n'a pu être lu dans ce fichier." });
-    }
-
-    const master = extract(doc, segment(doc));
+    // lib/import-pipeline choisit la voie d'extraction (locale par defaut,
+    // DocIE si DOCIE_EXTRACTION_ENABLED=true et fichier PDF — voir issue #152)
+    // et gere elle-meme le repli local en cas d'echec DocIE.
+    const master = await importerCv(buffer, filename);
     const hash = crypto.createHash("sha256").update(buffer).digest("hex");
     const existant = await db.findByHash(hash);
 
@@ -127,6 +116,7 @@ app.post("/api/import", async (req, res) => {
       doublon: existant ? { id: existant.id, nom: existant.nom, maj_le: existant.maj_le } : null,
     });
   } catch (e) {
+    if (e instanceof ImportError) return res.status(e.status).json({ error: e.message });
     console.error("[import]", e);
     res.status(500).json({ error: "Lecture impossible : " + (e.message || "erreur inconnue") });
   }
