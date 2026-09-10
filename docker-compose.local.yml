@@ -141,7 +141,12 @@ services:
           memory: 512m
 
   cv-parser:
-    build: ./cv-parser
+    build:
+      context: ./cv-parser
+      additional_contexts:
+        # Bridge DocIE partagé (issue #151, #150/#155) : source unique dans
+        # document-parsing/bridge/, copiée dans l'image au build (Dockerfile).
+        bridge: ./document-parsing/bridge
     extra_hosts:
       - "host.docker.internal:host-gateway"
     container_name: adbi-cv-parser
@@ -163,6 +168,16 @@ services:
       DOCIE_MODEL_PROFILE: ${DOCIE_MODEL_PROFILE:-}
       DOCIE_OCR_BACKEND: ${DOCIE_OCR_BACKEND:-}
       DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-900}
+      # Bascule issue #151 : off par défaut, docie_client.py (ci-dessus) reste
+      # le chemin d'extraction. DOCIE_AGENT_RESUME n'est requis que si activée
+      # (nom de l'agent DocIE côté bridge, voir document-parsing/bridge/README.md).
+      DOCIE_EXTRACTION_ENABLED: ${DOCIE_EXTRACTION_ENABLED:-false}
+      DOCIE_AGENT_RESUME: ${DOCIE_AGENT_RESUME:-}
+      # Le bridge refuse HTTP hors loopback par défaut (docie_bridge.py) ;
+      # dérogation explicite pour un réseau privé de confiance seulement.
+      # host.docker.internal (ci-dessus) n'est pas loopback vu du conteneur :
+      # nécessaire ici en local si DOCIE_EXTRACTION_ENABLED=true.
+      DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
       # Posé ICI, en dur — jamais via une variable .env optionnelle — pour
       # qu'exposer ce service via compose n'oublie jamais l'authentification
       # (voir factory/README.md § Authentification du CV Parser).

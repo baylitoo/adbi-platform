@@ -1315,23 +1315,43 @@ def fichier_upload(identifiant: str, ext: str):
 
 
 def process_cv(file_path, jeton=None) -> dict:
-    """Document → DocIE (extraction/OCR) → format CV ADBI."""
+    """Document → DocIE (extraction/OCR) → format CV ADBI.
+
+    Issue #151 : DOCIE_EXTRACTION_ENABLED bascule l'étape d'extraction vers
+    le bridge DocIE partagé (document-parsing/bridge/docie_bridge.py,
+    #150/#155) plutôt que le client ad hoc `docie_client.py` — normalisation,
+    édition et exports en aval ne changent pas. Off par défaut (voir
+    docie_bridge_extraction.docie_extraction_enabled) : comportement actuel
+    inchangé tant que le bridge n'est pas validé en production. Un échec du
+    bridge (timeout, erreur DocIE, mauvaise config...) lève DocIEError sans
+    second appel réseau ; l'appelant (route d'upload) garde son repli
+    existant vers une fiche vide éditable avec parse_warning — pas de repli
+    ajouté ici, pour ne jamais rejouer un travail DocIE potentiellement
+    facturé.
+    """
     import time
-    from docie_client import extract_resume
+    from docie_bridge_extraction import docie_extraction_enabled
+    from docie_bridge_extraction import extract_resume as extract_resume_bridge
+    from docie_client import extract_resume as extract_resume_legacy
 
     started = time.perf_counter()
+    bridge_active = docie_extraction_enabled()
+    extract_resume = extract_resume_bridge if bridge_active else extract_resume_legacy
     raw_data, metadata = extract_resume(
         file_path,
         progress=lambda detail: noter_progression(jeton, 55, "Analyse du CV", detail),
     )
     noter_progression(jeton, 93, "Finalisation de la fiche")
     cv_data = normalize_cv_data(raw_data)
+    # `transport` reflète le chemin réellement emprunté (docie_bridge_extraction
+    # délègue les .docx à docie_client même bascule activée — voir son docstring).
+    mode = metadata.get("transport", "docie")
     cv_data.update({
         "llm_parsed": True,
         "docling_used": False,
-        "parsing_mode": "docie",
-        "extraction": "docie",
-        "llm_service": "DocIE / " + (metadata["model_profile"] or "défaut"),
+        "parsing_mode": mode,
+        "extraction": mode,
+        "llm_service": ("DocIE Bridge / " if mode == "docie-bridge" else "DocIE / ") + (metadata["model_profile"] or "défaut"),
         "docie_event_id": metadata["event_id"],
         "docie_validation": metadata["validation"],
         "_timing": {"total_s": round(time.perf_counter() - started, 3)},
