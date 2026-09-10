@@ -38,11 +38,20 @@ SMTP) a été retiré au profit de ces connecteurs.
 ## Données et confidentialité
 
 Tout est local : le serveur n'écoute que sur `127.0.0.1:4100` en dehors d'un
-reverse proxy. Rien de la génération de contrat, de la recherche d'entreprise
-ni de l'analyse de pièces (OCR local, `lib/docanalyze.js`) ne part vers un
-tiers — seules la recherche société optionnelle (Pappers/INSEE) et la
-signature (Yousign/Zoho) sont des appels externes, tous deux à clé et
-documentés.
+reverse proxy. Rien de la génération de contrat ni de la recherche d'entreprise
+ne part vers un tiers. L'analyse de pièces (OCR local, `lib/docanalyze.js`)
+reste elle aussi 100% locale par défaut — seules la recherche société
+optionnelle (Pappers/INSEE) et la signature (Yousign/Zoho) sont des appels
+externes, tous deux à clé et documentés.
+
+Exception opt-in (`DOCIE_EXTRACTION_ENABLED=true`, désactivée par défaut,
+issue #153) : la pièce Kbis de la checklist est alors envoyée au service DocIE
+configuré (`DOCIE_BASE_URL`/`DOCIE_API_KEY`/`DOCIE_AGENT_KBIS`) via le bridge
+partagé `document-parsing/bridge/`, pour extraction — voir
+`lib/docie-extraction.js`. Les autres pièces (URSSAF, RIB, CNI, attestation
+fiscale...) restent toujours analysées localement, flag ou pas : le bridge n'a
+pas d'agent DocIE configuré pour elles à ce jour. Sur échec DocIE (config
+manquante, timeout, erreur), repli automatique sur l'analyse locale.
 
 Stocké en **PostgreSQL** (`DATABASE_URL`, requise — voir `lib/schema.sql`) :
 historique des contrats, demandes de signature (+ journal), corbeille et

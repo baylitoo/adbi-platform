@@ -109,4 +109,7 @@ async function analyzeDocumentLocal({ dataBase64, mimeType, items, expectedName 
   };
 }
 
-module.exports = { analyzeDocumentLocal, extractText };
+// norm/checkName/extractCompanyName/extractIssuedDate sont aussi exportées
+// (issue #153) : réutilisées telles quelles par lib/docie-extraction.js pour
+// analyser le texte aplati d'une extraction DocIE, sans dupliquer ces règles.
+module.exports = { analyzeDocumentLocal, extractText, norm, checkName, extractCompanyName, extractIssuedDate };

@@ -5,7 +5,9 @@
 //
 // Node 18+ fournit fetch() nativement : aucune dépendance npm supplémentaire.
 // NB : toute la partie IA/LLM a été retirée. La vérification des pièces
-// justificatives se fait LOCALEMENT via lib/docanalyze.js (pdf-parse + tesseract.js).
+// justificatives se fait LOCALEMENT via lib/docanalyze.js (pdf-parse + tesseract.js),
+// sauf pièce Kbis avec DOCIE_EXTRACTION_ENABLED=true (opt-in, issue #153) —
+// voir lib/docie-extraction.js.
 
 const fs = require("fs");
 const path = require("path");

@@ -15,7 +15,17 @@
 # =====================================================================
 services:
   adbi-contrats:
-    build: .
+    # additional_contexts (Compose >= 2.17) : expose ../document-parsing/bridge/
+    # (bridge DocIE partagé, hors du dossier contrats/) au Dockerfile via
+    # `COPY --from=bridge`, sans le dupliquer dans ce module (issue #153 —
+    # extraction Kbis optionnelle, voir lib/docie-extraction.js). Lancé
+    # isolément (ce fichier vit dans contrats/), le contexte relatif est donc
+    # "../document-parsing/bridge", pas "./document-parsing/bridge" comme dans
+    # le docker-compose.yml racine.
+    build:
+      context: .
+      additional_contexts:
+        bridge: ../document-parsing/bridge
     image: adbi-contrats:latest
     container_name: adbi-contrats
     ports:
@@ -24,6 +34,12 @@ services:
       - ./data:/app/data     # referentiel, cle API et fichiers generes conserves sur la machine hote
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL est requise (connexion PostgreSQL, voir README.md)}
+      # Extraction Kbis via le bridge DocIE — désactivée par défaut (comportement
+      # local pdf-parse/tesseract.js inchangé). Voir lib/docie-extraction.js.
+      DOCIE_EXTRACTION_ENABLED: ${DOCIE_EXTRACTION_ENABLED:-false}
+      DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
+      DOCIE_API_KEY: ${DOCIE_API_KEY:-}
+      DOCIE_AGENT_KBIS: ${DOCIE_AGENT_KBIS:-}
     restart: unless-stopped
     # Issue #138 : même plafond que le service `contrats` du docker-compose.yml
     # RACINE — sans lui, un pic mémoire ici n'est pas contenu au conteneur et
