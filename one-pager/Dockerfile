@@ -1,15 +1,26 @@
 # ADBI OnePager — image Docker
-# Build : docker build -t adbi-onepager .
+# Build (DEPUIS LA RACINE DU DEPOT — requis depuis l'issue #152 pour embarquer
+# le client bridge DocIE partage, voir document-parsing/bridge/README.md) :
+#   docker build -f one-pager/Dockerfile -t adbi-onepager .
 # Run   : docker run -p 4200:4200 -v "$(pwd)/data:/app/data" adbi-onepager
 FROM node:22-bookworm-slim
 
 WORKDIR /app
 
 # Dépendances d'abord (meilleur cache Docker).
-COPY package.json package-lock.json ./
+COPY one-pager/package.json one-pager/package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY --chown=node:node . .
+COPY --chown=node:node one-pager/ ./
+# Client bridge DocIE partage (issue #150) : source unique dans
+# document-parsing/bridge/, jamais copiee a la main dans les modules d'apres
+# son README — d'ou un contexte de build a la racine du depot plutot qu'un
+# copier-coller. lib/docie-extract.js le charge via un chemin relatif
+# (../../document-parsing/bridge/docie-bridge) qui reste valable ici :
+# depuis /app/lib, il resout vers /document-parsing/bridge/docie-bridge.js.
+# N'est utilise que si DOCIE_EXTRACTION_ENABLED=true ; son absence ne bloque
+# pas le demarrage du service (voir lib/docie-extract.js#chargerBridge).
+COPY --chown=node:node document-parsing/bridge/docie-bridge.js /document-parsing/bridge/docie-bridge.js
 
 ENV NODE_ENV=production
 # Sans ca, server.js lie 127.0.0.1 (defaut poste de dev) : injoignable via le

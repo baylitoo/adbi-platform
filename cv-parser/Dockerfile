@@ -5,6 +5,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+# Bridge DocIE partagé (issue #151, #150/#155) : contexte de build additionnel
+# pointant vers document-parsing/bridge/ (voir docker-compose*.yml,
+# additional_contexts: bridge). Copié uniquement au build, jamais dupliqué
+# dans ce dépôt module — document-parsing/bridge/README.md reste la source
+# unique. Utilisé seulement si DOCIE_EXTRACTION_ENABLED=true (docie_bridge_
+# extraction.py) ; absent, le client DocIE historique (docie_client.py)
+# reste le chemin par défaut.
+COPY --from=bridge docie_bridge.py .
 
 ENV PYTHONUNBUFFERED=1
 ENV ADBI_HOTE=0.0.0.0
