@@ -817,7 +817,6 @@ app.post("/webhooks/signature", async (req, res) => {
     const corps = req.body || {};
     let fournisseurWebhook = null;
     let idExterne = corps.data && corps.data.signature_request && corps.data.signature_request.id;
-    let fournisseurWebhook;
     if (idExterne) {
       fournisseurWebhook = "yousign";
       const y = fournisseurs.externe("yousign");
@@ -833,7 +832,6 @@ app.post("/webhooks/signature", async (req, res) => {
     } else if (corps.requests && corps.requests.request_id) {
       fournisseurWebhook = "zoho";
       idExterne = String(corps.requests.request_id);
-      fournisseurWebhook = "zoho";
     }
     if (!idExterne) return;
     // Rejet de forme/signature : géré ci-dessus (return sans traitement, rien
