@@ -31,6 +31,7 @@ from periode_mission import (  # noqa: E402
     mentionne_en_cours,
     mois_courant,
     ordre_missions,
+    periode_lisible,
 )
 from skills_normalizer import normalize_skills, skills_to_flat  # noqa: E402
 
@@ -57,6 +58,7 @@ def _normalize_cv_data():
         "ordre_missions": ordre_missions,
         "index_mois": index_mois,
         "mois_courant": mois_courant,
+        "periode_lisible": periode_lisible,
         # Les vraies : ce test mesure aussi ce qui arrive dans skills_flat,
         # c'est-à-dire dans ce que le rapprochement lit.
         "normalize_skills": normalize_skills,

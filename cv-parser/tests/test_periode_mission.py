@@ -31,6 +31,7 @@ from periode_mission import (  # noqa: E402
     mission_en_cours,
     mois_courant,
     ordre_missions,
+    periode_lisible,
     sans_accents,
 )
 
@@ -57,6 +58,7 @@ def _fonctions_de_app(noms):
         "ordre_missions": ordre_missions,
         "index_mois": index_mois,
         "mois_courant": mois_courant,
+        "periode_lisible": periode_lisible,
         # normalize_cv_data appelle ces trois-là hors du périmètre mesuré ici.
         "normalize_skills": lambda *a, **k: {},
         "skills_to_flat": lambda *a, **k: [],
@@ -322,6 +324,107 @@ class AncienneteAvecAnalyseurTests(unittest.TestCase):
         # rapprochement, exactement comme « Poste actuel » avant #176.
         self.assertEqual(self.annees([{"period": "il y a longtemps"}]), 1)
         self.assertEqual(self.annees([{"period": ""}]), 0)
+
+
+class AncienneteAnnonceeParDocIETests(unittest.TestCase):
+    """#177 ligne 3 : n'écraser le `years_experience` de DocIE que si on a mieux.
+
+    `normalize_cv_data` le remplaçait systématiquement par le calcul, même quand
+    aucune période n'était lisible et que le calcul ne reposait donc sur rien :
+    DocIE pouvait annoncer 12 ans, la fiche en affichait 0, et
+    /api/needs/<id>/match classait le consultant en dernier — la panne « senior
+    introuvable » de #176, par une autre cause.
+
+    Ordre de préférence mesuré ici, celui du JS
+    (`lib/docie-extract.js` : calcul si `experiences.some(e => e.start_date)`,
+    repli sur `years_experience` sinon) :
+        période lisible > valeur annoncée par DocIE > un an par période illisible.
+    """
+
+    def setUp(self):
+        espace = _fonctions_de_app({"normalize_cv_data", "compute_years_experience"})
+        self.normalize = espace["normalize_cv_data"]
+
+    def _annees(self, missions, annonce=None):
+        return self.normalize(
+            {"experience": missions, "years_experience": annonce}
+        )["years_experience"]
+
+    def test_une_periode_lisible_prime_sur_ce_que_docie_annonce(self):
+        """Le calcul est mesuré ; l'annonce de DocIE ne l'est pas."""
+        missions = [{"period": "Janvier 2019 - Décembre 2022"}]
+        self.assertEqual(self._annees(missions), 4)
+        self.assertEqual(self._annees(missions, 12), 4)
+
+    def test_sans_aucune_mission_la_valeur_de_docie_passe(self):
+        # Avant : 0, quoi que DocIE ait lu dans l'en-tête du CV.
+        self.assertEqual(self._annees([], 12), 12)
+        self.assertEqual(self._annees([], None), 0)
+
+    def test_des_missions_sans_date_laissent_passer_la_valeur_de_docie(self):
+        self.assertEqual(self._annees([{"period": ""}, {"period": ""}], 12), 12)
+
+    def test_des_periodes_illisibles_laissent_passer_la_valeur_de_docie(self):
+        """« 3 ans » n'est pas une période lisible : DocIE fait mieux."""
+        missions = [{"period": "3 ans"}, {"period": "2 ans"}]
+        self.assertEqual(self._annees(missions, 12), 12)
+
+    def test_le_forfait_dun_an_reste_le_dernier_recours(self):
+        """DocIE muet : le repli de #176 tient, personne n'est ramené à zéro."""
+        self.assertEqual(self._annees([{"period": "3 ans"}, {"period": "2 ans"}]), 2)
+        self.assertEqual(self._annees([{"period": "il y a longtemps"}], 0), 1)
+
+    def test_une_periode_lisible_tres_courte_reste_prioritaire(self):
+        """Trois mois lisibles valent 0 an, et ce 0-là est mesuré : il tient."""
+        self.assertEqual(self._annees([{"period": "Janvier 2024 - Mars 2024"}], 12), 0)
+
+    def test_la_valeur_de_docie_est_coercee_comme_par_le_JS(self):
+        """`Math.max(0, Math.round(Number(x) || 0))`, arrondi au supérieur."""
+        for annonce, attendu in (
+            (12, 12), ("12", 12), (" 12 ", 12), (12.6, 13), (12.4, 12),
+            ("douze", 0), ("", 0), (None, 0), (-5, 0), (True, 0), ([], 0),
+        ):
+            with self.subTest(annonce=annonce):
+                self.assertEqual(self._annees([], annonce), attendu)
+
+    def test_predicat_et_cumul_restent_dacord(self):
+        """`periode_lisible` doit dire vrai exactement quand le cumul a un intervalle.
+
+        Les deux critères sont écrits à deux endroits (periode_mission.py et
+        compute_years_experience) : s'ils divergent, la valeur de DocIE
+        remplacerait un calcul réel, ou l'inverse.
+        """
+        annees = _fonctions_de_app({"compute_years_experience"})["compute_years_experience"]
+        for periode in ("Janvier 2019 - Décembre 2022", "Mars 2019 – Poste actuel",
+                        "Depuis 2015 jusqu'en 2018", "2019", "Janvier 2024 - Mars 2024",
+                        "3 ans", "il y a longtemps", "", "   "):
+            with self.subTest(periode=periode):
+                missions = [{"period": periode}]
+                lisible = periode_lisible(missions)
+                # Le forfait vaut exactement 1 an ; tout autre total non nul
+                # vient d'un intervalle. Le cas « 3 mois » (0 an, lisible) est
+                # couvert à part ci-dessus.
+                if lisible:
+                    self.assertNotEqual(annees(missions), 1, periode)
+                elif annees(missions):
+                    self.assertEqual(annees(missions), 1, periode)
+
+    def test_la_vraie_reponse_docie_ne_bouge_pas(self):
+        """Témoin : elle a des périodes lisibles, et DocIE n'y annonce rien.
+
+        `years_experience` y vaut littéralement `null` : le repli est donc
+        inerte sur la seule vraie réponse DocIE du dépôt. Ce qui le justifie,
+        c'est la parité avec le JS et les cas sans période lisible, pas cette
+        fixture-ci.
+        """
+        reponse = json.loads(REPONSE_DOCIE.read_text(encoding="utf-8"))
+        self.assertIsNone(reponse["result"]["years_experience"])
+        from docie_client import map_resume
+        fiche = self.normalize(map_resume(reponse))
+        self.assertEqual(
+            fiche["years_experience"],
+            _anciennete_attendue(("2019-09", "2022-02"), ("2022-03", None)),
+        )
 
 
 class OrdreDesMissionsTests(unittest.TestCase):

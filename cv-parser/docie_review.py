@@ -92,9 +92,17 @@ LISTES_ALIGNEES = {
 # DocIE, leur permutation est donc l'identité.
 LISTES_REORDONNEES = ("experience",)
 
-# Champs que cv-parser recalcule lui-même : la confiance de DocIE dessus ne dit
-# rien de ce que la fiche affiche. `years_experience` est recalculé depuis les
-# périodes par compute_years_experience (app.py).
+# Champs dont la confiance de DocIE ne dit pas ce que la fiche affiche.
+#
+# `years_experience` : cv-parser le recalcule depuis les périodes
+# (compute_years_experience, app.py). Depuis la #177 ligne 3 il ne l'écrase
+# plus que si au moins une période est lisible : la valeur de DocIE PEUT donc
+# désormais atterrir telle quelle dans la fiche, et sa confiance dirait alors
+# quelque chose de ce qu'on affiche. Le champ reste pourtant ignoré ici : le
+# marquer demanderait d'ajouter le liant `a-verifier` à
+# templates/cv_detail.html (le champ y est éditable, ligne ~722, mais n'a
+# aucune marque), c'est-à-dire de toucher le gabarit dans une passe qui ne
+# corrige qu'un mapping. Choix de portée, pas un oubli — noté en #177.
 CHAMPS_IGNORES = {"years_experience"}
 
 # Feuilles d'une liste de scalaires : le schéma les décrit comme des objets

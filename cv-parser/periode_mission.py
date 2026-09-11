@@ -230,6 +230,28 @@ def analyser_periode(texte):
     return (debut, None if en_cours else debut, en_cours)
 
 
+def periode_lisible(lignes) -> bool:
+    """Au moins une mission dont la période donne un intervalle exploitable ?
+
+    C'est la question « avons-nous mieux que ce que DocIE annonce ? » de la
+    #177 ligne 3, et c'est aussi celle que pose le JS avant de se replier sur
+    `years_experience` (`lib/docie-extract.js` : `experiences.some(e =>
+    e.start_date)`).
+
+    Le critère reprend **mot pour mot** celui qui fait entrer une mission dans
+    le cumul de `compute_years_experience` (app.py) — un début analysable et un
+    intervalle non inverse. Les deux doivent rester d'accord : une période
+    présente mais illisible (« 3 ans ») ne compte PAS ici, et c'est ce qui
+    permet à la valeur de DocIE de prendre le relais dans ce cas précis.
+    """
+    for ligne in lignes or []:
+        ligne = ligne if isinstance(ligne, dict) else {}
+        debut, fin, en_cours = analyser_periode(ligne.get("period") or "")
+        if debut and index_mois(mois_courant() if en_cours or not fin else fin) >= index_mois(debut):
+            return True
+    return False
+
+
 def debut_mission(ligne) -> str | None:
     """Date de début d'une mission DocIE ou d'une mission déjà normalisée.
 

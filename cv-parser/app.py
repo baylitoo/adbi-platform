@@ -33,7 +33,8 @@ from skills_normalizer import normalize_skills, skills_to_flat, compute_skills_f
 # Les dates de mission : « la mission continue-t-elle ? » et « quelle date ce
 # texte porte-t-il ? ». Les deux jeux d'essai sont partagés avec one-pager
 # (document-parsing/fixtures/mission_en_cours.json et date_mission.json).
-from periode_mission import analyser_periode, index_mois, mois_courant, ordre_missions
+from periode_mission import (analyser_periode, index_mois, mois_courant,
+                             ordre_missions, periode_lisible)
 # Appel LLM avec chaîne de secours : si un service est en panne ou à court de
 # quota, le suivant prend le relais au lieu de faire échouer l'analyse.
 import llm_cascade
@@ -572,6 +573,11 @@ def compute_years_experience(experience: list[dict]) -> int:
     deux fois. Sur le même CV les deux services annonçaient donc des
     anciennetés différentes, et c'est cette valeur que /api/needs/<id>/match
     classe.
+
+    Ce que cette fonction rend n'est plus forcément ce que la fiche affiche :
+    `normalize_cv_data` ne retient son résultat que si au moins une période est
+    lisible (`periode_mission.periode_lisible`) ; sinon le `years_experience`
+    que DocIE annonce passe devant — #177 ligne 3.
     """
     intervalles, total_months = [], 0
     for exp in experience:
@@ -586,9 +592,14 @@ def compute_years_experience(experience: list[dict]) -> int:
             # Période présente mais illisible (« 3 ans », « été 2020 ») : on
             # continue de la compter pour un an. La mettre à zéro sortirait le
             # consultant de /api/needs/<id>/match exactement comme le faisait
-            # « Poste actuel » avant #176. C'est le seul écart assumé avec le
-            # JS, qui peut se rabattre sur le `years_experience` de DocIE là où
-            # cv-parser l'écrase toujours (#177 ligne 3, non traitée ici).
+            # « Poste actuel » avant #176.
+            #
+            # Ce n'est plus le dernier recours depuis la #177 ligne 3 :
+            # `normalize_cv_data` essaie d'abord le `years_experience` que
+            # DocIE annonce (aucune période n'étant lisible, il n'y a rien de
+            # mieux), et ne retombe sur ce compte-ci que si DocIE est muet.
+            # L'ordre est donc : période lisible > valeur DocIE > un an par
+            # période illisible. Personne n'est jamais ramené à zéro.
             total_months += 12
 
     # Union des intervalles, pas leur somme : deux missions menées en parallèle
@@ -1056,7 +1067,35 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
         if str(val).strip():
             normalized["interests"].append(str(val).strip())
             
-    normalized["years_experience"] = compute_years_experience(normalized["experience"])
+    # #177 ligne 3 : n'écraser le `years_experience` de DocIE que si l'on a
+    # MIEUX. `normalize_cv_data` le remplaçait systématiquement par le calcul,
+    # y compris quand aucune période n'était lisible et que le calcul ne
+    # reposait donc sur rien — DocIE pouvait annoncer 12 ans, la fiche en
+    # affichait 0, et /api/needs/<id>/match classait le consultant en dernier.
+    # C'est exactement la panne « senior introuvable » que #176 a réparée pour
+    # « Poste actuel », avec une autre cause.
+    #
+    # Ordre de préférence, celui du JS (`lib/docie-extract.js` : calcul si
+    # `experiences.some(e => e.start_date)`, repli sur `years_experience`
+    # sinon) :
+    #   1. au moins une période lisible -> le calcul, qui est mesuré ;
+    #   2. sinon, ce que DocIE annonce, s'il annonce quelque chose ;
+    #   3. sinon seulement, le forfait d'un an par période illisible
+    #      (compute_years_experience) — personne n'est ramené à zéro.
+    #
+    # La valeur de DocIE est coercée comme le fait le JS
+    # (`Math.max(0, Math.round(Number(x) || 0))`) : un entier, un flottant ou
+    # une chaîne numérique passent, tout le reste vaut 0 et laisse le calcul en
+    # place. `True` est écarté avec le reste (str(True) n'est pas un nombre).
+    annees = compute_years_experience(normalized["experience"])
+    if not periode_lisible(normalized["experience"]):
+        try:
+            annonce = int(float(str(data.get("years_experience")).strip()) + 0.5)
+        except (TypeError, ValueError):
+            annonce = 0
+        if annonce > 0:
+            annees = annonce
+    normalized["years_experience"] = annees
 
     # Compétences absentes : on les reconstruit depuis l'environnement technique
     # des missions.
