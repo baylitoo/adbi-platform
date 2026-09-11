@@ -1333,6 +1333,7 @@ def process_cv(file_path, jeton=None) -> dict:
     from docie_bridge_extraction import docie_extraction_enabled
     from docie_bridge_extraction import extract_resume as extract_resume_bridge
     from docie_client import extract_resume as extract_resume_legacy
+    from docie_review import revue_docie
 
     started = time.perf_counter()
     bridge_active = docie_extraction_enabled()
@@ -1357,8 +1358,15 @@ def process_cv(file_path, jeton=None) -> dict:
         "_timing": {"total_s": round(time.perf_counter() - started, 3)},
     })
     cv_data["bilan_adbi"] = bilan_adbi(cv_data)
-    validation = metadata["validation"]
-    if isinstance(validation, dict) and (validation.get("valid") is False or validation.get("warnings")):
+    # Ce que DocIE dit de sa propre extraction, traduit en signal de relecture
+    # par champ (docie_review.py, issue #172) : jusqu'ici seul un avertissement
+    # générique « relisez la fiche » était levé, sans dire QUEL champ relire, et
+    # la confiance par champ n'arrivait même pas jusqu'ici. Stocké sur la fiche
+    # (jamais modifiable par PATCH, voir CHAMPS_MODIFIABLES_CV) pour que l'écran
+    # de relecture (templates/cv_detail.html) marque les champs concernés.
+    revue = revue_docie(raw_data, metadata)
+    cv_data["docie_review"] = revue
+    if revue["needs_review"] or revue["warnings"]:
         cv_data["parse_warning"] = "DocIE signale des champs à vérifier. Relisez la fiche extraite."
     return cv_data
 
@@ -2168,6 +2176,28 @@ def _filtrer_champs_cv(brut: dict) -> dict:
     return updates
 
 
+def _perimer_revue_docie(cv: dict, updates: dict) -> None:
+    """Retire les marques « à vérifier » des rubriques que l'utilisateur vient
+    d'enregistrer (issue #172).
+
+    Un PATCH remplace la rubrique ENTIÈRE (l'écran d'édition renvoie toute la
+    liste des missions, pas le champ modifié), et ces listes sont réordonnables
+    à la souris : garder `experience[0].company` après un enregistrement, c'est
+    au mieux marquer un champ déjà corrigé, au pire surligner une AUTRE mission
+    que celle dont DocIE doutait. Le champ a été relu à l'écran puisqu'il a été
+    renvoyé : la marque tombe.
+
+    `warnings` n'est pas touché : ce sont des faits sur l'extraction (ce que
+    DocIE a signalé, une validation absente), pas l'état d'un champ éditable.
+    """
+    revue = cv.get("docie_review")
+    if not isinstance(revue, dict) or not revue.get("needs_review"):
+        return
+    restants = [chemin for chemin in revue["needs_review"]
+                if str(chemin).split(".")[0].split("[")[0] not in updates]
+    cv["docie_review"] = {**revue, "needs_review": restants}
+
+
 @app.route("/api/cvs/<cv_id>", methods=["PATCH"])
 @require_auth
 def update_cv(cv_id):
@@ -2182,6 +2212,7 @@ def update_cv(cv_id):
             abort(404)
         for key, val in updates.items():
             cv[key] = val
+        _perimer_revue_docie(cv, updates)
         cv["updated_at"] = datetime.now().isoformat()
         cvstore_pg.save_cv(cv_id, cv)
     return jsonify({"success": True})

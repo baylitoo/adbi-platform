@@ -1,0 +1,212 @@
+"""Ce que DocIE dit de SA PROPRE extraction, traduit en signal de relecture.
+
+DocIE ne renvoie pas que des valeurs : chaque feuille ancrée arrive enveloppée
+(`{value, confidence, evidence_ids}`) et l'agent joint un bloc `validation`
+(`{valid, errors, warnings}`). Jusqu'ici cv-parser jetait tout : la confiance
+par champ disparaissait au déballage, et `validation` ne servait qu'à lever un
+`parse_warning` générique (« relisez la fiche »), sans dire QUEL champ relire.
+Une extraction tronquée atterrissait donc dans la CVthèque avec l'apparence
+d'une fiche complète — puis était cherchée et rapprochée d'un besoin comme
+telle (issue #172, suite listée « hors périmètre » de #173).
+
+Ce module ne fait que traduire, il n'appelle rien :
+
+    revue_docie(data, metadata) -> {"needs_review": [...], "warnings": [...]}
+
+`data` est la sortie de `docie_client.map_resume` (avant normalisation),
+`metadata` celle de `docie_bridge_extraction.extract_resume`. Le vocabulaire
+est CELUI DE one-pager (`quality.needs_review` / `quality.warnings`, PR #173) :
+même seuil, mêmes préfixes d'avertissement, même règle « un chemin sans
+équivalent sort en avertissement plutôt qu'en faux chemin ». Deux écrans qui
+signalent la même chose doivent le signaler pareil.
+
+Ce que DocIE émet et que ce module NE fait PAS :
+  - il n'analyse jamais la prose de `validation.warnings` pour en déduire un
+    nom de champ : ce texte n'a aucun format stable, il est repris verbatim ;
+  - il n'utilise jamais `model_logprob` (ex-`model_confidence`) comme seuil :
+    c'est une log-probabilité (<= 0, non renormalisée), pas un score 0-1 ; la
+    comparer à 0.5 signalerait tout champ qui en porte une.
+"""
+
+# DocIE plafonne à EXACTEMENT 0.5 la confiance d'un champ dont il a dû tronquer
+# une liste qui bouclait : la valeur rendue est alors partielle sans que rien,
+# dans la fiche, ne le montre. `<= 0.5` est donc le critère sûr de « à relire ».
+# Même seuil que one-pager/lib/docie-extract.js::SEUIL_CONFIANCE.
+SEUIL_CONFIANCE = 0.5
+
+# ── Chemin DocIE -> chemin de la fiche cv-parser ─────────────────────────────
+# Les clés sont les noms de champs du schéma RÉELLEMENT servi
+# (cv-parser/adbi_resume.schema.json), verbatim : `name`, `experience[0]
+# .start_date`. La table est donc statique et exacte ; un chemin absent de ces
+# tables n'est jamais deviné (voir _chemin_fiche).
+CHAMPS_RACINE = {"name": "name", "title": "title"}
+
+CHAMPS_CONTACT = {"email", "phone", "linkedin", "github", "location"}
+
+# `start_date`/`end_date` sont fusionnés en `period` par map_resume ;
+# `location` n'a pas de place dans le modèle de cv-parser et est supprimé à la
+# normalisation (noté en suite dans #172) — donc pas de chemin de fiche.
+CHAMPS_EXPERIENCE = {
+    "company": "company",
+    "title": "title",
+    "start_date": "period",
+    "end_date": "period",
+    "description": "description",
+    "env_technique": "env_technique",
+}
+
+# map_resume : degree -> title, institution -> subtitle, year -> period.
+CHAMPS_EDUCATION = {"degree": "title", "institution": "subtitle", "year": "period"}
+
+# `issuer` est supprimé à la normalisation, comme experience[].location.
+CHAMPS_CERTIFICATIONS = {"name": "name", "year": "year"}
+
+# Listes dont l'index DocIE survit tel quel à normalize_cv_data : elle recopie
+# chaque ligne sans en filtrer ni en réordonner aucune. `skills`, `languages`
+# et `interests` en revanche sont dédupliqués/filtrés (une catégorie sans item,
+# une langue sans nom, un centre d'intérêt vide disparaissent) : l'index DocIE
+# y désignerait la mauvaise ligne, on ne le traduit donc pas — le champ sort en
+# avertissement générique plutôt qu'en surlignage d'une ligne au hasard.
+LISTES_ALIGNEES = {
+    "experience": CHAMPS_EXPERIENCE,
+    "education": CHAMPS_EDUCATION,
+    "certifications": CHAMPS_CERTIFICATIONS,
+}
+
+# Champs que cv-parser recalcule lui-même : la confiance de DocIE dessus ne dit
+# rien de ce que la fiche affiche. `years_experience` est recalculé depuis les
+# périodes par compute_years_experience (app.py).
+CHAMPS_IGNORES = {"years_experience"}
+
+# Feuilles d'une liste de scalaires : le schéma les décrit comme des objets
+# (`skills[].items[].item`, `interests[].interest`) mais map_resume les aplatit
+# en chaînes. Le chemin de confiance garde le nom de la feuille — sans ce
+# repli, chercher la valeur à `skills[1].items[2].item` tomberait sur une
+# chaîne, ne trouverait pas `.item`, et conclurait à tort « champ vide, rien à
+# signaler » : exactement le champ douteux qu'on cherche à remonter.
+FEUILLES_APLATIES = ("item", "interest")
+
+
+def _segments(chemin):
+    """« experience[0].start_date » -> ["experience", 0, "start_date"]."""
+    segments = []
+    for morceau in str(chemin).split("."):
+        nom, _, reste = morceau.partition("[")
+        if nom:
+            segments.append(nom)
+        for index in reste.rstrip("]").split("]["):
+            if index.strip().isdigit():
+                segments.append(int(index))
+    return segments
+
+
+def valeur_au_chemin(racine, chemin):
+    """Valeur de `racine` au chemin DocIE donné, ou None si le chemin n'y mène pas."""
+    segments = _segments(chemin)
+    if len(segments) > 1 and segments[-1] in FEUILLES_APLATIES:
+        segments = segments[:-1]
+    valeur = racine
+    for segment in segments:
+        if isinstance(segment, int):
+            if not isinstance(valeur, list) or not -len(valeur) <= segment < len(valeur):
+                return None
+            valeur = valeur[segment]
+        else:
+            if not isinstance(valeur, dict):
+                return None
+            valeur = valeur.get(segment)
+    return valeur
+
+
+def est_rempli(valeur):
+    """Un champ VIDE à confiance nulle est une absence, pas un doute.
+
+    Les absences sont déjà couvertes par le bilan ADBI (app.py::bilan_adbi) ;
+    les signaler ici ferait de chaque `linkedin` non renseigné une alerte.
+    """
+    if valeur is None or isinstance(valeur, bool):
+        return bool(valeur)
+    if isinstance(valeur, str):
+        return valeur.strip() != ""
+    if isinstance(valeur, (list, dict)):
+        return len(valeur) > 0
+    return True
+
+
+def _chemin_fiche(chemin_docie):
+    """Chemin DocIE -> chemin dans la fiche cv-parser, "" s'il n'en a pas.
+
+    "" n'est pas un échec : c'est un champ que la fiche n'expose pas (ou pas à
+    un index fiable). L'appelant le remonte alors en avertissement générique —
+    jamais en chemin inventé qui surlignerait le mauvais champ.
+    """
+    segments = _segments(chemin_docie)
+    if len(segments) == 1 and segments[0] in CHAMPS_RACINE:
+        return CHAMPS_RACINE[segments[0]]
+    if len(segments) == 2 and segments[0] == "contact" and segments[1] in CHAMPS_CONTACT:
+        return "contact.%s" % segments[1]
+    if len(segments) == 3 and isinstance(segments[1], int) and segments[0] in LISTES_ALIGNEES:
+        champ = LISTES_ALIGNEES[segments[0]].get(segments[2])
+        if champ:
+            return "%s[%d].%s" % (segments[0], segments[1], champ)
+    return ""
+
+
+def _texte_docie(entree):
+    """`validation.errors[]` / `warnings[]` sont des chaînes côté DocIE."""
+    if isinstance(entree, dict):
+        for cle in ("message", "detail", "field"):
+            if str(entree.get(cle) or "").strip():
+                return str(entree[cle]).strip()
+        return ""
+    return str(entree or "").strip()
+
+
+def revue_docie(data, metadata):
+    """{"needs_review": [chemins de la fiche], "warnings": [messages]}.
+
+    `needs_review` liste les champs que l'écran d'édition doit marquer « à
+    vérifier » ; `warnings` ce que DocIE a dit, repris verbatim, à afficher au
+    relecteur. Additif : des métadonnées sans les clés attendues (chemin
+    historique `docie_client`, réponse d'une version antérieure de DocIE)
+    donnent deux listes vides, donc le comportement actuel.
+    """
+    data = data if isinstance(data, dict) else {}
+    metadata = metadata if isinstance(metadata, dict) else {}
+    needs_review, warnings = [], []
+
+    validation = metadata.get("validation")
+    if validation is None:
+        # `validation` accompagne toute extraction terminée (listes vides quand
+        # tout va bien) : son absence n'est pas un succès, c'est une réponse
+        # qu'on n'a pas pu vérifier. La taire serait présenter pour propre une
+        # extraction dont personne n'a validé quoi que ce soit.
+        if metadata:
+            warnings.append("docie_validation_absente")
+    elif isinstance(validation, dict):
+        if validation.get("valid") is False:
+            warnings.append("docie_validation_negative")
+        for cle, prefixe in (("errors", "docie_erreur"), ("warnings", "docie_avertissement")):
+            entrees = validation.get(cle)
+            for entree in entrees if isinstance(entrees, list) else []:
+                message = _texte_docie(entree)
+                if message:
+                    warnings.append("%s:%s" % (prefixe, message))
+
+    confiances = metadata.get("field_confidence")
+    for chemin_docie, confiance in (confiances if isinstance(confiances, dict) else {}).items():
+        if isinstance(confiance, bool) or not isinstance(confiance, (int, float)):
+            continue
+        if confiance > SEUIL_CONFIANCE or confiance != confiance:  # NaN exclu
+            continue
+        if chemin_docie in CHAMPS_IGNORES:
+            continue
+        if not est_rempli(valeur_au_chemin(data, chemin_docie)):
+            continue
+        chemin = _chemin_fiche(chemin_docie)
+        if not chemin:
+            warnings.append("docie_confiance_faible:%s" % chemin_docie)
+        elif chemin not in needs_review:
+            needs_review.append(chemin)
+
+    return {"needs_review": needs_review, "warnings": warnings}

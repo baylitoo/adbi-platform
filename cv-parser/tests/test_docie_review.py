@@ -1,0 +1,205 @@
+"""Tests de la relecture DocIE côté cv-parser (issue #172).
+
+Aucun appel réseau : `docie_review` est une traduction pure, et l'épreuve de
+bout en bout part de la VRAIE réponse DocIE enregistrée dans le dépôt
+(document-parsing/fixtures/cv_samples/results/simple_docie.json), passée par
+`docie_client.map_resume` puis par la revue — la chaîne réelle de process_cv.
+"""
+import json
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from docie_client import map_resume
+from docie_review import SEUIL_CONFIANCE, est_rempli, revue_docie, valeur_au_chemin
+
+FIXTURE = (Path(__file__).resolve().parents[2]
+           / "document-parsing/fixtures/cv_samples/results/simple_docie.json")
+
+
+def _fixture_data():
+    """Fiche extraite telle que process_cv la reçoit, depuis la vraie réponse."""
+    reponse = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    reponse["schema_name"] = "adbi_resume"
+    return map_resume(reponse, expected_schema="adbi_resume")
+
+
+def _confiances(resultat, chemin="", dans=None):
+    """Reproduit la carte que le bridge rend dans metadata.field_confidence.
+
+    Mêmes chemins que document-parsing/bridge/docie_bridge.py (PR #173) :
+    « contact.email », « experience[0].title », « skills[1].items[2].item ».
+    Reconstruite ici pour que ce test tourne sur la vraie réponse enregistrée
+    sans dépendre de l'ordre de déploiement du bridge.
+    """
+    dans = {} if dans is None else dans
+    if isinstance(resultat, list):
+        for index, element in enumerate(resultat):
+            _confiances(element, "%s[%d]" % (chemin, index), dans)
+    elif isinstance(resultat, dict):
+        if "value" in resultat and ("confidence" in resultat or "evidence_ids" in resultat):
+            if chemin and isinstance(resultat.get("confidence"), (int, float)):
+                dans[chemin] = resultat["confidence"]
+            return _confiances(resultat["value"], chemin, dans)
+        for cle, valeur in resultat.items():
+            _confiances(valeur, ("%s.%s" % (chemin, cle)) if chemin else cle, dans)
+    return dans
+
+
+class CheminsTests(unittest.TestCase):
+    def test_chemins_docie_du_schema_servi(self):
+        """Les clés sont les noms du schéma RÉELLEMENT servi, pas ceux des
+        exemples DocIE : `name`/`experience[0].start_date`, pas `full_name`."""
+        data = {"name": "Camille", "experience": [{"start_date": "2020-01"}]}
+        self.assertEqual(valeur_au_chemin(data, "name"), "Camille")
+        self.assertEqual(valeur_au_chemin(data, "experience[0].start_date"), "2020-01")
+        self.assertIsNone(valeur_au_chemin(data, "experience[9].start_date"))
+        self.assertIsNone(valeur_au_chemin(data, "full_name"))
+
+    def test_feuille_aplatie_reste_trouvable(self):
+        """map_resume aplatit skills[].items[].item en chaînes : sans repli, le
+        champ douteux serait pris pour vide et jamais signalé."""
+        data = {"skills": [{"category": "Data", "items": ["SQL", "Python"]}],
+                "interests": ["Escalade"]}
+        self.assertEqual(valeur_au_chemin(data, "skills[0].items[1].item"), "Python")
+        self.assertEqual(valeur_au_chemin(data, "interests[0].interest"), "Escalade")
+
+    def test_est_rempli(self):
+        for vide in (None, "", "   ", [], {}, False):
+            self.assertFalse(est_rempli(vide))
+        for rempli in ("x", [1], {"a": 1}, 0.5, True):
+            self.assertTrue(est_rempli(rempli))
+
+
+class RevueTests(unittest.TestCase):
+    def test_champ_tronque_devient_a_verifier_sur_le_bon_chemin(self):
+        data = {"name": "Camille Béranger",
+                "experience": [{"company": "Numelia", "description": "A · B"},
+                               {"company": "Studio Pixelia", "description": "C"}]}
+        revue = revue_docie(data, {"validation": {"valid": True, "errors": [], "warnings": []},
+                                   "field_confidence": {"experience[1].description": 0.5}})
+        self.assertEqual(revue["needs_review"], ["experience[1].description"])
+        self.assertEqual(revue["warnings"], [])
+
+    def test_confiance_haute_ne_signale_rien_et_champ_vide_non_plus(self):
+        data = {"name": "Camille", "contact": {"email": "c@example.fr", "linkedin": ""}}
+        revue = revue_docie(data, {"validation": {}, "field_confidence": {
+            "name": 1, "contact.email": 0.9, "contact.linkedin": 0}})
+        self.assertEqual(revue, {"needs_review": [], "warnings": []})
+
+    def test_seuil_inclusif(self):
+        """DocIE plafonne à EXACTEMENT 0.5 un champ tronqué : le seuil doit
+        l'attraper, juste au-dessus ne doit rien signaler."""
+        data = {"title": "Développeuse"}
+        self.assertEqual(SEUIL_CONFIANCE, 0.5)
+        self.assertEqual(revue_docie(data, {"validation": {}, "field_confidence": {"title": 0.5}})["needs_review"],
+                         ["title"])
+        self.assertEqual(revue_docie(data, {"validation": {}, "field_confidence": {"title": 0.51}})["needs_review"],
+                         [])
+
+    def test_logprob_n_est_jamais_pris_pour_un_seuil(self):
+        """`model_logprob` est une log-probabilité (<= 0), pas un score 0-1 :
+        seule `confidence` alimente la revue, sinon tout champ qui en porte une
+        serait signalé (-7.5 est sous n'importe quel seuil 0-1)."""
+        data = {"name": "Camille"}
+        revue = revue_docie(data, {"validation": {}, "field_confidence": {}, "model_logprob": -7.5})
+        self.assertEqual(revue["needs_review"], [])
+
+    def test_champ_sans_equivalent_sort_en_avertissement_pas_en_faux_chemin(self):
+        """skills/languages/interests sont dédupliqués et filtrés par
+        normalize_cv_data : l'index DocIE y désignerait la mauvaise ligne.
+        experience[].location et certifications[].issuer sont supprimés."""
+        data = {"skills": [{"category": "Data", "items": ["SQL"]}],
+                "languages": [{"language": "Anglais", "level": "C1"}],
+                "experience": [{"company": "Numelia", "location": "Lyon"}],
+                "certifications": [{"name": "AWS", "issuer": "Amazon"}]}
+        revue = revue_docie(data, {"validation": {}, "field_confidence": {
+            "skills[0].items[0].item": 0.5, "languages[0].level": 0.4,
+            "experience[0].location": 0.5, "certifications[0].issuer": 0.2}})
+        self.assertEqual(revue["needs_review"], [])
+        self.assertEqual(sorted(revue["warnings"]), sorted([
+            "docie_confiance_faible:skills[0].items[0].item",
+            "docie_confiance_faible:languages[0].level",
+            "docie_confiance_faible:experience[0].location",
+            "docie_confiance_faible:certifications[0].issuer"]))
+
+    def test_renommages_de_map_resume_sont_suivis(self):
+        """degree/institution/year deviennent title/subtitle/period, et
+        start_date/end_date sont fusionnés en period."""
+        data = {"education": [{"degree": "Master", "institution": "Lyon 1", "year": "2019"}],
+                "experience": [{"company": "Numelia", "start_date": "2020-01"}]}
+        revue = revue_docie(data, {"validation": {}, "field_confidence": {
+            "education[0].degree": 0.5, "education[0].institution": 0.5,
+            "education[0].year": 0.3, "experience[0].start_date": 0.5}})
+        self.assertEqual(revue["needs_review"], [
+            "education[0].title", "education[0].subtitle", "education[0].period",
+            "experience[0].period"])
+
+    def test_years_experience_recalcule_n_est_pas_signale(self):
+        revue = revue_docie({"years_experience": 4},
+                            {"validation": {}, "field_confidence": {"years_experience": 0.2}})
+        self.assertEqual(revue, {"needs_review": [], "warnings": []})
+
+    def test_avertissements_et_erreurs_docie_verbatim(self):
+        """La prose de DocIE n'a aucun format stable : reprise telle quelle,
+        jamais analysée pour en déduire un nom de champ."""
+        validation = {"valid": False,
+                      "errors": ["name : evidence id inconnu"],
+                      "warnings": ["experience[1].description truncated after 3 repeats: repetition loop detected"]}
+        revue = revue_docie({"name": "Camille"}, {"validation": validation, "field_confidence": {}})
+        self.assertEqual(revue["warnings"], [
+            "docie_validation_negative",
+            "docie_erreur:name : evidence id inconnu",
+            "docie_avertissement:experience[1].description truncated after 3 repeats: repetition loop detected"])
+
+    def test_validation_absente_n_est_pas_un_succes(self):
+        """`validation` accompagne toute extraction terminée : son absence
+        signale une réponse qu'on n'a pas pu vérifier."""
+        revue = revue_docie({"name": "Camille"}, {"validation": None, "event_id": "e1"})
+        self.assertEqual(revue["warnings"], ["docie_validation_absente"])
+
+    def test_metadonnees_sans_revue_comportement_inchange(self):
+        """Rétrocompatibilité : le chemin historique docie_client ne fournit
+        pas field_confidence — deux listes vides, aucune marque inventée."""
+        self.assertEqual(revue_docie({"name": "Camille"}, {"validation": {}, "event_id": "e1"}),
+                         {"needs_review": [], "warnings": []})
+        self.assertEqual(revue_docie(None, None), {"needs_review": [], "warnings": []})
+
+
+class FixtureReelleTests(unittest.TestCase):
+    """Bout en bout sur la vraie réponse DocIE enregistrée dans le dépôt."""
+
+    def test_cv_propre_n_ajoute_aucun_bruit(self):
+        data = _fixture_data()
+        confiances = _confiances(json.loads(FIXTURE.read_text(encoding="utf-8"))["result"])
+        self.assertEqual(len(confiances), 40)          # 40 champs ancrés
+        reponse = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        revue = revue_docie(data, {"validation": reponse.get("validation"),
+                                   "field_confidence": confiances})
+        # Les seules confiances <= 0.5 du CV sont github/linkedin, VIDES :
+        # une absence, déjà couverte par le bilan ADBI — pas une alerte.
+        self.assertEqual({c: v for c, v in confiances.items() if v <= SEUIL_CONFIANCE},
+                         {"contact.github": 0, "contact.linkedin": 0})
+        self.assertEqual(revue, {"needs_review": [], "warnings": []})
+
+    def test_meme_cv_avec_une_liste_tronquee_par_docie(self):
+        """DocIE plafonne à 0.5 la confiance d'un champ tronqué et joint
+        l'avertissement correspondant : les deux doivent arriver au relecteur."""
+        data = _fixture_data()
+        confiances = _confiances(json.loads(FIXTURE.read_text(encoding="utf-8"))["result"])
+        confiances["experience[1].description"] = 0.5
+        validation = {"valid": True, "errors": [], "warnings": [
+            "experience[1].description truncated after 3 repeats: repetition loop detected"]}
+        revue = revue_docie(data, {"validation": validation, "field_confidence": confiances})
+        self.assertEqual(revue["needs_review"], ["experience[1].description"])
+        self.assertEqual(revue["warnings"], [
+            "docie_avertissement:experience[1].description truncated after 3 repeats: repetition loop detected"])
+        # Le champ marqué est bien rempli dans la fiche : c'est une valeur
+        # PARTIELLE, pas une absence — invisible sans ce signal.
+        self.assertTrue(data["experience"][1]["description"])
+
+
+if __name__ == "__main__":
+    unittest.main()

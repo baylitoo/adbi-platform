@@ -266,6 +266,30 @@
     #tabProfil.active .pv-card   { margin-bottom: 12px; }
     #tabModifier.active .sec-card { margin-bottom: 10px; }
 
+    /* RELECTURE DOCIE (issue #172) — ce dont l'extraction elle-même doute.
+       Bandeau hors des onglets : une extraction partielle se voit dès le
+       profil, pas seulement en ouvrant « Modifier ». */
+    .revue-docie {
+      flex-shrink: 0; background: #FFFBEB; border-bottom: 1px solid #FCD34D;
+      padding: 9px 18px; font-size: 12px; color: #78350F;
+    }
+    .revue-docie-titre { font-weight: 800; }
+    .revue-docie-puces { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+    .puce-avert {
+      background: #FEF3C7; border: 1px solid #FCD34D; border-radius: 999px;
+      padding: 2px 9px; font-size: 11px; font-weight: 600; word-break: break-word;
+    }
+    /* Marque « à vérifier » sur le champ concerné. ::after (et non ::before,
+       déjà pris par les placeholders) et contenu purement décoratif : il
+       n'entre pas dans textContent, donc jamais dans ce que collectData()
+       renvoie au serveur. */
+    .a-verifier { background: #FFFBEB !important; box-shadow: inset 0 0 0 1.5px #F59E0B; }
+    .a-verifier:focus { box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .a-verifier::after {
+      content: '⚠ à vérifier'; margin-left: 7px; font-size: 10px; font-weight: 700;
+      color: #B45309; font-style: normal; white-space: nowrap;
+    }
+
     /* LLM / export buttons */
     .tbtn-teal  { background: #0284C7; color: #fff; }
     .tbtn-amber { background: #B45309; color: #fff; }
@@ -500,6 +524,29 @@
       <button class="tab-btn"        data-tab="pdf"      onclick="switchTab('pdf')">📄 Aperçu PDF</button>
     </div>
 
+    {# ── Ce dont DocIE doute (issue #172) ──────────────────────────────────
+       `docie_review` est posé à l'extraction (app.py::process_cv via
+       docie_review.py) : `needs_review` = chemins de la fiche dont DocIE
+       plafonne la confiance (valeur partielle/tronquée), `warnings` = ce que
+       DocIE a signalé, REPRIS VERBATIM — sa prose n'a aucun format stable, on
+       n'en déduit jamais un nom de champ. Sans ce bandeau, une extraction
+       tronquée s'affiche exactement comme une extraction complète. #}
+    {% set revue = cv.docie_review or {} %}
+    {% set a_verifier = revue.needs_review or [] %}
+    {% if a_verifier or revue.warnings %}
+    <div class="revue-docie">
+      <span class="revue-docie-titre">⚠️ DocIE n'est pas sûr de cette extraction.</span>
+      {% if a_verifier %}
+      {{ a_verifier|length }} champ{{ 's' if a_verifier|length > 1 else '' }} à relire, marqué{{ 's' if a_verifier|length > 1 else '' }} dans l'onglet « Modifier ».
+      {% endif %}
+      {% if revue.warnings %}
+      <div class="revue-docie-puces">
+        {% for avertissement in revue.warnings %}<span class="puce-avert">{{ avertissement }}</span>{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
     <!-- ═══════════════════════════════════
          TAB: PROFIL (read-only overview)
     ═══════════════════════════════════ -->
@@ -668,19 +715,19 @@
       </div>
       <div class="sec-body">
         <div class="field-row"><span class="field-label">Nom</span>
-          <div class="field-val" contenteditable="true" data-field="name" data-empty="{{ 'true' if not cv.name else 'false' }}" data-placeholder="Non renseigné">{{ cv.name or '' }}</div></div>
+          <div class="field-val{{ ' a-verifier' if 'name' in a_verifier }}" contenteditable="true" data-field="name" data-empty="{{ 'true' if not cv.name else 'false' }}" data-placeholder="Non renseigné">{{ cv.name or '' }}</div></div>
         <div class="field-row"><span class="field-label">Titre</span>
-          <div class="field-val" contenteditable="true" data-field="title" data-empty="{{ 'true' if not cv.title else 'false' }}" data-placeholder="Non renseigné">{{ cv.title or '' }}</div></div>
+          <div class="field-val{{ ' a-verifier' if 'title' in a_verifier }}" contenteditable="true" data-field="title" data-empty="{{ 'true' if not cv.title else 'false' }}" data-placeholder="Non renseigné">{{ cv.title or '' }}</div></div>
         <div class="field-row"><span class="field-label">Années d'exp.</span>
           <div class="field-val" contenteditable="true" data-field="years_experience" data-empty="{{ 'true' if not cv.years_experience else 'false' }}" data-placeholder="0">{{ cv.years_experience or '' }}</div></div>
         <div class="field-row"><span class="field-label">Email</span>
-          <div class="field-val" contenteditable="true" data-section="contact" data-field="email" data-empty="{{ 'true' if not c.email else 'false' }}" data-placeholder="Non renseigné">{{ c.email or '' }}</div></div>
+          <div class="field-val{{ ' a-verifier' if 'contact.email' in a_verifier }}" contenteditable="true" data-section="contact" data-field="email" data-empty="{{ 'true' if not c.email else 'false' }}" data-placeholder="Non renseigné">{{ c.email or '' }}</div></div>
         <div class="field-row"><span class="field-label">Téléphone</span>
-          <div class="field-val" contenteditable="true" data-section="contact" data-field="phone" data-empty="{{ 'true' if not c.phone else 'false' }}" data-placeholder="Non renseigné">{{ c.phone or '' }}</div></div>
+          <div class="field-val{{ ' a-verifier' if 'contact.phone' in a_verifier }}" contenteditable="true" data-section="contact" data-field="phone" data-empty="{{ 'true' if not c.phone else 'false' }}" data-placeholder="Non renseigné">{{ c.phone or '' }}</div></div>
         <div class="field-row"><span class="field-label">Localisation</span>
-          <div class="field-val" contenteditable="true" data-section="contact" data-field="location" data-empty="{{ 'true' if not c.location else 'false' }}" data-placeholder="Non renseigné">{{ c.location or '' }}</div></div>
+          <div class="field-val{{ ' a-verifier' if 'contact.location' in a_verifier }}" contenteditable="true" data-section="contact" data-field="location" data-empty="{{ 'true' if not c.location else 'false' }}" data-placeholder="Non renseigné">{{ c.location or '' }}</div></div>
         <div class="field-row"><span class="field-label">LinkedIn</span>
-          <div class="field-val" contenteditable="true" data-section="contact" data-field="linkedin" data-empty="{{ 'true' if not c.linkedin else 'false' }}" data-placeholder="Non renseigné">{{ c.linkedin or '' }}</div></div>
+          <div class="field-val{{ ' a-verifier' if 'contact.linkedin' in a_verifier }}" contenteditable="true" data-section="contact" data-field="linkedin" data-empty="{{ 'true' if not c.linkedin else 'false' }}" data-placeholder="Non renseigné">{{ c.linkedin or '' }}</div></div>
       </div>
     </div>
 
@@ -811,15 +858,16 @@
       <div class="sec-body" id="bodyEdu">
         {% if cv.education %}
           {% for edu in cv.education %}
+          {% set chemin_edu = 'education[' ~ loop.index0 ~ '].' %}
           <div class="entry-card" draggable="true" data-section="education" data-entry-idx="{{ loop.index0 }}">
             <div class="entry-head">
               <div class="entry-head-left">
-                <div class="entry-company" contenteditable="true" data-f="title" data-empty="{{ 'true' if not edu.title else 'false' }}" data-placeholder="Intitulé du diplôme">{{ edu.title or '' }}</div>
-                <div class="entry-role" contenteditable="true" data-f="subtitle" data-empty="{{ 'true' if not edu.subtitle else 'false' }}" data-placeholder="Établissement">{{ edu.subtitle or '' }}</div>
+                <div class="entry-company{{ ' a-verifier' if chemin_edu ~ 'title' in a_verifier }}" contenteditable="true" data-f="title" data-empty="{{ 'true' if not edu.title else 'false' }}" data-placeholder="Intitulé du diplôme">{{ edu.title or '' }}</div>
+                <div class="entry-role{{ ' a-verifier' if chemin_edu ~ 'subtitle' in a_verifier }}" contenteditable="true" data-f="subtitle" data-empty="{{ 'true' if not edu.subtitle else 'false' }}" data-placeholder="Établissement">{{ edu.subtitle or '' }}</div>
               </div>
               <div class="entry-head-right">
                 <span class="drag-handle" title="Glisser pour réordonner">⠿</span>
-                <div class="period-badge" contenteditable="true" data-f="period" data-empty="{{ 'true' if not edu.period else 'false' }}">{{ edu.period or '' }}</div>
+                <div class="period-badge{{ ' a-verifier' if chemin_edu ~ 'period' in a_verifier }}" contenteditable="true" data-f="period" data-empty="{{ 'true' if not edu.period else 'false' }}">{{ edu.period or '' }}</div>
                 <button class="btn-rm" onclick="this.closest('.entry-card').remove()">×</button>
               </div>
             </div>
@@ -849,15 +897,19 @@
           {% for exp in cv.experience %}
           {% set company = exp.company or exp.title or '' %}
           {% set role    = exp.title if exp.company else (exp.subtitle or '') %}
+          {# normalize_cv_data recopie les missions dans l'ordre de DocIE sans en
+             filtrer ni en réordonner aucune : l'index de la boucle EST l'index
+             DocIE, la marque tombe donc bien sur la mission concernée. #}
+          {% set chemin_exp = 'experience[' ~ loop.index0 ~ '].' %}
           <div class="entry-card" draggable="true" data-section="experience" data-entry-idx="{{ loop.index0 }}">
             <div class="entry-head">
               <div class="entry-head-left">
-                <div class="entry-company" contenteditable="true" data-f="company" data-empty="{{ 'true' if not company else 'false' }}" data-placeholder="Entreprise">{{ company }}</div>
-                <div class="entry-role" contenteditable="true" data-f="title" data-empty="{{ 'true' if not role else 'false' }}" data-placeholder="Poste occupé">{{ role }}</div>
+                <div class="entry-company{{ ' a-verifier' if chemin_exp ~ 'company' in a_verifier }}" contenteditable="true" data-f="company" data-empty="{{ 'true' if not company else 'false' }}" data-placeholder="Entreprise">{{ company }}</div>
+                <div class="entry-role{{ ' a-verifier' if chemin_exp ~ 'title' in a_verifier }}" contenteditable="true" data-f="title" data-empty="{{ 'true' if not role else 'false' }}" data-placeholder="Poste occupé">{{ role }}</div>
               </div>
               <div class="entry-head-right">
                 <span class="drag-handle" title="Glisser pour réordonner">⠿</span>
-                <div class="period-badge" contenteditable="true" data-f="period" data-empty="{{ 'true' if not exp.period else 'false' }}">{{ exp.period or '' }}</div>
+                <div class="period-badge{{ ' a-verifier' if chemin_exp ~ 'period' in a_verifier }}" contenteditable="true" data-f="period" data-empty="{{ 'true' if not exp.period else 'false' }}">{{ exp.period or '' }}</div>
                 <button class="btn-rm" onclick="this.closest('.entry-card').remove()">×</button>
               </div>
             </div>
@@ -870,9 +922,9 @@
             <div class="field-row"><span class="field-label">Méthodologie</span>
               <div class="field-val" contenteditable="true" data-f="methodologie" data-empty="{{ 'true' if not exp.methodologie else 'false' }}" data-placeholder="Agile, Scrum…">{{ exp.methodologie or '' }}</div></div>
             <div class="field-row"><span class="field-label">Env. technique</span>
-              <div class="field-val" contenteditable="true" data-f="env_technique" data-empty="{{ 'true' if not exp.env_technique else 'false' }}" data-placeholder="Technologies, frameworks">{{ exp.env_technique or '' }}</div></div>
+              <div class="field-val{{ ' a-verifier' if chemin_exp ~ 'env_technique' in a_verifier }}" contenteditable="true" data-f="env_technique" data-empty="{{ 'true' if not exp.env_technique else 'false' }}" data-placeholder="Technologies, frameworks">{{ exp.env_technique or '' }}</div></div>
             <div class="bullets-section">
-              <div class="bullets-label">Description</div>
+              <div class="bullets-label{{ ' a-verifier' if chemin_exp ~ 'description' in a_verifier }}">Description</div>
               <div data-f="description">
                 {% set bullets = exp.description.split(' · ') if exp.description else [] %}
                 {% for b in bullets %}{% if b.strip() %}
@@ -908,9 +960,10 @@
       </div>
       <div class="sec-body" id="certsBody">
         {% for cert in cv.certifications %}
+        {% set chemin_cert = 'certifications[' ~ loop.index0 ~ '].' %}
         <div class="cert-row">
-          <div class="cert-name" contenteditable="true" data-cert-name="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.name else 'false' }}" data-placeholder="Nom de la certification">{{ cert.name or '' }}</div>
-          <div class="cert-year" contenteditable="true" data-cert-year="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.year else 'false' }}">{{ cert.year or '' }}</div>
+          <div class="cert-name{{ ' a-verifier' if chemin_cert ~ 'name' in a_verifier }}" contenteditable="true" data-cert-name="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.name else 'false' }}" data-placeholder="Nom de la certification">{{ cert.name or '' }}</div>
+          <div class="cert-year{{ ' a-verifier' if chemin_cert ~ 'year' in a_verifier }}" contenteditable="true" data-cert-year="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.year else 'false' }}">{{ cert.year or '' }}</div>
           <button class="btn-rm-sm" onclick="this.closest('.cert-row').remove()">×</button>
         </div>
         {% endfor %}
