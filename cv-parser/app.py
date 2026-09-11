@@ -30,6 +30,15 @@ from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 # L'extraction/OCR est effectuée par DocIE, sans runtime ML dans ce process.
 from skills_normalizer import normalize_skills, skills_to_flat, compute_skills_flat
+# Les dates de mission : « la mission continue-t-elle ? » et « quelle date ce
+# texte porte-t-il ? ». Les deux jeux d'essai sont partagés avec one-pager
+# (document-parsing/fixtures/mission_en_cours.json et date_mission.json).
+from periode_mission import (analyser_periode, index_mois, mois_courant,
+                             ordre_missions, periode_lisible, titre_de_repli)
+# « Quel niveau CECRL ce libellé annonce-t-il ? » — troisième question posée
+# aux deux services, troisième jeu d'essai partagé avec one-pager
+# (document-parsing/fixtures/niveau_langue.json, #177 ligne 11).
+from niveau_langue import niveau_cecrl
 # Appel LLM avec chaîne de secours : si un service est en panne ou à court de
 # quota, le suivant prend le relais au lieu de faire échouer l'analyse.
 import llm_cascade
@@ -547,24 +556,75 @@ def split_bullets(bullets: list[str]) -> dict:
 
 
 def compute_years_experience(experience: list[dict]) -> int:
-    """Estimate total years of experience from period strings."""
-    YEAR_RE   = re.compile(r"\b(20\d{2}|19\d{2})\b")
-    PRESENT_RE = re.compile(
-        r"présent|present|aujourd'hui|current|maintenant|en\s+cours",
-        re.IGNORECASE,
-    )
-    now_year = datetime.now().year
-    total_months = 0
+    """Ancienneté totale, en années, déduite des périodes de mission.
+
+    Les deux bornes sont lues par l'analyseur de date partagé avec one-pager
+    (periode_mission.analyser_periode, jeu d'essai
+    document-parsing/fixtures/date_mission.json) au lieu d'être devinées en
+    cherchant une année à quatre chiffres dans la chaîne entière — #177 ligne 8.
+
+    Ce que ça corrige, au-delà de la propreté : la marque « en cours » n'est
+    plus cherchée que dans la borne de FIN. « Depuis 2015 jusqu'en 2018 » est
+    une période FERMÉE ; l'ancienne lecture y voyait « depuis », concluait
+    « mission en cours » et comptait jusqu'à aujourd'hui — mesuré, 11 ans au
+    lieu de 3.
+
+    **Méthode : union des périodes en mois réels**, celle de
+    one-pager/lib/extract.js::seniorityYears. cv-parser sommait des années
+    civiles pleines, ce qui se trompait deux fois (#177 ligne 9) : une mission
+    de mars 2019 à aujourd'hui ne valait que la différence des millésimes, tous
+    les mois étant perdus ; et deux missions menées en parallèle comptaient
+    deux fois. Sur le même CV les deux services annonçaient donc des
+    anciennetés différentes, et c'est cette valeur que /api/needs/<id>/match
+    classe.
+
+    Ce que cette fonction rend n'est plus forcément ce que la fiche affiche :
+    `normalize_cv_data` ne retient son résultat que si au moins une période est
+    lisible (`periode_mission.periode_lisible`) ; sinon le `years_experience`
+    que DocIE annonce passe devant — #177 ligne 3.
+    """
+    intervalles, total_months = [], 0
     for exp in experience:
         period = exp.get("period", "") or ""
-        years = YEAR_RE.findall(period)
-        if len(years) >= 1:
-            start = int(years[0])
-            end   = now_year if PRESENT_RE.search(period) else int(years[-1])
-            total_months += max(0, end - start) * 12
+        debut, fin, en_cours = analyser_periode(period)
+        if debut:
+            depart = index_mois(debut)
+            arrivee = index_mois(mois_courant() if en_cours or not fin else fin)
+            if arrivee >= depart:
+                intervalles.append((depart, arrivee))
         elif period:
+            # Période présente mais illisible (« 3 ans », « été 2020 ») : on
+            # continue de la compter pour un an. La mettre à zéro sortirait le
+            # consultant de /api/needs/<id>/match exactement comme le faisait
+            # « Poste actuel » avant #176.
+            #
+            # Ce n'est plus le dernier recours depuis la #177 ligne 3 :
+            # `normalize_cv_data` essaie d'abord le `years_experience` que
+            # DocIE annonce (aucune période n'étant lisible, il n'y a rien de
+            # mieux), et ne retombe sur ce compte-ci que si DocIE est muet.
+            # L'ordre est donc : période lisible > valeur DocIE > un an par
+            # période illisible. Personne n'est jamais ramené à zéro.
             total_months += 12
-    return max(0, round(total_months / 12))
+
+    # Union des intervalles, pas leur somme : deux missions menées en parallèle
+    # ne font pas deux fois plus d'expérience. Des mois jointifs (une mission qui
+    # finit en mai, la suivante qui commence en juin) forment une seule période,
+    # d'où le `<= fin + 1`.
+    intervalles.sort()
+    if intervalles:
+        courant_debut, courant_fin = intervalles[0]
+        for depart, arrivee in intervalles[1:]:
+            if depart <= courant_fin + 1:
+                courant_fin = max(courant_fin, arrivee)
+            else:
+                total_months += courant_fin - courant_debut + 1
+                courant_debut, courant_fin = depart, arrivee
+        total_months += courant_fin - courant_debut + 1
+
+    # `int(x + 0.5)` et non `round`, qui arrondit au pair en Python (8.5 -> 8)
+    # là où Math.round côté JS arrondit au supérieur (8.5 -> 9). Sur la même
+    # ancienneté les deux services doivent afficher le même nombre.
+    return max(0, int(total_months / 12 + 0.5))
 
 
 def parse_certifications(lines: list[str]) -> list[dict]:
@@ -911,19 +971,69 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
         "location": str(contact_src.get("location") or "").strip(),
     }
     
-    for exp in (data.get("experience") or []):
+    # Missions de la plus RÉCENTE à la plus ancienne (#177 ligne 7). DocIE rend
+    # les missions dans l'ordre du document, qui n'est pas toujours celui-là ;
+    # one-pager triait déjà, cv-parser non — le même CV se lisait donc à
+    # l'envers selon le service. `ordre_missions` est partagée avec
+    # docie_review.py : les deux l'appellent sur CETTE liste-ci, donc une marque
+    # « à vérifier » posée par DocIE sur `experience[0]` suit sa mission.
+    missions_source = data.get("experience") or []
+    for exp in (missions_source[i] for i in ordre_missions(missions_source)):
+        periode = str(exp.get("period") or exp.get("periode") or "").strip()
+        # Mission sans date de fin : elle est EN COURS, pas ponctuelle.
+        # DocIE laisse `end_date` vide quand le CV n'annonce pas de fin ;
+        # `map_resume` fabrique alors une période réduite au seul début
+        # (« Mars 2019 »), que l'ancienneté comptait pour 0 an. On rend la
+        # période telle que le CV la dit, et « Depuis » la fait compter.
+        debut = str(exp.get("start_date") or "").strip()
+        if debut and not str(exp.get("end_date") or "").strip() and periode in ("", debut):
+            periode = f"Depuis {debut}"
         normalized["experience"].append({
             "company": str(exp.get("company") or exp.get("entreprise") or "").strip(),
             "client": str(exp.get("client") or "").strip(),
             "title": str(exp.get("title") or exp.get("poste") or "").strip(),
-            "period": str(exp.get("period") or exp.get("periode") or "").strip(),
+            # #177 ligne 17 : le LIEU de la mission est conservé.
+            #
+            # Le schéma servi déclare `experience[].location` et DocIE le
+            # remplit (« Lyon », « Bordeaux » sur la vraie réponse enregistrée) ;
+            # `map_resume` le transmet intact, et c'est ICI qu'il disparaissait :
+            # le dictionnaire reconstruit ne listait pas la clé, donc la donnée
+            # tombait en silence. one-pager la garde depuis toujours, sous le
+            # même nom et à plat (lib/docie-extract.js::mapperExperience) — d'où
+            # le même nom et la même forme ici, pour ne pas créer une 23e
+            # divergence en en corrigeant une.
+            #
+            # Champ d'AFFICHAGE, pas d'entrée de rapprochement : core/matcher.py
+            # ne lit pour la localisation que `cv.contact.location`
+            # (_score_bonus, « Localisation compatible ») et jamais le lieu
+            # d'une mission ; skills_to_flat n'en voit rien non plus. Vérifié,
+            # pas supposé — c'est ce qui borne le risque de cette ligne.
+            "location": str(exp.get("location") or exp.get("lieu") or "").strip(),
+            "period": periode,
             "contexte": str(exp.get("contexte") or "").strip(),
             "objectifs": str(exp.get("objectifs") or "").strip(),
             "methodologie": str(exp.get("methodologie") or "").strip(),
             "env_technique": str(exp.get("env_technique") or "").strip(),
             "description": str(exp.get("description") or "").strip(),
         })
-        
+
+    # #177 ligne 2 : une fiche sans intitulé prend celui de sa dernière mission.
+    #
+    # DocIE ne rend pas toujours de `title` — le schéma servi le déclare, rien
+    # ne le garantit rempli. one-pager se repliait déjà sur le rôle de la
+    # mission la plus récente ET le signalait (`lib/docie-extract.js`), pas
+    # cv-parser : la fiche arrivait dans la CVthèque avec « — » en en-tête,
+    # c'est-à-dire sans ce que le commercial lit en premier, et le dossier ADBI
+    # comme le dossier client partaient sans titre.
+    #
+    # Le repli est TRACÉ, jamais silencieux : `docie_review.revue_docie` pose
+    # l'avertissement `titre_deduit_de_la_mission_la_plus_recente`, que le
+    # bandeau de templates/cv_detail.html affiche verbatim. Les deux posent la
+    # question avec la MÊME fonction, sur la MÊME liste — sans quoi la fiche
+    # porterait un titre déduit sans que rien ne le dise.
+    if not normalized["title"]:
+        normalized["title"] = titre_de_repli(missions_source)
+
     for edu in (data.get("education") or data.get("formation") or []):
         normalized["education"].append({
             "title": str(edu.get("title") or edu.get("diplome") or "").strip(),
@@ -949,19 +1059,54 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
                 items.append(it)
                 seen_local.add(key)
                 _seen_items_global.add(key)
-        if category and items:
+        # Un groupe SANS catégorie garde ses compétences (#177 ligne 12).
+        # `if category and items` les jetait : un CV dont la section
+        # « Compétences » est une simple liste à puces — sans en-tête
+        # « Langages : », « Outils : » — perdait TOUTES ses compétences, en
+        # silence. C'est la CVthèque que /api/needs/<id>/match interroge : une
+        # compétence absente de la base, c'est un consultant que le
+        # rapprochement ne trouve pas. one-pager conservait déjà le groupe sous
+        # le libellé « Compétences » (lib/docie-extract.js::mapperCompetences) ;
+        # même libellé ici, le même CV donne donc la même fiche des deux côtés.
+        # La catégorie n'est qu'un intitulé d'affichage : skills_to_flat()
+        # l'ignore, donc le rapprochement voit les items quel que soit le
+        # libellé. Plusieurs groupes sans catégorie donnent plusieurs
+        # « Compétences », comme côté JS qui les libelle un par un.
+        if items:
             normalized["skills"].append({
-                "category": category,
+                "category": category or "Compétences",
                 "items": items
             })
             
+    # #177 ligne 11 : le niveau de langue est normalisé en CECRL.
+    #
+    # DocIE rend `languages[].level` en texte libre et y recopie ce que le CV
+    # écrit (« natif », « courant » sur la vraie réponse enregistrée).
+    # one-pager en déduisait un niveau CECRL depuis toujours, cv-parser
+    # stockait le libellé verbatim : le même CV donnait « natif » dans la
+    # CVthèque et « C2 » dans le dossier one-page, et deux CV écrivant la même
+    # chose autrement (« natif » / « langue maternelle ») donnaient deux fiches
+    # différentes pour le même candidat. La table et son jeu d'essai sont
+    # partagés (document-parsing/fixtures/niveau_langue.json, port
+    # niveau_langue.py), donc une divergence redevient un échec de test.
+    #
+    # **Un libellé non reconnu garde son texte**, il n'est jamais vidé : c'est
+    # la leçon de la ligne 10, où un `natif` inconnu de la table sortait en
+    # niveau vide côté JS. Écart assumé avec one-pager, qui met `level` à "" et
+    # garde le brut dans `self_described` : une fiche CVthèque n'a qu'un champ
+    # à afficher. Le libellé d'origine est conservé dans `niveau_declare`,
+    # comme le `self_described` du JS.
+    #
+    # Sans effet sur le rapprochement : core/matcher.py ne lit que le NOM de la
+    # langue (`l.get("language")`), jamais son niveau — vérifié, pas supposé.
     for lang in (data.get("languages") or data.get("langues") or []):
         language = str(lang.get("language") or lang.get("langue") or "").strip()
-        level = str(lang.get("level") or lang.get("niveau") or "").strip()
+        declare = str(lang.get("level") or lang.get("niveau") or "").strip()
         if language:
             normalized["languages"].append({
                 "language": language,
-                "level": level
+                "level": niveau_cecrl(declare) or declare,
+                "niveau_declare": declare,
             })
             
     for proj in (data.get("projects") or data.get("projets") or []):
@@ -972,9 +1117,22 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
             "description": str(proj.get("description") or "").strip(),
         })
         
+    # #177 ligne 18 : l'ORGANISME de la certification est conservé.
+    #
+    # Même panne que la ligne 17, même cause : le schéma servi déclare
+    # `certifications[].issuer` (« Microsoft », « AWS »), `map_resume` le
+    # transmet, le dictionnaire reconstruit ici ne le listait pas. Or une
+    # certification sans son organisme perd la moitié de ce qui la qualifie :
+    # « Architecte Solutions » ne dit pas la même chose selon qu'AWS ou Azure
+    # la délivre, et c'est exactement ce qu'un client lit dans le dossier.
+    # Nom et forme de one-pager (lib/docie-extract.js::mapperCertifications).
+    #
+    # Champ d'affichage lui aussi : core/matcher.py ne compte que le NOMBRE de
+    # certifications (`len(certs)`, 2 pts de bonus), jamais leur contenu.
     for cert in (data.get("certifications") or []):
         normalized["certifications"].append({
             "name": str(cert.get("name") or "").strip(),
+            "issuer": str(cert.get("issuer") or cert.get("organisme") or "").strip(),
             "year": str(cert.get("year") or "").strip(),
         })
         
@@ -982,7 +1140,35 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
         if str(val).strip():
             normalized["interests"].append(str(val).strip())
             
-    normalized["years_experience"] = compute_years_experience(normalized["experience"])
+    # #177 ligne 3 : n'écraser le `years_experience` de DocIE que si l'on a
+    # MIEUX. `normalize_cv_data` le remplaçait systématiquement par le calcul,
+    # y compris quand aucune période n'était lisible et que le calcul ne
+    # reposait donc sur rien — DocIE pouvait annoncer 12 ans, la fiche en
+    # affichait 0, et /api/needs/<id>/match classait le consultant en dernier.
+    # C'est exactement la panne « senior introuvable » que #176 a réparée pour
+    # « Poste actuel », avec une autre cause.
+    #
+    # Ordre de préférence, celui du JS (`lib/docie-extract.js` : calcul si
+    # `experiences.some(e => e.start_date)`, repli sur `years_experience`
+    # sinon) :
+    #   1. au moins une période lisible -> le calcul, qui est mesuré ;
+    #   2. sinon, ce que DocIE annonce, s'il annonce quelque chose ;
+    #   3. sinon seulement, le forfait d'un an par période illisible
+    #      (compute_years_experience) — personne n'est ramené à zéro.
+    #
+    # La valeur de DocIE est coercée comme le fait le JS
+    # (`Math.max(0, Math.round(Number(x) || 0))`) : un entier, un flottant ou
+    # une chaîne numérique passent, tout le reste vaut 0 et laisse le calcul en
+    # place. `True` est écarté avec le reste (str(True) n'est pas un nombre).
+    annees = compute_years_experience(normalized["experience"])
+    if not periode_lisible(normalized["experience"]):
+        try:
+            annonce = int(float(str(data.get("years_experience")).strip()) + 0.5)
+        except (TypeError, ValueError):
+            annonce = 0
+        if annonce > 0:
+            annees = annonce
+    normalized["years_experience"] = annees
 
     # Compétences absentes : on les reconstruit depuis l'environnement technique
     # des missions.
@@ -1333,6 +1519,7 @@ def process_cv(file_path, jeton=None) -> dict:
     from docie_bridge_extraction import docie_extraction_enabled
     from docie_bridge_extraction import extract_resume as extract_resume_bridge
     from docie_client import extract_resume as extract_resume_legacy
+    from docie_review import revue_docie
 
     started = time.perf_counter()
     bridge_active = docie_extraction_enabled()
@@ -1357,8 +1544,15 @@ def process_cv(file_path, jeton=None) -> dict:
         "_timing": {"total_s": round(time.perf_counter() - started, 3)},
     })
     cv_data["bilan_adbi"] = bilan_adbi(cv_data)
-    validation = metadata["validation"]
-    if isinstance(validation, dict) and (validation.get("valid") is False or validation.get("warnings")):
+    # Ce que DocIE dit de sa propre extraction, traduit en signal de relecture
+    # par champ (docie_review.py, issue #172) : jusqu'ici seul un avertissement
+    # générique « relisez la fiche » était levé, sans dire QUEL champ relire, et
+    # la confiance par champ n'arrivait même pas jusqu'ici. Stocké sur la fiche
+    # (jamais modifiable par PATCH, voir CHAMPS_MODIFIABLES_CV) pour que l'écran
+    # de relecture (templates/cv_detail.html) marque les champs concernés.
+    revue = revue_docie(raw_data, metadata)
+    cv_data["docie_review"] = revue
+    if revue["needs_review"] or revue["warnings"]:
         cv_data["parse_warning"] = "DocIE signale des champs à vérifier. Relisez la fiche extraite."
     return cv_data
 
@@ -2171,6 +2365,7 @@ def _filtrer_champs_cv(brut: dict) -> dict:
 @app.route("/api/cvs/<cv_id>", methods=["PATCH"])
 @require_auth
 def update_cv(cv_id):
+    from docie_review import perimer_revue
     brut = request.json or {}
     updates = _filtrer_champs_cv(brut)
     erreur = _plafonner_cv(updates)
@@ -2182,6 +2377,7 @@ def update_cv(cv_id):
             abort(404)
         for key, val in updates.items():
             cv[key] = val
+        perimer_revue(cv, updates)
         cv["updated_at"] = datetime.now().isoformat()
         cvstore_pg.save_cv(cv_id, cv)
     return jsonify({"success": True})

@@ -217,7 +217,9 @@ body {
       {% for c in cv.certifications %}
         <div class="formation">
           <div class="annee">{{ c.year or '' }}</div>
-          <div>{{ c.name }}</div>
+          {# L'organisme émetteur (#177 ligne 18) : « Architecte Solutions » ne
+             dit pas la même chose selon qu'AWS ou Azure la délivre. #}
+          <div>{{ c.name }}{% if c.issuer %} — {{ c.issuer }}{% endif %}</div>
         </div>
       {% endfor %}
     {% endif %}
@@ -249,7 +251,10 @@ body {
     {% for e in cv.experience %}
       <div class="mission">
         <div class="mission-tete">
-          <span>{{ e.company }}{% if e.client and e.client != e.company %} – {{ e.client }}{% endif %}</span>
+          {# Le lieu de mission (#177 ligne 17) rejoint la société sur la ligne
+             d'en-tête plutôt que de prendre une ligne à lui : c'est un repère,
+             pas une rubrique. #}
+          <span>{{ e.company }}{% if e.client and e.client != e.company %} – {{ e.client }}{% endif %}{% if e.location %} — {{ e.location }}{% endif %}</span>
           <span class="periode">{{ e.period or '' }}</span>
         </div>
         {% if e.title %}<div class="mission-champ"><b>Rôle :</b> {{ e.title }}</div>{% endif %}
