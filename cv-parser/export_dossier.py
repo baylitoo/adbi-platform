@@ -274,12 +274,14 @@ class Dossier:
         # Lieu de mission (#177 ligne 17) : sur la ligne d'en-tête, à la suite
         # de la société. La borne de 58 caractères reste celle d'avant — la
         # période est posée en face, à droite, et déborder la percuterait — mais
-        # c'est la SOCIÉTÉ qui cède la place, pas le lieu : un nom d'entreprise
-        # raccourci reste identifiable, un lieu raccourci ne veut plus rien dire.
-        lieu = str(exp.get("location") or "").strip()
-        en_tete = f"{societe[:max(12, 58 - len(lieu) - 3)]} — {lieu}" if lieu else societe
+        # la ligne entière tient dedans PAR CONSTRUCTION : le lieu est borné à
+        # 24 caractères et la société prend ce qui reste. C'est donc elle qui
+        # cède la place : un nom d'entreprise raccourci reste identifiable, un
+        # lieu raccourci ne veut plus rien dire.
+        lieu = str(exp.get("location") or "").strip()[:24]
+        en_tete = f"{societe[:58 - len(lieu) - 3]} — {lieu}" if lieu else societe[:58]
         self._place(52)
-        self.page.insert_text((MARGE_G, self.y + 10), en_tete[:58],
+        self.page.insert_text((MARGE_G, self.y + 10), en_tete,
                               fontname=self.police_g, fontsize=11, color=ORANGE)
         if periode:
             # Même orange que la société : la période fait partie de l'en-tête

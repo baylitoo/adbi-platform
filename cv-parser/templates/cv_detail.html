@@ -904,9 +904,12 @@
           {% for exp in cv.experience %}
           {% set company = exp.company or exp.title or '' %}
           {% set role    = exp.title if exp.company else (exp.subtitle or '') %}
-          {# normalize_cv_data recopie les missions dans l'ordre de DocIE sans en
-             filtrer ni en réordonner aucune : l'index de la boucle EST l'index
-             DocIE, la marque tombe donc bien sur la mission concernée. #}
+          {# L'index de la boucle est celui de la fiche, PAS celui de DocIE :
+             normalize_cv_data range les missions de la plus récente à la plus
+             ancienne (#177 ligne 7). La marque tombe bien sur la mission
+             concernée parce que docie_review.positions_apres_tri a déjà traduit
+             l'index DocIE en position de fiche, en rejouant la même fonction de
+             tri sur la même liste. #}
           {% set chemin_exp = 'experience[' ~ loop.index0 ~ '].' %}
           <div class="entry-card" draggable="true" data-section="experience" data-entry-idx="{{ loop.index0 }}">
             <div class="entry-head">
