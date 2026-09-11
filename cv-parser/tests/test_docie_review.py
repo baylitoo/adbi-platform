@@ -114,15 +114,20 @@ class RevueTests(unittest.TestCase):
         experience[].location et certifications[].issuer sont supprimés."""
         data = {"skills": [{"category": "Data", "items": ["SQL"]}],
                 "languages": [{"language": "Anglais", "level": "C1"}],
+                "contact": {"github": "github.com/camille"},
                 "experience": [{"company": "Numelia", "location": "Lyon"}],
                 "certifications": [{"name": "AWS", "issuer": "Amazon"}]}
         revue = revue_docie(data, {"validation": {}, "field_confidence": {
             "skills[0].items[0].item": 0.5, "languages[0].level": 0.4,
+            "contact.github": 0.5,
             "experience[0].location": 0.5, "certifications[0].issuer": 0.2}})
         self.assertEqual(revue["needs_review"], [])
         self.assertEqual(sorted(revue["warnings"]), sorted([
             "docie_confiance_faible:skills[0].items[0].item",
             "docie_confiance_faible:languages[0].level",
+            # `github` est stocké mais affiché par aucun onglet : le marquer
+            # annoncerait un champ à relire introuvable à l'écran.
+            "docie_confiance_faible:contact.github",
             "docie_confiance_faible:experience[0].location",
             "docie_confiance_faible:certifications[0].issuer"]))
 

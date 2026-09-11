@@ -41,7 +41,11 @@ SEUIL_CONFIANCE = 0.5
 # tables n'est jamais deviné (voir _chemin_fiche).
 CHAMPS_RACINE = {"name": "name", "title": "title"}
 
-CHAMPS_CONTACT = {"email", "phone", "linkedin", "github", "location"}
+# `github` est volontairement absent : la fiche le stocke, mais aucun des deux
+# onglets de cv_detail.html ne l'affiche. Le marquer ferait annoncer « 1 champ à
+# relire » au bandeau sans que rien ne soit marqué nulle part — même traitement
+# que experience[].location : avertissement générique, pas faux chemin.
+CHAMPS_CONTACT = {"email", "phone", "linkedin", "location"}
 
 # `start_date`/`end_date` sont fusionnés en `period` par map_resume ;
 # `location` n'a pas de place dans le modèle de cv-parser et est supprimé à la
