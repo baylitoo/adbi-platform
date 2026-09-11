@@ -17,6 +17,11 @@ MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MIME_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/webp"}
 SCHEMAS = {"resume": "adbi_resume", "contract": "contract", "kbis": "kbis"}
+# A grounded field arrives as {value, ...} alongside at least one of these keys.
+# `model_confidence` is part of the set on purpose: DocIE's logprob confidence
+# adds it as a fourth key, and an envelope test that ignores it lets a scalar
+# reach the consumer as a dict ("Ada" becoming {"value": "Ada", ...}).
+ENVELOPE_MARKERS = ("confidence", "evidence_ids", "model_confidence")
 
 
 class DocIEBridgeError(RuntimeError):
@@ -60,14 +65,73 @@ def configuration(kind, env):
     return base + "/v1/agents/" + agent + "/chat/completions", key, agent, timeout, tokens
 
 
+def is_envelope(value):
+    return isinstance(value, dict) and "value" in value and any(key in value for key in ENVELOPE_MARKERS)
+
+
 def unwrap(value):
     if isinstance(value, dict):
-        if "value" in value and ("confidence" in value or "evidence_ids" in value):
+        if is_envelope(value):
             return unwrap(value["value"])
         return {key: unwrap(item) for key, item in value.items()}
     if isinstance(value, list):
         return [unwrap(item) for item in value]
     return value
+
+
+def number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def field_confidences(value, path="", into=None):
+    """Per-field confidence, collected before unwrap() drops the envelopes.
+
+    DocIE grounds every field as {value, confidence, evidence_ids} and caps a
+    field's confidence when it had to truncate a repeated/looping list, so the
+    number is the only per-field "this is partial, have a human read it" signal
+    the agent emits. unwrap() keeps the values and threw the signal away;
+    consumers were left re-deriving a weaker one from emptiness alone.
+
+    Only `confidence` is collected. `model_confidence` is a logprob score on a
+    different scale, and the "<= 0.5 means review me" rule holds for the former
+    only; conflating them would invent review flags DocIE never raised.
+
+    Keys are stable across both bridges: "contact.email", "experience[0].title",
+    "skills[1].items[2].item". Transport only — the review threshold and the
+    mapping to an application's own field paths belong to the consumer.
+    """
+    into = {} if into is None else into
+    if isinstance(value, dict):
+        if is_envelope(value):
+            if path and number(value.get("confidence")):
+                into[path] = value["confidence"]
+            return field_confidences(value["value"], path, into)
+        for key, item in value.items():
+            field_confidences(item, (path + "." + key) if path else str(key), into)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            field_confidences(item, path + "[" + str(index) + "]", into)
+    return into
+
+
+def reported_field_confidence(meta):
+    """`docie_agent.field_confidence` — {"experience[0].title": {"confidence": 0.5}}.
+
+    DocIE's own per-field map, authoritative when the agent emits it: same dotted
+    paths, and it survives an agent that flattens its result before answering
+    (there are then no envelopes left for field_confidences to read). Returns
+    None when absent or unusable, so the caller falls back to the envelopes
+    rather than claiming DocIE reported nothing.
+    """
+    raw = meta.get("field_confidence")
+    if not isinstance(raw, dict):
+        return None
+    reported = {}
+    for path, entry in raw.items():
+        confidence = entry.get("confidence") if isinstance(entry, dict) else entry
+        if isinstance(path, str) and path and number(confidence):
+            reported[path] = confidence
+    return reported
 
 
 def parse_response(body, expected_schema, agent):
@@ -109,8 +173,10 @@ def parse_response(body, expected_schema, agent):
     if validation is not None and not isinstance(validation, dict):
         fail("response", "Invalid DocIE validation metadata.")
     # No synthetic confidence/validation success when the agent omits metadata.
+    confidence = reported_field_confidence(meta)
     metadata = {"request_id": body.get("id"), "agent": agent, "model": body.get("model"),
                 "validation": validation, "usage": body.get("usage"),
+                "field_confidence": field_confidences(result) if confidence is None else confidence,
                 "schema_reported": any(item is not None for item in reported)}
     for name in ("queue_wait_ms", "latency_ms", "generation_ms"):
         value = meta.get(name, extracted.get(name, body.get(name)))

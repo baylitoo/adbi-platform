@@ -145,6 +145,98 @@ test("un cv_master vide reste valide et signale les champs manquants", () => {
   assert.deepEqual(master.experiences, []);
 });
 
+// ── Metadonnees de relecture DocIE (issue : signaux jetes cote one-pager) ────
+
+/** Meme CV, missions dans l'ordre du document : DocIE[0] est la PLUS ANCIENNE. */
+const RESUME_ORDRE_DOCUMENT = {
+  ...ADBI_RESUME_COMPLET,
+  experience: [ADBI_RESUME_COMPLET.experience[1], ADBI_RESUME_COMPLET.experience[0]],
+};
+
+test("les avertissements et erreurs DocIE remontent verbatim dans quality.warnings", () => {
+  const metadata = {
+    ...METADATA_OK,
+    validation: { valid: false, errors: ["missing contact"], warnings: ["experience[0].description truncated: repeated content detected"] },
+  };
+  const master = mapperAdbiResume(ADBI_RESUME_COMPLET, metadata, { filename: "cv.pdf" });
+
+  assert.ok(master.quality.warnings.includes("docie_validation_negative"));
+  assert.ok(master.quality.warnings.includes("docie_erreur:missing contact"));
+  // Texte repris tel quel : aucun nom de champ n'en est extrait par regex.
+  assert.ok(master.quality.warnings.includes(
+    "docie_avertissement:experience[0].description truncated: repeated content detected"));
+});
+
+test("un champ dont DocIE doute (<= 0.5) devient un « a verifier » sur la BONNE mission apres tri", () => {
+  const metadata = {
+    ...METADATA_OK,
+    // DocIE[0] = Capgemini (2019) : apres tri chronologique, c'est exp_2.
+    field_confidence: { "experience[0].title": 0.5, "experience[1].company": 0.2, "contact.email": 0.4 },
+  };
+  const master = mapperAdbiResume(RESUME_ORDRE_DOCUMENT, metadata, { filename: "cv.pdf" });
+
+  assert.equal(master.experiences[0].company, "Decathlon", "tri chronologique inchange");
+  assert.ok(master.quality.needs_review.includes("exp_2.role"), "experience[0] de DocIE = exp_2 apres tri");
+  assert.equal(master.quality.needs_review.includes("exp_1.role"), false, "la mission recente n'est pas mise en doute a tort");
+  assert.ok(master.quality.needs_review.includes("exp_1.company"));
+  // contact.email a un chemin cv_master identique et est surligne par l'ecran de relecture.
+  assert.ok(master.quality.needs_review.includes("contact.email"));
+});
+
+test("une confiance haute ne signale rien, un champ vide non plus", () => {
+  const sansGithub = { ...ADBI_RESUME_COMPLET, contact: { ...ADBI_RESUME_COMPLET.contact, github: "" } };
+  const metadata = { ...METADATA_OK, field_confidence: { "contact.github": 0, name: 1, "experience[0].title": 0.9 } };
+  const master = mapperAdbiResume(sansGithub, metadata, { filename: "cv.pdf" });
+
+  // Un champ que DocIE n'a pas trouve vaut "" a confiance 0 : c'est une absence,
+  // pas une valeur douteuse — la completude s'en charge deja.
+  assert.equal(master.quality.needs_review.includes("contact.github"), false);
+  assert.equal(master.quality.warnings.some((w) => w.startsWith("docie_confiance_faible")), false);
+  assert.equal(master.quality.needs_review.includes("identity.full_name"), false);
+});
+
+test("un champ peu sur sans equivalent adressable est signale en avertissement, pas en faux chemin", () => {
+  const metadata = { ...METADATA_OK, field_confidence: { "education[0].degree": 0.3, "skills[0].items[1].item": 0.1 } };
+  const master = mapperAdbiResume(ADBI_RESUME_COMPLET, metadata, { filename: "cv.pdf" });
+
+  assert.ok(master.quality.warnings.includes("docie_confiance_faible:education[0].degree"));
+  assert.ok(master.quality.warnings.includes("docie_confiance_faible:skills[0].items[1].item"));
+  assert.equal(master.quality.needs_review.some((r) => r.startsWith("education")), false);
+});
+
+test("validation absente : reponse non verifiee, jamais presentee comme un succes", () => {
+  const master = mapperAdbiResume(ADBI_RESUME_COMPLET, { ...METADATA_OK, validation: null }, { filename: "cv.pdf" });
+  assert.ok(master.quality.warnings.includes("docie_validation_absente"));
+
+  // Validation propre : aucun bruit ajoute.
+  const propre = mapperAdbiResume(ADBI_RESUME_COMPLET,
+    { ...METADATA_OK, validation: { valid: true, errors: [], warnings: [] } }, { filename: "cv.pdf" });
+  assert.equal(propre.quality.warnings.some((w) => w.startsWith("docie_")), false);
+});
+
+test("un scalaire encore enveloppe (logprob model_confidence) reste lisible", () => {
+  // Si DocIE active la confiance par logprob avant que son deballage ne connaisse
+  // la cle, « Alice Dupont » arrive en {value, model_confidence} : sans repli, le
+  // dossier exporte afficherait « [object Object] ».
+  const data = {
+    ...ADBI_RESUME_COMPLET,
+    name: { value: "Alice Dupont", model_confidence: 0.82 },
+    title: { value: "Data Engineer", confidence: 0.9, model_confidence: 0.4, evidence_ids: ["b2"] },
+    interests: [{ interest: { value: "Photographie", model_confidence: 0.7 } }],
+  };
+  const master = mapperAdbiResume(data, METADATA_OK, { filename: "cv.pdf" });
+
+  assert.equal(master.identity.full_name, "Alice DUPONT");
+  assert.equal(master.identity.title, "Data Engineer");
+  assert.deepEqual(master.interests, ["Photographie"]);
+});
+
+test("metadonnees sans champ de relecture : comportement inchange (retrocompatibilite)", () => {
+  const avant = mapperAdbiResume(ADBI_RESUME_COMPLET, null, { filename: "cv.pdf" });
+  assert.deepEqual(avant.quality.warnings, []);
+  assert.deepEqual(avant.quality.needs_review, []);
+});
+
 test("decouperDescription: puces multi-lignes vs paragraphe unique", () => {
   const multi = decouperDescription("Pilotage de la plateforme.\nMigration de 40 pipelines vers Databricks.\nRéduction du coût cloud de 30%.");
   assert.equal(multi.context, "");

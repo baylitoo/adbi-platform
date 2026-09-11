@@ -34,10 +34,18 @@ def document_payload(path):
     return {"filename": path.name, "text": text}
 
 
+# Clés qui signalent une enveloppe de champ ancré {value, ...}. `model_confidence`
+# en fait partie : la confiance par logprob de DocIE l'ajoute comme quatrième clé,
+# et une détection qui l'ignore laisse un scalaire arriver sous forme de dict —
+# « Ada » devenant {"value": "Ada", "model_confidence": 0.82} jusque dans la fiche.
+# Même liste que document-parsing/bridge/docie_bridge.py::ENVELOPE_MARKERS.
+_MARQUEURS_ENVELOPPE = ("confidence", "evidence_ids", "model_confidence")
+
+
 def unwrap(value):
     """Strip evidence envelopes, preserving nested objects and lists."""
     if isinstance(value, dict):
-        if "value" in value and ("confidence" in value or "evidence_ids" in value):
+        if "value" in value and any(cle in value for cle in _MARQUEURS_ENVELOPPE):
             return unwrap(value["value"])
         return {k: unwrap(v) for k, v in value.items()}
     if isinstance(value, list):

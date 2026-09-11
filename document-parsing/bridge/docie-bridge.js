@@ -5,6 +5,11 @@ const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis" };
 const MIME_TYPES = new Set(["application/pdf", "image/png", "image/jpeg", "image/webp"]);
+// A grounded field arrives as {value, ...} alongside at least one of these keys.
+// `model_confidence` is part of the set on purpose: DocIE's logprob confidence
+// adds it as a fourth key, and an envelope test that ignores it lets a scalar
+// reach the consumer as a dict ("Ada" becoming {"value": "Ada", ...}).
+const ENVELOPE_MARKERS = ["confidence", "evidence_ids", "model_confidence"];
 
 class DocIEBridgeError extends Error {
   constructor(code, message, status = null) {
@@ -37,11 +42,52 @@ function configuration(kind, env) {
   return { endpoint: base + "/v1/agents/" + agent + "/chat/completions", key, agent, timeout, tokens };
 }
 
+function envelope(value) { return object(value) && Object.hasOwn(value, "value") && ENVELOPE_MARKERS.some(key => Object.hasOwn(value, key)); }
+function number(value) { return typeof value === "number" && Number.isFinite(value); }
+
 function unwrap(value) {
   if (Array.isArray(value)) return value.map(unwrap);
   if (!object(value)) return value;
-  if (Object.hasOwn(value, "value") && (Object.hasOwn(value, "confidence") || Object.hasOwn(value, "evidence_ids"))) return unwrap(value.value);
+  if (envelope(value)) return unwrap(value.value);
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, unwrap(item)]));
+}
+
+// Per-field confidence, collected before unwrap() drops the envelopes. DocIE
+// caps a field's confidence when it had to truncate a repeated/looping list, so
+// this is the only per-field "partial, have a human read it" signal it emits.
+// Only `confidence` is collected: `model_confidence` is a logprob score on a
+// different scale, and the "<= 0.5 means review me" rule holds for the former.
+// Keys match docie_bridge.py::field_confidences exactly: "contact.email",
+// "experience[0].title", "skills[1].items[2].item". Transport only: the review
+// threshold and the mapping to application field paths belong to the consumer.
+function fieldConfidences(value, path = "", into = {}) {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => fieldConfidences(item, path + "[" + index + "]", into));
+  } else if (object(value)) {
+    if (envelope(value)) {
+      if (path && number(value.confidence)) into[path] = value.confidence;
+      return fieldConfidences(value.value, path, into);
+    }
+    for (const [key, item] of Object.entries(value)) fieldConfidences(item, path ? path + "." + key : key, into);
+  }
+  return into;
+}
+
+// `docie_agent.field_confidence` — {"experience[0].title": {"confidence": 0.5}}.
+// DocIE's own per-field map, authoritative when the agent emits it: same dotted
+// paths, and it survives an agent that flattens its result before answering
+// (there are then no envelopes left for fieldConfidences to read). Returns null
+// when absent or unusable, so the caller falls back to the envelopes rather than
+// claiming DocIE reported nothing.
+function reportedFieldConfidence(meta) {
+  const raw = meta.field_confidence;
+  if (!object(raw)) return null;
+  const reported = {};
+  for (const [path, entry] of Object.entries(raw)) {
+    const confidence = object(entry) ? entry.confidence : entry;
+    if (path && number(confidence)) reported[path] = confidence;
+  }
+  return reported;
 }
 
 function parseResponse(body, expectedSchema, agent) {
@@ -65,8 +111,10 @@ function parseResponse(body, expectedSchema, agent) {
   if (reported.some(item => item != null && item !== expectedSchema)) fail("schema", "DocIE returned an unexpected document schema.");
   const validation = Object.hasOwn(meta, "validation") ? meta.validation : (extracted.validation ?? null);
   if (validation != null && !object(validation)) fail("response", "Invalid DocIE validation metadata.");
+  const confidence = reportedFieldConfidence(meta);
   const metadata = { request_id: body.id ?? null, agent, model: body.model ?? null,
-    validation, usage: body.usage ?? null, schema_reported: reported.some(item => item != null) };
+    validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
+    schema_reported: reported.some(item => item != null) };
   for (const name of ["queue_wait_ms", "latency_ms", "generation_ms"]) {
     const value = Object.hasOwn(meta, name) ? meta[name] : (Object.hasOwn(extracted, name) ? extracted[name] : body[name]);
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) metadata[name] = value;

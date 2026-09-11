@@ -5,15 +5,26 @@ const http = require("node:http");
 const cases = require("./contract.json");
 const { extractDocument, parseResponse, DocIEBridgeError } = require("../docie-bridge");
 
-test("shared contract vectors, latency and validation preserved", () => {
+test("shared contract vectors, latency, validation and per-field confidence preserved", () => {
   for (const c of cases) {
     const result = parseResponse(c.body, "adbi_resume", "adbi_agent_1");
     assert.deepEqual(result.result, c.expected_result);
     assert.equal(result.metadata.schema_reported, c.schema_reported);
+    // Same keys and numbers as docie_bridge.py::field_confidences — the two
+    // bridges feed the same review signal to their respective consumers.
+    assert.deepEqual(result.metadata.field_confidence, c.expected_field_confidence);
   }
   assert.equal(parseResponse(cases[0].body, "adbi_resume", "adbi_agent_1").metadata.queue_wait_ms, 125);
   assert.equal(parseResponse(cases[1].body, "adbi_resume", "adbi_agent_1").metadata.validation.valid, false);
   assert.equal(parseResponse(cases[2].body, "adbi_resume", "adbi_agent_1").metadata.validation, null);
+  // A list DocIE had to truncate: both the capped confidence and the warning survive.
+  const truncated = parseResponse(cases[3].body, "adbi_resume", "adbi_agent_1").metadata;
+  assert.equal(truncated.field_confidence["experience[0].description"], 0.5);
+  assert.equal(truncated.validation.warnings.length, 1);
+  assert.equal(truncated.latency_ms, 285014);
+  // Warnings are carried verbatim: their prose has no field-path contract to parse.
+  assert.equal(parseResponse(cases[4].body, "adbi_resume", "adbi_agent_1").metadata.validation.warnings[0],
+    "derived subtotal not found in the document");
 });
 
 test("reject incomplete, malformed, wrong schema and wrong agent responses", () => {
