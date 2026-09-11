@@ -111,25 +111,26 @@ class RevueTests(unittest.TestCase):
     def test_champ_sans_equivalent_sort_en_avertissement_pas_en_faux_chemin(self):
         """skills/languages/interests sont dédupliqués et filtrés par
         normalize_cv_data : l'index DocIE y désignerait la mauvaise ligne.
-        experience[].location et certifications[].issuer sont supprimés."""
+
+        `experience[].location` et `certifications[].issuer` figuraient ici
+        pour la même raison — la fiche les jetait, les marquer aurait désigné
+        une case inexistante. #177 lignes 17-18 leur a donné une place dans le
+        modèle ET une case éditable : ils ont donc un chemin, et le test qui
+        l'atteste est test_champs_conserves.py::RevueDocieTests.
+        """
         data = {"skills": [{"category": "Data", "items": ["SQL"]}],
                 "languages": [{"language": "Anglais", "level": "C1"}],
-                "contact": {"github": "github.com/camille"},
-                "experience": [{"company": "Numelia", "location": "Lyon"}],
-                "certifications": [{"name": "AWS", "issuer": "Amazon"}]}
+                "contact": {"github": "github.com/camille"}}
         revue = revue_docie(data, {"validation": {}, "field_confidence": {
             "skills[0].items[0].item": 0.5, "languages[0].level": 0.4,
-            "contact.github": 0.5,
-            "experience[0].location": 0.5, "certifications[0].issuer": 0.2}})
+            "contact.github": 0.5}})
         self.assertEqual(revue["needs_review"], [])
         self.assertEqual(sorted(revue["warnings"]), sorted([
             "docie_confiance_faible:skills[0].items[0].item",
             "docie_confiance_faible:languages[0].level",
             # `github` est stocké mais affiché par aucun onglet : le marquer
             # annoncerait un champ à relire introuvable à l'écran.
-            "docie_confiance_faible:contact.github",
-            "docie_confiance_faible:experience[0].location",
-            "docie_confiance_faible:certifications[0].issuer"]))
+            "docie_confiance_faible:contact.github"]))
 
     def test_renommages_de_map_resume_sont_suivis(self):
         """degree/institution/year deviennent title/subtitle/period, et

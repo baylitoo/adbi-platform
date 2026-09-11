@@ -47,16 +47,20 @@ CHAMPS_RACINE = {"name": "name", "title": "title"}
 
 # `github` est volontairement absent : la fiche le stocke, mais aucun des deux
 # onglets de cv_detail.html ne l'affiche. Le marquer ferait annoncer « 1 champ à
-# relire » au bandeau sans que rien ne soit marqué nulle part — même traitement
-# que experience[].location : avertissement générique, pas faux chemin.
+# relire » au bandeau sans que rien ne soit marqué nulle part : avertissement
+# générique, pas faux chemin.
 CHAMPS_CONTACT = {"email", "phone", "linkedin", "location"}
 
-# `start_date`/`end_date` sont fusionnés en `period` par map_resume ;
-# `location` n'a pas de place dans le modèle de cv-parser et est supprimé à la
-# normalisation (noté en suite dans #172) — donc pas de chemin de fiche.
+# `start_date`/`end_date` sont fusionnés en `period` par map_resume.
+# `location` a désormais un chemin de fiche : #177 ligne 17 lui a donné une
+# place dans le modèle (normalize_cv_data) ET une case éditable marquable dans
+# templates/cv_detail.html. Tant qu'il était supprimé à la normalisation, le
+# marquer aurait surligné un champ inexistant ; maintenant qu'il s'affiche,
+# l'omettre laisserait un lieu douteux passer pour relu.
 CHAMPS_EXPERIENCE = {
     "company": "company",
     "title": "title",
+    "location": "location",
     "start_date": "period",
     "end_date": "period",
     "description": "description",
@@ -66,8 +70,9 @@ CHAMPS_EXPERIENCE = {
 # map_resume : degree -> title, institution -> subtitle, year -> period.
 CHAMPS_EDUCATION = {"degree": "title", "institution": "subtitle", "year": "period"}
 
-# `issuer` est supprimé à la normalisation, comme experience[].location.
-CHAMPS_CERTIFICATIONS = {"name": "name", "year": "year"}
+# `issuer` est conservé et affiché depuis #177 ligne 18, comme
+# experience[].location : il a donc un chemin de fiche, lui aussi.
+CHAMPS_CERTIFICATIONS = {"name": "name", "issuer": "issuer", "year": "year"}
 
 # Listes dont l'index DocIE mène à une ligne identifiable dans la fiche :
 # normalize_cv_data les recopie sans en filtrer aucune. `skills`, `languages`

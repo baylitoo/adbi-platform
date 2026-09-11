@@ -992,6 +992,23 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
             "company": str(exp.get("company") or exp.get("entreprise") or "").strip(),
             "client": str(exp.get("client") or "").strip(),
             "title": str(exp.get("title") or exp.get("poste") or "").strip(),
+            # #177 ligne 17 : le LIEU de la mission est conservé.
+            #
+            # Le schéma servi déclare `experience[].location` et DocIE le
+            # remplit (« Lyon », « Bordeaux » sur la vraie réponse enregistrée) ;
+            # `map_resume` le transmet intact, et c'est ICI qu'il disparaissait :
+            # le dictionnaire reconstruit ne listait pas la clé, donc la donnée
+            # tombait en silence. one-pager la garde depuis toujours, sous le
+            # même nom et à plat (lib/docie-extract.js::mapperExperience) — d'où
+            # le même nom et la même forme ici, pour ne pas créer une 23e
+            # divergence en en corrigeant une.
+            #
+            # Champ d'AFFICHAGE, pas d'entrée de rapprochement : core/matcher.py
+            # ne lit pour la localisation que `cv.contact.location`
+            # (_score_bonus, « Localisation compatible ») et jamais le lieu
+            # d'une mission ; skills_to_flat n'en voit rien non plus. Vérifié,
+            # pas supposé — c'est ce qui borne le risque de cette ligne.
+            "location": str(exp.get("location") or exp.get("lieu") or "").strip(),
             "period": periode,
             "contexte": str(exp.get("contexte") or "").strip(),
             "objectifs": str(exp.get("objectifs") or "").strip(),
@@ -1100,9 +1117,22 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
             "description": str(proj.get("description") or "").strip(),
         })
         
+    # #177 ligne 18 : l'ORGANISME de la certification est conservé.
+    #
+    # Même panne que la ligne 17, même cause : le schéma servi déclare
+    # `certifications[].issuer` (« Microsoft », « AWS »), `map_resume` le
+    # transmet, le dictionnaire reconstruit ici ne le listait pas. Or une
+    # certification sans son organisme perd la moitié de ce qui la qualifie :
+    # « Architecte Solutions » ne dit pas la même chose selon qu'AWS ou Azure
+    # la délivre, et c'est exactement ce qu'un client lit dans le dossier.
+    # Nom et forme de one-pager (lib/docie-extract.js::mapperCertifications).
+    #
+    # Champ d'affichage lui aussi : core/matcher.py ne compte que le NOMBRE de
+    # certifications (`len(certs)`, 2 pts de bonus), jamais leur contenu.
     for cert in (data.get("certifications") or []):
         normalized["certifications"].append({
             "name": str(cert.get("name") or "").strip(),
+            "issuer": str(cert.get("issuer") or cert.get("organisme") or "").strip(),
             "year": str(cert.get("year") or "").strip(),
         })
         
