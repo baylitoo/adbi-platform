@@ -146,7 +146,7 @@ function normalizeNumber(raw, fieldKey, warnings) {
     warnings.push(fieldKey + ": nombre non reconnu (" + JSON.stringify(s) + "), reporté tel quel");
     return s;
   }
-  return Number.isInteger(asFloat) ? String(asFloat) : String(asFloat);
+  return String(asFloat);
 }
 
 function extractMoney(result, docieKey, warnings) {

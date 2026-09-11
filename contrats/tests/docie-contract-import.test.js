@@ -5,11 +5,20 @@
 // ("aucun appel distant DocIE par agent ADBI").
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("path");
 const {
   extractContractValues, mapContractResult, MAPPED_FIELDS,
   CONSTANT_FIELDS_NOT_FROM_DOCIE, GAP_FIELDS_NO_DOCIE_EQUIVALENT, ALL_ACCOUNTED_KEYS,
 } = require("../lib/docie-contract-import");
 const { sousTraitance } = require("../lib/fields");
+// Fixture RAW (enveloppe {value,confidence,evidence_ids} non déballée),
+// générée depuis les vrais modèles pydantic de DocIE — voir
+// document-parsing/mappings/fixtures/generate_sample.py. Utilisée ci-dessous
+// pour prouver le déballage bridge -> mapping de bout en bout (voir le test
+// d'intégration), pas seulement le mapping sur une forme déjà déballée.
+const RAW_FIXTURE = require(path.join(
+  __dirname, "..", "..", "document-parsing", "mappings", "fixtures", "contract_extraction_sample.json"
+));
 
 test("garde-fou anti-dérive : ALL_ACCOUNTED_KEYS == exactement les clés de fields.js::sousTraitance", () => {
   const fieldsKeys = new Set(sousTraitance.map((f) => f.key));
@@ -180,8 +189,15 @@ test("extractContractValues: échec DocIE (ex. config manquante) -> exception pr
 
 // Intégration réelle du bridge partagé (document-parsing/bridge/docie-bridge.js),
 // fetchImpl mocké — prouve le câblage réel (kind="contract", endpoint, payload)
-// sans jamais toucher le réseau.
-test("intégration réelle du bridge partagé (fetchImpl mocké, aucun réseau)", async () => {
+// ET le déballage réel bridge::unwrap() -> mapping, pas seulement le mapping
+// sur une forme déjà déballée à la main : le "agent" mocké renvoie la
+// fixture RAW (enveloppes {value,confidence,evidence_ids} non déballées,
+// montant {amount,currency,...}), exactement comme
+// document-parsing/mappings/test_contract_to_contrats.py la consomme côté
+// Python — AVANT le bridge. C'est le test qui aurait échoué si unwrap()
+// changeait de comportement (ex. se mettait à déballer aussi les montants)
+// ou si NOMINAL_RESULT ci-dessus avait été mal dérivé à la main. Sans réseau.
+test("intégration réelle du bridge partagé, fixture RAW non déballée (fetchImpl mocké, aucun réseau)", async () => {
   const env = {
     DOCIE_EXTRACTION_ENABLED: "true",
     DOCIE_BASE_URL: "https://docie.example.test",
@@ -191,7 +207,9 @@ test("intégration réelle du bridge partagé (fetchImpl mocké, aucun réseau)"
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push({ url, body: JSON.parse(options.body) });
-    const content = JSON.stringify({ document_type: "contract", result: NOMINAL_RESULT });
+    // La fixture RAW elle-même (result.*, chaque champ encore enveloppé) —
+    // pas de reconstruction manuelle ici.
+    const content = JSON.stringify(RAW_FIXTURE.result);
     return new Response(JSON.stringify({
       id: "chatcmpl-test",
       model: "contract-agent-test",
@@ -203,6 +221,13 @@ test("intégration réelle du bridge partagé (fetchImpl mocké, aucun réseau)"
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://docie.example.test/v1/agents/contract-agent-test/chat/completions");
   assert.equal(calls[0].body.model, "contract-agent-test");
+  // Mêmes valeurs attendues que le cas nominal ci-dessus (NOMINAL_RESULT EST
+  // la forme déballée de cette même fixture) — preuve que unwrap() produit
+  // bien la forme que ce module suppose.
   assert.equal(result.values.stNom, "SUND INDUSTRY SYSTEM");
   assert.equal(result.values.numeroContrat, "01-06-2026");
+  assert.equal(result.values.dateDebut, "2026-02-01"); // 01/02/2026 -> ISO
+  assert.equal(result.values.tjm, "450"); // {amount:"450",currency:"EUR"} déballé -> "450"
+  assert.equal(result.values.delaiPaiement, "45");
+  assert.equal(result.ok, true);
 });

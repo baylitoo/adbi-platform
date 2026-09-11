@@ -2627,7 +2627,7 @@ async function preremplirImportDepuisPdf() {
   const btn = $("#impPreremplir");
   const f = $("#impFichier").files && $("#impFichier").files[0];
   if (!f) { st.textContent = "Choisis d'abord le PDF du contrat."; st.className = "status err"; return; }
-  if ($("#impType").value === "avenant") {
+  if ($("#impType").value !== "sous-traitance") {
     st.textContent = "Pré-remplissage disponible uniquement pour une convention de sous-traitance.";
     st.className = "status err";
     return;

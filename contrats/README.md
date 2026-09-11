@@ -53,6 +53,13 @@ fiscale...) restent toujours analysées localement, flag ou pas : le bridge n'a
 pas d'agent DocIE configuré pour elles à ce jour. Sur échec DocIE (config
 manquante, timeout, erreur), repli automatique sur l'analyse locale.
 
+Même flag, autre usage : le pré-remplissage de l'import de contrat depuis un
+PDF (`POST /api/contracts/importer/extraire`, bouton « Pré-remplir depuis le
+PDF » de la modale d'import) utilise le même bridge avec `DOCIE_AGENT_CONTRACT`
+— voir `lib/docie-contract-import.js`. Pas de repli local ici (aucune analyse
+locale équivalente à 19 champs structurés) : flag off ou agent non configuré
+= fonctionnalité simplement absente, saisie manuelle comme avant.
+
 Stocké en **PostgreSQL** (`DATABASE_URL`, requise — voir `lib/schema.sql`) :
 historique des contrats, demandes de signature (+ journal), corbeille et
 personnalisation des modèles (`templates_perso`). Une instance déjà en place
