@@ -35,6 +35,10 @@ from skills_normalizer import normalize_skills, skills_to_flat, compute_skills_f
 # (document-parsing/fixtures/mission_en_cours.json et date_mission.json).
 from periode_mission import (analyser_periode, index_mois, mois_courant,
                              ordre_missions, periode_lisible, titre_de_repli)
+# « Quel niveau CECRL ce libellé annonce-t-il ? » — troisième question posée
+# aux deux services, troisième jeu d'essai partagé avec one-pager
+# (document-parsing/fixtures/niveau_langue.json, #177 ligne 11).
+from niveau_langue import niveau_cecrl
 # Appel LLM avec chaîne de secours : si un service est en panne ou à court de
 # quota, le suivant prend le relais au lieu de faire échouer l'analyse.
 import llm_cascade
@@ -1057,13 +1061,35 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
                 "items": items
             })
             
+    # #177 ligne 11 : le niveau de langue est normalisé en CECRL.
+    #
+    # DocIE rend `languages[].level` en texte libre et y recopie ce que le CV
+    # écrit (« natif », « courant » sur la vraie réponse enregistrée).
+    # one-pager en déduisait un niveau CECRL depuis toujours, cv-parser
+    # stockait le libellé verbatim : le même CV donnait « natif » dans la
+    # CVthèque et « C2 » dans le dossier one-page, et deux CV écrivant la même
+    # chose autrement (« natif » / « langue maternelle ») donnaient deux fiches
+    # différentes pour le même candidat. La table et son jeu d'essai sont
+    # partagés (document-parsing/fixtures/niveau_langue.json, port
+    # niveau_langue.py), donc une divergence redevient un échec de test.
+    #
+    # **Un libellé non reconnu garde son texte**, il n'est jamais vidé : c'est
+    # la leçon de la ligne 10, où un `natif` inconnu de la table sortait en
+    # niveau vide côté JS. Écart assumé avec one-pager, qui met `level` à "" et
+    # garde le brut dans `self_described` : une fiche CVthèque n'a qu'un champ
+    # à afficher. Le libellé d'origine est conservé dans `niveau_declare`,
+    # comme le `self_described` du JS.
+    #
+    # Sans effet sur le rapprochement : core/matcher.py ne lit que le NOM de la
+    # langue (`l.get("language")`), jamais son niveau — vérifié, pas supposé.
     for lang in (data.get("languages") or data.get("langues") or []):
         language = str(lang.get("language") or lang.get("langue") or "").strip()
-        level = str(lang.get("level") or lang.get("niveau") or "").strip()
+        declare = str(lang.get("level") or lang.get("niveau") or "").strip()
         if language:
             normalized["languages"].append({
                 "language": language,
-                "level": level
+                "level": niveau_cecrl(declare) or declare,
+                "niveau_declare": declare,
             })
             
     for proj in (data.get("projects") or data.get("projets") or []):

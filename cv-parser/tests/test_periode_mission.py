@@ -20,6 +20,7 @@ from pathlib import Path
 RACINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RACINE))
 
+from niveau_langue import niveau_cecrl  # noqa: E402
 from periode_mission import (  # noqa: E402
     MISSION_EN_COURS_RE,
     MOIS,
@@ -61,6 +62,7 @@ def _fonctions_de_app(noms):
         "mois_courant": mois_courant,
         "periode_lisible": periode_lisible,
         "titre_de_repli": titre_de_repli,
+        "niveau_cecrl": niveau_cecrl,
         # normalize_cv_data appelle ces trois-là hors du périmètre mesuré ici.
         "normalize_skills": lambda *a, **k: {},
         "skills_to_flat": lambda *a, **k: [],

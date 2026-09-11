@@ -25,6 +25,7 @@ from pathlib import Path
 RACINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RACINE))
 
+from niveau_langue import niveau_cecrl  # noqa: E402
 from periode_mission import (  # noqa: E402
     analyser_periode,
     index_mois,
@@ -61,6 +62,7 @@ def _normalize_cv_data():
         "mois_courant": mois_courant,
         "periode_lisible": periode_lisible,
         "titre_de_repli": titre_de_repli,
+        "niveau_cecrl": niveau_cecrl,
         # Les vraies : ce test mesure aussi ce qui arrive dans skills_flat,
         # c'est-à-dire dans ce que le rapprochement lit.
         "normalize_skills": normalize_skills,
