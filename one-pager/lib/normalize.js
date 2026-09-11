@@ -284,6 +284,18 @@ function findUrl(text, re) {
 // du tout — ni ici ni dans lib/docie-extract.js, qui appelle cette meme
 // fonction —, alors que « langue maternelle » donnait bien C2 : deux facons
 // d'ecrire la meme chose, deux fiches differentes pour le meme candidat.
+// Meme question, et donc meme table, que cv-parser/niveau_langue.py : « quel
+// niveau CECRL ce libelle annonce-t-il ? ». cv-parser ne normalisait RIEN — il
+// stockait le libelle verbatim (#177 ligne 11), troisieme divergence de la
+// famille « texte libre que les deux services doivent classer » apres
+// mission_en_cours.json et date_mission.json. Le jeu d'essai partage
+// document-parsing/fixtures/niveau_langue.json porte la table ET les cas ; un
+// test verifie l'egalite des deux, donc ajouter un libelle d'un seul cote casse
+// le test de l'autre service.
+//
+// L'ORDRE fait partie du contrat : le premier motif qui reconnait gagne, on
+// s'arrete la. C'est ce qui fait valoir B1 — et non A2 — a « niveau scolaire
+// solide ».
 const NIVEAUX = [
   [/\b(c2|bilingue|langue\s+maternelle|maternelle|nati[fv]e?s?|courant\s*\/?\s*bilingue)\b/i, "C2"],
   [/\b(c1|courant|fluent|avance|professionnel\s+complet|full\s+professional)\b/i, "C1"],
@@ -293,25 +305,28 @@ const NIVEAUX = [
   [/\b(a1|debutant|notions?|beginner)\b/i, "A1"],
 ];
 
+// Baremes des tests de langue, en table plutot qu'en cascade de ternaires :
+// c'est la forme que le jeu d'essai partage porte (champ `bareme`) et que le
+// port Python lit, donc celle qu'un test peut comparer. Paliers du plus haut au
+// plus bas ; sous le dernier palier, `defaut`.
+const BAREMES = [
+  { motif: /toeic\D{0,8}(\d{3,4})/i, paliers: [[945, "C1"], [785, "B2"], [550, "B1"]], defaut: "A2" },
+  { motif: /toefl\D{0,8}(\d{2,3})/i, paliers: [[95, "C1"], [72, "B2"]], defaut: "B1" },
+  { motif: /tcf\D{0,8}(\d{3})/i, paliers: [[600, "C1"], [500, "B2"], [400, "B1"]], defaut: "A2" },
+];
+
+const ORDRE_CECRL = ["A1", "A2", "B1", "B2", "C1", "C2"];
+
 /** Deduit un niveau CECRL d'un libelle libre, en tenant compte des scores de tests. */
 function languageLevel(text) {
   const s = deaccent(text || "");
   const levels = [];
 
-  const toeic = s.match(/toeic\D{0,8}(\d{3,4})/i);
-  if (toeic) {
-    const v = Number(toeic[1]);
-    levels.push(v >= 945 ? "C1" : v >= 785 ? "B2" : v >= 550 ? "B1" : "A2");
-  }
-  const toefl = s.match(/toefl\D{0,8}(\d{2,3})/i);
-  if (toefl) {
-    const v = Number(toefl[1]);
-    levels.push(v >= 95 ? "C1" : v >= 72 ? "B2" : "B1");
-  }
-  const tcf = s.match(/tcf\D{0,8}(\d{3})/i);
-  if (tcf) {
-    const v = Number(tcf[1]);
-    levels.push(v >= 600 ? "C1" : v >= 500 ? "B2" : v >= 400 ? "B1" : "A2");
+  for (const { motif, paliers, defaut } of BAREMES) {
+    const m = s.match(motif);
+    if (!m) continue;
+    const v = Number(m[1]);
+    levels.push((paliers.find(([seuil]) => v >= seuil) || [0, defaut])[1]);
   }
   for (const [re, lvl] of NIVEAUX) {
     if (re.test(s)) { levels.push(lvl); break; }
@@ -319,8 +334,9 @@ function languageLevel(text) {
 
   // Un candidat qui ecrit « courant » ET « TOEIC 880 » ne doit pas etre
   // deprecie par le bareme du test : on retient le niveau le plus favorable.
-  const ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"];
-  return levels.length ? levels.sort((a, b) => ORDER.indexOf(b) - ORDER.indexOf(a))[0] : null;
+  return levels.length
+    ? levels.sort((a, b) => ORDRE_CECRL.indexOf(b) - ORDRE_CECRL.indexOf(a))[0]
+    : null;
 }
 
 // --------------------------------------------------------------- Texte ----
@@ -391,4 +407,7 @@ module.exports = {
   // Exposes pour les tests d'egalite avec les jeux d'essai partages (#177).
   MOTIF_MISSION_EN_COURS: EN_COURS,
   MOIS,
+  NIVEAUX,
+  BAREMES,
+  ORDRE_CECRL,
 };

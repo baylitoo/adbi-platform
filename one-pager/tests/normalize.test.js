@@ -61,6 +61,43 @@ test("« nativement » n'est pas un niveau de langue", () => {
 });
 
 /**
+ * Niveau de langue : la table est partagee avec cv-parser (#177 ligne 11).
+ *
+ * cv-parser ne normalisait RIEN — il stockait le libelle DocIE verbatim, la ou
+ * ce service en deduit un niveau CECRL depuis toujours : le meme CV donnait
+ * « natif » d'un cote et « C2 » de l'autre. C'est la troisieme divergence de la
+ * famille « texte libre que les deux services doivent classer », apres
+ * mission_en_cours.json et date_mission.json, d'ou la meme discipline : la
+ * table vit ici en clair, le jeu d'essai partage en porte une copie, et un test
+ * d'egalite stricte interdit d'en toucher une sans l'autre.
+ */
+const NIVEAUX_PARTAGES = require("../../document-parsing/fixtures/niveau_langue.json");
+
+test("la table des niveaux est exactement celle du jeu d'essai partage", () => {
+  // L'ORDRE compte autant que le contenu : le premier motif qui reconnait
+  // gagne, c'est ce qui fait valoir B1 — et non A2 — a « niveau scolaire
+  // solide ». On compare donc la liste entiere, pas un ensemble.
+  assert.deepEqual(
+    N.NIVEAUX.map(([re, niveau]) => [re.source, niveau]),
+    NIVEAUX_PARTAGES.niveaux
+  );
+  assert.deepEqual(N.ORDRE_CECRL, NIVEAUX_PARTAGES.ordre);
+});
+
+test("les baremes de test sont exactement ceux du jeu d'essai partage", () => {
+  assert.deepEqual(
+    N.BAREMES.map(({ motif, paliers, defaut }) => ({ motif: motif.source, paliers, defaut })),
+    NIVEAUX_PARTAGES.bareme.map(({ motif, paliers, defaut }) => ({ motif, paliers, defaut }))
+  );
+});
+
+test("chaque libelle du jeu d'essai partage est classe comme cote cv-parser", () => {
+  for (const cas of NIVEAUX_PARTAGES.cas) {
+    assert.equal(N.languageLevel(cas.valeur), cas.niveau, `${cas.valeur} (${cas.preuve})`);
+  }
+});
+
+/**
  * « Mission en cours » sur la voie d'extraction par mise en page.
  *
  * lib/normalize.js portait un TROISIEME exemplaire independant de la liste des
