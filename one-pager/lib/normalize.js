@@ -6,20 +6,21 @@
  * demande vraiment de la comprehension.
  */
 
-const MOIS = {
-  janvier: 1, janv: 1, jan: 1, january: 1,
-  fevrier: 2, fev: 2, feb: 2, february: 2,
-  mars: 3, mar: 3, march: 3,
-  avril: 4, avr: 4, apr: 4, april: 4,
-  mai: 5, may: 5,
-  juin: 6, jun: 6, june: 6,
-  juillet: 7, juil: 7, jul: 7, july: 7,
-  aout: 8, aou: 8, aug: 8, august: 8,
-  septembre: 9, sept: 9, sep: 9, september: 9,
-  octobre: 10, oct: 10, october: 10,
-  novembre: 11, nov: 11, november: 11,
-  decembre: 12, dec: 12, december: 12,
-};
+// « Quelle date ce texte porte-t-il ? » — meme question, et donc meme table de
+// mois et meme jeu d'essai, que cv-parser/periode_mission.py. cv-parser
+// n'analysait AUCUNE date jusqu'a #177 : il cherchait une annee a quatre
+// chiffres dans la periode entiere, d'ou l'ordre des missions et l'anciennete
+// divergents entre les deux services (#177, lignes 7, 8 et 9). Un test verifie
+// l'egalite de cette table avec le champ `mois` du jeu d'essai : ajouter un
+// libelle d'un cote casse le test de l'autre.
+//
+// Un trou trouve en ecrivant ce jeu d'essai : « fevr » manquait.
+// Intl.DateTimeFormat('fr', {month:'short'}) rend « janv. fevr. mars avr. mai
+// juin juil. aout sept. oct. nov. dec. », et c'etait le SEUL de ces abreges
+// absent — donc le seul mois qu'un CV francais mis en forme par une
+// bibliotheque perdait : « fevr. 2022 » ressortait « 2022 », annee seule.
+const DATE_MISSION = require("../../document-parsing/fixtures/date_mission.json");
+const MOIS = DATE_MISSION.mois;
 
 // « Cette mission est-elle toujours en cours ? » — meme question, et donc meme
 // liste, que cv-parser/periode_mission.py et lib/docie-extract.js. La liste
@@ -173,6 +174,29 @@ function parsePeriod(text) {
   }
 
   return null;
+}
+
+/**
+ * « 2022-03 » -> un numero de mois absolu, comparable et soustractible.
+ *
+ * Une annee seule vaut JANVIER. Vivait en copie privee dans lib/extract.js
+ * (monthIndex) ; remontee ici parce que c'est la convention dont sort
+ * l'anciennete affichee, et qu'elle doit etre la MEME que celle de
+ * cv-parser/periode_mission.py::index_mois — jeu d'essai partage
+ * document-parsing/fixtures/date_mission.json, bloc `durees` (#177 ligne 9).
+ *
+ * A ne pas confondre avec monthsBetween plus bas, qui fait terminer une annee
+ * seule en DECEMBRE : celui-la sert `duration_months`, une duree affichee par
+ * mission, pas le cumul d'anciennete.
+ */
+function indexMois(iso) {
+  const [y, m] = String(iso).split("-").map(Number);
+  return y * 12 + (m || 1);
+}
+
+/** Longueur d'une periode en mois, BORNES INCLUSES (janvier -> decembre = 12). */
+function dureeMois(debut, fin) {
+  return Math.max(0, indexMois(fin) - indexMois(debut) + 1);
 }
 
 /** Nombre de mois entre deux dates ISO partielles. */
@@ -360,9 +384,11 @@ function initials(fullName) {
 
 module.exports = {
   parseMonthYear, parsePeriod, monthsBetween, formatPeriod, isoNow,
+  indexMois, dureeMois,
   findEmail, findPhone, findUrl, normalizePhone, formatPhone,
   RE_LINKEDIN, RE_GITHUB, RE_EMAIL,
   languageLevel, deaccent, trimTo, sentenceCase, properName, initials, trigram,
-  // Expose pour le test d'egalite avec le jeu d'essai partage (#177).
+  // Exposes pour les tests d'egalite avec les jeux d'essai partages (#177).
   MOTIF_MISSION_EN_COURS: EN_COURS,
+  MOIS,
 };

@@ -122,6 +122,69 @@ test("« Poste actuel » : la mission en cours n'est plus lue comme terminee", (
   assert.equal(finie.end, "2021-06");
 });
 
+/**
+ * « Quelle date ce texte porte-t-il ? » — l'analyseur, partage avec cv-parser.
+ *
+ * cv-parser n'analysait AUCUNE date jusqu'a #177 : `normalize_cv_data` collait
+ * les deux bouts en une chaine `period` et `compute_years_experience` y
+ * cherchait une annee a quatre chiffres. D'ou trois divergences d'un coup sur
+ * le meme CV — l'ordre des missions (ligne 7), le mois de debut (ligne 8),
+ * l'anciennete totale (ligne 9). Le portage Python vit dans
+ * cv-parser/periode_mission.py et son test jumeau lit exactement ce fichier-ci.
+ */
+const DATES = require("../../document-parsing/fixtures/date_mission.json");
+
+test("la table des mois est exactement celle du jeu d'essai partage", () => {
+  // Egalite stricte, comme pour le motif « en cours » : ajouter un libelle
+  // dans periode_mission.py sans toucher au jeu d'essai casse ce test, et
+  // reciproquement.
+  assert.deepEqual(N.MOIS, DATES.mois);
+});
+
+test("chaque date du jeu d'essai partage est lue pareil des deux cotes", () => {
+  for (const cas of DATES.cas) {
+    assert.equal(N.parseMonthYear(cas.valeur), cas.iso, `${cas.valeur} (${cas.preuve})`);
+  }
+});
+
+test("chaque duree du jeu d'essai partage", () => {
+  for (const cas of DATES.durees) {
+    assert.equal(N.dureeMois(cas.debut, cas.fin), cas.mois, `${cas.debut} -> ${cas.fin} (${cas.preuve})`);
+  }
+});
+
+test("« fevr. 2022 » : l'abrege francais standard n'est plus perdu", () => {
+  // Intl.DateTimeFormat('fr', {month:'short'}) rend « janv. févr. mars avr. mai
+  // juin juil. août sept. oct. nov. déc. ». « fevr » etait le seul de ces
+  // abreges absent de la table : « févr. 2022 » ressortait « 2022 », annee
+  // seule, donc une mission datee au mois pres perdait son mois — et le tri
+  // comme l'anciennete avec lui.
+  assert.equal(N.parseMonthYear("févr. 2022"), "2022-02");
+  const court = new Intl.DateTimeFormat("fr", { month: "short" });
+  for (let mois = 0; mois < 12; mois += 1) {
+    const libelle = court.format(new Date(2022, mois, 1));
+    assert.equal(
+      N.parseMonthYear(`${libelle} 2022`),
+      `2022-${String(mois + 1).padStart(2, "0")}`,
+      libelle
+    );
+  }
+});
+
+test("une annee seule vaut janvier, comme cote Python", () => {
+  // Convention de lib/extract.js::monthIndex, desormais N.indexMois : c'est
+  // elle dont sort l'anciennete affichee. N.monthsBetween, qui sert la duree
+  // d'UNE mission, fait terminer une annee seule en decembre — deux
+  // conventions differentes pour deux usages differents, a ne pas confondre.
+  assert.equal(N.indexMois("2019"), N.indexMois("2019-01"));
+  assert.equal(N.dureeMois("2019", "2021"), 25);
+  assert.equal(N.monthsBetween("2019", "2021", false), 36);
+});
+
+test("une fin anterieure au debut ne compte pas negativement", () => {
+  assert.equal(N.dureeMois("2021-06", "2019-03"), 0);
+});
+
 test("une borne de fin accentuee est reconnue (le motif partage est sans accent)", () => {
   // « Présent » seul : la branche `alone` testait la chaine brute, alors que le
   // motif partage est ecrit sans accent.

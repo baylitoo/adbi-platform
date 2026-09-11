@@ -1039,6 +1039,14 @@ function extract(doc, seg) {
 /**
  * Anciennete = union des periodes, pas leur somme : deux missions menees en
  * parallele ne font pas deux fois plus d'experience.
+ *
+ * cv-parser applique desormais exactement cette methode (app.py::
+ * compute_years_experience), apres avoir somme des annees civiles pleines — le
+ * meme CV n'y avait donc pas la meme anciennete qu'ici, et c'est cette valeur
+ * que le rapprochement classe (#177 ligne 9). La convention de `monthIndex`
+ * (une annee seule vaut janvier) est desormais celle de N.indexMois, epinglee
+ * des deux cotes par document-parsing/fixtures/date_mission.json, bloc
+ * `durees`.
  */
 function seniorityYears(experiences) {
   const spans = experiences
@@ -1058,9 +1066,11 @@ function seniorityYears(experiences) {
   return Math.max(0, Math.round(total / 12));
 }
 
+// Copie privee remontee dans lib/normalize.js : la convention « une annee seule
+// vaut janvier » doit etre la MEME que celle du portage Python, et un test la
+// compare au jeu d'essai partage.
 function monthIndex(iso) {
-  const [y, m] = String(iso).split("-").map(Number);
-  return y * 12 + (m || 1);
+  return N.indexMois(iso);
 }
 
 function completeness(d) {
