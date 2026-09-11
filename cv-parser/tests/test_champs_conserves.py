@@ -103,6 +103,22 @@ def _fiche_reelle():
     return APP["normalize_cv_data"](map_resume(reponse, expected_schema="adbi_resume"))
 
 
+def _rendu(gabarit, **contexte):
+    """Rendu jinja2 direct : importer app.py exigerait une base PostgreSQL."""
+    from jinja2 import Environment, FileSystemLoader, select_autoescape
+    env = Environment(loader=FileSystemLoader(str(GABARITS)),
+                      autoescape=select_autoescape(["html"]))
+    env.globals["url_for"] = lambda point, **kw: "/static/" + kw.get("filename", "")
+    return env.get_template(gabarit).render(**contexte)
+
+
+def _corps_de_fonction_js(nom):
+    """Corps d'une fonction JS de cv_detail.html, pour l'épingler telle quelle."""
+    html = (GABARITS / "cv_detail.html").read_text(encoding="utf-8")
+    corps = html[html.index("function %s()" % nom):]
+    return corps[:corps.index("\n}")]
+
+
 # Certifications : toutes les fixtures du dépôt en ont une liste VIDE
 # (`"certifications": []` dans simple_docie.json). L'entrée ci-dessous est donc
 # SYNTHÉTIQUE, et bâtie sur le schéma servi — `{name, issuer, year}` verbatim,
@@ -205,6 +221,85 @@ class AllerRetourPatchTests(unittest.TestCase):
     def test_le_plafonnement_ne_les_ampute_pas(self):
         retenu = APP["_filtrer_champs_cv"](self.FICHE_EDITEE)
         self.assertIsNone(APP["_plafonner_cv"](retenu))
+
+    def test_l_ecran_renvoie_le_lieu(self):
+        """collectData ramasse les missions par la boucle générique [data-f].
+
+        Toute case `data-f` d'une carte mission repart donc au serveur : il
+        suffit que le lieu EN SOIT une, ce que vérifie GabaritEditionTests.
+        """
+        self.assertIn("card.querySelectorAll('[data-f][contenteditable]')",
+                      _corps_de_fonction_js("collectData"))
+
+    def test_l_ecran_renvoie_l_organisme(self):
+        """Les certifications, elles, sont recomposées champ par champ.
+
+        C'est la ligne qui efface en silence si on l'oublie : `{name, year}`
+        seuls suffisaient à faire disparaître `issuer` au premier
+        enregistrement, alors même que la fiche l'affichait — la panne exacte
+        relevée sur `niveau_declare` au cycle précédent.
+        """
+        self.assertIn("issuer: row.querySelector('[data-cert-issuer]')",
+                      _corps_de_fonction_js("collectData"))
+
+    def test_un_aller_retour_complet_conserve_les_deux_valeurs(self):
+        """Fiche -> écran -> PATCH -> fiche, sans perte."""
+        fiche = _fiche_reelle()
+        fiche["certifications"] = [dict(CERTIFICATION_SYNTHETIQUE)]
+        # Ce que l'écran renvoie, rubriques entières (cf. collectData).
+        envoi = {"experience": fiche["experience"],
+                 "certifications": fiche["certifications"]}
+        retenu = APP["_filtrer_champs_cv"](envoi)
+        self.assertIsNone(APP["_plafonner_cv"](retenu))
+        apres = {**fiche, **retenu}          # ce que fait PATCH /api/cvs/<id>
+        self.assertEqual([m["location"] for m in apres["experience"]],
+                         ["Lyon", "Lyon"])
+        self.assertEqual(apres["certifications"][0]["issuer"], "Amazon Web Services")
+
+
+class GabaritEditionTests(unittest.TestCase):
+    """L'écran d'édition (templates/cv_detail.html) : affiché ET éditable."""
+
+    FICHE = {
+        "id": "cv1", "name": "Camille Béranger", "title": "Développeuse",
+        "contact": {"email": "camille@example.fr"},
+        "experience": [{"company": "Numelia", "title": "Dev", "location": "Lyon",
+                        "period": "Mars 2022 – Aujourd'hui", "description": "A"}],
+        "certifications": [CERTIFICATION_SYNTHETIQUE],
+    }
+
+    def test_le_lieu_est_une_case_editable_de_la_carte_mission(self):
+        html = _rendu("cv_detail.html", cv=self.FICHE, linked_cvs=[])
+        self.assertIn('contenteditable="true" data-f="location"', html)
+        self.assertIn("Lyon", html)
+
+    def test_l_organisme_est_une_case_editable_de_la_ligne_certification(self):
+        html = _rendu("cv_detail.html", cv=self.FICHE, linked_cvs=[])
+        self.assertIn('data-cert-issuer="0"', html)
+        self.assertIn("Amazon Web Services", html)
+
+    def test_les_missions_ajoutees_a_la_main_ont_aussi_la_case_lieu(self):
+        """Sinon une mission saisie à l'écran naîtrait sans lieu possible."""
+        self.assertIn("'location'", _corps_de_fonction_js("addExpCard"))
+
+    def test_une_fiche_d_avant_le_correctif_rend_l_ecran_sans_erreur(self):
+        """Aucune fiche déjà en base ne porte l'une ou l'autre clé."""
+        html = _rendu("cv_detail.html", cv={
+            "id": "cv1", "name": "Camille", "contact": {},
+            "experience": [{"company": "Numelia", "title": "Dev"}],
+            "certifications": [{"name": "ITIL", "year": "2020"}],
+        }, linked_cvs=[])
+        self.assertIn('data-f="location"', html)
+        self.assertIn('data-cert-issuer="0"', html)
+
+    def test_un_doute_de_docie_se_pose_sur_la_case_elle_meme(self):
+        fiche = {**self.FICHE, "docie_review": {
+            "needs_review": ["experience[0].location", "certifications[0].issuer"],
+            "warnings": []}}
+        html = _rendu("cv_detail.html", cv=fiche, linked_cvs=[])
+        self.assertIn('a-verifier" contenteditable="true" data-f="location"', html)
+        self.assertIn("cert-issuer a-verifier", html)
+
 
 class RevueDocieTests(unittest.TestCase):
     """Tant que les champs étaient jetés, un doute sur eux sortait en

@@ -211,6 +211,13 @@
     .cert-name:hover { background: #F0F4FF; }
     .cert-name:focus { background: var(--blue-l); box-shadow: inset 0 0 0 1.5px var(--blue); }
     .cert-name[data-empty="true"]:empty::before { content: 'Nom de la certification'; color: #CBD5E1; font-style: italic; }
+    /* Organisme émetteur (#177 ligne 18) : secondaire par rapport au nom, mais
+       affiché — une certification sans son émetteur perd la moitié de ce qui la
+       qualifie. */
+    .cert-issuer { width: 150px; flex-shrink: 0; font-size: 12px; color: var(--sub); outline: none; border-radius: 4px; padding: 2px 5px; }
+    .cert-issuer:hover { background: #F0F4FF; }
+    .cert-issuer:focus { background: var(--blue-l); box-shadow: inset 0 0 0 1.5px var(--blue); }
+    .cert-issuer[data-empty="true"]:empty::before { content: 'Organisme'; color: #CBD5E1; font-style: italic; }
     .cert-year { width: 58px; text-align: center; background: #F8FAFF; border: 1px solid var(--border); border-radius: 5px; font-size: 12px; font-weight: 700; color: var(--sub); padding: 3px 6px; outline: none; }
     .cert-year:focus { border-color: var(--blue); background: var(--blue-l); }
 
@@ -624,7 +631,7 @@
       <div class="pv-exp">
         <div class="pv-exp-hdr">
           <div class="pv-exp-left">
-            <div class="pv-exp-company">{{ company }}</div>
+            <div class="pv-exp-company">{{ company }}{% if exp.location %} — {{ exp.location }}{% endif %}</div>
             {% if exp.client %}<div class="pv-exp-client">🏢 Client : {{ exp.client }}</div>{% endif %}
             {% if role %}<div class="pv-exp-role">{{ role }}</div>{% endif %}
           </div>
@@ -915,6 +922,13 @@
             </div>
             <div class="field-row"><span class="field-label">Client</span>
               <div class="field-val" contenteditable="true" data-f="client" data-empty="{{ 'true' if not exp.client else 'false' }}" data-placeholder="Nom du client / donneur d'ordre">{{ exp.client or '' }}</div></div>
+            {# #177 ligne 17 : le lieu de la mission, que DocIE rend et que la
+               fiche jetait. Case ÉDITABLE et non simple affichage : collectData
+               ramasse les missions par la boucle générique [data-f], donc tout
+               ce qui n'est pas une case `data-f` disparaît au premier
+               enregistrement — le piège qui a fait différer cette ligne. #}
+            <div class="field-row"><span class="field-label">Lieu</span>
+              <div class="field-val{{ ' a-verifier' if chemin_exp ~ 'location' in a_verifier }}" contenteditable="true" data-f="location" data-empty="{{ 'true' if not exp.location else 'false' }}" data-placeholder="Ville, pays">{{ exp.location or '' }}</div></div>
             <div class="field-row"><span class="field-label">Contexte</span>
               <div class="field-val" contenteditable="true" data-f="contexte" data-empty="{{ 'true' if not exp.contexte else 'false' }}" data-placeholder="Secteur, client, environnement">{{ exp.contexte or '' }}</div></div>
             <div class="field-row"><span class="field-label">Objectifs</span>
@@ -963,6 +977,9 @@
         {% set chemin_cert = 'certifications[' ~ loop.index0 ~ '].' %}
         <div class="cert-row">
           <div class="cert-name{{ ' a-verifier' if chemin_cert ~ 'name' in a_verifier }}" contenteditable="true" data-cert-name="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.name else 'false' }}" data-placeholder="Nom de la certification">{{ cert.name or '' }}</div>
+          {# #177 ligne 18 : l'organisme émetteur. « Architecte Solutions » ne
+             dit pas la même chose selon qu'AWS ou Azure la délivre. #}
+          <div class="cert-issuer{{ ' a-verifier' if chemin_cert ~ 'issuer' in a_verifier }}" contenteditable="true" data-cert-issuer="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.issuer else 'false' }}" data-placeholder="Organisme">{{ cert.issuer or '' }}</div>
           <div class="cert-year{{ ' a-verifier' if chemin_cert ~ 'year' in a_verifier }}" contenteditable="true" data-cert-year="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.year else 'false' }}">{{ cert.year or '' }}</div>
           <button class="btn-rm-sm" onclick="this.closest('.cert-row').remove()">×</button>
         </div>
@@ -1136,6 +1153,7 @@ function addExpCard() {
       <button class="btn-rm" onclick="this.closest('.entry-card').remove()">×</button>
     </div></div>
     ${fr('Client','client','Nom du client / donneur d\'ordre')}
+    ${fr('Lieu','location','Ville, pays')}
     ${fr('Contexte','contexte','Secteur, client')}
     ${fr('Objectifs','objectifs','Objectifs et enjeux')}
     ${fr('Méthodologie','methodologie','Agile, Scrum…')}
@@ -1186,7 +1204,15 @@ function collectData() {
   data.certifications = [];
   document.querySelectorAll('#certsBody .cert-row').forEach(row => {
     const n = row.querySelector('[data-cert-name]')?.textContent.trim();
-    if (n) data.certifications.push({ name: n, year: row.querySelector('[data-cert-year]')?.textContent.trim() || '' });
+    // `issuer` (#177 ligne 18) : les certifications sont recomposées champ par
+    // champ, contrairement aux missions ramassées par la boucle générique
+    // [data-f]. L'oublier ici suffirait à faire disparaître l'organisme au
+    // premier « Enregistrer », alors même que la fiche l'affiche.
+    if (n) data.certifications.push({
+      name: n,
+      issuer: row.querySelector('[data-cert-issuer]')?.textContent.trim() || '',
+      year: row.querySelector('[data-cert-year]')?.textContent.trim() || '',
+    });
   });
   return data;
 }
