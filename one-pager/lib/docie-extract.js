@@ -135,9 +135,31 @@ function guessLevel(t) {
   return "";
 }
 
+/**
+ * Annee de fin lue dans un `education[].year` / `certifications[].year` DocIE.
+ *
+ * Ces deux champs sont du TEXTE LIBRE (comme start_date / end_date, cf.
+ * missionEnCours plus bas) : DocIE y recopie ce que le CV ecrit, donc aussi
+ * bien « 2019 » qu'une plage « 2016 - 2019 » ou une annee scolaire
+ * « 2019/2020 ». On prend la DERNIERE annee rencontree, pas la premiere :
+ * un diplome se date de son obtention, pas de son inscription (#177 ligne 14).
+ *
+ * Mesure avant correction : « 2016 - 2019 » rendait 2016. Le champ alimente
+ * l'affichage « (2019) » ET le tri des formations (lib/onepager.js, lignes 227
+ * et 228) — un master termine en 2019 s'affichait donc « (2016) » et passait
+ * derriere une licence plus ancienne. lib/extract.js, l'autre voie
+ * d'extraction, prenait deja la fin (`period.end || period.start`, ligne 814) :
+ * le meme CV se lisait differemment selon qu'il passait par DocIE ou par la
+ * mise en page.
+ *
+ * cv-parser garde la chaine verbatim (`education[].period` = « 2016 - 2019 »),
+ * et c'est voulu : une fiche CVtheque affiche la plage, un dossier one-page a
+ * besoin d'un scalaire triable. Ce qui doit s'accorder, c'est la regle — la
+ * derniere annee est celle du diplome —, pas la forme.
+ */
 function anneeDepuis(v) {
-  const m = String(v ?? "").match(/(19|20)\d{2}/);
-  return m ? Number(m[0]) : null;
+  const annees = String(v ?? "").match(/(?:19|20)\d{2}/g);
+  return annees ? Number(annees[annees.length - 1]) : null;
 }
 
 /**

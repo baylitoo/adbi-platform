@@ -316,6 +316,32 @@ test("#177 lignes 4-6 : « Poste actuel », « Maintenant », fin absente donnen
   assert.equal(terminee.experiences[0].end_date, "2021-06");
 });
 
+test("#177 ligne 14 : une formation « 2016 - 2019 » se date de 2019, pas de 2016", () => {
+  // `education[].year` est du texte libre cote DocIE : le CV y ecrit aussi bien
+  // une annee qu'une plage. On prenait la PREMIERE annee rencontree, donc
+  // l'annee d'INSCRIPTION — un master termine en 2019 s'affichait « (2016) »
+  // (lib/onepager.js ligne 227) et passait derriere une formation plus ancienne
+  // au tri (ligne 228). lib/extract.js, l'autre voie d'extraction, prenait deja
+  // la fin de la periode (`period.end || period.start`, ligne 814).
+  const annee = (y) =>
+    mapperAdbiResume({ education: [{ degree: "Master Informatique", institution: "Lyon 1", year: y }] }, {}, {})
+      .education[0].end_year;
+
+  assert.equal(annee("2016 - 2019"), 2019);   // mesure avant correction : 2016
+  assert.equal(annee("2016-2019"), 2019);     // sans espaces autour du tiret
+  assert.equal(annee("2016 – 2019"), 2019);   // tiret demi-cadratin, frequent en PDF
+  assert.equal(annee("2019/2020"), 2020);     // annee scolaire : le diplome est de 2020
+  assert.equal(annee("2019"), 2019);          // temoin : annee seule, inchangee
+  assert.equal(annee("Septembre 2019"), 2019);
+  assert.equal(annee("en cours"), null);      // aucune annee a en tirer
+
+  // Meme champ, meme lecture, pour les certifications.
+  const cert = mapperAdbiResume(
+    { certifications: [{ name: "AWS Solutions Architect", year: "2018 - 2021", issuer: "Amazon" }] }, {}, {}
+  );
+  assert.equal(cert.certifications[0].year, 2021);
+});
+
 test("decouperDescription: puces multi-lignes vs paragraphe unique", () => {
   const multi = decouperDescription("Pilotage de la plateforme.\nMigration de 40 pipelines vers Databricks.\nRéduction du coût cloud de 30%.");
   assert.equal(multi.context, "");
