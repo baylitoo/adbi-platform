@@ -2615,6 +2615,59 @@ async function validerImport() {
   }
 }
 
+// Pré-remplit le formulaire d'import ci-dessus depuis le PDF choisi, via
+// POST /api/contracts/importer/extraire (DocIE, schéma "contract" — voir
+// lib/docie-contract-import.js). Ne fait QUE remplir les champs pour
+// relecture : rien n'est importé/enregistré ici, l'utilisateur reste maître
+// de « ⬆ Importer dans le dossier » ci-dessous. Si DocIE est désactivé/non
+// configuré côté serveur, message clair — la saisie manuelle reste possible
+// exactement comme avant l'ajout de ce bouton.
+async function preremplirImportDepuisPdf() {
+  const st = $("#impPreremplirStatus");
+  const btn = $("#impPreremplir");
+  const f = $("#impFichier").files && $("#impFichier").files[0];
+  if (!f) { st.textContent = "Choisis d'abord le PDF du contrat."; st.className = "status err"; return; }
+  if ($("#impType").value === "avenant") {
+    st.textContent = "Pré-remplissage disponible uniquement pour une convention de sous-traitance.";
+    st.className = "status err";
+    return;
+  }
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = "Extraction…";
+  st.textContent = "🔎 Extraction DocIE en cours…";
+  st.className = "status";
+  try {
+    const dataBase64 = await fileToBase64(f);
+    const r = await fetch("/api/contracts/importer/extraire", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mimeType: f.type || "application/pdf", dataBase64 }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    const v = d.values || {};
+    if (v.numeroContrat) $("#impNumero").value = v.numeroContrat;
+    if (v.stNom) $("#impSt").value = v.stNom;
+    if (v.clientFinal) $("#impClient").value = v.clientFinal;
+    if (v.consultantNom) $("#impConsultant").value = v.consultantNom;
+    if (v.tjm) $("#impTjm").value = v.tjm;
+    if (v.dateDebut) $("#impDebut").value = v.dateDebut;
+    if (v.dateFin) $("#impFin").value = v.dateFin;
+    const notes = (d.warnings || []).slice(0, 3).join(" — ");
+    if (d.errors && d.errors.length) {
+      st.className = "status warn";
+      st.textContent = "⚠️ Champs pré-remplis à vérifier — " + d.errors.join(" ") + (notes ? " (" + notes + ")" : "");
+    } else {
+      st.className = "status ok";
+      st.textContent = "✓ Champs pré-remplis depuis le PDF — à relire avant import" + (notes ? " (" + notes + ")" : "");
+    }
+  } catch (e) {
+    st.textContent = "Pré-remplissage indisponible : " + e.message;
+    st.className = "status err";
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+
 // Recharge la vue de suivi active (Signatures ou Historique) après une action.
 function rafraichirSuivi() {
   const vueSign = document.getElementById("view-signatures");
@@ -2890,6 +2943,7 @@ function wire() {
   $("#btnImporter2").addEventListener("click", ouvrirImportModal);
   $("#impType").addEventListener("change", basculerChampsImport);
   $("#impCreer").addEventListener("click", validerImport);
+  $("#impPreremplir").addEventListener("click", preremplirImportDepuisPdf);
   $("#importClose").addEventListener("click", () => $("#importModal").classList.add("hidden"));
   $("#importModal").addEventListener("click", (e) => { if (e.target === $("#importModal")) $("#importModal").classList.add("hidden"); });
   $("#signeValider").addEventListener("click", validerSigneExterne);
