@@ -33,7 +33,7 @@ from skills_normalizer import normalize_skills, skills_to_flat, compute_skills_f
 # Les dates de mission : « la mission continue-t-elle ? » et « quelle date ce
 # texte porte-t-il ? ». Les deux jeux d'essai sont partagés avec one-pager
 # (document-parsing/fixtures/mission_en_cours.json et date_mission.json).
-from periode_mission import analyser_periode, ordre_missions
+from periode_mission import analyser_periode, index_mois, mois_courant, ordre_missions
 # Appel LLM avec chaîne de secours : si un service est en panne ou à court de
 # quota, le suivant prend le relais au lieu de faire échouer l'analyse.
 import llm_cascade
@@ -563,23 +563,53 @@ def compute_years_experience(experience: list[dict]) -> int:
     une période FERMÉE ; l'ancienne lecture y voyait « depuis », concluait
     « mission en cours » et comptait jusqu'à aujourd'hui — mesuré, 11 ans au
     lieu de 3.
+
+    **Méthode : union des périodes en mois réels**, celle de
+    one-pager/lib/extract.js::seniorityYears. cv-parser sommait des années
+    civiles pleines, ce qui se trompait deux fois (#177 ligne 9) : une mission
+    de mars 2019 à aujourd'hui ne valait que la différence des millésimes, tous
+    les mois étant perdus ; et deux missions menées en parallèle comptaient
+    deux fois. Sur le même CV les deux services annonçaient donc des
+    anciennetés différentes, et c'est cette valeur que /api/needs/<id>/match
+    classe.
     """
-    now_year = datetime.now().year
-    total_months = 0
+    intervalles, total_months = [], 0
     for exp in experience:
         period = exp.get("period", "") or ""
         debut, fin, en_cours = analyser_periode(period)
         if debut:
-            start = int(debut[:4])
-            end = now_year if en_cours or not fin else int(fin[:4])
-            total_months += max(0, end - start) * 12
+            depart = index_mois(debut)
+            arrivee = index_mois(mois_courant() if en_cours or not fin else fin)
+            if arrivee >= depart:
+                intervalles.append((depart, arrivee))
         elif period:
             # Période présente mais illisible (« 3 ans », « été 2020 ») : on
             # continue de la compter pour un an. La mettre à zéro sortirait le
             # consultant de /api/needs/<id>/match exactement comme le faisait
-            # « Poste actuel » avant #176.
+            # « Poste actuel » avant #176. C'est le seul écart assumé avec le
+            # JS, qui peut se rabattre sur le `years_experience` de DocIE là où
+            # cv-parser l'écrase toujours (#177 ligne 3, non traitée ici).
             total_months += 12
-    return max(0, round(total_months / 12))
+
+    # Union des intervalles, pas leur somme : deux missions menées en parallèle
+    # ne font pas deux fois plus d'expérience. Des mois jointifs (une mission qui
+    # finit en mai, la suivante qui commence en juin) forment une seule période,
+    # d'où le `<= fin + 1`.
+    intervalles.sort()
+    if intervalles:
+        courant_debut, courant_fin = intervalles[0]
+        for depart, arrivee in intervalles[1:]:
+            if depart <= courant_fin + 1:
+                courant_fin = max(courant_fin, arrivee)
+            else:
+                total_months += courant_fin - courant_debut + 1
+                courant_debut, courant_fin = depart, arrivee
+        total_months += courant_fin - courant_debut + 1
+
+    # `int(x + 0.5)` et non `round`, qui arrondit au pair en Python (8.5 -> 8)
+    # là où Math.round côté JS arrondit au supérieur (8.5 -> 9). Sur la même
+    # ancienneté les deux services doivent afficher le même nombre.
+    return max(0, int(total_months / 12 + 0.5))
 
 
 def parse_certifications(lines: list[str]) -> list[dict]:

@@ -308,7 +308,8 @@ class MarqueApresTriTests(unittest.TestCase):
         import re as _re
         from datetime import datetime
 
-        from periode_mission import analyser_periode, ordre_missions
+        from periode_mission import (analyser_periode, index_mois, mois_courant,
+                                     ordre_missions)
 
         racine = Path(__file__).resolve().parents[1]
         arbre = ast.parse((racine / "app.py").read_text(encoding="utf-8"))
@@ -318,7 +319,8 @@ class MarqueApresTriTests(unittest.TestCase):
             and n.name in {"normalize_cv_data", "compute_years_experience"}
         )
         espace = {"re": _re, "datetime": datetime, "analyser_periode": analyser_periode,
-                  "ordre_missions": ordre_missions,
+                  "ordre_missions": ordre_missions, "index_mois": index_mois,
+                  "mois_courant": mois_courant,
                   "normalize_skills": lambda *a, **k: {},
                   "skills_to_flat": lambda *a, **k: [],
                   "compute_skills_flat": lambda *a, **k: []}

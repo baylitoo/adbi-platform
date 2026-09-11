@@ -29,6 +29,7 @@ from periode_mission import (  # noqa: E402
     index_mois,
     mentionne_en_cours,
     mission_en_cours,
+    mois_courant,
     ordre_missions,
     sans_accents,
 )
@@ -54,6 +55,8 @@ def _fonctions_de_app(noms):
         "mentionne_en_cours": mentionne_en_cours,
         "analyser_periode": analyser_periode,
         "ordre_missions": ordre_missions,
+        "index_mois": index_mois,
+        "mois_courant": mois_courant,
         # normalize_cv_data appelle ces trois-là hors du périmètre mesuré ici.
         "normalize_skills": lambda *a, **k: {},
         "skills_to_flat": lambda *a, **k: [],
@@ -61,6 +64,20 @@ def _fonctions_de_app(noms):
     }
     exec(compile(source, str(RACINE / "app.py"), "exec"), espace)
     return espace
+
+
+def _anciennete_attendue(*intervalles):
+    """L'ancienneté que doit rendre `compute_years_experience`, en mois réels.
+
+    Écrite avec les primitives partagées (index_mois / mois_courant) plutôt
+    qu'avec un nombre en dur : « Mars 2019 -> aujourd'hui » ne vaut pas le même
+    nombre d'années selon le jour où le test tourne. `None` en fin d'intervalle
+    signifie « en cours ». Les intervalles sont supposés disjoints.
+    """
+    mois = sum(
+        duree_mois(debut, fin or mois_courant()) for debut, fin in intervalles
+    )
+    return int(mois / 12 + 0.5)
 
 
 def _periode_comme_map_resume(lignes):
@@ -123,14 +140,14 @@ class AncienneteTests(unittest.TestCase):
         annees, periodes = self.annees(
             [{"title": "Dev", "start_date": "Mars 2019", "end_date": "Poste actuel"}]
         )
-        self.assertEqual(annees, max(0, datetime.now().year - 2019))
+        self.assertEqual(annees, _anciennete_attendue(("2019-03", None)))
         self.assertEqual(periodes, ["Mars 2019 – Poste actuel"])
 
     def test_maintenant_compte_jusqu_a_aujourdhui(self):
         annees, _ = self.annees(
             [{"title": "Dev", "start_date": "Mars 2019", "end_date": "Maintenant"}]
         )
-        self.assertEqual(annees, max(0, datetime.now().year - 2019))
+        self.assertEqual(annees, _anciennete_attendue(("2019-03", None)))
 
     def test_sans_date_de_fin_la_mission_est_en_cours(self):
         # Avant : période « Mars 2019 » seule, donc 0 an (#177 ligne 6).
@@ -138,7 +155,7 @@ class AncienneteTests(unittest.TestCase):
             [{"title": "Dev", "start_date": "Mars 2019", "end_date": ""}]
         )
         self.assertEqual(periodes, ["Depuis Mars 2019"])
-        self.assertEqual(annees, max(0, datetime.now().year - 2019))
+        self.assertEqual(annees, _anciennete_attendue(("2019-03", None)))
 
     def test_une_mission_terminee_reste_bornee(self):
         annees, _ = self.annees(
@@ -147,7 +164,12 @@ class AncienneteTests(unittest.TestCase):
         self.assertEqual(annees, 2)
 
     def test_la_vraie_reponse_docie_du_depot_est_inchangee(self):
-        """Non-régression sur la fixture « Camille Béranger » : 7 ans avant."""
+        """Non-régression sur la fixture « Camille Béranger » : 7 ans avant.
+
+        Les deux missions sont jointives (février 2022 puis mars 2022) : leur
+        union est donc un seul intervalle de septembre 2019 à aujourd'hui.
+        Le passage aux mois réels (#177 ligne 9) ne déplace pas ce total.
+        """
         def deballe(valeur):
             if isinstance(valeur, dict):
                 if "value" in valeur and ("confidence" in valeur or "evidence_ids" in valeur):
@@ -161,10 +183,9 @@ class AncienneteTests(unittest.TestCase):
         missions = deballe(reponse["result"]).get("experience") or []
         annees, periodes = self.annees(missions)
         self.assertEqual(periodes[0], "Mars 2022 – Aujourd'hui")
-        # « Aujourd'hui » était déjà reconnu : mission en cours depuis 2022,
-        # plus 2019 -> 2022. Le total ne doit pas bouger.
-        attendu = (datetime.now().year - 2022) + (2022 - 2019)
-        self.assertEqual(annees, attendu)
+        # 7 ans au moment où #177 l'a relevé ; l'attendu est recalculé plutôt
+        # que figé, la fiche portant une mission toujours en cours.
+        self.assertEqual(annees, _anciennete_attendue(("2019-09", None)))
 
 
 class AnalyseurDeDateTests(unittest.TestCase):
@@ -264,8 +285,37 @@ class AncienneteAvecAnalyseurTests(unittest.TestCase):
         self.assertEqual(self.annees([{"period": "Septembre 2019 - Février 2022"}]), 3)
         self.assertEqual(
             self.annees([{"period": "Mars 2019 – Poste actuel"}]),
-            max(0, datetime.now().year - 2019),
+            _anciennete_attendue(("2019-03", None)),
         )
+
+    def test_les_missions_paralleles_ne_comptent_pas_deux_fois(self):
+        """#177 ligne 9 : union des périodes, pas somme — comme le JS.
+
+        Avant : 4 ans (janvier 2019 -> décembre 2022) plus 3 ans (juin 2020 ->
+        décembre 2022) additionnés, soit 7 ans pour quatre ans de carrière.
+        """
+        annees = self.annees([
+            {"period": "Janvier 2019 - Décembre 2022"},
+            {"period": "Juin 2020 - Décembre 2022"},
+        ])
+        self.assertEqual(annees, 4)
+
+    def test_deux_missions_jointives_forment_une_seule_periode(self):
+        # Une mission qui finit en mai, la suivante qui commence en juin : le
+        # mois de « trou » n'en est pas un.
+        self.assertEqual(
+            self.annees([{"period": "Janvier 2019 - Mai 2020"},
+                         {"period": "Juin 2020 - Décembre 2020"}]),
+            2,
+        )
+
+    def test_les_mois_comptent_et_pas_seulement_les_millesimes(self):
+        """Janvier -> décembre fait une année, janvier -> février n'en fait pas.
+
+        Les deux valaient 0 an quand seuls les millésimes étaient soustraits.
+        """
+        self.assertEqual(self.annees([{"period": "Janvier 2020 - Décembre 2020"}]), 1)
+        self.assertEqual(self.annees([{"period": "Janvier 2020 - Février 2020"}]), 0)
 
     def test_une_periode_illisible_compte_toujours_pour_un_an(self):
         # Repli conservé : la mettre à zéro sortirait le consultant du
