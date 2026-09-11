@@ -33,6 +33,7 @@ from periode_mission import (  # noqa: E402
     ordre_missions,
     periode_lisible,
     sans_accents,
+    titre_de_repli,
 )
 
 FIXTURE = Path(__file__).resolve().parents[2] / "document-parsing/fixtures/mission_en_cours.json"
@@ -59,6 +60,7 @@ def _fonctions_de_app(noms):
         "index_mois": index_mois,
         "mois_courant": mois_courant,
         "periode_lisible": periode_lisible,
+        "titre_de_repli": titre_de_repli,
         # normalize_cv_data appelle ces trois-là hors du périmètre mesuré ici.
         "normalize_skills": lambda *a, **k: {},
         "skills_to_flat": lambda *a, **k: [],

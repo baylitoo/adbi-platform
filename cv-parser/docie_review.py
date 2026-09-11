@@ -30,7 +30,7 @@ Ce que DocIE émet et que ce module NE fait PAS :
 # Le tri des missions appliqué par app.py::normalize_cv_data (#177 ligne 7).
 # Importé plutôt que réécrit : une marque ne suit sa mission que si les deux
 # appliquent exactement la même permutation.
-from periode_mission import ordre_missions
+from periode_mission import ordre_missions, titre_de_repli
 
 # DocIE plafonne à EXACTEMENT 0.5 la confiance d'un champ dont il a dû tronquer
 # une liste qui bouclait : la valeur rendue est alors partielle sans que rien,
@@ -91,6 +91,12 @@ LISTES_ALIGNEES = {
 # Seule liste réordonnée par normalize_cv_data ; les autres gardent l'ordre
 # DocIE, leur permutation est donc l'identité.
 LISTES_REORDONNEES = ("experience",)
+
+# Avertissement posé quand la fiche porte un titre que DocIE n'a PAS rendu.
+# Chaîne identique — caractère pour caractère — à celle de
+# one-pager/lib/docie-extract.js : les deux écrans signalent le même fait, ils
+# doivent le nommer pareil. Un test épingle la chaîne dans le fichier JS.
+AVERTISSEMENT_TITRE_DEDUIT = "titre_deduit_de_la_mission_la_plus_recente"
 
 # Champs dont la confiance de DocIE ne dit pas ce que la fiche affiche.
 #
@@ -234,6 +240,20 @@ def revue_docie(data, metadata):
     # cette traduction, une marque posée sur `experience[0]` par DocIE
     # surlignerait la mission qui se trouve en tête APRÈS le tri, pas la sienne.
     positions = positions_apres_tri(data)
+
+    # #177 ligne 2 : la fiche porte-t-elle un titre que DocIE n'a pas rendu ?
+    # `normalize_cv_data` se replie sur le rôle de la mission la plus récente
+    # quand `title` est vide — repli utile (une fiche sans intitulé est pire
+    # qu'une fiche intitulée d'après sa dernière mission), mais qui ne doit
+    # JAMAIS être silencieux : le relecteur doit savoir que cet en-tête est
+    # déduit, pas lu. Même prédicat et même fonction que la normalisation,
+    # appliqués à la même liste, donc les deux ne peuvent pas se contredire.
+    #
+    # Avertissement et non `needs_review` : c'est aussi l'arbitrage du JS
+    # (lib/docie-extract.js, `else if (title_derive)`), et un titre ABSENT est
+    # une absence, déjà du ressort du bilan ADBI — pas d'une marque par champ.
+    if not est_rempli(data.get("title")) and titre_de_repli(data.get("experience")):
+        warnings.append(AVERTISSEMENT_TITRE_DEDUIT)
 
     validation = metadata.get("validation")
     if validation is None:

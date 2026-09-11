@@ -34,7 +34,7 @@ from skills_normalizer import normalize_skills, skills_to_flat, compute_skills_f
 # texte porte-t-il ? ». Les deux jeux d'essai sont partagés avec one-pager
 # (document-parsing/fixtures/mission_en_cours.json et date_mission.json).
 from periode_mission import (analyser_periode, index_mois, mois_courant,
-                             ordre_missions, periode_lisible)
+                             ordre_missions, periode_lisible, titre_de_repli)
 # Appel LLM avec chaîne de secours : si un service est en panne ou à court de
 # quota, le suivant prend le relais au lieu de faire échouer l'analyse.
 import llm_cascade
@@ -995,7 +995,24 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
             "env_technique": str(exp.get("env_technique") or "").strip(),
             "description": str(exp.get("description") or "").strip(),
         })
-        
+
+    # #177 ligne 2 : une fiche sans intitulé prend celui de sa dernière mission.
+    #
+    # DocIE ne rend pas toujours de `title` — le schéma servi le déclare, rien
+    # ne le garantit rempli. one-pager se repliait déjà sur le rôle de la
+    # mission la plus récente ET le signalait (`lib/docie-extract.js`), pas
+    # cv-parser : la fiche arrivait dans la CVthèque avec « — » en en-tête,
+    # c'est-à-dire sans ce que le commercial lit en premier, et le dossier ADBI
+    # comme le dossier client partaient sans titre.
+    #
+    # Le repli est TRACÉ, jamais silencieux : `docie_review.revue_docie` pose
+    # l'avertissement `titre_deduit_de_la_mission_la_plus_recente`, que le
+    # bandeau de templates/cv_detail.html affiche verbatim. Les deux posent la
+    # question avec la MÊME fonction, sur la MÊME liste — sans quoi la fiche
+    # porterait un titre déduit sans que rien ne le dise.
+    if not normalized["title"]:
+        normalized["title"] = titre_de_repli(missions_source)
+
     for edu in (data.get("education") or data.get("formation") or []):
         normalized["education"].append({
             "title": str(edu.get("title") or edu.get("diplome") or "").strip(),

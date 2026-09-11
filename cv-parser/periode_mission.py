@@ -283,3 +283,36 @@ def ordre_missions(lignes) -> list[int]:
     vérifier » posée sur `experience[0]` par DocIE suit sa mission après le tri.
     """
     return sorted(range(len(lignes)), key=lambda i: debut_mission(lignes[i]) or "", reverse=True)
+
+
+def titre_de_repli(lignes) -> str:
+    """Titre déduit du rôle de la mission la plus récente, "" à défaut.
+
+    #177 ligne 2. Quand DocIE ne rend aucun `title`, one-pager se replie déjà
+    sur le rôle de la mission la plus récente et le dit
+    (`lib/docie-extract.js` : `experiences.find(e => e.role)` sur la liste
+    TRIÉE, plus l'avertissement `titre_deduit_de_la_mission_la_plus_recente`) ;
+    cv-parser laissait `""`. Une fiche sans intitulé dans la CVthèque est
+    matériellement pire qu'une fiche intitulée d'après sa dernière mission :
+    c'est l'en-tête que le commercial lit en premier (`templates/
+    cv_detail.html`, `.ph-title`, qui affiche « — »), et c'est aussi ce que
+    reprennent le dossier ADBI et le dossier client.
+
+    Vit ici, à côté d'`ordre_missions`, pour la même raison que celle-ci : les
+    DEUX appelants — `app.py::normalize_cv_data`, qui pose le titre, et
+    `docie_review.revue_docie`, qui en émet l'avertissement — doivent répondre
+    à la question sur la MÊME liste avec la MÊME fonction. Deux prédicats
+    jumeaux finiraient par diverger, et la fiche porterait alors un titre
+    déduit sans que rien ne le signale — exactement ce que la ligne 2
+    reproche.
+
+    Fonction PURE : « la plus récente » est l'ordre d'`ordre_missions`, donc
+    aucune supposition sur l'ordre du document DocIE.
+    """
+    lignes = lignes or []
+    for i in ordre_missions(lignes):
+        ligne = lignes[i] if isinstance(lignes[i], dict) else {}
+        titre = str(ligne.get("title") or ligne.get("poste") or "").strip()
+        if titre:
+            return titre
+    return ""
