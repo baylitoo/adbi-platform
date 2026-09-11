@@ -22,6 +22,15 @@ COPY --chown=node:node one-pager/ ./
 # pas le demarrage du service (voir lib/docie-extract.js#chargerBridge).
 COPY --chown=node:node document-parsing/bridge/docie-bridge.js /document-parsing/bridge/docie-bridge.js
 
+# Jeux d'essai partages avec cv-parser (#177) : lib/normalize.js les charge par
+# `require`, AU CHARGEMENT DU MODULE et sans garde — et server.js remonte
+# jusqu'a lui par lib/extract.js. Contrairement au client bridge ci-dessus, leur
+# absence ne degrade donc pas une fonctionnalite : elle empeche le service de
+# demarrer. Meme chemin relatif depuis /app/lib : ../../document-parsing/.
+COPY --chown=node:node document-parsing/fixtures/mission_en_cours.json \
+     document-parsing/fixtures/date_mission.json \
+     /document-parsing/fixtures/
+
 ENV NODE_ENV=production
 # Sans ca, server.js lie 127.0.0.1 (defaut poste de dev) : injoignable via le
 # port publie du conteneur malgre "-p 4200:4200" (voir server.js).
