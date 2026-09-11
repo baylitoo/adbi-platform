@@ -13,18 +13,18 @@
 // locale toujours, flag ou pas. Inventer un schéma DocIE pour ces pièces est
 // hors périmètre de ce ticket (travail côté DocIE, pas côté consommateur).
 //
-// Gap de schéma documenté : le contrat de champs réel de l'agent "kbis" n'est
-// ni documenté ni testé nulle part dans ce dépôt (document-parsing/bridge/
-// tests/contract.json ne couvre que le schéma "adbi_resume" ; le README du
-// bridge indique l'agent kbis "à configurer côté DocIE"). Plutôt que
-// d'inventer une correspondance de champs qui pourrait être fausse, le
-// résultat structuré DocIE est aplati en texte et repassé dans les mêmes
-// règles regex que l'analyse locale (extractCompanyName / extractIssuedDate /
-// checkName, importées de lib/docanalyze.js) : mapping best-effort et
-// provisoire, à resserrer dès qu'un schéma kbis documenté existera côté DocIE.
+// Mapping des champs : lib/kbis-mapping.js, portage JS de
+// document-parsing/mappings/kbis_to_contrats.py — le contrat de champs réel
+// de l'agent "kbis" (11 champs, confirmé contre les vrais modèles pydantic
+// DocIE par document-parsing/scripts/register_and_test.py, PR #46) est
+// désormais documenté et testé des deux côtés (Python et JS). Remplace
+// l'ancienne stratégie « aplatir en texte + regex locales », qui perdait
+// SIREN/SIRET/forme juridique/capital social/RCS/adresse/représentant légal
+// faute, à l'époque, d'un contrat de champs connu.
 
 const path = require("path");
-const { analyzeDocumentLocal, checkName, extractCompanyName, extractIssuedDate, norm } = require("./docanalyze");
+const { analyzeDocumentLocal } = require("./docanalyze");
+const { mapKbisResult } = require("./kbis-mapping");
 
 const ELIGIBLE_ITEM_ID = "kbis";
 const DOCIE_KIND = "kbis";
@@ -54,75 +54,6 @@ function loadBridge() {
   return require(BRIDGE_PATH);
 }
 
-function humanizeKey(key) {
-  return String(key)
-    .replace(/[_-]+/g, " ")
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .trim();
-}
-
-// Aplatit le JSON structuré retourné par DocIE en lignes "clé: valeur" — sans
-// supposer de noms de champs précis (cf. gap de schéma ci-dessus). Les clés
-// snake_case/camelCase sont "humanisées" en mots séparés par des espaces :
-// une clé plausible comme "date_delivrance" redevient "date delivrance", ce
-// qui reste détectable par les regex de proximité de mot-clé de
-// extractIssuedDate (ex. "DATE DE D[ÉE]LIVRANCE").
-function flattenResult(value, prefix, out) {
-  if (value === null || value === undefined) return out;
-  if (Array.isArray(value)) {
-    value.forEach((item) => flattenResult(item, prefix, out));
-    return out;
-  }
-  if (typeof value === "object") {
-    for (const [key, item] of Object.entries(value)) {
-      flattenResult(item, prefix ? prefix + " " + humanizeKey(key) : humanizeKey(key), out);
-    }
-    return out;
-  }
-  const text = String(value).trim();
-  if (!text) return out;
-  out.push(prefix ? prefix + ": " + text : text);
-  return out;
-}
-
-function resultToText(result) {
-  return flattenResult(result, "", []).join("\n");
-}
-
-// Repli date ISO (YYYY-MM-DD) : extractIssuedDate (analyse locale, inchangée)
-// ne reconnaît que DD/MM/YYYY et "DD mois YYYY" — un agent d'extraction
-// structuré renverra vraisemblablement de l'ISO. Ajouté uniquement ici (côté
-// DocIE) ; le front consomme déjà issuedDate via new Date(...), compatible ISO.
-//
-// Un Kbis peut porter plusieurs dates ISO (immatriculation/création ET
-// délivrance) : ne pas prendre "la première trouvée" (dépendrait de l'ordre
-// des clés du JSON DocIE, arbitraire). Mêmes 3 paliers que extractIssuedDate
-// (mot-clé de délivrance à proximité, sinon la plus récente non future, sinon
-// la plus ancienne) pour ne pas confondre date de création et de délivrance.
-function extractIsoDate(text) {
-  const now = new Date();
-  const minY = 2000, maxY = now.getFullYear() + 1;
-  const pad2 = (n) => String(n).padStart(2, "0");
-  const todayIso = now.getFullYear() + "-" + pad2(now.getMonth() + 1) + "-" + pad2(now.getDate());
-  const dates = [];
-  const re = /\b(20\d{2})-(\d{2})-(\d{2})\b/g;
-  let m;
-  const source = String(text || "");
-  while ((m = re.exec(source))) {
-    const yy = +m[1], mm = +m[2], dd = +m[3];
-    if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31 && yy >= minY && yy <= maxY) {
-      dates.push({ iso: m[1] + "-" + m[2] + "-" + m[3], idx: m.index });
-    }
-  }
-  if (!dates.length) return "";
-  const kw = /(D[ÉE]LIVR|[ÀA] JOUR AU|[ÉE]DIT[ÉE]? LE|[ÉE]TABLI LE|[ÉE]MISE? LE|FAIT [ÀA]? ?[A-Z ]*LE|EN DATE DU|DATE DE D[ÉE]LIVRANCE|EXTRAIT)/;
-  const near = dates.filter((d) => kw.test(norm(source.slice(Math.max(0, d.idx - 55), d.idx))));
-  if (near.length) return near.map((d) => d.iso).sort().reverse()[0];
-  const past = dates.filter((d) => d.iso <= todayIso).map((d) => d.iso).sort();
-  if (past.length) return past[past.length - 1];
-  return dates.map((d) => d.iso).sort()[0];
-}
-
 function sniffMime(mimeType, buffer) {
   const m = String(mimeType || "").toLowerCase();
   if (["application/pdf", "image/png", "image/jpeg", "image/webp"].includes(m)) return m;
@@ -135,29 +66,24 @@ function sniffMime(mimeType, buffer) {
 
 // Même forme de sortie que analyzeDocumentLocal (lib/docanalyze.js) : les
 // consommateurs (route Express, front) ne voient aucune différence de forme
-// selon l'origine locale ou DocIE.
+// selon l'origine locale ou DocIE — avec, en plus, les champs structurés
+// enrichis (SIREN, SIRET, forme juridique, capital social, RCS, adresse du
+// siège, représentant légal, date d'immatriculation) que l'analyse locale
+// n'a jamais su produire. Voir lib/kbis-mapping.js pour le détail du mapping.
 function mapDocieResult(docieResponse, { items, expectedName } = {}) {
-  const text = resultToText(docieResponse && docieResponse.result);
-  const item = (items || [])[0];
-  const nameMatches = checkName(text, expectedName);
-  const companyName = extractCompanyName(text) || (nameMatches ? expectedName : null);
-  const issuedDate = extractIssuedDate(text) || extractIsoDate(text);
   const validation = docieResponse && docieResponse.metadata && docieResponse.metadata.validation;
-  const validationFailed = !!(validation && validation.valid === false);
-  const issues = [];
-  if (validationFailed) issues.push("DocIE n'a pas validé l'extraction (vérification manuelle recommandée).");
-  if (nameMatches === false) issues.push("La société du document ne correspond pas au sous-traitant saisi.");
-  if (!issuedDate) issues.push("Date de délivrance non trouvée dans le document.");
-  return {
-    documentType: "Extrait Kbis",
-    matchedId: item ? item.id : null,
-    isValid: !validationFailed,
-    issuedDate,
-    companyName,
-    nameMatches,
-    issues,
-    summary: "Extrait Kbis" + (issuedDate ? " — délivré le " + issuedDate : "") + " (DocIE)",
-  };
+  const { analysis } = mapKbisResult(docieResponse && docieResponse.result, { expectedName, items, validation });
+  // Marqueur de transparence historique de ce module (comportement d'avant
+  // ce portage, issue #153) : signale au front que l'analyse vient de DocIE,
+  // pas de l'OCR local. N'existe pas côté kbis_to_contrats.py/kbis-mapping.js
+  // (qui visent la parité stricte avec docanalyze.js, lequel n'a aucune
+  // notion d'origine à signaler) — ajouté ici uniquement, sur la branche
+  // "lisible" (jamais sur "Document illisible.", qui reste identique quelle
+  // que soit l'origine de l'analyse).
+  if (analysis.documentType !== "Document" && analysis.summary) {
+    analysis.summary += " (DocIE)";
+  }
+  return analysis;
 }
 
 // deps injectables (extractDocument, fetchImpl, env) : tests unitaires sans
@@ -204,7 +130,6 @@ module.exports = {
   analyzeDocument,
   extractViaDocie,
   mapDocieResult,
-  resultToText,
   isEnabled,
   isEligible,
   ELIGIBLE_ITEM_ID,
