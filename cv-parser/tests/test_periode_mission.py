@@ -22,12 +22,19 @@ sys.path.insert(0, str(RACINE))
 
 from periode_mission import (  # noqa: E402
     MISSION_EN_COURS_RE,
+    MOIS,
+    analyser_date,
+    analyser_periode,
+    duree_mois,
+    index_mois,
     mentionne_en_cours,
     mission_en_cours,
+    ordre_missions,
     sans_accents,
 )
 
 FIXTURE = Path(__file__).resolve().parents[2] / "document-parsing/fixtures/mission_en_cours.json"
+FIXTURE_DATES = Path(__file__).resolve().parents[2] / "document-parsing/fixtures/date_mission.json"
 REPONSE_DOCIE = (
     Path(__file__).resolve().parents[2]
     / "document-parsing/fixtures/cv_samples/results/simple_docie.json"
@@ -45,6 +52,8 @@ def _fonctions_de_app(noms):
         "re": re,
         "datetime": datetime,
         "mentionne_en_cours": mentionne_en_cours,
+        "analyser_periode": analyser_periode,
+        "ordre_missions": ordre_missions,
         # normalize_cv_data appelle ces trois-là hors du périmètre mesuré ici.
         "normalize_skills": lambda *a, **k: {},
         "skills_to_flat": lambda *a, **k: [],
@@ -156,6 +165,156 @@ class AncienneteTests(unittest.TestCase):
         # plus 2019 -> 2022. Le total ne doit pas bouger.
         attendu = (datetime.now().year - 2022) + (2022 - 2019)
         self.assertEqual(annees, attendu)
+
+
+class AnalyseurDeDateTests(unittest.TestCase):
+    """#177 ligne 8 : un seul analyseur de date, honoré à l'identique des deux côtés.
+
+    Le jeu d'essai est lu dans document-parsing/fixtures/date_mission.json — le
+    test JS jumeau (one-pager/tests/normalize.test.js) lit exactement le même
+    fichier et compare sa table de mois au même champ `mois`. Ajouter un libellé
+    de mois d'un seul côté casse donc le test de l'autre service.
+    """
+
+    def setUp(self):
+        self.fixture = json.loads(FIXTURE_DATES.read_text(encoding="utf-8"))
+
+    def test_la_table_des_mois_est_celle_du_jeu_dessai_partage(self):
+        self.assertEqual(MOIS, self.fixture["mois"])
+
+    def test_chaque_date_du_jeu_dessai_partage(self):
+        for cas in self.fixture["cas"]:
+            with self.subTest(valeur=cas["valeur"]):
+                self.assertEqual(analyser_date(cas["valeur"]), cas["iso"], cas["preuve"])
+
+    def test_chaque_duree_du_jeu_dessai_partage(self):
+        for cas in self.fixture["durees"]:
+            with self.subTest(debut=cas["debut"], fin=cas["fin"]):
+                self.assertEqual(duree_mois(cas["debut"], cas["fin"]), cas["mois"], cas["preuve"])
+
+    def test_une_annee_seule_vaut_janvier(self):
+        # Convention de one-pager/lib/extract.js::monthIndex, celle dont sort
+        # l'ancienneté affichée : s'en écarter ferait diverger d'un an tout CV
+        # daté à l'année seule.
+        self.assertEqual(index_mois("2019"), index_mois("2019-01"))
+
+    def test_une_fin_anterieure_au_debut_ne_compte_pas_negativement(self):
+        self.assertEqual(duree_mois("2021-06", "2019-03"), 0)
+
+    def test_le_texte_vide_et_les_absences(self):
+        for vide in ("", "   ", None):
+            with self.subTest(valeur=vide):
+                self.assertIsNone(analyser_date(vide))
+                self.assertEqual(analyser_periode(vide), (None, None, False))
+
+
+class DecoupagePeriodeTests(unittest.TestCase):
+    """La marque « en cours » ne se cherche que dans la borne de FIN.
+
+    C'est l'asymétrie que #177 signalait comme « connue et acceptée » faute
+    d'analyseur : le motif était appliqué à la période entière côté Python.
+    """
+
+    def test_les_deux_bornes_sont_lues(self):
+        self.assertEqual(
+            analyser_periode("Septembre 2019 - Février 2022"), ("2019-09", "2022-02", False)
+        )
+
+    def test_une_periode_fermee_qui_commence_par_depuis(self):
+        # « Depuis 2015 jusqu'en 2018 » : période FERMÉE. Avant l'analyseur,
+        # « depuis » suffisait à la déclarer en cours et elle était comptée
+        # jusqu'à aujourd'hui.
+        self.assertEqual(analyser_periode("Depuis 2015 jusqu'en 2018"), ("2015", "2018", False))
+
+    def test_sans_separateur_la_chaine_entiere_reste_la_question(self):
+        self.assertEqual(analyser_periode("Depuis Mars 2019"), ("2019-03", None, True))
+
+    def test_un_tiret_dans_une_date_ne_coupe_pas_la_periode(self):
+        # Le séparateur doit être entouré d'espaces, sans quoi « 2019-03 »
+        # serait coupé en deux et le mois perdu.
+        self.assertEqual(analyser_periode("2019-03"), ("2019-03", "2019-03", False))
+        self.assertEqual(analyser_periode("2019-03 - 2021-06"), ("2019-03", "2021-06", False))
+
+    def test_les_formes_rendues_par_map_resume(self):
+        # `map_resume` fabrique la période avec un tiret demi-cadratin entouré
+        # d'espaces ; `normalize_cv_data` ajoute la forme « Depuis <début> ».
+        self.assertEqual(analyser_periode("Mars 2022 – Aujourd'hui"), ("2022-03", None, True))
+        self.assertEqual(analyser_periode("Mars 2019 – Poste actuel"), ("2019-03", None, True))
+
+    def test_les_separateurs_francais_ecrits_en_toutes_lettres(self):
+        for periode in ("De mars 2019 à juin 2021", "Mars 2019 au Juin 2021",
+                        "Mars 2019 jusqu'au Juin 2021"):
+            with self.subTest(periode=periode):
+                self.assertEqual(analyser_periode(periode), ("2019-03", "2021-06", False))
+
+
+class AncienneteAvecAnalyseurTests(unittest.TestCase):
+    """#177 ligne 8, mesuré sur `compute_years_experience`."""
+
+    def setUp(self):
+        espace = _fonctions_de_app({"compute_years_experience"})
+        self.annees = espace["compute_years_experience"]
+
+    def test_une_periode_fermee_ouverte_par_depuis_ne_court_plus_jusqu_a_aujourdhui(self):
+        # Avant l'analyseur : « depuis » dans la chaîne -> fin = année courante,
+        # soit 2026 - 2015 = 11 ans pour une mission de 3 ans.
+        self.assertEqual(self.annees([{"period": "Depuis 2015 jusqu'en 2018"}]), 3)
+
+    def test_les_periodes_ordinaires_sont_inchangees(self):
+        self.assertEqual(self.annees([{"period": "Septembre 2019 - Février 2022"}]), 3)
+        self.assertEqual(
+            self.annees([{"period": "Mars 2019 – Poste actuel"}]),
+            max(0, datetime.now().year - 2019),
+        )
+
+    def test_une_periode_illisible_compte_toujours_pour_un_an(self):
+        # Repli conservé : la mettre à zéro sortirait le consultant du
+        # rapprochement, exactement comme « Poste actuel » avant #176.
+        self.assertEqual(self.annees([{"period": "il y a longtemps"}]), 1)
+        self.assertEqual(self.annees([{"period": ""}]), 0)
+
+
+class OrdreDesMissionsTests(unittest.TestCase):
+    """#177 ligne 7 : les missions se lisent de la plus récente à la plus ancienne."""
+
+    def test_tri_decroissant_sur_la_date_de_debut(self):
+        lignes = [
+            {"title": "Ancienne", "start_date": "Septembre 2019"},
+            {"title": "Recente", "start_date": "Mars 2022"},
+        ]
+        self.assertEqual(ordre_missions(lignes), [1, 0])
+
+    def test_la_periode_sert_de_repli_quand_start_date_manque(self):
+        # Après `normalize_cv_data` la fiche ne garde que `period` ; le chemin
+        # « Copilot » renormalise une fiche qui n'a jamais eu de `start_date`.
+        lignes = [
+            {"period": "Septembre 2019 - Février 2022"},
+            {"period": "Mars 2022 – Aujourd'hui"},
+        ]
+        self.assertEqual(ordre_missions(lignes), [1, 0])
+
+    def test_une_mission_sans_date_sort_en_dernier_sans_bouger_des_autres(self):
+        lignes = [
+            {"title": "Sans date"},
+            {"title": "Ancienne", "start_date": "2019"},
+            {"title": "Sans date non plus", "start_date": "à définir"},
+            {"title": "Recente", "start_date": "2022"},
+        ]
+        self.assertEqual(ordre_missions(lignes), [3, 1, 0, 2])
+
+    def test_le_tri_est_stable_a_dates_egales(self):
+        lignes = [
+            {"title": "A", "start_date": "Mars 2022"},
+            {"title": "B", "start_date": "Mars 2022"},
+            {"title": "C", "start_date": "Mars 2022"},
+        ]
+        self.assertEqual(ordre_missions(lignes), [0, 1, 2])
+
+    def test_un_mois_connu_passe_devant_la_meme_annee_sans_mois(self):
+        # « 2019-03 » et « 2019 » se comparent comme des chaînes, des deux
+        # côtés : le mois connu est le plus récent des deux.
+        lignes = [{"start_date": "2019"}, {"start_date": "Mars 2019"}]
+        self.assertEqual(ordre_missions(lignes), [1, 0])
 
 
 if __name__ == "__main__":

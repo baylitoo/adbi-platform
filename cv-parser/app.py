@@ -30,9 +30,10 @@ from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 # L'extraction/OCR est effectuée par DocIE, sans runtime ML dans ce process.
 from skills_normalizer import normalize_skills, skills_to_flat, compute_skills_flat
-# « La mission continue-t-elle ? » — liste de synonymes partagée avec one-pager
-# (document-parsing/fixtures/mission_en_cours.json).
-from periode_mission import mentionne_en_cours
+# Les dates de mission : « la mission continue-t-elle ? » et « quelle date ce
+# texte porte-t-il ? ». Les deux jeux d'essai sont partagés avec one-pager
+# (document-parsing/fixtures/mission_en_cours.json et date_mission.json).
+from periode_mission import analyser_periode
 # Appel LLM avec chaîne de secours : si un service est en panne ou à court de
 # quota, le suivant prend le relais au lieu de faire échouer l'analyse.
 import llm_cascade
@@ -550,22 +551,33 @@ def split_bullets(bullets: list[str]) -> dict:
 
 
 def compute_years_experience(experience: list[dict]) -> int:
-    """Estimate total years of experience from period strings."""
-    YEAR_RE   = re.compile(r"\b(20\d{2}|19\d{2})\b")
+    """Ancienneté totale, en années, déduite des périodes de mission.
+
+    Les deux bornes sont lues par l'analyseur de date partagé avec one-pager
+    (periode_mission.analyser_periode, jeu d'essai
+    document-parsing/fixtures/date_mission.json) au lieu d'être devinées en
+    cherchant une année à quatre chiffres dans la chaîne entière — #177 ligne 8.
+
+    Ce que ça corrige, au-delà de la propreté : la marque « en cours » n'est
+    plus cherchée que dans la borne de FIN. « Depuis 2015 jusqu'en 2018 » est
+    une période FERMÉE ; l'ancienne lecture y voyait « depuis », concluait
+    « mission en cours » et comptait jusqu'à aujourd'hui — mesuré, 11 ans au
+    lieu de 3.
+    """
     now_year = datetime.now().year
     total_months = 0
     for exp in experience:
         period = exp.get("period", "") or ""
-        years = YEAR_RE.findall(period)
-        if len(years) >= 1:
-            start = int(years[0])
-            # La liste des « la mission continue » vit dans periode_mission.py,
-            # partagée avec one-pager : l'ancienne liste locale ignorait
-            # « actuel », donc une mission « Mars 2019 – Poste actuel » comptait
-            # pour 0 an et sortait son consultant du rapprochement.
-            end   = now_year if mentionne_en_cours(period) else int(years[-1])
+        debut, fin, en_cours = analyser_periode(period)
+        if debut:
+            start = int(debut[:4])
+            end = now_year if en_cours or not fin else int(fin[:4])
             total_months += max(0, end - start) * 12
         elif period:
+            # Période présente mais illisible (« 3 ans », « été 2020 ») : on
+            # continue de la compter pour un an. La mettre à zéro sortirait le
+            # consultant de /api/needs/<id>/match exactement comme le faisait
+            # « Poste actuel » avant #176.
             total_months += 12
     return max(0, round(total_months / 12))
 
