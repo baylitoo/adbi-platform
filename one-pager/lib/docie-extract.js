@@ -164,13 +164,46 @@ function decouperDescription(description) {
   return { context: seule, highlights: [] };
 }
 
+/**
+ * « Cette mission est-elle toujours en cours ? » — liste de synonymes partagee.
+ *
+ * DocIE type experience[].start_date / end_date en `date` dans le schema
+ * adbi_resume, mais les renvoie en TEXTE LIBRE : la vraie reponse enregistree
+ * (document-parsing/fixtures/cv_samples/results/simple_docie.json) porte
+ * « Mars 2022 » et « Aujourd'hui ». Chaque service doit donc reconnaitre
+ * lui-meme « la mission continue », et les deux listes avaient diverge
+ * (inventaire #177, lignes 4, 5 et 6) : celle-ci connaissait « actuel » sans
+ * « maintenant », celle de cv-parser l'inverse. Mesure ici : une mission
+ * « Mars 2019 - Maintenant » ressortait TERMINEE, avec une date de fin nulle.
+ *
+ * Le motif et le jeu d'essai sont partages avec cv-parser
+ * (document-parsing/fixtures/mission_en_cours.json) ; le port Python vit dans
+ * cv-parser/periode_mission.py. Les tests des deux cotes comparent leur motif
+ * a ce fichier : ajouter un synonyme d'un seul cote casse le test de l'autre.
+ *
+ * Le texte est desaccentue avant l'essai, le motif n'a donc que des formes sans
+ * accent (« present » couvre « Present »). « ce jour » figure sans son « a » :
+ * dans « du 02/2022 a ce jour », le « a » est souvent deja consomme comme
+ * separateur de periode.
+ */
+const MOTIF_MISSION_EN_COURS = /\b(?:aujourd.?hui|ce\s+jour|actuel(?:le(?:ment)?)?|en\s+cours|maintenant|depuis|present|current|now|to\s+date)\b/i;
+
+/**
+ * Une date de fin absente vaut « en cours » : une mission sans fin connue est
+ * ouverte, pas ponctuelle (#177 ligne 6).
+ */
+function missionEnCours(dateFin) {
+  const valeur = N.deaccent(texte(dateFin)).toLowerCase().trim();
+  return !valeur || MOTIF_MISSION_EN_COURS.test(valeur);
+}
+
 function mapperExperience(brut, index) {
   const role = texte(brut && brut.title);
   const company = texte(brut && brut.company);
   const location = texte(brut && brut.location);
   const startRaw = texte(brut && brut.start_date);
   const endRaw = texte(brut && brut.end_date);
-  const isCurrent = !endRaw || /present|actuel|current|en\s*cours|aujourd|a\s*ce\s*jour/i.test(endRaw);
+  const isCurrent = missionEnCours(endRaw);
   const start = startRaw ? N.parseMonthYear(startRaw) : null;
   const end = isCurrent ? null : (endRaw ? N.parseMonthYear(endRaw) : null);
 
@@ -448,4 +481,11 @@ async function extraireViaDocie(buffer, filename, { env = process.env, fetchImpl
   return mapperAdbiResume(result, metadata, { filename });
 }
 
-module.exports = { extraireViaDocie, mapperAdbiResume, decouperDescription };
+module.exports = {
+  extraireViaDocie,
+  mapperAdbiResume,
+  decouperDescription,
+  // Exportes pour le test d'accord avec cv-parser (fixture partagee).
+  missionEnCours,
+  MOTIF_MISSION_EN_COURS,
+};

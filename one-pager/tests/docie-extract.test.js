@@ -10,9 +10,28 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
-const { mapperAdbiResume, decouperDescription } = require("../lib/docie-extract");
+const {
+  mapperAdbiResume,
+  decouperDescription,
+  missionEnCours,
+  MOTIF_MISSION_EN_COURS,
+} = require("../lib/docie-extract");
 const { build } = require("../lib/onepager");
+
+/**
+ * Jeu d'essai « mission en cours », partage mot pour mot avec
+ * cv-parser/tests/test_periode_mission.py : c'est ce fichier, et non deux
+ * listes jumelles, qui empeche les deux services de rediverger (#177).
+ */
+const FIXTURE_EN_COURS = JSON.parse(
+  fs.readFileSync(
+    path.join(__dirname, "..", "..", "document-parsing", "fixtures", "mission_en_cours.json"),
+    "utf8"
+  )
+);
 
 const ADBI_RESUME_COMPLET = {
   name: "Alice Dupont",
@@ -253,6 +272,48 @@ test("metadonnees sans champ de relecture : comportement inchange (retrocompatib
   const avant = mapperAdbiResume(ADBI_RESUME_COMPLET, null, { filename: "cv.pdf" });
   assert.deepEqual(avant.quality.warnings, []);
   assert.deepEqual(avant.quality.needs_review, []);
+});
+
+test("le motif « mission en cours » est celui de la fixture partagee avec cv-parser", () => {
+  // Comparer le motif, et pas seulement les verdicts : ajouter un synonyme
+  // d'un seul cote casse alors le test de l'autre service.
+  assert.equal(MOTIF_MISSION_EN_COURS.source, FIXTURE_EN_COURS.motif);
+  assert.ok(MOTIF_MISSION_EN_COURS.flags.includes("i"), "insensible a la casse");
+});
+
+test("chaque cas du jeu d'essai partage est classe comme cote cv-parser", () => {
+  for (const cas of FIXTURE_EN_COURS.cas) {
+    assert.equal(missionEnCours(cas.valeur), cas.en_cours, `${cas.valeur} — ${cas.preuve}`);
+  }
+  assert.equal(FIXTURE_EN_COURS.vide_est_en_cours, true);
+  for (const vide of ["", "   ", null, undefined]) {
+    assert.equal(missionEnCours(vide), true, "une mission sans date de fin est ouverte");
+  }
+});
+
+test("#177 lignes 4-6 : « Poste actuel », « Maintenant », fin absente donnent la meme mission en cours", () => {
+  // Avant : « Maintenant » etait absent de la liste locale, la mission
+  // ressortait TERMINEE avec une date de fin nulle — un consultant en poste
+  // presente comme disponible depuis mars 2019.
+  for (const fin of ["Poste actuel", "Maintenant", ""]) {
+    const master = mapperAdbiResume(
+      { name: "Alice Dupont", experience: [{ company: "Numelia", title: "Dev", start_date: "Mars 2019", end_date: fin }] },
+      null,
+      { filename: "cv.pdf" }
+    );
+    const mission = master.experiences[0];
+    assert.equal(mission.is_current, true, `end_date « ${fin} »`);
+    assert.equal(mission.end_date, null, `end_date « ${fin} » : pas de fin fabriquee`);
+  }
+
+  // Temoin : une fin reelle reste une fin.
+  const terminee = mapperAdbiResume(
+    { name: "Alice Dupont", experience: [{ company: "Numelia", title: "Dev", start_date: "Mars 2019", end_date: "Juin 2021" }] },
+    null,
+    { filename: "cv.pdf" }
+  );
+  assert.equal(terminee.experiences[0].is_current, false);
+  assert.equal(terminee.experiences[0].end_date, "2021-06");
 });
 
 test("decouperDescription: puces multi-lignes vs paragraphe unique", () => {
