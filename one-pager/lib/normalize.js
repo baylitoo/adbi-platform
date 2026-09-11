@@ -216,8 +216,15 @@ function findUrl(text, re) {
 
 // ------------------------------------------------------------- Langues ----
 
+// « natif » manquait la ou « native » etait deja reconnu : c'est pourtant la
+// forme qu'un CV francais emploie, et celle que DocIE renvoie sur le CV
+// d'exemple du depot (document-parsing/fixtures/cv_samples/results/simple_docie.json,
+// languages[0].level = "natif"). Un locuteur natif ressortait donc sans niveau
+// du tout — ni ici ni dans lib/docie-extract.js, qui appelle cette meme
+// fonction —, alors que « langue maternelle » donnait bien C2 : deux facons
+// d'ecrire la meme chose, deux fiches differentes pour le meme candidat.
 const NIVEAUX = [
-  [/\b(c2|bilingue|langue\s+maternelle|maternelle|native|courant\s*\/?\s*bilingue)\b/i, "C2"],
+  [/\b(c2|bilingue|langue\s+maternelle|maternelle|nati[fv]e?s?|courant\s*\/?\s*bilingue)\b/i, "C2"],
   [/\b(c1|courant|fluent|avance|professionnel\s+complet|full\s+professional)\b/i, "C1"],
   [/\b(b2|intermediaire\s+avance|professionnel|upper[\s-]intermediate|bon\s+niveau)\b/i, "B2"],
   [/\b(b1|intermediaire|intermediate|niveau\s+scolaire\s+solide)\b/i, "B1"],
