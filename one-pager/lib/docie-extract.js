@@ -43,7 +43,10 @@ function texte(v) {
   // mais la liste des cles qui en signalent une a deja evolue cote DocIE
   // (`model_confidence`) ; sans ce repli un scalaire deballe une version trop
   // tot se lirait « [object Object] » jusque dans le dossier exporte.
-  if (v && typeof v === "object" && !Array.isArray(v) && "value" in v) return texte(v.value);
+  // Tout autre objet ne devient jamais du texte : « [object Object] » finirait
+  // dans le dossier exporte. DocIE renvoie null pour une feuille absente, donc
+  // {item: null} arrive bel et bien ici.
+  if (v && typeof v === "object" && !Array.isArray(v)) return "value" in v ? texte(v.value) : "";
   return String(v ?? "").trim();
 }
 

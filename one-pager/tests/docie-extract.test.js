@@ -231,6 +231,24 @@ test("un scalaire encore enveloppe (logprob model_confidence) reste lisible", ()
   assert.deepEqual(master.interests, ["Photographie"]);
 });
 
+test("une feuille absente reste vide, jamais « [object Object] » dans le dossier", () => {
+  // DocIE renvoie null pour une feuille qu'il n'a pas trouvee : {item: null}
+  // arrive tel quel apres deballage de l'enveloppe.
+  const data = {
+    ...ADBI_RESUME_COMPLET,
+    skills: [{ category: "Langages", items: [{ item: null }, {}, { item: "Python" }] }],
+    interests: [{ interest: null }, {}, "Course à pied"],
+    languages: [{ language: { value: null, confidence: 0 }, level: "courant" }, { language: "Anglais", level: null }],
+  };
+  const master = mapperAdbiResume(data, METADATA_OK, { filename: "cv.pdf" });
+
+  assert.deepEqual(master.skills, [{ label: "Langages", items: ["Python"] }]);
+  assert.deepEqual(master.interests, ["Course à pied"]);
+  assert.deepEqual(master.languages.map((l) => l.name), ["Anglais"]);
+  const texteComplet = JSON.stringify(master);
+  assert.equal(texteComplet.includes("[object Object]"), false, "aucun objet converti en texte");
+});
+
 test("metadonnees sans champ de relecture : comportement inchange (retrocompatibilite)", () => {
   const avant = mapperAdbiResume(ADBI_RESUME_COMPLET, null, { filename: "cv.pdf" });
   assert.deepEqual(avant.quality.warnings, []);
