@@ -13,7 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from docie_client import map_resume
-from docie_review import SEUIL_CONFIANCE, est_rempli, revue_docie, valeur_au_chemin
+from docie_review import (SEUIL_CONFIANCE, est_rempli, perimer_revue, revue_docie,
+                          valeur_au_chemin)
 
 FIXTURE = (Path(__file__).resolve().parents[2]
            / "document-parsing/fixtures/cv_samples/results/simple_docie.json")
@@ -199,6 +200,70 @@ class FixtureReelleTests(unittest.TestCase):
         # Le champ marqué est bien rempli dans la fiche : c'est une valeur
         # PARTIELLE, pas une absence — invisible sans ce signal.
         self.assertTrue(data["experience"][1]["description"])
+
+
+class PerimerRevueTests(unittest.TestCase):
+    """PATCH /api/cvs/<id> : la rubrique enregistrée a été relue à l'écran."""
+
+    def test_rubrique_enregistree_perd_ses_marques(self):
+        cv = {"docie_review": {"needs_review": ["experience[0].company", "contact.email", "title"],
+                               "warnings": ["docie_avertissement:truncated"]}}
+        perimer_revue(cv, {"experience": [{"company": "Numelia"}]})
+        self.assertEqual(cv["docie_review"]["needs_review"], ["contact.email", "title"])
+        # Les avertissements décrivent l'extraction, pas un champ éditable.
+        self.assertEqual(cv["docie_review"]["warnings"], ["docie_avertissement:truncated"])
+
+    def test_rubrique_non_envoyee_garde_sa_marque(self):
+        cv = {"docie_review": {"needs_review": ["education[1].title"], "warnings": []}}
+        perimer_revue(cv, {"name": "Camille"})
+        self.assertEqual(cv["docie_review"]["needs_review"], ["education[1].title"])
+
+    def test_fiche_sans_revue_est_intacte(self):
+        cv = {"name": "Camille"}
+        perimer_revue(cv, {"name": "Camille"})
+        self.assertNotIn("docie_review", cv)
+
+
+class GabaritTests(unittest.TestCase):
+    """L'écran de relecture (templates/cv_detail.html) doit montrer le signal.
+
+    Rendu via jinja2 directement : importer app.py exigerait une base
+    PostgreSQL (init_schema au chargement), sans rien apprendre de plus sur le
+    gabarit.
+    """
+
+    def _rendu(self, cv):
+        from jinja2 import Environment, FileSystemLoader, select_autoescape
+        racine = Path(__file__).resolve().parents[1] / "templates"
+        env = Environment(loader=FileSystemLoader(str(racine)),
+                          autoescape=select_autoescape(["html"]))
+        env.globals["url_for"] = lambda point, **kw: "/static/" + kw.get("filename", "")
+        return env.get_template("cv_detail.html").render(cv=cv, linked_cvs=[])
+
+    def test_champ_peu_sur_est_marque_et_avertissement_affiche_verbatim(self):
+        avertissement = "experience[1].description truncated after 3 repeats: repetition loop detected"
+        html = self._rendu({
+            "id": "cv1", "name": "Camille Béranger", "title": "Développeuse",
+            "contact": {"email": "camille@example.fr"},
+            "experience": [{"company": "Numelia", "title": "Dev", "description": "A"},
+                           {"company": "Studio Pixelia", "title": "Dev", "description": "B"}],
+            "docie_review": {"needs_review": ["experience[1].description", "contact.email"],
+                             "warnings": ["docie_avertissement:" + avertissement]},
+        })
+        self.assertIn("revue-docie", html)
+        self.assertIn(avertissement, html)              # verbatim, pas reformulé
+        self.assertIn("2 champs à relire", html)
+        self.assertIn('class="field-val a-verifier" contenteditable="true" data-section="contact" data-field="email"', html)
+        # La marque tombe sur la BONNE mission : la seconde, pas la première.
+        self.assertIn('class="bullets-label a-verifier"', html)
+        self.assertEqual(html.count("a-verifier\""), 2)
+        self.assertLess(html.index("Studio Pixelia"), html.index('class="bullets-label a-verifier"'))
+
+    def test_fiche_sans_revue_rend_l_ecran_inchange(self):
+        html = self._rendu({"id": "cv1", "name": "Camille", "experience": [],
+                            "contact": {"email": "camille@example.fr"}})
+        self.assertNotIn("revue-docie\"", html)
+        self.assertNotIn("a-verifier\"", html)
 
 
 if __name__ == "__main__":

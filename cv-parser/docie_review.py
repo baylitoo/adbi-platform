@@ -210,3 +210,26 @@ def revue_docie(data, metadata):
             needs_review.append(chemin)
 
     return {"needs_review": needs_review, "warnings": warnings}
+
+
+def perimer_revue(cv, updates):
+    """Retire les marques « à vérifier » des rubriques que l'écran vient
+    d'enregistrer (PATCH /api/cvs/<id>).
+
+    Un PATCH remplace la rubrique ENTIÈRE — l'écran d'édition renvoie toute la
+    liste des missions, pas le seul champ modifié (cv_detail.html::collectData)
+    — et ces listes sont réordonnables à la souris. Garder
+    `experience[0].company` après un enregistrement, c'est au mieux marquer un
+    champ déjà corrigé, au pire surligner une AUTRE mission que celle dont
+    DocIE doutait : exactement le mauvais champ signalé. La rubrique renvoyée
+    a été relue à l'écran, la marque tombe avec elle.
+
+    `warnings` n'est pas touché : ce sont des faits sur l'extraction (ce que
+    DocIE a signalé, une validation absente), pas l'état d'un champ éditable.
+    """
+    revue = cv.get("docie_review")
+    if not isinstance(revue, dict) or not revue.get("needs_review"):
+        return
+    cv["docie_review"] = {**revue, "needs_review": [
+        chemin for chemin in revue["needs_review"]
+        if str(chemin).split(".")[0].split("[")[0] not in updates]}

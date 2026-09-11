@@ -2176,31 +2176,10 @@ def _filtrer_champs_cv(brut: dict) -> dict:
     return updates
 
 
-def _perimer_revue_docie(cv: dict, updates: dict) -> None:
-    """Retire les marques « à vérifier » des rubriques que l'utilisateur vient
-    d'enregistrer (issue #172).
-
-    Un PATCH remplace la rubrique ENTIÈRE (l'écran d'édition renvoie toute la
-    liste des missions, pas le champ modifié), et ces listes sont réordonnables
-    à la souris : garder `experience[0].company` après un enregistrement, c'est
-    au mieux marquer un champ déjà corrigé, au pire surligner une AUTRE mission
-    que celle dont DocIE doutait. Le champ a été relu à l'écran puisqu'il a été
-    renvoyé : la marque tombe.
-
-    `warnings` n'est pas touché : ce sont des faits sur l'extraction (ce que
-    DocIE a signalé, une validation absente), pas l'état d'un champ éditable.
-    """
-    revue = cv.get("docie_review")
-    if not isinstance(revue, dict) or not revue.get("needs_review"):
-        return
-    restants = [chemin for chemin in revue["needs_review"]
-                if str(chemin).split(".")[0].split("[")[0] not in updates]
-    cv["docie_review"] = {**revue, "needs_review": restants}
-
-
 @app.route("/api/cvs/<cv_id>", methods=["PATCH"])
 @require_auth
 def update_cv(cv_id):
+    from docie_review import perimer_revue
     brut = request.json or {}
     updates = _filtrer_champs_cv(brut)
     erreur = _plafonner_cv(updates)
@@ -2212,7 +2191,7 @@ def update_cv(cv_id):
             abort(404)
         for key, val in updates.items():
             cv[key] = val
-        _perimer_revue_docie(cv, updates)
+        perimer_revue(cv, updates)
         cv["updated_at"] = datetime.now().isoformat()
         cvstore_pg.save_cv(cv_id, cv)
     return jsonify({"success": True})
