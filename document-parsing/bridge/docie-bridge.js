@@ -6,10 +6,22 @@ const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis" };
 const MIME_TYPES = new Set(["application/pdf", "image/png", "image/jpeg", "image/webp"]);
 // A grounded field arrives as {value, ...} alongside at least one of these keys.
-// `model_confidence` is part of the set on purpose: DocIE's logprob confidence
-// adds it as a fourth key, and an envelope test that ignores it lets a scalar
-// reach the consumer as a dict ("Ada" becoming {"value": "Ada", ...}).
-const ENVELOPE_MARKERS = ["confidence", "evidence_ids", "model_confidence"];
+// The logprob key is in the set on purpose: DocIE's logprob confidence adds it as
+// a fourth key, and an envelope test that ignores it lets a scalar reach the
+// consumer as a dict ("Ada" becoming {"value": "Ada", ...}).
+//
+// BOTH logprob spellings are accepted. DocIE renamed `model_confidence` to
+// `model_logprob` -- the value is a natural-log probability, not a 0-1 score, and
+// the old name invited exactly that confusion -- but that rename ships in a PR
+// that is not merged yet. Accepting both keeps unwrapping correct whichever side
+// deploys first, and costs nothing once the rename lands.
+//
+// Only `confidence` is ever collected as a review signal. `model_logprob` is a
+// natural-log probability (<= 0, closer to 0 = more confident), deliberately NOT
+// renormalised upstream: comparing it against `confidence`'s 0-1 scale would flag
+// every field carrying one, since -7.5 sits well below any 0-1 threshold. It
+// ranks fields within one extraction; it is not a threshold input.
+const ENVELOPE_MARKERS = ["confidence", "evidence_ids", "model_confidence", "model_logprob"];
 
 class DocIEBridgeError extends Error {
   constructor(code, message, status = null) {

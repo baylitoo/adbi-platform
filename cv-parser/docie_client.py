@@ -34,12 +34,24 @@ def document_payload(path):
     return {"filename": path.name, "text": text}
 
 
-# Clés qui signalent une enveloppe de champ ancré {value, ...}. `model_confidence`
+# Clés qui signalent une enveloppe de champ ancré {value, ...}. La clé de logprob
 # en fait partie : la confiance par logprob de DocIE l'ajoute comme quatrième clé,
 # et une détection qui l'ignore laisse un scalaire arriver sous forme de dict —
-# « Ada » devenant {"value": "Ada", "model_confidence": 0.82} jusque dans la fiche.
+# « Ada » devenant {"value": "Ada", ...} jusque dans la fiche.
+#
+# Les DEUX orthographes de la clé logprob sont acceptées : DocIE a renommé
+# `model_confidence` en `model_logprob` (la valeur est une log-probabilité
+# naturelle, pas un score 0-1 — l'ancien nom invitait précisément à cette
+# confusion), mais ce renommage est dans une PR non mergée. Accepter les deux
+# garde le déballage correct quel que soit le côté qui déploie en premier.
+#
+# Seul `confidence` sert de signal de revue. `model_logprob` est une
+# log-probabilité (<= 0, plus proche de 0 = plus confiant), volontairement NON
+# renormalisée en amont : la comparer au seuil 0-1 de `confidence` signalerait
+# tous les champs qui en portent une (-7,5 est très en dessous de tout seuil
+# 0-1). Elle classe les champs entre eux, elle n'alimente pas un seuil.
 # Même liste que document-parsing/bridge/docie_bridge.py::ENVELOPE_MARKERS.
-_MARQUEURS_ENVELOPPE = ("confidence", "evidence_ids", "model_confidence")
+_MARQUEURS_ENVELOPPE = ("confidence", "evidence_ids", "model_confidence", "model_logprob")
 
 
 def unwrap(value):

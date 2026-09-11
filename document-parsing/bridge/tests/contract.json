@@ -2,12 +2,38 @@
   {
     "name": "flattened_agent_result",
     "body": {
-      "id": "chatcmpl-test", "model": "spark-x2.5-1.7b",
-      "choices": [{"finish_reason": "stop", "message": {"content": "{\"document_type\":\"adbi_resume\",\"name\":\"Alice Dupont\",\"experience\":[],\"certifications\":null}"}}],
-      "usage": {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130},
-      "docie_agent": {"agent": "adbi_agent_1", "validation": {"valid": true, "errors": [], "warnings": []}, "queue_wait_ms": 125, "generation_ms": 400}
+      "id": "chatcmpl-test",
+      "model": "spark-x2.5-1.7b",
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "message": {
+            "content": "{\"document_type\":\"adbi_resume\",\"name\":\"Alice Dupont\",\"experience\":[],\"certifications\":null}"
+          }
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 100,
+        "completion_tokens": 30,
+        "total_tokens": 130
+      },
+      "docie_agent": {
+        "agent": "adbi_agent_1",
+        "validation": {
+          "valid": true,
+          "errors": [],
+          "warnings": []
+        },
+        "queue_wait_ms": 125,
+        "generation_ms": 400
+      }
     },
-    "expected_result": {"document_type": "adbi_resume", "name": "Alice Dupont", "experience": [], "certifications": null},
+    "expected_result": {
+      "document_type": "adbi_resume",
+      "name": "Alice Dupont",
+      "experience": [],
+      "certifications": null
+    },
     "expected_field_confidence": {},
     "schema_reported": true
   },
@@ -15,18 +41,39 @@
     "name": "wrapped_evidence_result",
     "body": {
       "model": "lfm2.5-2.6b",
-      "choices": [{"finish_reason": "stop", "message": {"content": "{\"schema_name\":\"adbi_resume\",\"result\":{\"name\":{\"value\":\"Alice Dupont\",\"confidence\":1,\"evidence_ids\":[\"b1\"]},\"experience\":[]},\"validation\":{\"valid\":false,\"errors\":[\"missing contact\"]}}"}}]
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "message": {
+            "content": "{\"schema_name\":\"adbi_resume\",\"result\":{\"name\":{\"value\":\"Alice Dupont\",\"confidence\":1,\"evidence_ids\":[\"b1\"]},\"experience\":[]},\"validation\":{\"valid\":false,\"errors\":[\"missing contact\"]}}"
+          }
+        }
+      ]
     },
-    "expected_result": {"name": "Alice Dupont", "experience": []},
-    "expected_field_confidence": {"name": 1},
+    "expected_result": {
+      "name": "Alice Dupont",
+      "experience": []
+    },
+    "expected_field_confidence": {
+      "name": 1
+    },
     "schema_reported": true
   },
   {
     "name": "unreported_schema_not_invented",
     "body": {
-      "choices": [{"finish_reason": "stop", "message": {"content": "```json\n{\"name\":\"Alice Dupont\"}\n```"}}]
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "message": {
+            "content": "```json\n{\"name\":\"Alice Dupont\"}\n```"
+          }
+        }
+      ]
     },
-    "expected_result": {"name": "Alice Dupont"},
+    "expected_result": {
+      "name": "Alice Dupont"
+    },
     "expected_field_confidence": {},
     "schema_reported": false
   },
@@ -34,16 +81,54 @@
     "name": "grounded_fields_with_truncated_list",
     "comment": "Real adbi_resume shape (cf. document-parsing/fixtures/cv_samples/results/simple_docie.json): every leaf is grounded, nested list items carry their own confidence, a field DocIE had to truncate is capped at 0.5 with a validation warning, and a field it did not find is an empty value at confidence 0.",
     "body": {
-      "id": "chatcmpl-grounded", "model": "nuextract3_local_127",
-      "choices": [{"finish_reason": "stop", "message": {"content": "{\"schema_name\":\"adbi_resume\",\"result\":{\"name\":{\"value\":\"Camille Béranger\",\"confidence\":1,\"evidence_ids\":[\"b1_0\"]},\"contact\":{\"email\":{\"value\":\"camille@example.fr\",\"confidence\":1,\"evidence_ids\":[\"b1_2\"]},\"github\":{\"value\":\"\",\"confidence\":0,\"evidence_ids\":[]}},\"experience\":[{\"company\":{\"value\":\"Numelia\",\"confidence\":1,\"evidence_ids\":[\"b1_4\"]},\"description\":{\"value\":\"Plateforme SaaS de gestion de stocks.\",\"confidence\":0.5,\"evidence_ids\":[\"b1_6\"]}}],\"skills\":[{\"category\":{\"value\":\"Langages\",\"confidence\":1,\"evidence_ids\":[\"b1_15\"]},\"items\":[{\"item\":{\"value\":\"Python\",\"confidence\":1,\"evidence_ids\":[\"b1_15\"]}},{\"item\":{\"value\":\"SQL\",\"confidence\":0.4,\"evidence_ids\":[]}}]}],\"interests\":null}}"}}],
-      "docie_agent": {"agent": "adbi_agent_1", "schema_name": "adbi_resume", "latency_ms": 285014,
-        "validation": {"valid": true, "errors": [], "warnings": ["experience[0].description truncated: repeated content detected"]}}
+      "id": "chatcmpl-grounded",
+      "model": "nuextract3_local_127",
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "message": {
+            "content": "{\"schema_name\":\"adbi_resume\",\"result\":{\"name\":{\"value\":\"Camille Béranger\",\"confidence\":1,\"evidence_ids\":[\"b1_0\"]},\"contact\":{\"email\":{\"value\":\"camille@example.fr\",\"confidence\":1,\"evidence_ids\":[\"b1_2\"]},\"github\":{\"value\":\"\",\"confidence\":0,\"evidence_ids\":[]}},\"experience\":[{\"company\":{\"value\":\"Numelia\",\"confidence\":1,\"evidence_ids\":[\"b1_4\"]},\"description\":{\"value\":\"Plateforme SaaS de gestion de stocks.\",\"confidence\":0.5,\"evidence_ids\":[\"b1_6\"]}}],\"skills\":[{\"category\":{\"value\":\"Langages\",\"confidence\":1,\"evidence_ids\":[\"b1_15\"]},\"items\":[{\"item\":{\"value\":\"Python\",\"confidence\":1,\"evidence_ids\":[\"b1_15\"]}},{\"item\":{\"value\":\"SQL\",\"confidence\":0.4,\"evidence_ids\":[]}}]}],\"interests\":null}}"
+          }
+        }
+      ],
+      "docie_agent": {
+        "agent": "adbi_agent_1",
+        "schema_name": "adbi_resume",
+        "latency_ms": 285014,
+        "validation": {
+          "valid": true,
+          "errors": [],
+          "warnings": [
+            "experience[0].description truncated: repeated content detected"
+          ]
+        }
+      }
     },
     "expected_result": {
       "name": "Camille Béranger",
-      "contact": {"email": "camille@example.fr", "github": ""},
-      "experience": [{"company": "Numelia", "description": "Plateforme SaaS de gestion de stocks."}],
-      "skills": [{"category": "Langages", "items": [{"item": "Python"}, {"item": "SQL"}]}],
+      "contact": {
+        "email": "camille@example.fr",
+        "github": ""
+      },
+      "experience": [
+        {
+          "company": "Numelia",
+          "description": "Plateforme SaaS de gestion de stocks."
+        }
+      ],
+      "skills": [
+        {
+          "category": "Langages",
+          "items": [
+            {
+              "item": "Python"
+            },
+            {
+              "item": "SQL"
+            }
+          ]
+        }
+      ],
       "interests": null
     },
     "expected_field_confidence": {
@@ -63,24 +148,102 @@
     "comment": "DocIE's own docie_agent.field_confidence map. Authoritative when present: it still describes the fields after the agent flattened its result, so there is no envelope left to read. Entries without a usable confidence are dropped, not defaulted.",
     "body": {
       "model": "nuextract3_local_127",
-      "choices": [{"finish_reason": "stop", "message": {"content": "{\"schema_name\":\"adbi_resume\",\"result\":{\"name\":\"Ada Lovelace\",\"experience\":[{\"title\":\"Analyste\"}]}}"}}],
-      "docie_agent": {"agent": "adbi_agent_1", "validation": {"valid": true, "errors": [], "warnings": ["derived subtotal not found in the document"]},
-        "field_confidence": {"name": {"confidence": 0.93, "evidence_ids": ["b1"]},
-          "experience[0].title": {"confidence": 0.5, "evidence_ids": ["b4"]},
-          "experience[0].start_date": {"confidence": 0}, "experience[0].company": {"evidence_ids": []}}}
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "message": {
+            "content": "{\"schema_name\":\"adbi_resume\",\"result\":{\"name\":\"Ada Lovelace\",\"experience\":[{\"title\":\"Analyste\"}]}}"
+          }
+        }
+      ],
+      "docie_agent": {
+        "agent": "adbi_agent_1",
+        "validation": {
+          "valid": true,
+          "errors": [],
+          "warnings": [
+            "derived subtotal not found in the document"
+          ]
+        },
+        "field_confidence": {
+          "name": {
+            "confidence": 0.93,
+            "evidence_ids": [
+              "b1"
+            ]
+          },
+          "experience[0].title": {
+            "confidence": 0.5,
+            "evidence_ids": [
+              "b4"
+            ]
+          },
+          "experience[0].start_date": {
+            "confidence": 0
+          },
+          "experience[0].company": {
+            "evidence_ids": []
+          }
+        }
+      }
     },
-    "expected_result": {"name": "Ada Lovelace", "experience": [{"title": "Analyste"}]},
-    "expected_field_confidence": {"name": 0.93, "experience[0].title": 0.5, "experience[0].start_date": 0},
+    "expected_result": {
+      "name": "Ada Lovelace",
+      "experience": [
+        {
+          "title": "Analyste"
+        }
+      ]
+    },
+    "expected_field_confidence": {
+      "name": 0.93,
+      "experience[0].title": 0.5,
+      "experience[0].start_date": 0
+    },
     "schema_reported": true
   },
   {
     "name": "logprob_envelope_still_unwrapped",
-    "comment": "DocIE's logprob confidence adds a fourth key, model_confidence. An envelope test that only knows {value, confidence, evidence_ids} leaves the scalar wrapped and every consumer reads a dict where a string belongs. model_confidence is not collected as a review confidence: different scale.",
+    "comment": "DocIE's logprob confidence adds a fourth key. This vector uses the OLD spelling `model_confidence`, still accepted: the rename to `model_logprob` ships in an unmerged DocIE PR, so both must unwrap correctly whichever side deploys first. Neither is collected as a review confidence: different scale.",
     "body": {
-      "choices": [{"finish_reason": "stop", "message": {"content": "{\"schema_name\":\"adbi_resume\",\"result\":{\"name\":{\"value\":\"Ada Lovelace\",\"model_confidence\":0.82},\"title\":{\"value\":\"Analyste\",\"confidence\":0.5,\"model_confidence\":0.31,\"evidence_ids\":[\"b2\"]}}}"}}]
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "message": {
+            "content": "{\"schema_name\":\"adbi_resume\",\"result\":{\"name\":{\"value\":\"Ada Lovelace\",\"model_confidence\":0.82},\"title\":{\"value\":\"Analyste\",\"confidence\":0.5,\"model_confidence\":0.31,\"evidence_ids\":[\"b2\"]}}}"
+          }
+        }
+      ]
     },
-    "expected_result": {"name": "Ada Lovelace", "title": "Analyste"},
-    "expected_field_confidence": {"title": 0.5},
+    "expected_result": {
+      "name": "Ada Lovelace",
+      "title": "Analyste"
+    },
+    "expected_field_confidence": {
+      "title": 0.5
+    },
+    "schema_reported": true
+  },
+  {
+    "name": "logprob_envelope_renamed_still_unwrapped",
+    "comment": "`model_confidence` was renamed to `model_logprob`: the value is a natural-log probability (<= 0, closer to 0 = more confident), deliberately not renormalised, and the old name invited reading it as a 0-1 score. Two points: the new spelling must still be recognised as an envelope marker, and the logprob must NOT be collected as a review confidence -- title's -7.5 would sit below any 0-1 threshold and flag every field carrying one. Only `confidence` (0.5) is reported.",
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "message": {
+            "content": "{\"schema_name\": \"adbi_resume\", \"result\": {\"name\": {\"value\": \"Ada Lovelace\", \"model_logprob\": -0.18}, \"title\": {\"value\": \"Analyste\", \"confidence\": 0.5, \"model_logprob\": -7.5, \"evidence_ids\": [\"b2\"]}}}"
+          }
+        }
+      ]
+    },
+    "expected_result": {
+      "name": "Ada Lovelace",
+      "title": "Analyste"
+    },
+    "expected_field_confidence": {
+      "title": 0.5
+    },
     "schema_reported": true
   }
 ]
