@@ -390,24 +390,35 @@ class AncienneteAnnonceeParDocIETests(unittest.TestCase):
     def test_predicat_et_cumul_restent_dacord(self):
         """`periode_lisible` doit dire vrai exactement quand le cumul a un intervalle.
 
-        Les deux critères sont écrits à deux endroits (periode_mission.py et
-        compute_years_experience) : s'ils divergent, la valeur de DocIE
+        Le critère est écrit à DEUX endroits — `periode_mission.periode_lisible`
+        et la boucle de `compute_years_experience` — et ils doivent rester
+        d'accord : s'ils divergeaient, la valeur annoncée par DocIE
         remplacerait un calcul réel, ou l'inverse.
+
+        Chaque période est confrontée à l'ancienneté qu'on en RECALCULE avec les
+        primitives partagées, jamais à une heuristique sur le résultat : une
+        année civile pleine vaut 1 an tout comme le forfait d'une période
+        illisible, donc le nombre seul ne dit pas d'où il vient.
         """
         annees = _fonctions_de_app({"compute_years_experience"})["compute_years_experience"]
         for periode in ("Janvier 2019 - Décembre 2022", "Mars 2019 – Poste actuel",
                         "Depuis 2015 jusqu'en 2018", "2019", "Janvier 2024 - Mars 2024",
+                        "Janvier 2020 - Décembre 2020",  # 1 an, lisible : le sosie du forfait
                         "3 ans", "il y a longtemps", "", "   "):
             with self.subTest(periode=periode):
                 missions = [{"period": periode}]
-                lisible = periode_lisible(missions)
-                # Le forfait vaut exactement 1 an ; tout autre total non nul
-                # vient d'un intervalle. Le cas « 3 mois » (0 an, lisible) est
-                # couvert à part ci-dessus.
-                if lisible:
-                    self.assertNotEqual(annees(missions), 1, periode)
-                elif annees(missions):
-                    self.assertEqual(annees(missions), 1, periode)
+                debut, fin, en_cours = analyser_periode(periode)
+                intervalle = bool(debut) and index_mois(
+                    mois_courant() if en_cours or not fin else fin) >= index_mois(debut)
+                self.assertEqual(periode_lisible(missions), intervalle, periode)
+                if intervalle:
+                    attendu = _anciennete_attendue((debut, fin))
+                else:
+                    # Forfait d'un an dès que la période est présente — même
+                    # faite d'espaces, `compute_years_experience` testant la
+                    # chaîne brute.
+                    attendu = 1 if periode else 0
+                self.assertEqual(annees(missions), attendu, periode)
 
     def test_la_vraie_reponse_docie_ne_bouge_pas(self):
         """Témoin : elle a des périodes lisibles, et DocIE n'y annonce rien.
