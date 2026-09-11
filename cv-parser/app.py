@@ -33,7 +33,7 @@ from skills_normalizer import normalize_skills, skills_to_flat, compute_skills_f
 # Les dates de mission : « la mission continue-t-elle ? » et « quelle date ce
 # texte porte-t-il ? ». Les deux jeux d'essai sont partagés avec one-pager
 # (document-parsing/fixtures/mission_en_cours.json et date_mission.json).
-from periode_mission import analyser_periode
+from periode_mission import analyser_periode, ordre_missions
 # Appel LLM avec chaîne de secours : si un service est en panne ou à court de
 # quota, le suivant prend le relais au lieu de faire échouer l'analyse.
 import llm_cascade
@@ -926,7 +926,14 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
         "location": str(contact_src.get("location") or "").strip(),
     }
     
-    for exp in (data.get("experience") or []):
+    # Missions de la plus RÉCENTE à la plus ancienne (#177 ligne 7). DocIE rend
+    # les missions dans l'ordre du document, qui n'est pas toujours celui-là ;
+    # one-pager triait déjà, cv-parser non — le même CV se lisait donc à
+    # l'envers selon le service. `ordre_missions` est partagée avec
+    # docie_review.py : les deux l'appellent sur CETTE liste-ci, donc une marque
+    # « à vérifier » posée par DocIE sur `experience[0]` suit sa mission.
+    missions_source = data.get("experience") or []
+    for exp in (missions_source[i] for i in ordre_missions(missions_source)):
         periode = str(exp.get("period") or exp.get("periode") or "").strip()
         # Mission sans date de fin : elle est EN COURS, pas ponctuelle.
         # DocIE laisse `end_date` vide quand le CV n'annonce pas de fin ;

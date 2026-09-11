@@ -27,6 +27,10 @@ Ce que DocIE émet et que ce module NE fait PAS :
     c'est une log-probabilité (<= 0, non renormalisée), pas un score 0-1 ; la
     comparer à 0.5 signalerait tout champ qui en porte une.
 """
+# Le tri des missions appliqué par app.py::normalize_cv_data (#177 ligne 7).
+# Importé plutôt que réécrit : une marque ne suit sa mission que si les deux
+# appliquent exactement la même permutation.
+from periode_mission import ordre_missions
 
 # DocIE plafonne à EXACTEMENT 0.5 la confiance d'un champ dont il a dû tronquer
 # une liste qui bouclait : la valeur rendue est alors partielle sans que rien,
@@ -65,17 +69,28 @@ CHAMPS_EDUCATION = {"degree": "title", "institution": "subtitle", "year": "perio
 # `issuer` est supprimé à la normalisation, comme experience[].location.
 CHAMPS_CERTIFICATIONS = {"name": "name", "year": "year"}
 
-# Listes dont l'index DocIE survit tel quel à normalize_cv_data : elle recopie
-# chaque ligne sans en filtrer ni en réordonner aucune. `skills`, `languages`
+# Listes dont l'index DocIE mène à une ligne identifiable dans la fiche :
+# normalize_cv_data les recopie sans en filtrer aucune. `skills`, `languages`
 # et `interests` en revanche sont dédupliqués/filtrés (une catégorie sans item,
 # une langue sans nom, un centre d'intérêt vide disparaissent) : l'index DocIE
 # y désignerait la mauvaise ligne, on ne le traduit donc pas — le champ sort en
 # avertissement générique plutôt qu'en surlignage d'une ligne au hasard.
+#
+# `experience` est le seul cas où l'index ne survit PAS tel quel : depuis #177
+# ligne 7, normalize_cv_data range les missions de la plus récente à la plus
+# ancienne. L'index DocIE y est donc traduit par la permutation de tri (voir
+# `positions_apres_tri`), calculée par la MÊME fonction, sur la MÊME liste, que
+# celle qu'applique normalize_cv_data — un index non traduit surlignerait une
+# autre mission que celle dont DocIE doute, ce qui est pire que rien.
 LISTES_ALIGNEES = {
     "experience": CHAMPS_EXPERIENCE,
     "education": CHAMPS_EDUCATION,
     "certifications": CHAMPS_CERTIFICATIONS,
 }
+
+# Seule liste réordonnée par normalize_cv_data ; les autres gardent l'ordre
+# DocIE, leur permutation est donc l'identité.
+LISTES_REORDONNEES = ("experience",)
 
 # Champs que cv-parser recalcule lui-même : la confiance de DocIE dessus ne dit
 # rien de ce que la fiche affiche. `years_experience` est recalculé depuis les
@@ -137,12 +152,38 @@ def est_rempli(valeur):
     return True
 
 
-def _chemin_fiche(chemin_docie):
+def positions_apres_tri(data):
+    """Index DocIE -> position dans la fiche, par liste réordonnée.
+
+    `normalize_cv_data` range les missions de la plus récente à la plus ancienne
+    (#177 ligne 7) : `experience[0]` côté DocIE n'est plus `experience[0]` dans
+    la fiche. On rejoue donc ici la MÊME fonction de tri sur la MÊME liste — la
+    liste telle que `map_resume` la rend, celle que reçoit aussi
+    `normalize_cv_data` — plutôt que de supposer l'un ou l'autre ordre.
+    """
+    data = data if isinstance(data, dict) else {}
+    positions = {}
+    for nom in LISTES_REORDONNEES:
+        lignes = data.get(nom)
+        lignes = lignes if isinstance(lignes, list) else []
+        positions[nom] = {
+            source: cible for cible, source in enumerate(ordre_missions(lignes))
+        }
+    return positions
+
+
+def _chemin_fiche(chemin_docie, positions=None):
     """Chemin DocIE -> chemin dans la fiche cv-parser, "" s'il n'en a pas.
 
     "" n'est pas un échec : c'est un champ que la fiche n'expose pas (ou pas à
     un index fiable). L'appelant le remonte alors en avertissement générique —
     jamais en chemin inventé qui surlignerait le mauvais champ.
+
+    `positions` traduit les index des listes réordonnées (voir
+    `positions_apres_tri`). `None` signifie « aucune traduction connue » et
+    laisse l'index tel quel ; une table fournie fait autorité, et un index
+    qu'elle ne connaît pas (hors de la liste reçue) sort en "" plutôt qu'en
+    position devinée.
     """
     segments = _segments(chemin_docie)
     if len(segments) == 1 and segments[0] in CHAMPS_RACINE:
@@ -151,8 +192,11 @@ def _chemin_fiche(chemin_docie):
         return "contact.%s" % segments[1]
     if len(segments) == 3 and isinstance(segments[1], int) and segments[0] in LISTES_ALIGNEES:
         champ = LISTES_ALIGNEES[segments[0]].get(segments[2])
-        if champ:
-            return "%s[%d].%s" % (segments[0], segments[1], champ)
+        index = segments[1]
+        if positions is not None and segments[0] in LISTES_REORDONNEES:
+            index = positions.get(segments[0], {}).get(segments[1])
+        if champ and index is not None and index >= 0:
+            return "%s[%d].%s" % (segments[0], index, champ)
     return ""
 
 
@@ -178,6 +222,10 @@ def revue_docie(data, metadata):
     data = data if isinstance(data, dict) else {}
     metadata = metadata if isinstance(metadata, dict) else {}
     needs_review, warnings = [], []
+    # Les missions sont réordonnées par normalize_cv_data (#177 ligne 7) : sans
+    # cette traduction, une marque posée sur `experience[0]` par DocIE
+    # surlignerait la mission qui se trouve en tête APRÈS le tri, pas la sienne.
+    positions = positions_apres_tri(data)
 
     validation = metadata.get("validation")
     if validation is None:
@@ -207,7 +255,7 @@ def revue_docie(data, metadata):
             continue
         if not est_rempli(valeur_au_chemin(data, chemin_docie)):
             continue
-        chemin = _chemin_fiche(chemin_docie)
+        chemin = _chemin_fiche(chemin_docie, positions)
         if not chemin:
             warnings.append("docie_confiance_faible:%s" % chemin_docie)
         elif chemin not in needs_review:

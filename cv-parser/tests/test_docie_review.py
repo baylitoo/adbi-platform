@@ -13,8 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from docie_client import map_resume
-from docie_review import (SEUIL_CONFIANCE, est_rempli, perimer_revue, revue_docie,
-                          valeur_au_chemin)
+from docie_review import (SEUIL_CONFIANCE, est_rempli, perimer_revue,
+                          positions_apres_tri, revue_docie, valeur_au_chemin)
 
 FIXTURE = (Path(__file__).resolve().parents[2]
            / "document-parsing/fixtures/cv_samples/results/simple_docie.json")
@@ -269,6 +269,84 @@ class GabaritTests(unittest.TestCase):
                             "contact": {"email": "camille@example.fr"}})
         self.assertNotIn("revue-docie\"", html)
         self.assertNotIn("a-verifier\"", html)
+
+
+class MarqueApresTriTests(unittest.TestCase):
+    """#177 ligne 7 : la marque suit sa mission quand le tri la déplace.
+
+    La vraie réponse enregistrée est DÉJÀ dans l'ordre chronologique — le tri y
+    est l'identité et ne prouverait donc rien. Les missions sont ici données à
+    l'ENVERS, comme un CV qui les liste de la plus ancienne à la plus récente.
+    """
+
+    MISSIONS = [
+        {"company": "Ancienne", "title": "Dev junior",
+         "start_date": "Septembre 2019", "end_date": "Février 2022",
+         "description": "la plus ancienne, donnée en premier par DocIE"},
+        {"company": "Recente", "title": "Dev senior",
+         "start_date": "Mars 2022", "end_date": "Aujourd'hui",
+         "description": "la plus récente, donnée en second"},
+    ]
+
+    def test_la_permutation_est_celle_du_tri(self):
+        positions = positions_apres_tri({"experience": self.MISSIONS})
+        # DocIE 0 (« Ancienne ») descend en position 1 ; DocIE 1 remonte en 0.
+        self.assertEqual(positions["experience"], {0: 1, 1: 0})
+
+    def test_un_champ_peu_sur_de_la_mission_ancienne_est_marque_a_sa_nouvelle_place(self):
+        revue = revue_docie(
+            {"experience": self.MISSIONS},
+            {"validation": {}, "field_confidence": {"experience[0].description": 0.5}},
+        )
+        # Sans traduction, ce serait « experience[0].description », c'est-à-dire
+        # la mission « Recente » une fois la fiche triée : la mauvaise.
+        self.assertEqual(revue["needs_review"], ["experience[1].description"])
+
+    def test_la_fiche_triee_porte_bien_la_mission_designee(self):
+        """Le chemin marqué et la fiche rendue par normalize_cv_data concordent."""
+        import ast
+        import re as _re
+        from datetime import datetime
+
+        from periode_mission import analyser_periode, ordre_missions
+
+        racine = Path(__file__).resolve().parents[1]
+        arbre = ast.parse((racine / "app.py").read_text(encoding="utf-8"))
+        source = "\n\n".join(
+            ast.unparse(n) for n in arbre.body
+            if isinstance(n, ast.FunctionDef)
+            and n.name in {"normalize_cv_data", "compute_years_experience"}
+        )
+        espace = {"re": _re, "datetime": datetime, "analyser_periode": analyser_periode,
+                  "ordre_missions": ordre_missions,
+                  "normalize_skills": lambda *a, **k: {},
+                  "skills_to_flat": lambda *a, **k: [],
+                  "compute_skills_flat": lambda *a, **k: []}
+        exec(compile(source, str(racine / "app.py"), "exec"), espace)
+
+        fiche = espace["normalize_cv_data"]({"experience": self.MISSIONS})
+        self.assertEqual([e["company"] for e in fiche["experience"]], ["Recente", "Ancienne"])
+        revue = revue_docie(
+            {"experience": self.MISSIONS},
+            {"validation": {}, "field_confidence": {"experience[0].description": 0.5}},
+        )
+        index = int(revue["needs_review"][0].split("[")[1].split("]")[0])
+        self.assertEqual(fiche["experience"][index]["company"], "Ancienne")
+
+    def test_un_index_hors_liste_sort_en_avertissement_pas_en_fausse_position(self):
+        revue = revue_docie(
+            {"experience": self.MISSIONS},
+            {"validation": {}, "field_confidence": {"experience[7].description": 0.4}},
+        )
+        self.assertEqual(revue["needs_review"], [])
+
+    def test_les_autres_listes_gardent_leur_index(self):
+        """Seule `experience` est réordonnée : education et certifications non."""
+        data = {"education": [{"degree": "Master", "institution": "Lyon 1"},
+                              {"degree": "Licence", "institution": "Rennes 1"}]}
+        revue = revue_docie(data, {"validation": {}, "field_confidence": {
+            "education[1].degree": 0.5}})
+        self.assertEqual(revue["needs_review"], ["education[1].title"])
 
 
 if __name__ == "__main__":
