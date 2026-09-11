@@ -31,13 +31,21 @@ import re
 # côté JS (N.deaccent).
 from periode_mission import sans_accents
 
-# `re.ASCII` n'est pas décoratif : il ramène `\b`, `\w` et `\d` à la sémantique
-# ASCII, qui est celle des expressions régulières JS sans drapeau `u`. Sans lui,
-# `\b` serait Unicode côté Python et les deux moteurs se sépareraient sur un
-# libellé portant une lettre hors ASCII que la désaccentuation ne réduit pas
-# (« œ » par exemple). Les motifs, eux, sont ASCII : le texte est désaccentué
-# avant l'essai.
-_DRAPEAUX = re.IGNORECASE | re.ASCII
+# `re.IGNORECASE` SEUL, et surtout pas `re.ASCII` : il paraît rapprocher du JS
+# (dont `\b` est ASCII) mais restreint aussi `\s` à `[ \t\n\r\f\v]`, alors que
+# le `\s` de JS franchit l'espace insécable — celui que le texte extrait d'un
+# PDF porte entre les mots. Mesuré, avec `re.ASCII` et un U+00A0 :
+#
+#     « bon<NBSP>niveau »              JS B2  / Python None
+#     « niveau<NBSP>scolaire<NBSP>solide »  JS B1  / Python A2
+#     « professionnel<NBSP>complet »   JS C1  / Python B2
+#
+# soit exactement la divergence que ce portage existe pour supprimer. Le `\b`
+# reste donc Unicode côté Python : l'écart résiduel ne se voit que sur une
+# lettre hors ASCII accolée au motif (« œ », un idéogramme), que la
+# désaccentuation ne réduit pas et qu'aucun libellé de niveau ne porte — c'est
+# ce que dit le champ `_regle_frontiere` du jeu d'essai partagé.
+_DRAPEAUX = re.IGNORECASE
 
 # Table ORDONNÉE : le premier motif qui reconnaît gagne, et on s'arrête là.
 # L'ordre fait partie du contrat — c'est lui qui fait valoir B1, et non A2, à
