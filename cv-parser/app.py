@@ -1010,9 +1010,22 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
                 items.append(it)
                 seen_local.add(key)
                 _seen_items_global.add(key)
-        if category and items:
+        # Un groupe SANS catégorie garde ses compétences (#177 ligne 12).
+        # `if category and items` les jetait : un CV dont la section
+        # « Compétences » est une simple liste à puces — sans en-tête
+        # « Langages : », « Outils : » — perdait TOUTES ses compétences, en
+        # silence. C'est la CVthèque que /api/needs/<id>/match interroge : une
+        # compétence absente de la base, c'est un consultant que le
+        # rapprochement ne trouve pas. one-pager conservait déjà le groupe sous
+        # le libellé « Compétences » (lib/docie-extract.js::mapperCompetences) ;
+        # même libellé ici, le même CV donne donc la même fiche des deux côtés.
+        # La catégorie n'est qu'un intitulé d'affichage : skills_to_flat()
+        # l'ignore, donc le rapprochement voit les items quel que soit le
+        # libellé. Plusieurs groupes sans catégorie donnent plusieurs
+        # « Compétences », comme côté JS qui les libelle un par un.
+        if items:
             normalized["skills"].append({
-                "category": category,
+                "category": category or "Compétences",
                 "items": items
             })
             
