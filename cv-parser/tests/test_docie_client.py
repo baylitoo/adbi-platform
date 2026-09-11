@@ -42,6 +42,25 @@ class DocIEClientTests(unittest.TestCase):
         self.assertTrue(all(isinstance(v, str) for row in data["skills"] for v in row["items"]))
         self.assertNotIn("confidence", data["contact"])
 
+    def test_logprob_envelope_is_unwrapped_like_the_others(self):
+        """La confiance par logprob ajoute `model_confidence` à l'enveloppe.
+
+        Une détection limitée à {value, confidence, evidence_ids} laisserait
+        alors chaque scalaire arriver en dict : le nom du candidat s'afficherait
+        « {'value': ...} » dans la fiche, sans qu'aucune erreur ne soit levée.
+        """
+        output = {"schema_name": "resume", "result": {
+            "name": {"value": "Ada Lovelace", "model_confidence": 0.82},
+            "title": {"value": "Analyste", "confidence": 0.5, "model_confidence": 0.31, "evidence_ids": ["b2"]},
+            "experience": [{"title": {"value": "Analyste", "model_confidence": 0.6},
+                            "company": {"value": "Numelia", "model_confidence": 0.6}}],
+            "education": [], "skills": [], "languages": [], "certifications": [], "interests": [],
+        }}
+        data = map_resume(output)
+        self.assertEqual(data["name"], "Ada Lovelace")
+        self.assertEqual(data["title"], "Analyste")
+        self.assertEqual(data["experience"][0]["company"], "Numelia")
+
     def test_extract_polls_and_authenticates(self):
         (data, meta), session = self.run_client([
             (200, {"event_ids": ["event-1"]}),

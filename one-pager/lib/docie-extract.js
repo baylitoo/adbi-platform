@@ -9,6 +9,11 @@
  * de la chaine (edition, reduction one-page, exports PDF/PPTX) ne voie aucune
  * difference entre les deux origines.
  *
+ * Ce que DocIE dit de SA PROPRE extraction (avertissements de validation,
+ * confiance par champ) est reprojete dans `quality.warnings` / `quality.needs_review`,
+ * c'est-a-dire dans le bandeau et les surlignages de l'ecran de relecture :
+ * une extraction partielle ne doit pas s'y presenter comme complete et sure.
+ *
  * Le client bridge n'est charge qu'a l'appel (jamais au chargement du module) :
  * le fichier partage vit dans document-parsing/bridge/ et n'est present que si
  * l'empaquetage Docker de ce service l'y copie (voir one-pager/Dockerfile).
@@ -29,13 +34,96 @@ function chargerBridge() {
 function versListeDeChaines(valeur, cle) {
   if (valeur == null) return [];
   const liste = Array.isArray(valeur) ? valeur : [valeur];
-  return liste
-    .map((v) => (v && typeof v === "object" ? String(v[cle] ?? "").trim() : String(v ?? "").trim()))
-    .filter(Boolean);
+  return liste.map((v) => (v && typeof v === "object" ? texte(v[cle] ?? v) : texte(v))).filter(Boolean);
 }
 
 function texte(v) {
+  // Filet de securite : un champ ancre par DocIE arrive enveloppe
+  // ({value, confidence, evidence_ids}). Le bridge deballe ces enveloppes,
+  // mais la liste des cles qui en signalent une a deja evolue cote DocIE
+  // (`model_confidence`) ; sans ce repli un scalaire deballe une version trop
+  // tot se lirait « [object Object] » jusque dans le dossier exporte.
+  // Tout autre objet ne devient jamais du texte : « [object Object] » finirait
+  // dans le dossier exporte. DocIE renvoie null pour une feuille absente, donc
+  // {item: null} arrive bel et bien ici.
+  if (v && typeof v === "object" && !Array.isArray(v)) return "value" in v ? texte(v.value) : "";
   return String(v ?? "").trim();
+}
+
+/**
+ * Seuil de relecture humaine sur la confiance DocIE d'un champ.
+ *
+ * DocIE plafonne la confiance d'un champ a exactement 0.5 quand il a du
+ * tronquer une liste qui bouclait : la valeur rendue est alors partielle, mais
+ * rien dans le CV extrait ne le montre. C'est le seul signal par champ que
+ * l'agent emette ; `validation.warnings` est une prose libre, sans contrat de
+ * format, qu'on affiche telle quelle sans jamais en extraire un nom de champ.
+ */
+const SEUIL_CONFIANCE = 0.5;
+
+/** Chemin DocIE -> chemin cv_master, pour les champs hors missions. */
+const CHAMPS_DOCIE = {
+  name: "identity.full_name",
+  title: "identity.title",
+  "contact.email": "contact.email",
+  "contact.phone": "contact.phone_display",
+  "contact.linkedin": "contact.linkedin",
+  "contact.github": "contact.github",
+  "contact.location": "contact.location.city",
+};
+
+/** Chemin DocIE -> chemin cv_master, a l'interieur d'une mission. */
+const CHAMPS_MISSION = {
+  title: "role",
+  company: "company",
+  start_date: "start_date",
+  end_date: "end_date",
+  location: "location",
+  description: "context",
+  env_technique: "tech_stack",
+};
+
+/**
+ * Traduit « experience[2].title » en « exp_1.role ».
+ *
+ * DocIE numerote les missions dans l'ordre du document, le cv_master les trie
+ * par date decroissante : sans `idParIndexDocie`, un champ peu sur designerait
+ * la mauvaise mission dans l'ecran de relecture. Renvoie "" quand le champ n'a
+ * pas d'equivalent adressable (formation, competences, langues...), l'appelant
+ * le signale alors en avertissement plutot que de forger un chemin inexistant.
+ */
+function cheminMaster(cheminDocie, idParIndexDocie) {
+  if (Object.hasOwn(CHAMPS_DOCIE, cheminDocie)) return CHAMPS_DOCIE[cheminDocie];
+  const decoupe = /^experience\[(\d+)\]\.([a-z_]+)$/.exec(cheminDocie);
+  if (!decoupe) return "";
+  const id = idParIndexDocie.get(Number(decoupe[1]));
+  const champ = CHAMPS_MISSION[decoupe[2]];
+  return id && champ ? `${id}.${champ}` : "";
+}
+
+/** Valeur extraite a un chemin DocIE (« experience[0].title »), ou undefined. */
+function valeurAuChemin(racine, chemin) {
+  return (chemin.match(/[^.[\]]+/g) || []).reduce(
+    (valeur, cle) => (valeur !== null && typeof valeur === "object" ? valeur[cle] : undefined),
+    racine
+  );
+}
+
+function estRempli(valeur) {
+  if (valeur == null) return false;
+  if (typeof valeur === "string") return valeur.trim() !== "";
+  if (Array.isArray(valeur)) return valeur.length > 0;
+  if (typeof valeur === "number") return Number.isFinite(valeur);
+  if (typeof valeur === "object") return Object.keys(valeur).length > 0;
+  return true;
+}
+
+/** `validation.errors[]` / `validation.warnings[]` sont des chaines cote DocIE. */
+function texteDocie(entree) {
+  if (entree && typeof entree === "object" && !Array.isArray(entree)) {
+    return texte(entree.message ?? entree.detail ?? entree.field ?? "");
+  }
+  return texte(entree);
 }
 
 /** « bac+5 » deduit d'un intitule de diplome — memes mots-cles que lib/extract.js#guessLevel. */
@@ -47,9 +135,31 @@ function guessLevel(t) {
   return "";
 }
 
+/**
+ * Annee de fin lue dans un `education[].year` / `certifications[].year` DocIE.
+ *
+ * Ces deux champs sont du TEXTE LIBRE (comme start_date / end_date, cf.
+ * missionEnCours plus bas) : DocIE y recopie ce que le CV ecrit, donc aussi
+ * bien « 2019 » qu'une plage « 2016 - 2019 » ou une annee scolaire
+ * « 2019/2020 ». On prend la DERNIERE annee rencontree, pas la premiere :
+ * un diplome se date de son obtention, pas de son inscription (#177 ligne 14).
+ *
+ * Mesure avant correction : « 2016 - 2019 » rendait 2016. Le champ alimente
+ * l'affichage « (2019) » ET le tri des formations (lib/onepager.js, lignes 227
+ * et 228) — un master termine en 2019 s'affichait donc « (2016) » et passait
+ * derriere une licence plus ancienne. lib/extract.js, l'autre voie
+ * d'extraction, prenait deja la fin (`period.end || period.start`, ligne 814) :
+ * le meme CV se lisait differemment selon qu'il passait par DocIE ou par la
+ * mise en page.
+ *
+ * cv-parser garde la chaine verbatim (`education[].period` = « 2016 - 2019 »),
+ * et c'est voulu : une fiche CVtheque affiche la plage, un dossier one-page a
+ * besoin d'un scalaire triable. Ce qui doit s'accorder, c'est la regle — la
+ * derniere annee est celle du diplome —, pas la forme.
+ */
 function anneeDepuis(v) {
-  const m = String(v ?? "").match(/(19|20)\d{2}/);
-  return m ? Number(m[0]) : null;
+  const annees = String(v ?? "").match(/(?:19|20)\d{2}/g);
+  return annees ? Number(annees[annees.length - 1]) : null;
 }
 
 /**
@@ -76,13 +186,46 @@ function decouperDescription(description) {
   return { context: seule, highlights: [] };
 }
 
+/**
+ * « Cette mission est-elle toujours en cours ? » — liste de synonymes partagee.
+ *
+ * DocIE type experience[].start_date / end_date en `date` dans le schema
+ * adbi_resume, mais les renvoie en TEXTE LIBRE : la vraie reponse enregistree
+ * (document-parsing/fixtures/cv_samples/results/simple_docie.json) porte
+ * « Mars 2022 » et « Aujourd'hui ». Chaque service doit donc reconnaitre
+ * lui-meme « la mission continue », et les deux listes avaient diverge
+ * (inventaire #177, lignes 4, 5 et 6) : celle-ci connaissait « actuel » sans
+ * « maintenant », celle de cv-parser l'inverse. Mesure ici : une mission
+ * « Mars 2019 - Maintenant » ressortait TERMINEE, avec une date de fin nulle.
+ *
+ * Le motif et le jeu d'essai sont partages avec cv-parser
+ * (document-parsing/fixtures/mission_en_cours.json) ; le port Python vit dans
+ * cv-parser/periode_mission.py. Les tests des deux cotes comparent leur motif
+ * a ce fichier : ajouter un synonyme d'un seul cote casse le test de l'autre.
+ *
+ * Le texte est desaccentue avant l'essai, le motif n'a donc que des formes sans
+ * accent (« present » couvre « Present »). « ce jour » figure sans son « a » :
+ * dans « du 02/2022 a ce jour », le « a » est souvent deja consomme comme
+ * separateur de periode.
+ */
+const MOTIF_MISSION_EN_COURS = /\b(?:aujourd.?hui|ce\s+jour|actuel(?:le(?:ment)?)?|en\s+cours|maintenant|depuis|present|current|now|to\s+date)\b/i;
+
+/**
+ * Une date de fin absente vaut « en cours » : une mission sans fin connue est
+ * ouverte, pas ponctuelle (#177 ligne 6).
+ */
+function missionEnCours(dateFin) {
+  const valeur = N.deaccent(texte(dateFin)).toLowerCase().trim();
+  return !valeur || MOTIF_MISSION_EN_COURS.test(valeur);
+}
+
 function mapperExperience(brut, index) {
   const role = texte(brut && brut.title);
   const company = texte(brut && brut.company);
   const location = texte(brut && brut.location);
   const startRaw = texte(brut && brut.start_date);
   const endRaw = texte(brut && brut.end_date);
-  const isCurrent = !endRaw || /present|actuel|current|en\s*cours|aujourd|a\s*ce\s*jour/i.test(endRaw);
+  const isCurrent = missionEnCours(endRaw);
   const start = startRaw ? N.parseMonthYear(startRaw) : null;
   const end = isCurrent ? null : (endRaw ? N.parseMonthYear(endRaw) : null);
 
@@ -209,10 +352,14 @@ function mapperAdbiResume(data, metadata, doc) {
   const d = data && typeof data === "object" ? data : {};
   const fullName = texte(d.name);
 
-  const experiences = (Array.isArray(d.experience) ? d.experience : [])
-    .map(mapperExperience)
-    .sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")))
-    .map((e, k) => ({ ...e, id: `exp_${k + 1}` }));
+  // L'index DocIE d'origine est conserve a cote de la mission (jamais dedans :
+  // le cv_master est un contrat partage avec l'edition et les exports) pour
+  // pouvoir rattacher un champ peu sur a la bonne mission apres le tri.
+  const triees = (Array.isArray(d.experience) ? d.experience : [])
+    .map((brut, indexDocie) => ({ indexDocie, exp: mapperExperience(brut, indexDocie) }))
+    .sort((a, b) => String(b.exp.start_date || "").localeCompare(String(a.exp.start_date || "")));
+  const experiences = triees.map(({ exp }, k) => ({ ...exp, id: `exp_${k + 1}` }));
+  const idParIndexDocie = new Map(triees.map(({ indexDocie }, k) => [indexDocie, `exp_${k + 1}`]));
 
   const identity = {
     full_name: fullName ? N.properName(fullName) : "",
@@ -263,9 +410,46 @@ function mapperAdbiResume(data, metadata, doc) {
   if (!experiences.length) needs_review.push("experiences");
   experiences.forEach((e) => { if (!e.start_date) needs_review.push(`${e.id}.start_date`); });
 
-  const validation = metadata && metadata.validation;
+  const meta = metadata && typeof metadata === "object" ? metadata : {};
+  const validation = meta.validation;
   if (validation && validation.valid === false) warnings.push("docie_validation_negative");
-  if (metadata && metadata.schema_reported === false) warnings.push("docie_schema_non_verifie");
+  if (meta.schema_reported === false) warnings.push("docie_schema_non_verifie");
+
+  // ── Ce dont DocIE lui-meme doute ──────────────────────────────────────────
+  // Jusqu'ici seul `validation.valid === false` remontait : les avertissements
+  // et erreurs de DocIE, et la confiance qu'il attache a chaque champ, etaient
+  // jetes. Une extraction tronquee s'affichait donc comme complete et sure.
+  //
+  // `validation` accompagne toute extraction terminee (listes vides si tout va
+  // bien) : son absence n'est pas un succes, c'est une reponse qu'on n'a pas pu
+  // verifier — on le signale au lieu de la passer sous silence.
+  if (meta.validation === undefined || meta.validation === null) {
+    if (Object.keys(meta).length) warnings.push("docie_validation_absente");
+  } else {
+    for (const [cle, prefixe] of [["errors", "docie_erreur"], ["warnings", "docie_avertissement"]]) {
+      const entrees = Array.isArray(validation[cle]) ? validation[cle] : [];
+      // Texte repris verbatim : la prose de DocIE n'a aucun format stable dont
+      // on pourrait deduire un nom de champ, et le pretendre serait pire que
+      // de l'afficher telle quelle au relecteur.
+      for (const entree of entrees) {
+        const message = texteDocie(entree);
+        if (message) warnings.push(`${prefixe}:${message}`);
+      }
+    }
+  }
+
+  // Confiance par champ : <= 0.5 signifie « partiel, a relire » (DocIE plafonne
+  // a 0.5 exactement un champ dont il a du tronquer la liste). Un champ vide a
+  // une confiance nulle sans rien avoir de douteux : c'est une absence, deja
+  // couverte par les controles de completude ci-dessus.
+  const confiances = meta.field_confidence;
+  for (const [cheminDocie, confiance] of Object.entries(confiances && typeof confiances === "object" ? confiances : {})) {
+    if (typeof confiance !== "number" || !Number.isFinite(confiance) || confiance > SEUIL_CONFIANCE) continue;
+    if (!estRempli(valeurAuChemin(d, cheminDocie))) continue;
+    const chemin = cheminMaster(cheminDocie, idParIndexDocie);
+    if (!chemin) warnings.push(`docie_confiance_faible:${cheminDocie}`);
+    else if (!needs_review.includes(chemin)) needs_review.push(chemin);
+  }
 
   const master = {
     source: {
@@ -319,4 +503,11 @@ async function extraireViaDocie(buffer, filename, { env = process.env, fetchImpl
   return mapperAdbiResume(result, metadata, { filename });
 }
 
-module.exports = { extraireViaDocie, mapperAdbiResume, decouperDescription };
+module.exports = {
+  extraireViaDocie,
+  mapperAdbiResume,
+  decouperDescription,
+  // Exportes pour le test d'accord avec cv-parser (fixture partagee).
+  missionEnCours,
+  MOTIF_MISSION_EN_COURS,
+};

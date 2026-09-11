@@ -48,10 +48,21 @@ class BridgeTests(unittest.TestCase):
                 result = parse_response(case["body"], "adbi_resume", "adbi_agent_1")
                 self.assertEqual(result["result"], case["expected_result"])
                 self.assertEqual(result["metadata"]["schema_reported"], case["schema_reported"])
+                # Same keys and numbers as docie-bridge.js::fieldConfidences — the
+                # two bridges feed the same review signal to their consumers.
+                self.assertEqual(result["metadata"]["field_confidence"], case["expected_field_confidence"])
         meta = parse_response(CASES[0]["body"], "adbi_resume", "adbi_agent_1")["metadata"]
         self.assertEqual(meta["queue_wait_ms"], 125)
         self.assertFalse(parse_response(CASES[1]["body"], "adbi_resume", "adbi_agent_1")["metadata"]["validation"]["valid"])
         self.assertIsNone(parse_response(CASES[2]["body"], "adbi_resume", "adbi_agent_1")["metadata"]["validation"])
+        # A list DocIE had to truncate: capped confidence and warning both survive.
+        truncated = parse_response(CASES[3]["body"], "adbi_resume", "adbi_agent_1")["metadata"]
+        self.assertEqual(truncated["field_confidence"]["experience[0].description"], 0.5)
+        self.assertEqual(len(truncated["validation"]["warnings"]), 1)
+        self.assertEqual(truncated["latency_ms"], 285014)
+        # Warnings are carried verbatim: their prose has no field-path contract.
+        self.assertEqual(parse_response(CASES[4]["body"], "adbi_resume", "adbi_agent_1")["metadata"]["validation"]["warnings"][0],
+                         "derived subtotal not found in the document")
 
     def test_rejects_incomplete_invalid_and_wrong_schema(self):
         bad = [None, {}, {"choices": [None]}]

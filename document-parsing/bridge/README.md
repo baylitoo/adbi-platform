@@ -38,9 +38,22 @@ adaptation fait partie des migrations des consommateurs et doit être testée.
 
 Sortie : `{schema_name, result, metadata}`. Les enveloppes de champs
 `{value,confidence,evidence_ids}` sont déballées sans conversion arbitraire des
-valeurs. Les mappings métier restent aux consommateurs. Les arrays/null sont
-préservés. Une validation négative est conservée et doit déclencher une revue
-côté application ; absence de validation ne signifie pas succès validé.
+valeurs. `model_confidence` (confiance par logprob) compte aussi comme marqueur
+d'enveloppe : l'ignorer laisserait un scalaire arriver au consommateur sous
+forme de dict. Les mappings métier restent aux consommateurs. Les arrays/null
+sont préservés. Une validation négative est conservée et doit déclencher une
+revue côté application ; absence de validation ne signifie pas succès validé.
+
+La confiance par champ n'est plus perdue au déballage : `metadata.field_confidence`
+associe un chemin (`contact.email`, `experience[0].title`, `skills[1].items[2].item`)
+à la confiance DocIE de ce champ. La carte `docie_agent.field_confidence` fait foi
+quand l'agent l'émet ; sinon elle est reconstruite depuis les enveloppes. DocIE
+plafonne à 0.5 la confiance d'un champ dont il a dû tronquer une liste qui
+bouclait : `<= 0.5` est donc un critère sûr de « partiel, à faire relire ». Seule
+`confidence` est collectée (`model_confidence` est une autre échelle). Le seuil
+et la traduction vers les chemins de chaque application restent aux consommateurs.
+`validation.warnings` / `validation.errors` sont des chaînes libres, sans format
+stable : à afficher verbatim, jamais à analyser pour en déduire un nom de champ.
 
 Les réponses aplaties de l'agent et les enveloppes `result` sont acceptées.
 Le modèle retourné peut être le modèle de calcul, pas le nom d'agent. Les noms
