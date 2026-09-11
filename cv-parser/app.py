@@ -30,6 +30,9 @@ from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 # L'extraction/OCR est effectuée par DocIE, sans runtime ML dans ce process.
 from skills_normalizer import normalize_skills, skills_to_flat, compute_skills_flat
+# « La mission continue-t-elle ? » — liste de synonymes partagée avec one-pager
+# (document-parsing/fixtures/mission_en_cours.json).
+from periode_mission import mentionne_en_cours
 # Appel LLM avec chaîne de secours : si un service est en panne ou à court de
 # quota, le suivant prend le relais au lieu de faire échouer l'analyse.
 import llm_cascade
@@ -549,10 +552,6 @@ def split_bullets(bullets: list[str]) -> dict:
 def compute_years_experience(experience: list[dict]) -> int:
     """Estimate total years of experience from period strings."""
     YEAR_RE   = re.compile(r"\b(20\d{2}|19\d{2})\b")
-    PRESENT_RE = re.compile(
-        r"présent|present|aujourd'hui|current|maintenant|en\s+cours",
-        re.IGNORECASE,
-    )
     now_year = datetime.now().year
     total_months = 0
     for exp in experience:
@@ -560,7 +559,11 @@ def compute_years_experience(experience: list[dict]) -> int:
         years = YEAR_RE.findall(period)
         if len(years) >= 1:
             start = int(years[0])
-            end   = now_year if PRESENT_RE.search(period) else int(years[-1])
+            # La liste des « la mission continue » vit dans periode_mission.py,
+            # partagée avec one-pager : l'ancienne liste locale ignorait
+            # « actuel », donc une mission « Mars 2019 – Poste actuel » comptait
+            # pour 0 an et sortait son consultant du rapprochement.
+            end   = now_year if mentionne_en_cours(period) else int(years[-1])
             total_months += max(0, end - start) * 12
         elif period:
             total_months += 12
@@ -912,11 +915,20 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
     }
     
     for exp in (data.get("experience") or []):
+        periode = str(exp.get("period") or exp.get("periode") or "").strip()
+        # Mission sans date de fin : elle est EN COURS, pas ponctuelle.
+        # DocIE laisse `end_date` vide quand le CV n'annonce pas de fin ;
+        # `map_resume` fabrique alors une période réduite au seul début
+        # (« Mars 2019 »), que l'ancienneté comptait pour 0 an. On rend la
+        # période telle que le CV la dit, et « Depuis » la fait compter.
+        debut = str(exp.get("start_date") or "").strip()
+        if debut and not str(exp.get("end_date") or "").strip() and periode in ("", debut):
+            periode = f"Depuis {debut}"
         normalized["experience"].append({
             "company": str(exp.get("company") or exp.get("entreprise") or "").strip(),
             "client": str(exp.get("client") or "").strip(),
             "title": str(exp.get("title") or exp.get("poste") or "").strip(),
-            "period": str(exp.get("period") or exp.get("periode") or "").strip(),
+            "period": periode,
             "contexte": str(exp.get("contexte") or "").strip(),
             "objectifs": str(exp.get("objectifs") or "").strip(),
             "methodologie": str(exp.get("methodologie") or "").strip(),
