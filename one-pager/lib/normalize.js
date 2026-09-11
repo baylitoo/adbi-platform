@@ -21,7 +21,16 @@ const MOIS = {
   decembre: 12, dec: 12, december: 12,
 };
 
-const EN_COURS = /\b(aujourd.?hui|a\s+ce\s+jour|actuellement|en\s+cours|present|current|now|to\s+date|maintenant)\b/i;
+// « Cette mission est-elle toujours en cours ? » — meme question, et donc meme
+// liste, que cv-parser/periode_mission.py et lib/docie-extract.js. La liste
+// vivait ici en troisieme exemplaire independant, avec ses propres trous :
+// « Poste actuel » n'y figurait pas, donc une mission en cours etait lue comme
+// terminee sur la voie d'extraction par mise en page (cf. inventaire de
+// divergence #177, lignes 4 a 6). Elle est desormais lue depuis le jeu d'essai
+// partage, et un test verifie l'egalite : ajouter un synonyme d'un cote casse
+// le test de l'autre.
+const MISSION_EN_COURS = require("../../document-parsing/fixtures/mission_en_cours.json");
+const EN_COURS = new RegExp(MISSION_EN_COURS.motif, "i");
 
 function deaccent(s) {
   return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -93,13 +102,29 @@ function parsePeriod(text) {
   const SEP = "(?:\\s*[—–\\-−]{1,2}\\s*|\\s+(?:a|au|jusqu.?au?|to|until)\\s+)";
   // « ce jour » figure sans son « à » : dans « du 02/2022 à ce jour », le « à »
   // a deja ete consomme comme separateur de la periode.
-  const END = `(?:${DATE}|aujourd.?hui|(?:a\\s+)?ce\\s+jour|present|en\\s+cours|actuellement|current|now|maintenant)`;
+  //
+  // Role DIFFERENT de EN_COURS, d'ou une liste distincte plutot que le motif
+  // partage : ici on TOKENISE (qu'est-ce qui peut tenir lieu de borne de fin
+  // dans du texte brut), la-haut on CLASSE (cette borne signifie-t-elle « en
+  // cours »). « depuis » appartient au motif partage mais pas ici : il ouvre
+  // une periode au lieu de la fermer, et la branche `since` plus bas le traite.
+  // Consequence a ne pas perdre de vue : EN_COURS ne voit que ce que END a
+  // laisse passer, donc un synonyme absent d'ici est mort meme s'il figure
+  // dans le motif partage — c'est ainsi que « Poste actuel » etait ignore.
+  // Un test verifie que END couvre bien tout le vocabulaire du jeu d'essai.
+  const FIN_EN_COURS = "aujourd.?hui|(?:a\\s+)?ce\\s+jour|present|en\\s+cours|actuel(?:le(?:ment)?)?|current|now|to\\s+date|maintenant";
+  // Le `\b` final n'est pas decoratif : sans lui, « present » matche le debut de
+  // « Présentation client » et la borne de fin capturee devient « Present », donc
+  // EN_COURS declare la mission en cours. Mesure sur la branche avant ce commit :
+  // « Mars 2019 - Présentation client » ressortait current=true, matched
+  // « Mars 2019 - Présent ». Le jeu d'essai partage porte ce cas comme garde-fou.
+  const END = `(?:${DATE}|(?:${FIN_EN_COURS})\\b)`;
 
   // « Du 02/2022 à ce jour » : mission toujours en cours. Traite a part, car la
   // regle generale doit deja arbitrer « à » comme separateur ET comme premiere
   // lettre de la borne de fin — ambiguite qu'une seule expression gere mal.
   const jusquAujourdhui = ds.match(
-    new RegExp(`\\b(?:de|du|depuis|from)?\\s*(${DATE})\\s*(?:[—–\\-−]{1,2}|a|au|jusqu.?\\s*au?|to)\\s+(?:ce\\s+jour|aujourd.?hui|present|actuellement|en\\s+cours|now|maintenant)\\b`, "i")
+    new RegExp(`\\b(?:de|du|depuis|from)?\\s*(${DATE})\\s*(?:[—–\\-−]{1,2}|a|au|jusqu.?\\s*au?|to)\\s+(?:${FIN_EN_COURS})\\b`, "i")
   );
   if (jusquAujourdhui) {
     const debut = parseMonthYear(jusquAujourdhui[1]);
@@ -132,7 +157,19 @@ function parsePeriod(text) {
   const alone = s.trim();
   if (alone.length <= 24) {
     const one = parseMonthYear(alone);
-    if (one) return { start: one, end: one, current: EN_COURS.test(alone), matched: alone };
+    // Teste sur la version desaccentuee, comme `range` plus haut : le motif
+    // partage est ecrit sans accent (« present », « ce jour »), donc l'appliquer
+    // au texte brut ratait « Présent » et « À ce jour ».
+    //
+    // `end: one` est le defaut de cette branche (une date isolee borne les deux
+    // cotes), mais une mission en cours n'a pas de fin : on aligne sur la
+    // branche `range` plus haut, qui met deja end a null dans ce cas. Sans ca
+    // « Mars 2019 - Poste actuel » (24 caracteres, donc traite ici) ressortait
+    // current=true ET end=2019-03, soit une mission a la fois en cours et finie.
+    if (one) {
+      const enCours = EN_COURS.test(deaccent(alone));
+      return { start: one, end: enCours ? null : one, current: enCours, matched: alone };
+    }
   }
 
   return null;
@@ -326,4 +363,6 @@ module.exports = {
   findEmail, findPhone, findUrl, normalizePhone, formatPhone,
   RE_LINKEDIN, RE_GITHUB, RE_EMAIL,
   languageLevel, deaccent, trimTo, sentenceCase, properName, initials, trigram,
+  // Expose pour le test d'egalite avec le jeu d'essai partage (#177).
+  MOTIF_MISSION_EN_COURS: EN_COURS,
 };

@@ -1,0 +1,36 @@
+{
+  "_description": "Jeu d'essai partage : « cette mission est-elle toujours en cours ? ». DocIE type experience[].start_date / end_date en `date` dans le schema adbi_resume, mais les renvoie en texte libre (cf. cv_samples/results/simple_docie.json : « Mars 2022 », « Aujourd'hui »). cv-parser (Python) et one-pager (JS) doivent donc classer ces textes, et le faisaient chacun avec sa propre liste incomplete — cf. inventaire de divergence #177, lignes 4, 5 et 6. Ce fichier est la liste unique : les deux services comparent leur motif a `motif` et leur classement a `cas`, donc une nouvelle divergence redevient un echec de test.",
+  "_ports": [
+    "cv-parser/periode_mission.py (Python)",
+    "one-pager/lib/docie-extract.js (JS)"
+  ],
+  "_regle": "Le texte est d'abord desaccentue puis mis en minuscules ; le motif est applique sans tenir compte de la casse. Une date de fin VIDE vaut « en cours » : une mission sans fin connue est ouverte, pas ponctuelle (#177 ligne 6).",
+  "motif": "\\b(?:aujourd.?hui|ce\\s+jour|actuel(?:le(?:ment)?)?|en\\s+cours|maintenant|depuis|present|current|now|to\\s+date)\\b",
+  "vide_est_en_cours": true,
+  "cas": [
+    { "valeur": "Aujourd'hui", "en_cours": true, "preuve": "valeur reelle de experience[0].end_date dans fixtures/cv_samples/results/simple_docie.json" },
+    { "valeur": "AUJOURD'HUI", "en_cours": true, "preuve": "meme valeur, casse libre : DocIE recopie la casse du document" },
+    { "valeur": "Aujourd hui", "en_cours": true, "preuve": "apostrophe perdue a l'OCR d'un PDF scanne" },
+    { "valeur": "Poste actuel", "en_cours": true, "preuve": "#177 ligne 4 — 0 an mesure cote Python avant correction" },
+    { "valeur": "Actuel", "en_cours": true, "preuve": "forme courte de « Poste actuel »" },
+    { "valeur": "Actuellement", "en_cours": true, "preuve": "one-pager/lib/normalize.js, EN_COURS" },
+    { "valeur": "Maintenant", "en_cours": true, "preuve": "#177 ligne 5 — mission dite terminee cote JS avant correction" },
+    { "valeur": "En cours", "en_cours": true, "preuve": "one-pager/lib/normalize.js, EN_COURS ; cv-parser/app.py, PRESENT_RE" },
+    { "valeur": "Présent", "en_cours": true, "preuve": "cv-parser/app.py, PRESENT_RE" },
+    { "valeur": "present", "en_cours": true, "preuve": "CV bilingue : one-pager traduit FR -> EN" },
+    { "valeur": "Current", "en_cours": true, "preuve": "one-pager/lib/normalize.js, EN_COURS" },
+    { "valeur": "Now", "en_cours": true, "preuve": "one-pager/lib/normalize.js, EN_COURS" },
+    { "valeur": "To date", "en_cours": true, "preuve": "one-pager/lib/normalize.js, EN_COURS" },
+    { "valeur": "À ce jour", "en_cours": true, "preuve": "one-pager/lib/normalize.js, parsePeriod" },
+    { "valeur": "ce jour", "en_cours": true, "preuve": "one-pager/lib/normalize.js, parsePeriod — le « a » est parfois consomme comme separateur" },
+    { "valeur": "Depuis mars 2019", "en_cours": true, "preuve": "one-pager/lib/normalize.js, parsePeriod ; forme rendue par cv-parser pour une mission sans date de fin (#177 ligne 6)" },
+    { "valeur": "", "en_cours": true, "preuve": "#177 ligne 6 — une mission sans date de fin est ouverte" },
+    { "valeur": "   ", "en_cours": true, "preuve": "idem, date de fin reduite a des espaces" },
+    { "valeur": "Juin 2021", "en_cours": false, "preuve": "date de fin ordinaire" },
+    { "valeur": "Février 2022", "en_cours": false, "preuve": "valeur reelle de experience[1].end_date dans fixtures/cv_samples/results/simple_docie.json" },
+    { "valeur": "2021", "en_cours": false, "preuve": "annee seule" },
+    { "valeur": "12/2020", "en_cours": false, "preuve": "date numerique" },
+    { "valeur": "Présentation client", "en_cours": false, "preuve": "garde-fou : « present » ne doit pas matcher au milieu d'un mot" },
+    { "valeur": "Poste précédent", "en_cours": false, "preuve": "garde-fou : une mission passee ne doit pas etre lue comme actuelle" }
+  ]
+}
