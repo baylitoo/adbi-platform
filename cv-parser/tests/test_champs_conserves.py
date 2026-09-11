@@ -301,6 +301,68 @@ class GabaritEditionTests(unittest.TestCase):
         self.assertIn("cert-issuer a-verifier", html)
 
 
+class DossiersTests(unittest.TestCase):
+    """Les quatre sorties livrées au client montrent ce que DocIE a lu.
+
+    Deux gabarits HTML (dossier ADBI, dossier client) et les deux exports
+    (PDF, Word) — un champ conservé mais absent d'un seul des quatre serait
+    une fiche qui se contredit selon le format qu'on en tire.
+    """
+
+    FICHE = {
+        "name": "Camille Béranger", "title": "Développeuse", "years_experience": 7,
+        "contact": {}, "skills": [], "languages": [], "education": [],
+        "experience": [{"company": "Numelia", "title": "Dev", "location": "Lyon",
+                        "period": "Mars 2022 – Aujourd'hui", "description": "A"}],
+        "certifications": [CERTIFICATION_SYNTHETIQUE],
+    }
+
+    def test_dossier_adbi(self):
+        html = _rendu("adbi_cv.html", cv=self.FICHE, pied="ADBI")
+        self.assertIn("Lyon", html)
+        self.assertIn("Amazon Web Services", html)
+
+    def test_dossier_client(self):
+        html = _rendu("company_cv.html", cv=self.FICHE, pied="ADBI")
+        self.assertIn("Lyon", html)
+        self.assertIn("Amazon Web Services", html)
+
+    def test_export_pdf(self):
+        import fitz
+        from export_dossier import en_pdf
+        flux = en_pdf(self.FICHE, ["Data"], ["Pilotage"])
+        with fitz.open(stream=flux.read(), filetype="pdf") as document:
+            texte = "\n".join(page.get_text() for page in document)
+        self.assertIn("Lyon", texte)
+        self.assertIn("Amazon Web Services", texte)
+
+    def test_export_word(self):
+        from docx import Document
+        from export_dossier import en_word
+        # `duo()` écrit dans un tableau, pas dans un paragraphe : lire les deux.
+        document = Document(en_word(self.FICHE, ["Data"], ["Pilotage"]))
+        texte = "\n".join(
+            [p.text for p in document.paragraphs]
+            + [c.text for t in document.tables for r in t.rows for c in r.cells])
+        self.assertIn("Lyon", texte)
+        self.assertIn("Amazon Web Services", texte)
+
+    def test_une_fiche_d_avant_le_correctif_s_exporte_sans_erreur(self):
+        """Aucune fiche déjà en base ne porte l'une ou l'autre clé."""
+        from export_dossier import en_pdf, en_word
+        fiche = {**self.FICHE,
+                 "experience": [{"company": "Numelia", "title": "Dev"}],
+                 "certifications": [{"name": "ITIL", "year": "2020"}]}
+        for gabarit in ("adbi_cv.html", "company_cv.html"):
+            with self.subTest(sortie=gabarit):
+                html = _rendu(gabarit, cv=fiche, pied="ADBI")
+                self.assertIn("Numelia", html)
+                self.assertIn("ITIL", html)
+        for export in (en_pdf, en_word):
+            with self.subTest(sortie=export.__name__):
+                self.assertTrue(export(fiche, ["Data"], ["Pilotage"]).read())
+
+
 class RevueDocieTests(unittest.TestCase):
     """Tant que les champs étaient jetés, un doute sur eux sortait en
     avertissement générique — le seul choix honnête. Maintenant qu'ils

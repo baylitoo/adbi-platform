@@ -271,8 +271,15 @@ class Dossier:
         periode = str(exp.get("period") or "").strip()
         poste = str(exp.get("title") or "").strip()
 
+        # Lieu de mission (#177 ligne 17) : sur la ligne d'en-tête, à la suite
+        # de la société. La borne de 58 caractères reste celle d'avant — la
+        # période est posée en face, à droite, et déborder la percuterait — mais
+        # c'est la SOCIÉTÉ qui cède la place, pas le lieu : un nom d'entreprise
+        # raccourci reste identifiable, un lieu raccourci ne veut plus rien dire.
+        lieu = str(exp.get("location") or "").strip()
+        en_tete = f"{societe[:max(12, 58 - len(lieu) - 3)]} — {lieu}" if lieu else societe
         self._place(52)
-        self.page.insert_text((MARGE_G, self.y + 10), societe[:58],
+        self.page.insert_text((MARGE_G, self.y + 10), en_tete[:58],
                               fontname=self.police_g, fontsize=11, color=ORANGE)
         if periode:
             # Même orange que la société : la période fait partie de l'en-tête
@@ -369,6 +376,20 @@ def _replier(texte: str, largeur: int) -> list:
     return lignes
 
 
+def _certification(cert: dict) -> str:
+    """« AWS Certified Solutions Architect — Amazon Web Services ».
+
+    L'organisme émetteur (#177 ligne 18) est rendu par DocIE et était supprimé
+    à la normalisation ; il tient sur la même ligne que le nom, les deux
+    dossiers listant les certifications en « année / intitulé ». Une seule
+    fonction pour le PDF et le Word : les deux exports doivent dire la même
+    chose du même candidat.
+    """
+    nom = str(cert.get("name") or "").strip()
+    organisme = str(cert.get("issuer") or "").strip()
+    return f"{nom} — {organisme}" if nom and organisme else nom or organisme
+
+
 # ── Entrées publiques ────────────────────────────────────────────────────────
 
 def en_pdf(cv: dict, pastilles: list, savoir_faire: list) -> BytesIO:
@@ -404,7 +425,7 @@ def en_pdf(cv: dict, pastilles: list, savoir_faire: list) -> BytesIO:
                 titre_f += f" – {f['subtitle']}"
             d.ligne(str(f.get("period") or ""), titre_f)
         for c in (cv.get("certifications") or []):
-            d.ligne(str(c.get("year") or ""), str(c.get("name") or ""))
+            d.ligne(str(c.get("year") or ""), _certification(c))
 
     if cv.get("languages"):
         d.rubrique("Langues")
@@ -618,7 +639,7 @@ def en_word(cv: dict, pastilles: list, savoir_faire: list) -> BytesIO:
                 titre_f += f" – {f['subtitle']}"
             duo(f.get("period"), titre_f)
         for c in (cv.get("certifications") or []):
-            duo(c.get("year"), c.get("name"))
+            duo(c.get("year"), _certification(c))
 
     if cv.get("languages"):
         rubrique("Langues")
@@ -635,6 +656,11 @@ def en_word(cv: dict, pastilles: list, savoir_faire: list) -> BytesIO:
             client = str(e.get("client") or "").strip()
             if client and client.lower() not in societe.lower():
                 societe = f"{societe} – {client}" if societe else client
+            # Lieu de mission (#177 ligne 17), comme dans le PDF. Pas de borne
+            # ici : le Word replie la ligne, il n'a rien à percuter.
+            lieu = str(e.get("location") or "").strip()
+            if lieu:
+                societe = f"{societe} — {lieu}" if societe else lieu
             p = doc.add_paragraph()
             p.paragraph_format.space_before, p.paragraph_format.space_after = Pt(14), Pt(2)
             r = p.add_run(societe)
