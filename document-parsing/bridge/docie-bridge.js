@@ -35,7 +35,7 @@
 // uses for the block ceiling is not recorded anywhere we can check; see #180.
 const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
-const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis" };
+const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf" };
 // What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
 // This transport posts the document as an `image_url` data URI to
 // /v1/agents/<agent>/chat/completions, where DocIE OCRs it: liteparse renders

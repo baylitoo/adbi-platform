@@ -121,6 +121,16 @@ voir venir. Un refus pour dépassement revient donc après l'appel, sous l'une d
 formes déjà traitées : HTTP 413 → code `limits`, erreurs de `validation`
 conservées verbatim, ou `finish_reason` non « stop » → code `incomplete`.
 
+La difference qui compte pour choisir une voie n'est pas la vitesse mais la
+RESOLUTION DU SCHEMA : sur la voie agent il est resolu PAR NOM et doit donc
+exister cote Studio DocIE ; sur la voie texte, sa DEFINITION voyage dans la
+requete et rien n'a a etre enregistre au prealable. C'est ce qui permet a un
+service d'ajouter une piece sans action manuelle cote DocIE (cf. #170).
+
+La regle de routage n'est donc pas « preferer la voie texte » mais « utiliser
+la structure que la source a reellement » : un document scanne n'a pas de
+texte a envoyer et reste du ressort de la voie fichier.
+
 Sortie : `{schema_name, result, metadata}`. Les enveloppes de champs
 `{value,confidence,evidence_ids}` sont déballées sans conversion arbitraire des
 valeurs. `model_confidence` (confiance par logprob) compte aussi comme marqueur

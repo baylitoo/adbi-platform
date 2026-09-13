@@ -1,0 +1,118 @@
+{
+  "request_id": "req-fixture-urssaf-unreadable-0001",
+  "schema_name": "urssaf",
+  "model_profile": "nuextract3_ollama",
+  "document_hash": "sha256:req-fixture-urssaf-unreadable-0001",
+  "result": {
+    "document_type": "urssaf",
+    "extraction_notes": [
+      "scan illisible, aucun champ identifiant extrait"
+    ],
+    "company_name": {
+      "value": null,
+      "evidence_ids": [],
+      "confidence": 0.0
+    },
+    "siren": {
+      "value": null,
+      "evidence_ids": [],
+      "confidence": 0.0
+    },
+    "siret": {
+      "value": null,
+      "evidence_ids": [],
+      "confidence": 0.0
+    },
+    "registered_address": null,
+    "issued_date": {
+      "value": null,
+      "evidence_ids": [],
+      "confidence": 0.0
+    },
+    "valid_until": null,
+    "security_code": null,
+    "urssaf_agency": {
+      "value": "URSSAF",
+      "evidence_ids": [],
+      "confidence": 0.2
+    },
+    "employee_count": null,
+    "declared_payroll": null
+  },
+  "validation": {
+    "valid": false,
+    "errors": [
+      "aucun champ identifiant"
+    ],
+    "warnings": []
+  },
+  "usage": null,
+  "latency_ms": 54321,
+  "dynamic_schema": {
+    "document_type": "urssaf",
+    "fields": [
+      {
+        "name": "company_name",
+        "type": "string",
+        "description": "Denomination sociale du cotisant a qui l'attestation est delivree",
+        "fields": []
+      },
+      {
+        "name": "siren",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "siret",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "registered_address",
+        "type": "string",
+        "description": "Adresse du cotisant telle qu'imprimee sur l'attestation",
+        "fields": []
+      },
+      {
+        "name": "issued_date",
+        "type": "date",
+        "description": "Date de delivrance / d'edition de l'attestation",
+        "fields": []
+      },
+      {
+        "name": "valid_until",
+        "type": "date",
+        "description": "Date de fin de validite imprimee sur l'attestation, quand elle y figure",
+        "fields": []
+      },
+      {
+        "name": "security_code",
+        "type": "string",
+        "description": "Code de securite permettant de verifier l'attestation sur urssaf.fr",
+        "fields": []
+      },
+      {
+        "name": "urssaf_agency",
+        "type": "string",
+        "description": "URSSAF emettrice (region / organisme)",
+        "fields": []
+      },
+      {
+        "name": "employee_count",
+        "type": "number",
+        "description": "Nombre de salaries declare sur l'attestation",
+        "fields": []
+      },
+      {
+        "name": "declared_payroll",
+        "type": "money",
+        "description": "Montant des remunerations declarees (masse salariale) figurant sur l'attestation",
+        "fields": []
+      }
+    ]
+  },
+  "routing": null,
+  "response_format_style": "json_schema"
+}

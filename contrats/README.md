@@ -45,13 +45,29 @@ optionnelle (Pappers/INSEE) et la signature (Yousign/Zoho) sont des appels
 externes, tous deux à clé et documentés.
 
 Exception opt-in (`DOCIE_EXTRACTION_ENABLED=true`, désactivée par défaut,
-issue #153) : la pièce Kbis de la checklist est alors envoyée au service DocIE
-configuré (`DOCIE_BASE_URL`/`DOCIE_API_KEY`/`DOCIE_AGENT_KBIS`) via le bridge
-partagé `document-parsing/bridge/`, pour extraction — voir
-`lib/docie-extraction.js`. Les autres pièces (URSSAF, RIB, CNI, attestation
-fiscale...) restent toujours analysées localement, flag ou pas : le bridge n'a
-pas d'agent DocIE configuré pour elles à ce jour. Sur échec DocIE (config
-manquante, timeout, erreur), repli automatique sur l'analyse locale.
+issues #153 et #170) : deux pièces de la checklist sont alors envoyées au
+service DocIE configuré via le bridge partagé `document-parsing/bridge/`, par
+deux voies différentes — voir `lib/docie-extraction.js`.
+
+- **Kbis** — voie agent (`DOCIE_BASE_URL`/`DOCIE_API_KEY`/`DOCIE_AGENT_KBIS`) :
+  le PDF ou l'image part entier, les backends OCR de DocIE le lisent, et
+  l'agent résout son schéma **par nom** — ce schéma doit donc exister côté
+  Studio DocIE.
+- **Attestation de vigilance URSSAF** — voie texte : la couche texte du PDF est
+  lue localement, puis envoyée avec la **définition du schéma dans le corps de
+  la requête** (`document-parsing/schemas/urssaf.schema.json`). Aucun
+  enregistrement préalable côté Studio, et donc aucun agent à configurer. La
+  date de délivrance extraite alimente la validité 6 mois affichée par la
+  checklist, à la place de la devinette par regex de l'analyse locale. Le choix
+  de la voie se fait **à l'exécution sur le document reçu** : une attestation
+  scannée (image, ou PDF dont une page est sans texte) n'est jamais envoyée —
+  elle retombe sur l'analyse locale, exactement comme avant, avec un
+  avertissement nommant la cause.
+
+Les cinq autres pièces (RIB, CNI, attestation fiscale, coordonnées,
+informations spécifiques) restent toujours analysées localement, flag ou pas :
+elles n'ont ni schéma ni mapping à ce jour. Sur échec DocIE (config manquante,
+timeout, erreur), repli automatique sur l'analyse locale.
 
 Même flag, autre usage : le pré-remplissage de l'import de contrat depuis un
 PDF (`POST /api/contracts/importer/extraire`, bouton « Pré-remplir depuis le

@@ -1,0 +1,65 @@
+{
+  "document_type": "urssaf",
+  "fields": [
+    {
+      "name": "company_name",
+      "type": "string",
+      "description": "Denomination sociale du cotisant a qui l'attestation est delivree",
+      "fields": []
+    },
+    {
+      "name": "siren",
+      "type": "string",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "siret",
+      "type": "string",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "registered_address",
+      "type": "string",
+      "description": "Adresse du cotisant telle qu'imprimee sur l'attestation",
+      "fields": []
+    },
+    {
+      "name": "issued_date",
+      "type": "date",
+      "description": "Date de delivrance / d'edition de l'attestation",
+      "fields": []
+    },
+    {
+      "name": "valid_until",
+      "type": "date",
+      "description": "Date de fin de validite imprimee sur l'attestation, quand elle y figure",
+      "fields": []
+    },
+    {
+      "name": "security_code",
+      "type": "string",
+      "description": "Code de securite permettant de verifier l'attestation sur urssaf.fr",
+      "fields": []
+    },
+    {
+      "name": "urssaf_agency",
+      "type": "string",
+      "description": "URSSAF emettrice (region / organisme)",
+      "fields": []
+    },
+    {
+      "name": "employee_count",
+      "type": "number",
+      "description": "Nombre de salaries declare sur l'attestation",
+      "fields": []
+    },
+    {
+      "name": "declared_payroll",
+      "type": "money",
+      "description": "Montant des remunerations declarees (masse salariale) figurant sur l'attestation",
+      "fields": []
+    }
+  ]
+}

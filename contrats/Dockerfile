@@ -29,6 +29,17 @@ COPY --chown=node:node . .
 #    bridge : "ne pas copier manuellement ces fichiers dans les modules").
 COPY --from=bridge --chown=node:node . /document-parsing/bridge
 
+# 4) Schemas dynamiques partages (issue #170) : document-parsing/schemas/ porte
+#    la DEFINITION des schemas envoyes dans le corps de la requete DocIE (voie
+#    texte -- urssaf.schema.json). Meme mecanique et meme raison que le bridge
+#    ci-dessus : lib/docie-extraction.js les resout par un chemin relatif
+#    depuis /app/lib (../../document-parsing/schemas), donc meme emplacement a
+#    la racine de l'image. Sans cette copie, le require() du schema echoue dans
+#    le conteneur, l'erreur est rattrapee par le repli, et la voie texte ne
+#    tournerait JAMAIS en production sans que rien ne le dise -- exactement le
+#    piege de #164 (DOCIE_ALLOW_HTTP documente mais absent du compose).
+COPY --from=schemas --chown=node:node . /document-parsing/schemas
+
 # Les fichiers (referentiel, cle API, contrats generes) vivent dans
 # /app/data, monte comme volume pour persister hors du conteneur.
 # L'historique/signatures/corbeille/templates-perso vivent en PostgreSQL
