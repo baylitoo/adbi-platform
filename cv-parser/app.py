@@ -2375,12 +2375,54 @@ def update_cv(cv_id):
         cv = cvstore_pg.get_cv(cv_id)
         if cv is None:
             abort(404)
+        preserver_niveau_declare(cv, updates)
         for key, val in updates.items():
             cv[key] = val
         perimer_revue(cv, updates)
         cv["updated_at"] = datetime.now().isoformat()
         cvstore_pg.save_cv(cv_id, cv)
     return jsonify({"success": True})
+
+
+def preserver_niveau_declare(cv, updates):
+    """Reporte `niveau_declare` de la fiche enregistrée vers les langues d'un PATCH.
+
+    `niveau_declare` garde le libellé d'origine du CV (« natif », « courant »)
+    à côté du niveau CECRL déduit — l'équivalent du `self_described` de
+    one-pager. Les deux services le conservent comme provenance : NI l'un NI
+    l'autre ne l'affiche.
+
+    C'est précisément ce qui le rendait fragile. L'écran d'édition ne le montre
+    pas, donc `collectData()` ne le renvoie pas — et comme les langues sont
+    reconstruites champ par champ (`{language, level}`, cv_detail.html) et non
+    parcourues par la boucle générique `[data-f]`, le premier enregistrement
+    d'une fiche effaçait la provenance de TOUTES ses langues, en silence.
+
+    Le réflexe serait d'ajouter le champ au DOM pour qu'il fasse l'aller-retour,
+    comme pour le lieu et l'organisme (lignes 17-18). Mauvaise forme ici : ce
+    n'est pas du contenu que l'utilisateur édite, c'est une trace de ce que le
+    document disait. On la reporte donc côté serveur, appariée par nom de langue
+    (insensible à la casse et aux espaces), plutôt que de la faire transiter par
+    le navigateur.
+
+    Une langue renommée ou ajoutée à la main n'a pas de provenance : on n'en
+    invente pas, le champ reste simplement absent.
+    """
+    if "languages" not in updates or not isinstance(updates.get("languages"), list):
+        return
+    connues = {}
+    for ancienne in (cv.get("languages") or []):
+        if isinstance(ancienne, dict):
+            nom = str(ancienne.get("language") or "").strip().casefold()
+            declare = ancienne.get("niveau_declare")
+            if nom and declare:
+                connues[nom] = declare
+    for langue in updates["languages"]:
+        if not isinstance(langue, dict) or langue.get("niveau_declare"):
+            continue
+        declare = connues.get(str(langue.get("language") or "").strip().casefold())
+        if declare:
+            langue["niveau_declare"] = declare
 
 
 @app.route("/api/cvs/<cv_id>", methods=["DELETE"])
