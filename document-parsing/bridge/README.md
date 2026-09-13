@@ -26,15 +26,63 @@ privé de confiance. Elle ne chiffre pas les échanges. TLS n'est jamais désact
 
 ## Contrat
 
+Deux points d'entrée, un par **surface DocIE**. Ce ne sont pas deux formats d'une
+même voie : ce sont deux endpoints, deux corps de requête, deux façons pour DocIE
+de lire le document. La règle d'aiguillage vient de l'équipe DocIE (#180) :
+**utiliser la structure que la source possède réellement**, et non « préférer la
+voie texte » — un PDF scanné n'a aucun texte lisible par machine, la voie fichier
+y reste la seule possible.
+
+### Voie fichier — `/v1/agents/{agent}/chat/completions`
+
 `extract_document(bytes, mime_type, kind="resume")` en Python et
 `extractDocument(buffer, mimeType, {kind: "resume"})` en Node envoient un seul POST
 à `/v1/agents/{agent}/chat/completions` avec `model={agent}`, document en data URI
-dans `image_url`, **`parallel_extraction: true` et `stream: false`**.
+dans `image_url`, **`parallel_extraction: true` et `stream: false`**, en-tête
+`Authorization: Bearer`.
 
 PDF et images PNG/JPEG sont acceptés, jusqu'à 20 MiB. Aucun OCR local,
 enregistrement de schéma, création d'agent ni retry automatique. L'OCR et son cache
-restent à DocIE. DOCX et texte ne sont pas envoyés avec un contrat inventé : leur
-adaptation fait partie des migrations des consommateurs et doit être testée.
+restent à DocIE. Un DOCX n'est pas envoyé ici : rien derrière l'enveloppe
+`image_url` ne le lit.
+
+### Voie texte — `/v1/extract/text`
+
+`extract_text(text, kind="resume", dynamic_schema=None)` en Python et
+`extractText(text, {kind: "resume", dynamicSchema})` en Node envoient un seul POST
+à `/v1/extract/text` avec `{text, schema_name, schema_mode: "dynamic",
+dynamic_schema}` et l'en-tête `x-api-key`. **Pas d'enveloppe data URI**, et rien
+de la voie chat (`model`, `messages`, `max_tokens`) : rien ne montre que cet
+endpoint les lise. C'est la forme portée depuis la seule requête dont ce dépôt
+garde une réponse réelle réussie (`cv-parser/docie_client.py`, réponse obtenue
+par `document-parsing/scripts/test_api.py` — le vecteur
+`tests/contract_text.json` en est extrait).
+
+Pour une source qui **possède déjà** du texte lisible par machine : un `.txt`,
+les paragraphes d'un DOCX, la couche texte d'un PDF déjà lue. Jamais un repli
+après un échec de la voie fichier.
+
+`dynamic_schema` est le schéma de l'appelant et le reste : un transport ne
+possède pas de schéma métier. Il n'est pas optionnel en pratique pour un schéma
+**personnalisé** — `document-parsing/scripts/register_and_test.py` enregistre que
+`schema_name` seul ne résout que le petit registre intégré de DocIE, donc
+`adbi_resume` doit voyager avec sa définition —, mais son absence n'est pas
+refusée : les noms intégrés existent.
+
+`ocr_blocks` n'est **pas** envoyé. DocIE découpe le texte lui-même et, pour du
+texte brut, nous n'avons rien de mieux à proposer que son propre découpage ; le
+chemin DOCX de cv-parser envoie du texte sans lui depuis son écriture. Il
+deviendra un argument optionnel transmis tel quel le jour où un appelant
+démontrera de meilleures frontières (les paragraphes d'un DOCX, par exemple).
+
+L'ancrage fonctionne **à l'identique** sur cette voie : le service découpe le
+texte lui-même, donc chaque feuille revient en `{value, confidence,
+evidence_ids}` et toute la chaîne de signaux de revue (#172/#173/#175) est
+inchangée. Deux différences honnêtes, qui viennent de l'endpoint et non d'un
+choix ici : `metadata.agent` vaut `null` (il n'y a pas d'agent sur cette voie),
+et le code `incomplete` n'existe pas (il lit `finish_reason`, que cette réponse
+n'a pas — une troncature s'y présente en erreurs de `validation` ou en HTTP 413
+→ `limits`). Tout le reste du contrat de métadonnées est identique.
 
 Cette liste est celle de la **voie agent/chat**, pas la liste d'upload de DocIE
 (`ALLOWED_UPLOAD_MIME_TYPES`) : le document part en data URI `image_url` et c'est
@@ -44,10 +92,10 @@ WebP faisait un aller-retour réseau inutile avant d'échouer ; il échoue
 maintenant localement, avec les types acceptés nommés. `text/plain` et
 `image/tiff` figurent dans la liste d'upload DocIE mais **ne sont pas ajoutés
 ici** : le texte n'a aucun backend OCR derrière l'enveloppe `image_url`, sa voie
-vérifiée est `POST /v1/extract/text` (`text` dans le corps, mêmes paramètres de
-schéma, ancrage conservé — déjà utilisée par `cv-parser/docie_client.py`) ; le
-TIFF est plausible mais non vérifié, et son acceptation dépend du backend OCR du
-déploiement, pas de la seule liste d'upload. Voir #180.
+est `extract_text` / `extractText` ci-dessous — un autre endpoint, pas un type
+MIME à ajouter à cette liste ; le TIFF est plausible mais non vérifié, et son
+acceptation dépend du backend OCR du déploiement, pas de la seule liste
+d'upload. Voir #180.
 
 Limites documentées par DocIE : 25 Mo d'upload, 26 Mo de corps, 1 000 000
 caractères de texte, **1 000 blocs OCR par document**, 20 000 caractères par

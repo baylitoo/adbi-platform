@@ -2,6 +2,20 @@
 
 // Server-side counterpart of docie_bridge.py. No browser API key, OCR or retries.
 //
+// Two entry points, one per DocIE surface, because the two surfaces are
+// genuinely different -- not because text is a "format" the first could take:
+//
+//   extractDocument(buffer, mimeType)  POST /v1/agents/<agent>/chat/completions
+//       The document travels as an `image_url` data URI and DocIE's OCR
+//       backends read it. Only what those backends read may be sent.
+//
+//   extractText(text)                  POST /v1/extract/text
+//       The text travels as `text` in the body, no data-URI wrapper, and DocIE
+//       blocks it itself. For a source that already HAS readable text.
+//
+// Routing rule, from DocIE's team (#180): use the structure the source actually
+// has. Not "prefer the text path" -- a scanned PDF has no text at all.
+//
 // Our own caps, chosen locally before DocIE's were known. 20 MiB stays: it sits
 // inside DocIE's own guards. DocIE's documented limits, per its team: 25 MB
 // upload, 26 MB request body, 1,000,000 characters of text, 1,000 OCR blocks
@@ -32,10 +46,10 @@ const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis" };
 // pointless round-trip before failing remotely. It now fails locally, named.
 //
 // `text/plain` and `image/tiff` are in DocIE's upload allowlist but are NOT
-// added here. Text has no OCR backend behind the `image_url` wrapper; its
-// verified path is POST /v1/extract/text, which takes `text` in the body with
-// the same schema parameters and still grounds (cv-parser already routes text
-// and DOCX there -- docie_client.py). TIFF is plausible through the wrapper
+// added here. Text has no OCR backend behind the `image_url` wrapper: its path
+// is extractText() below, a different endpoint with a different request body
+// -- adding a MIME type to this set would send text through the OCR wrapper,
+// which is precisely what does not work. TIFF is plausible through the wrapper
 // but unverified, and acceptance depends on the deployment's OCR backend, not
 // on the allowlist alone. Neither is added on a reading of someone else's
 // configuration -- that is exactly how `image/webp` got here (#180).
@@ -66,8 +80,11 @@ class DocIEBridgeError extends Error {
 function fail(code, message, status) { throw new DocIEBridgeError(code, message, status); }
 function object(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
-function configuration(kind, env) {
-  if (!Object.hasOwn(SCHEMAS, kind)) fail("configuration", "Unsupported document kind.");
+// API root, access key and timeout — what BOTH DocIE paths need. Split out of
+// configuration() for extractText(): POST /v1/extract/text has no agent in its
+// URL, so requiring DOCIE_AGENT_<KIND> there would refuse a text extraction
+// over a setting that call never uses.
+function connection(env) {
   const base = (env.DOCIE_BASE_URL || "").trim().replace(/\/+$/, "");
   let url;
   try { url = new URL(base); } catch { fail("configuration", "Invalid DocIE API root URL."); }
@@ -79,13 +96,18 @@ function configuration(kind, env) {
   }
   const key = (env.DOCIE_API_KEY || "").trim();
   if (!key || /[\r\n]/.test(key)) fail("configuration", "Configure a valid DOCIE_API_KEY.");
+  const timeout = Number(env.DOCIE_TIMEOUT_SECONDS ?? "360");
+  if (!Number.isFinite(timeout) || timeout < 1 || timeout > 3600) fail("configuration", "Invalid DocIE timeout or token budget.");
+  return { base, key, timeout };
+}
+
+function configuration(kind, env) {
+  if (!Object.hasOwn(SCHEMAS, kind)) fail("configuration", "Unsupported document kind.");
+  const { base, key, timeout } = connection(env);
   const agent = (env["DOCIE_AGENT_" + kind.toUpperCase()] || "").trim();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(agent)) fail("configuration", "Configure the document kind's DocIE agent name.");
-  const timeout = Number(env.DOCIE_TIMEOUT_SECONDS ?? "360");
   const tokens = Number(env.DOCIE_MAX_TOKENS ?? "8192");
-  if (!Number.isFinite(timeout) || timeout < 1 || timeout > 3600 || !Number.isInteger(tokens) || tokens < 1 || tokens > 65536) {
-    fail("configuration", "Invalid DocIE timeout or token budget.");
-  }
+  if (!Number.isInteger(tokens) || tokens < 1 || tokens > 65536) fail("configuration", "Invalid DocIE timeout or token budget.");
   return { endpoint: base + "/v1/agents/" + agent + "/chat/completions", key, agent, timeout, tokens };
 }
 
@@ -169,22 +191,55 @@ function parseResponse(body, expectedSchema, agent) {
   return { schema_name: expectedSchema, result: unwrap(result), metadata };
 }
 
-async function extractDocument(content, mimeType, { kind = "resume", env = process.env, fetchImpl = fetch } = {}) {
-  const { endpoint, key, agent, timeout, tokens } = configuration(kind, env);
-  if (!Buffer.isBuffer(content) || !content.length || content.length > MAX_DOCUMENT_BYTES) fail("input", "Document must contain between 1 byte and 20 MiB.");
-  if (!MIME_TYPES.has(mimeType)) fail("input", "Unsupported document MIME type; use PDF, PNG or JPEG.");
-  const payload = { model: agent, parallel_extraction: true, stream: false, max_tokens: tokens,
-    messages: [{ role: "user", content: [
-      { type: "text", text: "Extract the document using your configured schema. Do not invent missing information." },
-      { type: "image_url", image_url: { url: "data:" + mimeType + ";base64," + content.toString("base64") } },
-    ] }] };
+// POST /v1/extract/text answers FLAT — no `choices`, no `finish_reason`. A real
+// recorded answer (document-parsing/scripts/test_api.py against the deployment)
+// carries: request_id, schema_name, model_profile, document_hash, result,
+// validation, usage, latency_ms, dynamic_schema, routing, response_format_style.
+// The service blocks the text itself, so `result` is grounded exactly like the
+// chat path's — {value, confidence, evidence_ids} per leaf — and every review
+// signal built on that keeps working unchanged.
+//
+// Same metadata contract as parseResponse, same stable error codes, with two
+// honest differences that come from the endpoint, not from a choice here:
+//   * `agent` is null. There is no agent on this path; claiming one would name
+//     a component that took no part in the extraction.
+//   * no `incomplete` code. That code reads `finish_reason`, which a chat
+//     completion has and this response does not. A truncation shows up here as
+//     `validation` errors or an HTTP 413 -> `limits`, both already handled.
+function parseTextResponse(body, expectedSchema) {
+  if (!object(body)) fail("response", "Invalid DocIE extraction response.");
+  const result = body.result;
+  if (!object(result) || !Object.keys(result).length) fail("response", "DocIE returned an empty or malformed result.");
+  // Same arbitration as the chat path: a NAMED and wrong schema is refused, a
+  // SILENT one is accepted and reported as unverified (schema_reported).
+  const reported = [body.schema_name, result.document_type];
+  if (reported.some(item => item != null && item !== expectedSchema)) fail("schema", "DocIE returned an unexpected document schema.");
+  const validation = body.validation ?? null;
+  if (validation != null && !object(validation)) fail("response", "Invalid DocIE validation metadata.");
+  const confidence = reportedFieldConfidence(body);
+  const metadata = { request_id: body.request_id ?? null, agent: null, model: body.model_profile ?? null,
+    validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
+    schema_reported: reported.some(item => item != null) };
+  for (const name of ["queue_wait_ms", "latency_ms", "generation_ms"]) {
+    const value = body[name];
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) metadata[name] = value;
+  }
+  return { schema_name: expectedSchema, result: unwrap(result), metadata };
+}
+
+// One POST, never a retry: DocIE work is potentially billable. Shared by both
+// entry points on purpose — status classification, the response ceiling, the
+// timeout and the reflected-key redaction are the same guarantees whichever
+// DocIE surface is called, and a second copy of them is exactly the drift this
+// module exists to prevent.
+async function postJson(endpoint, headers, payload, key, timeout, fetchImpl) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout * 1000);
   const started = performance.now();
   let reader;
   try {
     const response = await fetchImpl(endpoint, { method: "POST", redirect: "manual", signal: controller.signal,
-      headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (response.status !== 200) {
       await response.body?.cancel();
       // 413 gets its own code: DocIE refuses a document that is beyond the
@@ -208,9 +263,7 @@ async function extractDocument(content, mimeType, { kind = "resume", env = proce
     let body;
     try { body = JSON.parse(Buffer.concat(chunks).toString("utf8").split(key).join("[REDACTED]")); }
     catch { fail("response", "DocIE returned invalid JSON."); }
-    const result = parseResponse(body, SCHEMAS[kind], agent);
-    result.metadata.elapsed_ms = Math.round(performance.now() - started);
-    return result;
+    return { body, elapsed: Math.round(performance.now() - started) };
   } catch (error) {
     if (error instanceof DocIEBridgeError) throw error;
     if (controller.signal.aborted) fail("timeout", "DocIE timeout; remote processing may continue.");
@@ -221,4 +274,74 @@ async function extractDocument(content, mimeType, { kind = "resume", env = proce
   }
 }
 
-module.exports = { extractDocument, parseResponse, configuration, DocIEBridgeError };
+// Send one PDF/image to the configured agent. DOCX and text are not sent here:
+// the `image_url` wrapper feeds DocIE's OCR backends, which read PDF and images
+// only. A source that already carries machine-readable text goes to
+// extractText() instead — a different endpoint, not a MIME type to add above.
+async function extractDocument(content, mimeType, { kind = "resume", env = process.env, fetchImpl = fetch } = {}) {
+  const { endpoint, key, agent, timeout, tokens } = configuration(kind, env);
+  if (!Buffer.isBuffer(content) || !content.length || content.length > MAX_DOCUMENT_BYTES) fail("input", "Document must contain between 1 byte and 20 MiB.");
+  if (!MIME_TYPES.has(mimeType)) fail("input", "Unsupported document MIME type; use PDF, PNG or JPEG.");
+  const payload = { model: agent, parallel_extraction: true, stream: false, max_tokens: tokens,
+    messages: [{ role: "user", content: [
+      { type: "text", text: "Extract the document using your configured schema. Do not invent missing information." },
+      { type: "image_url", image_url: { url: "data:" + mimeType + ";base64," + content.toString("base64") } },
+    ] }] };
+  const { body, elapsed } = await postJson(endpoint, { Authorization: "Bearer " + key }, payload, key, timeout, fetchImpl);
+  const result = parseResponse(body, SCHEMAS[kind], agent);
+  result.metadata.elapsed_ms = elapsed;
+  return result;
+}
+
+/**
+ * Send already-readable text to POST /v1/extract/text. One call, no retry.
+ *
+ * For a source that HAS machine-readable text — a .txt, a DOCX's paragraphs, a
+ * PDF whose text layer was already read. Not a fallback for the file path: a
+ * scanned document has no text to send and belongs to extractDocument().
+ *
+ * Request body, ported from the one shape with a recorded successful grounded
+ * answer in this repo (cv-parser/docie_client.py L169 and document-parsing/
+ * scripts/test_api.py, whose response is the fixture behind
+ * tests/contract_text.json): {text, schema_name, schema_mode, dynamic_schema}.
+ * Nothing from the chat path is sent — no `model`, `messages` or `max_tokens` —
+ * because nothing shows this endpoint reads them.
+ *
+ * `dynamicSchema` is the caller's JSON schema and stays the caller's: a
+ * transport does not own a business schema. It is not optional in practice for
+ * a CUSTOM schema — register_and_test.py records that `schema_name` alone
+ * resolves only DocIE's small built-in registry, so `adbi_resume` needs its
+ * definition in the request — but omitting it is allowed for the built-in names
+ * rather than refused on an assumption about someone's deployment.
+ *
+ * `ocr_blocks` is deliberately absent. DocIE splits the text itself, and for
+ * plain text there is nothing better to offer; cv-parser's DOCX path has sent
+ * text without it since it was written. It becomes an optional argument passed
+ * straight through the day a caller can prove better segmentation.
+ */
+async function extractText(text, { kind = "resume", dynamicSchema = null, env = process.env, fetchImpl = fetch } = {}) {
+  if (!Object.hasOwn(SCHEMAS, kind)) fail("configuration", "Unsupported document kind.");
+  const { base, key, timeout } = connection(env);
+  const schema = SCHEMAS[kind];
+  if (typeof text !== "string" || !text.trim()) fail("input", "Document text must not be empty.");
+  if (Buffer.byteLength(text, "utf8") > MAX_DOCUMENT_BYTES) fail("input", "Document must contain between 1 byte and 20 MiB.");
+  const payload = { text, schema_name: schema };
+  if (dynamicSchema != null) {
+    if (!object(dynamicSchema) || !Object.keys(dynamicSchema).length) fail("input", "dynamic_schema must be a non-empty schema object.");
+    if (dynamicSchema.document_type != null && dynamicSchema.document_type !== schema) fail("input", "dynamic_schema describes another document type.");
+    payload.schema_mode = "dynamic";
+    payload.dynamic_schema = dynamicSchema;
+  }
+  const profile = (env.DOCIE_MODEL_PROFILE || "").trim();
+  if (profile) payload.model_profile = profile;
+  // `x-api-key`, not `Authorization: Bearer`: that is the header every recorded
+  // success on this endpoint used (cv-parser/docie_client.py, the response saved
+  // by document-parsing/scripts/test_api.py). The chat path keeps its own
+  // header, equally by measurement.
+  const { body, elapsed } = await postJson(base + "/v1/extract/text", { "x-api-key": key }, payload, key, timeout, fetchImpl);
+  const result = parseTextResponse(body, schema);
+  result.metadata.elapsed_ms = elapsed;
+  return result;
+}
+
+module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, DocIEBridgeError };

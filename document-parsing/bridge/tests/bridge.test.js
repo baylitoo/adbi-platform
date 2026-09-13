@@ -3,7 +3,10 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
 const cases = require("./contract.json");
-const { extractDocument, parseResponse, DocIEBridgeError } = require("../docie-bridge");
+const textCases = require("./contract_text.json");
+const { extractDocument, extractText, parseResponse, parseTextResponse, DocIEBridgeError } = require("../docie-bridge");
+
+const RESUME_SCHEMA = { document_type: "adbi_resume", fields: [{ name: "name", type: "string" }] };
 
 test("shared contract vectors, latency, validation and per-field confidence preserved", () => {
   for (const c of cases) {
@@ -108,6 +111,99 @@ test("loopback HTTP contract and sanitized failures without retries", async () =
       status = next; const before = calls.length;
       await assert.rejects(extractDocument(Buffer.from("pdf"), "application/pdf", { env }), error => {
         assert.equal(error.status, status); assert.equal(error.code, codes[status] || "upstream");
+        assert.ok(!error.message.includes("test-secret")); return true;
+      });
+      assert.equal(calls.length, before + 1);
+    }
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+// ---------------------------------------------------------- voie texte -----
+// POST /v1/extract/text — le point d'entree d'une source qui A du texte.
+
+test("shared text contract vectors: flat response, grounding and metadata preserved", () => {
+  for (const c of textCases) {
+    const result = parseTextResponse(c.body, "adbi_resume");
+    assert.deepEqual(result.result, c.expected_result);
+    assert.equal(result.metadata.schema_reported, c.schema_reported);
+    // Same keys and numbers as docie_bridge.py::parse_text_response.
+    assert.deepEqual(result.metadata.field_confidence, c.expected_field_confidence);
+    for (const [key, value] of Object.entries(c.expected_metadata)) assert.deepEqual(result.metadata[key], value);
+  }
+  const recorded = parseTextResponse(textCases[0].body, "adbi_resume").metadata;
+  assert.equal(recorded.usage.total_tokens, 5332);
+  assert.equal(recorded.validation.valid, true);
+  // Absent validation is not a validated success (same rule as the chat path).
+  assert.equal(parseTextResponse(textCases[1].body, "adbi_resume").metadata.validation, null);
+  const negative = parseTextResponse(textCases[2].body, "adbi_resume").metadata.validation;
+  assert.equal(negative.valid, false);
+  assert.deepEqual(negative.errors, ["contact manquant"]);
+});
+
+test("reject malformed and wrong-schema text responses", () => {
+  const bad = [null, [], {}, { result: {} }, { result: "text" },
+    { schema_name: "kbis", result: { name: "Alice" } },
+    { result: { document_type: "kbis", name: "Alice" } },
+    { result: { name: "Alice" }, validation: "ok" }];
+  for (const body of bad) assert.throws(() => parseTextResponse(body, "adbi_resume"), DocIEBridgeError);
+});
+
+test("text input and configuration rejected before network", async () => {
+  // No DOCIE_AGENT_RESUME on purpose: this endpoint has no agent in its URL, so
+  // requiring the setting would refuse a call that never uses it.
+  const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret" };
+  let calls = 0;
+  const fetchImpl = () => { calls++; throw Error("Unexpected network"); };
+  for (const change of [{ DOCIE_BASE_URL: "http://public.example" }, { DOCIE_API_KEY: "" }, { DOCIE_TIMEOUT_SECONDS: "NaN" }]) {
+    await assert.rejects(extractText("CV", { env: { ...env, ...change }, fetchImpl }), DocIEBridgeError);
+  }
+  for (const text of ["", "   ", null, Buffer.from("CV")]) {
+    await assert.rejects(extractText(text, { env, fetchImpl }),
+      error => error instanceof DocIEBridgeError && error.code === "input");
+  }
+  // A schema describing another document type never leaves the process.
+  await assert.rejects(extractText("CV", { dynamicSchema: { document_type: "kbis" }, env, fetchImpl }),
+    error => error.code === "input");
+  assert.equal(calls, 0);
+});
+
+test("text loopback HTTP contract: /v1/extract/text, x-api-key, no data-URI wrapper", async () => {
+  let status = 200;
+  const calls = [];
+  const server = http.createServer(async (req, res) => {
+    let body = ""; for await (const chunk of req) body += chunk;
+    calls.push({ url: req.url, apiKey: req.headers["x-api-key"], bearer: req.headers.authorization, payload: JSON.parse(body) });
+    res.writeHead(status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(status === 200 ? textCases[0].body : { error: "test-secret" }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const env = { DOCIE_BASE_URL: "http://127.0.0.1:" + server.address().port, DOCIE_API_KEY: "test-secret" };
+  try {
+    const result = await extractText("Alice Dupont\nDéveloppeuse", { dynamicSchema: RESUME_SCHEMA, env });
+    assert.equal(result.result.name, "Alice Dupont");
+    // Grounding survives the text path: the review signal is intact.
+    assert.equal(result.metadata.field_confidence["experience[1].description"], 0);
+    const { url, apiKey, bearer, payload } = calls[0];
+    assert.equal(url, "/v1/extract/text");
+    assert.equal(apiKey, "test-secret");
+    assert.equal(bearer, undefined);
+    assert.equal(payload.text, "Alice Dupont\nDéveloppeuse");
+    assert.equal(payload.schema_name, "adbi_resume");
+    assert.equal(payload.schema_mode, "dynamic");
+    assert.deepEqual(payload.dynamic_schema, RESUME_SCHEMA);
+    // No data-URI wrapper and nothing from the chat path: this endpoint reads
+    // none of it, and `ocr_blocks` is not sent for plain text.
+    for (const absent of ["messages", "model", "max_tokens", "parallel_extraction", "ocr_blocks"]) {
+      assert.equal(Object.hasOwn(payload, absent), false, absent);
+    }
+    const codes = { 401: "auth", 413: "limits", 429: "rate_limit" };
+    for (const next of [401, 413, 429, 500]) {
+      status = next; const before = calls.length;
+      await assert.rejects(extractText("CV", { dynamicSchema: RESUME_SCHEMA, env }), error => {
+        assert.equal(error.code, codes[status] || "upstream");
         assert.ok(!error.message.includes("test-secret")); return true;
       });
       assert.equal(calls.length, before + 1);
