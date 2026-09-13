@@ -3201,6 +3201,7 @@ def export_word(cv_id):
 def translate_cv(cv_id):
     """Translate a CV to English and store it as a NEW linked entry (original untouched)."""
     import shutil
+    from docie_review import perimer_revue
     original = cvstore_pg.get_cv(cv_id)
     if original is None:
         abort(404)
@@ -3241,9 +3242,28 @@ def translate_cv(cv_id):
     new_cv["years_experience"] = int(original.get("years_experience") or 0)
 
     # Apply translated fields
+    champs_traduits = set()
     for k in ("name", "title", "experience", "education", "skills", "interests", "certifications", "languages"):
         if translated.get(k):
             new_cv[k] = translated[k]
+            champs_traduits.add(k)
+
+    # `new_cv = dict(original)` est une copie de SURFACE : la fiche traduite
+    # hérite telle quelle de `docie_review`, dont les marques « à vérifier »
+    # désignent des chemins (experience[1].description…) dans le texte
+    # FRANÇAIS qu'on vient de remplacer. Une marque pointerait alors un texte
+    # qui n'existe plus — ou pire, cautionnerait en silence une réécriture que
+    # personne n'a relue. Les rubriques réellement réécrites perdent donc leur
+    # marque, exactement comme après un PATCH (issue #175, « Enrichissement et
+    # traduction »). Per-rubrique et non en bloc : si le modèle a omis
+    # `education`, ce texte-là est toujours celui que DocIE a extrait et sa
+    # marque reste valable.
+    #
+    # Le suffixe « (EN) » ajouté au nom juste après ne compte volontairement
+    # pas comme une réécriture : coller une étiquette sur un texte dont DocIE
+    # doutait ne lève pas le doute. `name` ne perd sa marque que si le modèle
+    # l'a bel et bien traduit.
+    perimer_revue(new_cv, champs_traduits)
 
     # Append language tag to name so it's distinguishable in the list
     suffix = " (EN)" if target == "en" else " (FR)"

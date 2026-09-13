@@ -298,16 +298,37 @@ def revue_docie(data, metadata):
 
 
 def perimer_revue(cv, updates):
-    """Retire les marques « à vérifier » des rubriques que l'écran vient
-    d'enregistrer (PATCH /api/cvs/<id>).
+    """Retire les marques « à vérifier » des rubriques qui viennent d'être
+    REMPLACÉES, quel que soit le chemin qui les a remplacées.
 
-    Un PATCH remplace la rubrique ENTIÈRE — l'écran d'édition renvoie toute la
-    liste des missions, pas le seul champ modifié (cv_detail.html::collectData)
-    — et ces listes sont réordonnables à la souris. Garder
-    `experience[0].company` après un enregistrement, c'est au mieux marquer un
-    champ déjà corrigé, au pire surligner une AUTRE mission que celle dont
-    DocIE doutait : exactement le mauvais champ signalé. La rubrique renvoyée
-    a été relue à l'écran, la marque tombe avec elle.
+    Un PATCH /api/cvs/<id> remplace la rubrique ENTIÈRE — l'écran d'édition
+    renvoie toute la liste des missions, pas le seul champ modifié
+    (cv_detail.html::collectData) — et ces listes sont réordonnables à la
+    souris. Garder `experience[0].company` après un enregistrement, c'est au
+    mieux marquer un champ déjà corrigé, au pire surligner une AUTRE mission
+    que celle dont DocIE doutait : exactement le mauvais champ signalé. La
+    rubrique renvoyée a été relue à l'écran, la marque tombe avec elle.
+
+    Les chemins de réécriture par le modèle (traduction FR->EN, « Enrichir »,
+    « Adapter au poste », l'enrichissement de fond après dépôt) remplacent les
+    mêmes rubriques SANS relecture humaine, et posaient le problème inverse :
+    une marque survivait à la réécriture du champ, donc désignait un texte qui
+    n'existait plus — ou, pire, cautionnait en silence un texte que personne
+    n'avait relu (issue #175, « Enrichissement et traduction »). Une rubrique
+    réécrite n'est plus celle que DocIE a extraite : sa marque ne décrit plus
+    rien et tombe aussi. Ces chemins-là n'ont en revanche AUCUNE relecture
+    derrière eux — d'où le reste du signal, qui subsiste.
+
+    `updates` est seulement interrogé par appartenance : un dict de rubriques
+    (PATCH) ou un simple ensemble de noms de rubriques (réécritures) conviennent
+    aussi bien. Ne passer que les rubriques RÉELLEMENT remplacées : si le
+    modèle en a omis une, son texte est toujours celui que DocIE a extrait et
+    sa marque reste valable.
+
+    La fiche est réécrite par REBINDING, jamais mutée en place : un appelant
+    qui travaille sur une copie de surface (`dict(original)`, cas de la
+    traduction, qui crée une NOUVELLE fiche) ne doit pas voir la fiche
+    d'origine perdre ses marques.
 
     `warnings` n'est pas touché : ce sont des faits sur l'extraction (ce que
     DocIE a signalé, une validation absente), pas l'état d'un champ éditable.

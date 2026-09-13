@@ -230,6 +230,83 @@ class PerimerRevueTests(unittest.TestCase):
         self.assertNotIn("docie_review", cv)
 
 
+class PerimerRevueApresReecritureTests(unittest.TestCase):
+    """Issue #175, « Enrichissement et traduction » : la traduction FR->EN
+    réécrit les descriptions de missions sans expirer les marques qui y sont
+    attachées. Une marque désigne alors un texte qui n'existe plus — ou, pire,
+    cautionne en silence un texte réécrit que personne n'a relu."""
+
+    def test_ensemble_de_rubriques_accepte_comme_un_dict(self):
+        # Les chemins de réécriture ne construisent pas de dict de valeurs :
+        # ils savent seulement QUELLES rubriques ils ont remplacées.
+        cv = {"docie_review": {"needs_review": ["experience[1].description", "education[0].title"],
+                               "warnings": ["docie_avertissement:truncated"]}}
+        perimer_revue(cv, {"experience", "title"})
+        self.assertEqual(cv["docie_review"]["needs_review"], ["education[0].title"])
+        self.assertEqual(cv["docie_review"]["warnings"], ["docie_avertissement:truncated"])
+
+    def test_rubrique_omise_par_le_modele_garde_sa_marque(self):
+        # Per-rubrique et non en bloc : si le modèle n'a pas rendu `education`,
+        # ce texte-là est toujours celui que DocIE a extrait.
+        cv = {"docie_review": {"needs_review": ["experience[1].description", "education[0].title"],
+                               "warnings": []}}
+        perimer_revue(cv, {"experience", "name", "skills"})
+        self.assertEqual(cv["docie_review"]["needs_review"], ["education[0].title"])
+
+    def test_fiche_traduite_ne_deteriore_pas_la_fiche_d_origine(self):
+        # translate_cv fait `new_cv = dict(original)` : une copie de SURFACE,
+        # donc les deux fiches partagent le MÊME objet docie_review. perimer_revue
+        # réécrit par rebinding et ne mute rien — invariant vérifié ici parce
+        # que c'est exactement celui qu'une « optimisation » en mutation
+        # sur place casserait, en faisant perdre ses marques à l'original.
+        original = {"docie_review": {"needs_review": ["experience[1].description", "education[0].title"],
+                                     "warnings": ["docie_avertissement:truncated"]}}
+        new_cv = dict(original)
+        self.assertIs(new_cv["docie_review"], original["docie_review"])
+        perimer_revue(new_cv, {"experience", "education"})
+        self.assertEqual(new_cv["docie_review"]["needs_review"], [])
+        self.assertEqual(original["docie_review"]["needs_review"],
+                         ["experience[1].description", "education[0].title"])
+
+
+class CheminsDeReecritureTests(unittest.TestCase):
+    """Garde-fou anti-dérive : les chemins d'app.py qui REMPLACENT une rubrique
+    sans relecture humaine doivent tous expirer la revue.
+
+    Lecture structurelle de l'AST plutôt qu'un import : app.py ouvre PostgreSQL
+    au chargement (même raison que test_champs_conserves.py).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import ast
+        cls.ast = ast
+        source = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
+        cls.fonctions = {
+            noeud.name: noeud
+            for noeud in ast.walk(ast.parse(source))
+            if isinstance(noeud, ast.FunctionDef)
+        }
+
+    def _appelle(self, nom_fonction, nom_appel):
+        self.assertIn(nom_fonction, self.fonctions, f"{nom_fonction} a disparu d'app.py")
+        return any(
+            isinstance(n, self.ast.Call)
+            and self.ast.unparse(n.func).endswith(nom_appel)
+            for n in self.ast.walk(self.fonctions[nom_fonction])
+        )
+
+    def test_traduction_expire_la_revue(self):
+        # Le chemin nommé par l'issue #175 : la fiche traduite est une NOUVELLE
+        # fiche dont tout le texte des rubriques rendues par le modèle a été
+        # remplacé.
+        self.assertTrue(self._appelle("translate_cv", "perimer_revue"))
+
+    def test_le_patch_expire_toujours_la_revue(self):
+        # Non-régression : le cas d'origine ne doit pas se perdre en route.
+        self.assertTrue(self._appelle("update_cv", "perimer_revue"))
+
+
 class GabaritTests(unittest.TestCase):
     """L'écran de relecture (templates/cv_detail.html) doit montrer le signal.
 
