@@ -228,6 +228,45 @@ class SourceAuPatchTests(unittest.TestCase):
         self.assertEqual(updates["anciennete_source"], "manuel")
 
 
+class PeremptionDeLaRevueTests(unittest.TestCase):
+    """`marquer_anciennete_manuelle` ajoute une clé à `updates` — et `update_cv`
+    passe ce MÊME dictionnaire à `perimer_revue` juste après la fusion.
+
+    `perimer_revue` n'interroge `updates` que par appartenance (« cette rubrique
+    vient-elle d'être remplacée ? »), donc une clé de plus ne devrait rien
+    périmer. Mesuré plutôt que supposé : c'est le genre d'effet de bord qui
+    effacerait en silence une marque « à vérifier » sur une tout autre rubrique.
+    """
+
+    FICHE = {"years_experience": 4, "anciennete_source": "periodes",
+             "docie_review": {"needs_review": ["experience[0].company",
+                                               "contact.email"],
+                              "warnings": ["docie_avertissement: liste tronquée"]}}
+
+    def test_la_cle_de_provenance_ne_perime_aucune_marque(self):
+        from docie_review import perimer_revue
+        cv = {**self.FICHE, "docie_review": dict(self.FICHE["docie_review"])}
+        updates = {"years_experience": 12}
+        APP["marquer_anciennete_manuelle"](cv, updates)
+        self.assertEqual(updates["anciennete_source"], "manuel")
+        for cle, val in updates.items():
+            cv[cle] = val
+        perimer_revue(cv, updates)
+        self.assertEqual(cv["docie_review"]["needs_review"],
+                         ["experience[0].company", "contact.email"])
+        self.assertEqual(cv["docie_review"]["warnings"],
+                         ["docie_avertissement: liste tronquée"])
+
+    def test_une_rubrique_reellement_remplacee_est_toujours_perimee(self):
+        """Témoin : la péremption n'est pas cassée pour autant."""
+        from docie_review import perimer_revue
+        cv = {**self.FICHE, "docie_review": dict(self.FICHE["docie_review"])}
+        updates = {"years_experience": 12, "experience": []}
+        APP["marquer_anciennete_manuelle"](cv, updates)
+        perimer_revue(cv, updates)
+        self.assertEqual(cv["docie_review"]["needs_review"], ["contact.email"])
+
+
 class SourceALaCreationTests(unittest.TestCase):
     """POST /api/cvs : ni période mesurée, ni extraction — donc manuel, ou rien."""
 
