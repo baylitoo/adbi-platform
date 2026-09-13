@@ -89,19 +89,47 @@ function normalizeDate(raw, fieldKey, warnings) {
   return "";
 }
 
+// « Ce texte est-il un nombre ? » — motif PARTAGÉ, identique caractère pour
+// caractère au littéral de lib/docie-contract-import.js, à celui des deux
+// modules Python miroirs, et au champ `motif` de
+// document-parsing/fixtures/nombre_docie.json, que les tests des quatre
+// portages comparent à ce littéral : ajouter une forme d'un seul côté casse
+// le test des autres. [0-9] et non \d parce que \d reconnaît aussi les
+// chiffres arabes-indiens en Python et pas en JS ; l'exponentielle est
+// refusée parce que son rendu diverge entre les deux langages.
+const MOTIF_NOMBRE = "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)$";
+const NOMBRE_RE = new RegExp(MOTIF_NOMBRE);
+
+// Mise en forme PUREMENT LEXICALE d'un texte déjà reconnu par NOMBRE_RE :
+// jamais d'aller-retour par le nombre du langage, dont le rendu diffère
+// (String(1e16) rend "10000000000000000", str(1e16) rend "1e+16" côté
+// Python). Voir `_regle_forme` dans la fixture partagée.
+function formeNombre(texte) {
+  const negatif = texte.startsWith("-");
+  const corps = (texte.startsWith("+") || negatif) ? texte.slice(1) : texte;
+  const point = corps.indexOf(".");
+  const entier = (point === -1 ? corps : corps.slice(0, point)).replace(/^0+/, "") || "0";
+  const frac = (point === -1 ? "" : corps.slice(point + 1)).replace(/0+$/, "");
+  const sortie = entier + (frac ? "." + frac : "");
+  return negatif && sortie !== "0" ? "-" + sortie : sortie;
+}
+
+// Règle partagée : document-parsing/fixtures/nombre_docie.json. Ce module
+// s'en remettait à Number(), le module Python miroir à float(), et les deux
+// n'acceptent pas les mêmes textes — inventaire de divergence #179, lignes
+// B2/B3. Number("") vaut 0 et 0 est fini : un montant réduit à des espaces
+// ressortait en « 0 » (un capital social de 0 € fabriqué de toutes pièces).
 function normalizeNumber(raw, fieldKey, warnings) {
   if (raw === null || raw === undefined || raw === "") return "";
   const s = String(raw).trim();
-  const asFloat = Number(s);
-  if (!Number.isFinite(asFloat)) {
+  // Un champ réduit à des espaces est un champ vide : « champ vu, rien
+  // trouvé », même traitement que {"value": null}.
+  if (s === "") return "";
+  if (!NOMBRE_RE.test(s)) {
     warnings.push(fieldKey + ": nombre non reconnu (" + JSON.stringify(s) + "), reporté tel quel");
     return s;
   }
-  // Number(...) normalise déjà "5000.00" -> 5000 et String(5000) -> "5000"
-  // (pas de zéros ou décimale superflus) : un seul chemin de retour suffit
-  // (contrairement à kbis_to_contrats.py, où raw_s garde sa forme d'origine
-  // tant que int(as_float) n'est pas explicitement reformé en chaîne).
-  return String(asFloat);
+  return formeNombre(s);
 }
 
 // Contrairement à lib/docie-contract-import.js::extractMoney (qui doit
@@ -157,16 +185,15 @@ function mapKbisResult(docieResult, { expectedName, items, validation } = {}) {
   // rien pu lire d'exploitable, au même titre qu'un OCR local qui ne renvoie
   // presque pas de texte).
   //
-  // DIVERGENCE ASSUMÉE avec kbis_to_contrats.py (qui, lui, vise la parité
-  // stricte avec docanalyze.js et traite aussi validation.valid===false
-  // comme "illisible") : docanalyze.js n'a AUCUNE notion de validation DocIE
-  // à imiter, donc cette analogie n'a pas de justification de parité ici.
   // Un validation.valid=false avec des champs identifiants bel et bien
   // extraits (ex: nom + SIREN présents, mais DocIE signale une incohérence
-  // ailleurs) ne doit pas jeter ces champs au visage de l'utilisateur avec
-  // un message "PDF scanné sans texte" trompeur — comportement du module JS
-  // AVANT ce portage (issue #153), conservé ici : les champs restent, mais
-  // isValid=false + avertissement explicite.
+  // ailleurs) ne doit PAS jeter ces champs au visage de l'utilisateur avec
+  // un message "PDF scanné sans texte" trompeur : l'extraction est douteuse,
+  // pas illisible. Comportement du module JS avant ce portage (issue #153),
+  // conservé ici : les champs restent, mais isValid=false + avertissement
+  // explicite. kbis_to_contrats.py, qui confondait les deux signaux, s'est
+  // aligné sur cette règle (inventaire de divergence #179, ligne B1) — les
+  // deux portages ne divergent plus.
   const docieSaysInvalid = !!(validation && validation.valid === false);
   const nothingIdentifying = !rawCompanyName && !enriched.siren && !enriched.siret;
   const isValid = !(docieSaysInvalid || nothingIdentifying);
@@ -219,4 +246,6 @@ module.exports = {
   MAPPED_FIELDS,
   ENRICHED_KEYS,
   mapKbisResult,
+  MOTIF_NOMBRE,
+  normalizeNumber,
 };

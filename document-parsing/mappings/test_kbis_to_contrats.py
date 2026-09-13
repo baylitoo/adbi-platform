@@ -44,7 +44,9 @@ from kbis_to_contrats import (  # noqa: E402
     DOCANALYZE_BASE_KEYS,
     ENRICHED_KEYS,
     MAPPED_FIELDS,
+    MOTIF_NOMBRE,
     KbisMappingError,
+    _normalize_number,
     map_docie_kbis_to_analysis,
 )
 
@@ -278,11 +280,34 @@ class TestDocieValidationInvalid(unittest.TestCase):
     chemin en mutant une copie de la fixture nominale, pour ne pas laisser
     `docie_says_invalid` sans couverture."""
 
-    def test_validation_invalid_forces_illisible_shape_even_with_readable_fields(self):
+    def test_validation_invalid_marque_le_doute_sans_jeter_les_champs_lus(self):
+        """Inventaire de divergence #179, ligne B1. Ce module basculait sur la
+        branche "Document illisible" -- il jetait companyName, issuedDate et
+        nameMatches, c'est-a-dire EXACTEMENT les trois valeurs que
+        contrats/public/app.js::analyzeChecklistDoc lit -- et affichait
+        "Aucun texte lisible (PDF scanne sans texte ou image floue)" pour une
+        extraction ou le nom et le SIREN avaient ete lus. Une extraction
+        douteuse n'est pas une extraction illisible : le portage JS
+        (contrats/lib/kbis-mapping.js) avait deja la bonne regle."""
         envelope = json.loads(json.dumps(_load_fixture("kbis_extraction_sample.json")))
         envelope["validation"]["valid"] = False
-        mapping = map_docie_kbis_to_analysis(envelope)
+        mapping = map_docie_kbis_to_analysis(envelope, expected_name="SUND INDUSTRY SYSTEM")
         v = mapping.analysis
+        self.assertFalse(v["isValid"])
+        self.assertEqual("Extrait Kbis", v["documentType"])
+        self.assertEqual("SUND INDUSTRY SYSTEM", v["companyName"])
+        self.assertTrue(v["nameMatches"])
+        self.assertEqual("2026-09-04", v["issuedDate"])
+        self.assertEqual("941091316", v["siren"])
+        self.assertIn(
+            "DocIE n'a pas validé l'extraction (vérification manuelle recommandée).",
+            v["issues"],
+        )
+
+    def test_validation_invalide_ET_rien_didentifiant_reste_illisible(self):
+        envelope = json.loads(json.dumps(_load_fixture("kbis_extraction_sample_unreadable.json")))
+        envelope["validation"]["valid"] = False
+        v = map_docie_kbis_to_analysis(envelope).analysis
         self.assertFalse(v["isValid"])
         self.assertEqual("Document", v["documentType"])
         self.assertIsNone(v["companyName"])
@@ -326,6 +351,41 @@ class TestSchemaGuard(unittest.TestCase):
     def test_non_dict_input_raises(self):
         with self.assertRaises(KbisMappingError):
             map_docie_kbis_to_analysis(None)  # type: ignore[arg-type]
+
+
+class TestNombrePartage(unittest.TestCase):
+    """Inventaire de divergence #179, lignes B2/B3 : ce module s'en remettait a
+    float(), le portage JS a Number(), et les deux n'acceptent pas les memes
+    textes. La regle est desormais ecrite une seule fois, dans
+    document-parsing/fixtures/nombre_docie.json, et les quatre portages
+    comparent leur motif ET leur sortie a ce fichier."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(REPO_ROOT / "document-parsing" / "fixtures" / "nombre_docie.json", encoding="utf-8") as fh:
+            cls.fixture = json.load(fh)
+
+    def test_motif_identique_a_la_fixture(self):
+        self.assertEqual(self.fixture["motif"], MOTIF_NOMBRE)
+        self.assertIn(
+            "document-parsing/mappings/kbis_to_contrats.py (Python)",
+            self.fixture["_ports"],
+        )
+
+    def test_tous_les_cas_du_jeu_dessai(self):
+        for cas in self.fixture["cas"]:
+            with self.subTest(valeur=cas["valeur"], preuve=cas["preuve"]):
+                warnings: list[str] = []
+                self.assertEqual(cas["sortie"], _normalize_number(cas["valeur"], "champ", warnings))
+                self.assertEqual(cas["avertit"], bool(warnings))
+
+    def test_capital_reduit_a_des_espaces_ne_devient_pas_zero(self):
+        envelope = json.loads(json.dumps(_load_fixture("kbis_extraction_sample.json")))
+        envelope["result"]["share_capital"]["amount"] = "   "
+        mapping = map_docie_kbis_to_analysis(envelope)
+        self.assertEqual("", mapping.analysis["capitalSocial"])
+        self.assertEqual("EUR", mapping.analysis["capitalSocialDevise"])
+        self.assertFalse(any("nombre non reconnu" in w for w in mapping.warnings))
 
 
 class TestFieldInventory(unittest.TestCase):

@@ -9,7 +9,17 @@
 // exerce le VRAI unwrap() de bout en bout plutôt que ces valeurs pré-déballées.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { DOCANALYZE_BASE_KEYS, ENRICHED_KEYS, MAPPED_FIELDS, mapKbisResult } = require("../lib/kbis-mapping");
+const path = require("path");
+const {
+  DOCANALYZE_BASE_KEYS, ENRICHED_KEYS, MAPPED_FIELDS, mapKbisResult,
+  MOTIF_NOMBRE, normalizeNumber,
+} = require("../lib/kbis-mapping");
+// Jeu d'essai PARTAGÉ avec les trois autres portages du même normaliseur
+// (kbis_to_contrats.py, contract_to_contrats.py, lib/docie-contract-import.js) :
+// c'est lui qui empêche la divergence de #179 (lignes B2/B3) de revenir.
+const NOMBRE = require(path.join(
+  __dirname, "..", "..", "document-parsing", "fixtures", "nombre_docie.json"
+));
 
 const NOMINAL = {
   company_name: "SUND INDUSTRY SYSTEM",
@@ -185,9 +195,9 @@ test("edge cases: qualité imbriquée dans representantLegal reste non structur�
 });
 
 test("validation.valid=false avec des champs identifiants lisibles: isValid=false, mais champs et documentType conservés (pas de branche illisible)", () => {
-  // Divergence assumée avec kbis_to_contrats.py (voir kbis-mapping.js) :
-  // docanalyze.js n'a pas de notion de validation DocIE à imiter, donc ce
-  // signal ne doit pas jeter des champs réellement extraits.
+  // Une extraction douteuse n'est pas une extraction illisible : ce signal ne
+  // doit pas jeter des champs réellement extraits. kbis_to_contrats.py
+  // confondait les deux et s'est aligné ici (#179 ligne B1).
   const { analysis } = mapKbisResult(NOMINAL, { validation: { valid: false, errors: ["x"], warnings: [] } });
   assert.equal(analysis.isValid, false);
   assert.equal(analysis.documentType, "Extrait Kbis");
@@ -225,4 +235,35 @@ test("unreadable: reste un sur-ensemble des clés locales même illisible", () =
 test("garde-fou: résultat non-objet lève une erreur explicite", () => {
   assert.throws(() => mapKbisResult(null), /objet attendu/);
   assert.throws(() => mapKbisResult("nope"), /objet attendu/);
+});
+
+// ---------------------------------------------------------------------------
+// Inventaire de divergence #179, lignes B2/B3 : ce module s'en remettait à
+// Number(), kbis_to_contrats.py à float(), et les deux n'acceptent pas les
+// mêmes textes. La règle est désormais écrite une seule fois, dans la fixture
+// partagée, et les quatre portages comparent leur motif ET leur sortie à ce
+// fichier : ajouter une forme d'un seul côté casse le test des autres.
+// ---------------------------------------------------------------------------
+test("nombre : le motif de ce portage est celui de la fixture partagée (#179 B2/B3)", () => {
+  assert.equal(new RegExp(MOTIF_NOMBRE).source, NOMBRE.motif);
+  assert.ok(NOMBRE._ports.includes("contrats/lib/kbis-mapping.js (JS)"));
+});
+
+test("nombre : les " + NOMBRE.cas.length + " cas du jeu d'essai partagé (#179 B2/B3)", () => {
+  for (const cas of NOMBRE.cas) {
+    const warnings = [];
+    const sortie = normalizeNumber(cas.valeur, "champ", warnings);
+    assert.equal(sortie, cas.sortie, cas.valeur + " -> " + JSON.stringify(sortie) + " (" + cas.preuve + ")");
+    assert.equal(warnings.length > 0, cas.avertit, "avertissement attendu=" + cas.avertit + " pour " + JSON.stringify(cas.valeur));
+  }
+});
+
+test("capital social réduit à des espaces : vide, jamais un 0 fabriqué (#179 B2)", () => {
+  const { analysis, warnings } = mapKbisResult(
+    Object.assign({}, NOMINAL, { share_capital: { amount: "   ", currency: "EUR" } }),
+    { validation: NOMINAL_VALIDATION }
+  );
+  assert.equal(analysis.capitalSocial, "");
+  assert.equal(analysis.capitalSocialDevise, "EUR");
+  assert.ok(!warnings.some((w) => /nombre non reconnu/.test(w)));
 });
