@@ -6,7 +6,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
-  analyzeDocument, mapDocieResult, isEnabled, isEligible,
+  analyzeDocument, mapDocieResult, isEnabled, isEligible, voiePour, VOIES,
 } = require("../lib/docie-extraction");
 
 const LOCAL_SHAPE_KEYS = [
@@ -21,16 +21,28 @@ function fakeLocal(tag) {
   });
 }
 
-test("isEnabled / isEligible: flag parsing and Kbis-only scope", () => {
+test("isEnabled / isEligible / voiePour: flag parsing et portée par pièce", () => {
   assert.equal(isEnabled({}), false);
   assert.equal(isEnabled({ DOCIE_EXTRACTION_ENABLED: "false" }), false);
   assert.equal(isEnabled({ DOCIE_EXTRACTION_ENABLED: "TRUE" }), true);
   assert.equal(isEnabled({ DOCIE_EXTRACTION_ENABLED: " true " }), true);
   assert.equal(isEligible([{ id: "kbis" }]), true);
-  assert.equal(isEligible([{ id: "urssaf" }]), false);
-  assert.equal(isEligible([{ id: "rib" }]), false);
+  // urssaf est désormais couverte (issue #170), par la voie TEXTE : son schéma
+  // voyage dans le corps de la requête, aucun enregistrement Studio requis.
+  assert.equal(isEligible([{ id: "urssaf" }]), true);
+  assert.equal(voiePour([{ id: "kbis" }]), "agent");
+  assert.equal(voiePour([{ id: "urssaf" }]), "texte");
+  // Les cinq autres pièces n'ont ni schéma ni mapping : jamais envoyées.
+  for (const id of ["rib", "cni", "fiscale", "coordonnees", "specifique"]) {
+    assert.equal(isEligible([{ id }]), false, id);
+    assert.equal(voiePour([{ id }]), null, id);
+  }
   assert.equal(isEligible([]), false);
   assert.equal(isEligible(undefined), false);
+  assert.equal(voiePour(undefined), null);
+  assert.deepEqual(Object.keys(VOIES).sort(), ["kbis", "urssaf"]);
+  // Seul items[0] compte — port exact de docanalyze.js::detectType.
+  assert.equal(voiePour([{ id: "rib" }, { id: "urssaf" }]), null);
 });
 
 test("flag off: local analysis used unchanged, bridge never invoked", async () => {
@@ -43,15 +55,16 @@ test("flag off: local analysis used unchanged, bridge never invoked", async () =
   assert.equal(result.summary, "local");
 });
 
-test("flag on but item non éligible (ex: urssaf): reste local (gap de schéma documenté)", async () => {
+test("flag on but item non éligible (ex: rib): reste local (ni schéma ni mapping)", async () => {
   let localCalls = 0;
   const analyzeLocal = async (body) => { localCalls++; return fakeLocal("local")(body); };
-  const extractDocument = async () => { throw new Error("le bridge ne doit pas être appelé (item non-kbis)"); };
+  const extractDocument = async () => { throw new Error("le bridge ne doit pas être appelé (pièce non couverte)"); };
   const env = { DOCIE_EXTRACTION_ENABLED: "true" };
-  const body = { dataBase64: "AA==", mimeType: "application/pdf", items: [{ id: "urssaf" }] };
+  const body = { dataBase64: "AA==", mimeType: "application/pdf", items: [{ id: "rib" }] };
   const result = await analyzeDocument(body, { env, analyzeLocal, extractDocument });
   assert.equal(localCalls, 1);
   assert.equal(result.summary, "local");
+  assert.deepEqual(result.issues, []);
 });
 
 test("flag on + item kbis + succès DocIE: mapping correct, sur-ensemble de la forme locale", async () => {

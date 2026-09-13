@@ -1,33 +1,53 @@
 "use strict";
 // Extraction DocIE (bridge partagé document-parsing/bridge/) pour les pièces
-// Kbis de la checklist Sous-traitance — issue #153 (« migrer OCR/extraction
-// vers le bridge »). Derrière DOCIE_EXTRACTION_ENABLED (défaut absent/false) :
+// Kbis et URSSAF de la checklist Sous-traitance — issues #153 et #170.
+// Derrière DOCIE_EXTRACTION_ENABLED (défaut absent/false) :
 // flag off => comportement inchangé, 100% lib/docanalyze.js local (pdf-parse
 // + tesseract.js, RGPD, aucun envoi externe). Les mappings de champs contrat,
 // la génération PDF/DOCX et la signature Yousign/Zoho ne sont pas touchés ici.
 //
-// Portée volontairement limitée à item.id === "kbis" : SCHEMAS dans
-// document-parsing/bridge/docie-bridge.js n'a pas d'agent configuré pour les
-// autres pièces de la checklist (urssaf, rib, cni, fiscale, coordonnees,
-// specifique). Pour elles, DOCIE_EXTRACTION_ENABLED n'a aucun effet — analyse
-// locale toujours, flag ou pas. Inventer un schéma DocIE pour ces pièces est
-// hors périmètre de ce ticket (travail côté DocIE, pas côté consommateur).
+// DEUX pièces sont couvertes, par DEUX voies DocIE différentes — et ce n'est
+// pas un détail d'implémentation, c'est ce qui décide si la pièce est
+// couvrable du tout :
 //
-// Mapping des champs : lib/kbis-mapping.js, portage JS de
-// document-parsing/mappings/kbis_to_contrats.py — le contrat de champs réel
-// de l'agent "kbis" (11 champs, confirmé contre les vrais modèles pydantic
-// DocIE par document-parsing/scripts/register_and_test.py, PR #46) est
-// désormais documenté et testé des deux côtés (Python et JS). Remplace
-// l'ancienne stratégie « aplatir en texte + regex locales », qui perdait
-// SIREN/SIRET/forme juridique/capital social/RCS/adresse/représentant légal
-// faute, à l'époque, d'un contrat de champs connu.
+//   kbis   -> voie AGENT (extractDocument, POST /v1/agents/<agent>/chat/...)
+//             Le document part en data URI et les backends OCR de DocIE le
+//             lisent. L'agent résout son schéma PAR NOM, donc un schéma
+//             enregistré au préalable dans le Studio DocIE.
+//   urssaf -> voie TEXTE (extractText, POST /v1/extract/text)
+//             La DÉFINITION du schéma voyage dans le corps de la requête
+//             (`dynamic_schema`, document-parsing/schemas/urssaf.schema.json).
+//             Rien n'a à être enregistré côté Studio.
+//
+// L'issue #170 tenait « créer le schéma dans le Studio » pour un préalable aux
+// six pièces non-Kbis. Ce n'est vrai que du premier mécanisme. Le second
+// n'exige aucune action côté DocIE ni aucun appel distant pour être mis en
+// place ; cv-parser l'emploie en mode `inline` depuis toujours.
+//
+// Les cinq pièces restantes (rib, cni, fiscale, coordonnees, specifique)
+// restent analysées localement, flag ou pas : elles n'ont ni schéma ni
+// mapping. urssaf a été traitée en premier parce que c'est la seule dont une
+// valeur extraite pilote une vraie logique métier — lib/checklist.js la
+// déclare `dateField: true` / « À renouveler tous les 6 mois », et
+// public/app.js::renderChecklistDocResult calcule PÉRIMÉ / bientôt périmé /
+// valable à partir de `issuedDate`.
+//
+// Mapping des champs : lib/kbis-mapping.js et lib/urssaf-mapping.js, portages
+// JS de document-parsing/mappings/{kbis,urssaf}_to_contrats.py.
 
 const path = require("path");
+const { PDFParse } = require("pdf-parse");
 const { analyzeDocumentLocal } = require("./docanalyze");
 const { mapKbisResult } = require("./kbis-mapping");
+const { mapUrssafResult } = require("./urssaf-mapping");
 
+// Conservé tel quel (exporté historiquement) : la pièce de la voie agent.
 const ELIGIBLE_ITEM_ID = "kbis";
 const DOCIE_KIND = "kbis";
+
+// Quelle voie DocIE pour quelle pièce de la checklist. Une pièce absente de
+// cette table n'est jamais envoyée, flag ou pas.
+const VOIES = { kbis: "agent", urssaf: "texte" };
 
 // Chemin relatif volontaire (et non un package npm local) : le bridge reste
 // une source partagée dans document-parsing/bridge/ (cf. son README, « ne pas
@@ -38,13 +58,30 @@ const DOCIE_KIND = "kbis";
 // relative depuis contrats/lib, donc même chemin ici dans les deux cas.
 const BRIDGE_PATH = path.join(__dirname, "..", "..", "document-parsing", "bridge", "docie-bridge.js");
 
+// Même raisonnement de chemin que BRIDGE_PATH : document-parsing/schemas/ est
+// une source partagée hors de contrats/, copiée à la même profondeur relative
+// dans l'image Docker (voir Dockerfile, contexte de build "schemas").
+// Le schéma est chargé PARESSEUSEMENT, pour la même raison que le bridge : le
+// flag désactivé ne doit jamais dépendre de la présence d'un fichier partagé.
+const SCHEMA_URSSAF_PATH = path.join(__dirname, "..", "..", "document-parsing", "schemas", "urssaf.schema.json");
+
 function isEnabled(env = process.env) {
   return String((env || {}).DOCIE_EXTRACTION_ENABLED || "").trim().toLowerCase() === "true";
 }
 
-function isEligible(items) {
+// Port exact de detectType() : seul items[0] compte.
+function pieceDemandee(items) {
   const item = (items || [])[0];
-  return !!(item && item.id === ELIGIBLE_ITEM_ID);
+  return (item && item.id) ? String(item.id) : null;
+}
+
+function isEligible(items) {
+  return Object.hasOwn(VOIES, pieceDemandee(items) || "");
+}
+
+function voiePour(items) {
+  const id = pieceDemandee(items);
+  return (id && Object.hasOwn(VOIES, id)) ? VOIES[id] : null;
 }
 
 // require() paresseux : le flag désactivé (comportement par défaut) ne doit
@@ -101,6 +138,102 @@ async function extractViaDocie({ dataBase64, mimeType, items, expectedName } = {
   return mapDocieResult(response, { items, expectedName });
 }
 
+// ---------------------------------------------------------------------------
+// Voie TEXTE (urssaf). Le choix de la voie se fait À L'EXÉCUTION sur le
+// document réellement reçu, JAMAIS en dur sur le type de pièce.
+//
+// « Une attestation URSSAF est un PDF avec couche texte » est une attente, pas
+// une mesure : aucune attestation réelle n'était disponible. Câbler « urssaf
+// => voie texte » enverrait donc, le jour où un utilisateur dépose un scan,
+// une chaîne vide ou trois caractères d'en-tête à DocIE — qui répondrait
+// quelque chose, et ce quelque chose alimenterait la validité 6 mois. Le
+// départage est donc structurel : la couche texte existe-t-elle, ici, sur ce
+// fichier-ci.
+//
+// Garde repris de cv-parser/docie_client.py, qui refuse explicitement un PDF
+// dont UNE page est sans texte (« PDF contenant une page sans texte : OCR
+// requis ») : une page muette signale un scan (ou une page image), et un texte
+// amputé produirait une extraction confiante et fausse — le pire cas possible
+// pour une date de délivrance, qu'aucune relecture humaine ne rattrape
+// (contrairement à un montant aberrant).
+//
+// Une image (PNG/JPEG/WebP) n'a par construction pas de couche texte : elle
+// part directement en analyse locale, SANS OCR de routage. Faire tourner
+// tesseract.js juste pour décider coûterait plusieurs secondes et, à la
+// première utilisation, un téléchargement de modèle — pour une réponse déjà
+// connue.
+// ---------------------------------------------------------------------------
+
+// Lit la couche texte d'un PDF, localement, sans OCR. Renvoie le texte joint
+// et la liste des pages muettes.
+async function lireCoucheTexte(buffer) {
+  const parser = new PDFParse({ data: buffer });
+  try {
+    const r = await parser.getText();
+    const pages = Array.isArray(r.pages) ? r.pages : [];
+    return { texte: String(r.text || ""), pages };
+  } finally {
+    try { await parser.destroy(); } catch (e) {}
+  }
+}
+
+// Le document reçu peut-il alimenter la voie texte ? Renvoie {ok, texte} ou
+// {ok:false, raison} — la raison est reprise telle quelle dans l'avertissement
+// rendu à l'utilisateur, pour que le repli soit diagnosticable.
+async function coucheTexteUtilisable(buffer, mime) {
+  if (mime !== "application/pdf") {
+    return { ok: false, raison: "le document n'est pas un PDF (image : pas de couche texte)" };
+  }
+  let lecture;
+  try {
+    lecture = await lireCoucheTexte(buffer);
+  } catch (e) {
+    return { ok: false, raison: "PDF illisible ou protégé" };
+  }
+  if (!lecture.pages.length) return { ok: false, raison: "PDF sans page lisible" };
+  const muettes = lecture.pages.filter((p) => !String(p.text || "").trim());
+  if (muettes.length) {
+    return {
+      ok: false,
+      raison: "PDF contenant une page sans texte (page " + (muettes[0].num ?? "?") + ") : scan, OCR requis",
+    };
+  }
+  if (!lecture.texte.trim()) return { ok: false, raison: "PDF sans texte exploitable : scan, OCR requis" };
+  return { ok: true, texte: lecture.texte };
+}
+
+function chargerSchemaUrssaf() {
+  return require(SCHEMA_URSSAF_PATH);
+}
+
+// Même forme de sortie que analyzeDocumentLocal, enrichie — voir
+// lib/urssaf-mapping.js. Marqueur « (DocIE) » identique à celui du Kbis.
+function mapUrssafDocieResult(docieResponse, { items, expectedName } = {}) {
+  const validation = docieResponse && docieResponse.metadata && docieResponse.metadata.validation;
+  const { analysis } = mapUrssafResult(docieResponse && docieResponse.result, { expectedName, items, validation });
+  if (analysis.documentType !== "Document" && analysis.summary) {
+    analysis.summary += " (DocIE)";
+  }
+  return analysis;
+}
+
+// Renvoie l'analyse DocIE, ou null si le document n'a pas de couche texte
+// exploitable — dans ce cas l'appelant retombe sur l'analyse locale en
+// nommant `raisonRepli`. Ne renvoie JAMAIS une extraction sur un texte vide.
+async function extractUrssafViaTexte({ dataBase64, mimeType, items, expectedName } = {}, deps = {}) {
+  if (!dataBase64) throw new Error("Aucun fichier reçu.");
+  const env = deps.env || process.env;
+  const buffer = Buffer.from(dataBase64, "base64");
+  const mime = sniffMime(mimeType, buffer);
+  const verdict = await coucheTexteUtilisable(buffer, mime);
+  if (!verdict.ok) return { analysis: null, raisonRepli: verdict.raison };
+  const { extractText } = deps.extractText ? deps : loadBridge();
+  const options = { kind: "urssaf", dynamicSchema: (deps.dynamicSchema || chargerSchemaUrssaf()), env };
+  if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;
+  const response = await extractText(verdict.texte, options);
+  return { analysis: mapUrssafDocieResult(response, { items, expectedName }), raisonRepli: null };
+}
+
 // Point d'entrée unique appelé par server.js : bascule flag + repli. En cas
 // d'échec DocIE (config manquante, timeout, erreur upstream/réseau...), repli
 // automatique sur l'analyse locale (jamais d'endpoint silencieusement cassé),
@@ -110,28 +243,46 @@ async function extractViaDocie({ dataBase64, mimeType, items, expectedName } = {
 async function analyzeDocument(body = {}, deps = {}) {
   const analyzeLocal = deps.analyzeLocal || analyzeDocumentLocal;
   const env = deps.env || process.env;
-  if (isEnabled(env) && isEligible(body.items)) {
-    try {
-      return await extractViaDocie(body, deps);
-    } catch (error) {
-      const code = (error && error.code) || "erreur";
-      console.error("[docie-extraction] Extraction DocIE en échec, repli sur l'analyse locale (code=" + code + "):", error && error.message);
+  const voie = isEnabled(env) ? voiePour(body.items) : null;
+  if (!voie) return analyzeLocal(body);
+  try {
+    if (voie === "texte") {
+      const { analysis, raisonRepli } = await extractUrssafViaTexte(body, deps);
+      if (analysis) return analysis;
+      // Pas d'échec DocIE ici : DocIE n'a tout simplement pas été sollicité,
+      // faute de couche texte. Avertissement DISTINCT de celui d'un échec
+      // d'extraction, parce que les deux ne se corrigent pas pareil — celui-ci
+      // se corrige en fournissant un PDF texte, l'autre côté DocIE.
       const local = await analyzeLocal(body);
       local.issues = (local.issues || []).concat(
-        "Extraction DocIE indisponible (" + code + ") — analyse locale utilisée en repli."
+        "DocIE non sollicité (" + raisonRepli + ") — analyse locale utilisée."
       );
       return local;
     }
+    return await extractViaDocie(body, deps);
+  } catch (error) {
+    const code = (error && error.code) || "erreur";
+    console.error("[docie-extraction] Extraction DocIE en échec, repli sur l'analyse locale (code=" + code + "):", error && error.message);
+    const local = await analyzeLocal(body);
+    local.issues = (local.issues || []).concat(
+      "Extraction DocIE indisponible (" + code + ") — analyse locale utilisée en repli."
+    );
+    return local;
   }
-  return analyzeLocal(body);
 }
 
 module.exports = {
   analyzeDocument,
   extractViaDocie,
+  extractUrssafViaTexte,
+  coucheTexteUtilisable,
   mapDocieResult,
+  mapUrssafDocieResult,
+  chargerSchemaUrssaf,
   isEnabled,
   isEligible,
+  voiePour,
+  VOIES,
   ELIGIBLE_ITEM_ID,
   // Exportés pour réutilisation par d'autres consommateurs du bridge côté
   // contrats (ex. lib/docie-contract-import.js) : même flag DOCIE_EXTRACTION_ENABLED,

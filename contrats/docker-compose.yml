@@ -26,6 +26,10 @@ services:
       context: .
       additional_contexts:
         bridge: ../document-parsing/bridge
+        # Schémas dynamiques partagés (issue #170) : la DÉFINITION du schéma
+        # urssaf voyage dans le corps de la requête DocIE, ce fichier doit donc
+        # être dans l'image. Voir le Dockerfile, étape 4.
+        schemas: ../document-parsing/schemas
     image: adbi-contrats:latest
     container_name: adbi-contrats
     ports:
