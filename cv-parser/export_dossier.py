@@ -378,7 +378,7 @@ def _replier(texte: str, largeur: int) -> list:
     return lignes
 
 
-def _certification(cert: dict) -> str:
+def certification(cert: dict) -> str:
     """« AWS Certified Solutions Architect — Amazon Web Services ».
 
     L'organisme émetteur (#177 ligne 18) est rendu par DocIE et était supprimé
@@ -386,6 +386,10 @@ def _certification(cert: dict) -> str:
     dossiers listant les certifications en « année / intitulé ». Une seule
     fonction pour le PDF et le Word : les deux exports doivent dire la même
     chose du même candidat.
+
+    Publique depuis #174 : le Word de `app.py::export_word` — la cinquième
+    sortie, oubliée du premier passage — s'en sert aussi. Trois exports, une
+    seule règle de mise en forme.
     """
     nom = str(cert.get("name") or "").strip()
     organisme = str(cert.get("issuer") or "").strip()
@@ -427,7 +431,7 @@ def en_pdf(cv: dict, pastilles: list, savoir_faire: list) -> BytesIO:
                 titre_f += f" – {f['subtitle']}"
             d.ligne(str(f.get("period") or ""), titre_f)
         for c in (cv.get("certifications") or []):
-            d.ligne(str(c.get("year") or ""), _certification(c))
+            d.ligne(str(c.get("year") or ""), certification(c))
 
     if cv.get("languages"):
         d.rubrique("Langues")
@@ -641,7 +645,7 @@ def en_word(cv: dict, pastilles: list, savoir_faire: list) -> BytesIO:
                 titre_f += f" – {f['subtitle']}"
             duo(f.get("period"), titre_f)
         for c in (cv.get("certifications") or []):
-            duo(c.get("year"), _certification(c))
+            duo(c.get("year"), certification(c))
 
     if cv.get("languages"):
         rubrique("Langues")

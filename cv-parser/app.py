@@ -3206,7 +3206,11 @@ def export_word(cv_id):
                 p0.paragraph_format.space_after = Pt(1)
                 p1.paragraph_format.space_after = Pt(1)
                 _run(p0, cert.get("year") or "", DARK, bold=True, size_pt=9.5)
-                _run(p1, cert.get("name") or "", DARK, size_pt=9.5)
+                # #174 : l'organisme émetteur, comme dans les quatre autres
+                # sorties. Même fonction que le PDF et le Word d'export_dossier
+                # (« Intitulé — Organisme ») : trois exports du même candidat
+                # ne doivent pas dire trois choses différentes.
+                _run(p1, export_dossier.certification(cert), DARK, size_pt=9.5)
 
         # — Langues —
         if languages:
@@ -3249,6 +3253,13 @@ def export_word(cv_id):
             _run(lp, company, COL1, bold=True, size_pt=12)
             if client:
                 _run(lp, f"  —  {client}", COL1, italic=True, size_pt=10)
+            # #174 : le lieu de mission, à la suite de la société, comme dans
+            # les quatre autres sorties. Pas de borne ici : la période est dans
+            # la CELLULE d'à côté, pas positionnée au caractère près comme dans
+            # le PDF — la ligne se replie, elle n'a rien à percuter.
+            if exp.get("location"):
+                _run(lp, f"  —  {str(exp['location']).strip()}",
+                     COL1, italic=True, size_pt=10)
 
             rp = et.rows[0].cells[1].paragraphs[0]
             rp.alignment = WD_ALIGN_PARAGRAPH.RIGHT

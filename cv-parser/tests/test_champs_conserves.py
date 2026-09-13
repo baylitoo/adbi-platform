@@ -363,6 +363,81 @@ class DossiersTests(unittest.TestCase):
                 self.assertTrue(export(fiche, ["Data"], ["Pilotage"]).read())
 
 
+def _export_word(fiche):
+    """Exécute `app.py::export_word` sur une fiche et rend le .docx produit.
+
+    C'est la CINQUIÈME sortie de la fiche — celle que l'« Attendu » de #174
+    liste à côté des deux gabarits et des deux exports d'export_dossier, et
+    qu'aucun test ne couvrait. La route est extraite par `ast`, décorateurs
+    retirés (`@app.route` / `@require_auth` exigeraient l'application Flask,
+    donc une base) ; ses seules dépendances hors python-docx sont la lecture de
+    la fiche et `send_file`, toutes deux remplacées ici.
+    """
+    import io
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt, RGBColor
+
+    import export_dossier
+
+    arbre = ast.parse((RACINE / "app.py").read_text(encoding="utf-8"))
+    fonction = next(n for n in arbre.body
+                    if isinstance(n, ast.FunctionDef) and n.name == "export_word")
+    fonction.decorator_list = []
+    produit = {}
+    espace = {
+        "io": io, "re": re, "Document": Document, "DocxDoc": Document,
+        "WD_ALIGN_PARAGRAPH": WD_ALIGN_PARAGRAPH, "OxmlElement": OxmlElement,
+        "qn": qn, "Cm": Cm, "Pt": Pt, "RGBColor": RGBColor,
+        "_DOCX_AVAILABLE": True,
+        "export_dossier": export_dossier,
+        "cvstore_pg": type("S", (), {"get_cv": staticmethod(lambda _id: fiche)}),
+        "request": type("R", (), {"args": {}})(),
+        "abort": lambda code: (_ for _ in ()).throw(AssertionError(code)),
+        "jsonify": lambda *a, **k: (_ for _ in ()).throw(AssertionError(a or k)),
+        "send_file": lambda flux, **k: produit.setdefault("flux", flux),
+    }
+    exec(compile(ast.unparse(fonction), str(RACINE / "app.py"), "exec"), espace)
+    espace["export_word"]("cv1")
+    document = Document(produit["flux"])
+    return "\n".join(
+        [p.text for p in document.paragraphs]
+        + [c.text for t in document.tables for r in t.rows for c in r.cells])
+
+
+class CinquiemeSortieTests(unittest.TestCase):
+    """Le Word d'`app.py` — la sortie que le premier passage avait oubliée.
+
+    `DossiersTests` couvre les quatre autres. Celle-ci est une route distincte,
+    avec sa propre mise en page (tableaux à deux colonnes, gabarit ABC_ADBI),
+    et elle listait les certifications par leur seul intitulé et les missions
+    par leur seule société : la fiche se contredisait selon le format qu'on en
+    tirait, ce que l'« Attendu » de #174 interdit explicitement.
+    """
+
+    FICHE = dict(DossiersTests.FICHE, id="cv1")
+
+    def test_le_lieu_et_l_organisme_sont_dans_le_word_de_app(self):
+        texte = _export_word(self.FICHE)
+        self.assertIn("Lyon", texte)
+        self.assertIn("Amazon Web Services", texte)
+
+    def test_les_cinq_sorties_disent_la_meme_chose_de_la_certification(self):
+        """Même règle de mise en forme que le PDF et le Word d'export_dossier."""
+        from export_dossier import certification
+        self.assertIn(certification(CERTIFICATION_SYNTHETIQUE),
+                      _export_word(self.FICHE))
+
+    def test_une_fiche_d_avant_le_correctif_s_exporte_sans_erreur(self):
+        texte = _export_word({**self.FICHE,
+                              "experience": [{"company": "Numelia", "title": "Dev"}],
+                              "certifications": [{"name": "ITIL", "year": "2020"}]})
+        self.assertIn("Numelia", texte)
+        self.assertIn("ITIL", texte)
+
+
 class RevueDocieTests(unittest.TestCase):
     """Tant que les champs étaient jetés, un doute sur eux sortait en
     avertissement générique — le seul choix honnête. Maintenant qu'ils
