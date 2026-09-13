@@ -48,6 +48,8 @@ from kbis_to_contrats import (  # noqa: E402
     ANNEE_MIN,
     MOTIF_NOMBRE,
     KbisMappingError,
+    _LEGAL_FORM_TOKENS,
+    _check_name,
     _normalize_date,
     _normalize_number,
     map_docie_kbis_to_analysis,
@@ -452,6 +454,76 @@ class TestFieldInventory(unittest.TestCase):
         # legal_representative) -- company_name/issued_date/share_capital
         # sont traites a part (voir le module).
         self.assertEqual(8, len(MAPPED_FIELDS))
+
+
+class TestNomPartage(unittest.TestCase):
+    """Inventaire de divergence #179, ligne B7 : la correspondance de nom a
+    DEUX implementations -- contrats/lib/docanalyze.js::checkName (le JS, qui
+    tourne en production, importe tel quel par lib/kbis-mapping.js) et
+    _check_name ici. #179 les a mesurees d'accord sur les fixtures du depot,
+    mais RIEN ne les comparait l'une a l'autre : la premiere derive serait
+    passee inapercue jusqu'a l'ecran. L'enjeu est concret --
+    `nameMatches === false` fait afficher a contrats/public/app.js::
+    analyzeChecklistDoc un « ⛔ ce n'est PAS le sous-traitant saisi »
+    BLOQUANT, donc une divergence accuse a tort un sous-traitant legitime.
+    La regle est desormais ecrite une seule fois, dans
+    document-parsing/fixtures/nom_docie.json, et les deux portages comparent
+    leurs constantes ET leur verdict a ce fichier."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(REPO_ROOT / "document-parsing" / "fixtures" / "nom_docie.json", encoding="utf-8") as fh:
+            cls.fixture = json.load(fh)
+
+    def test_formes_juridiques_identiques_a_la_fixture(self):
+        self.assertEqual(set(self.fixture["formes_juridiques"]), _LEGAL_FORM_TOKENS)
+        self.assertIn(
+            "document-parsing/mappings/kbis_to_contrats.py (Python)",
+            self.fixture["_ports"],
+        )
+
+    def test_formes_juridiques_du_portage_js_identiques_a_la_fixture(self):
+        # Meme garde-fou que TestDocanalyzeParity : docanalyze.js est relu EN
+        # DIRECT, parce que checkName garde ses constantes en litteraux a
+        # l'interieur de la fonction. Modifier la liste d'un seul cote sans
+        # toucher la fixture casse donc ce test.
+        source = DOCANALYZE_JS.read_text(encoding="utf-8")
+        m = re.search(r"!/\^\(([A-Z|]+)\)\$/\.test\(t\)", source)
+        self.assertIsNotNone(
+            m,
+            "checkName ne filtre plus les formes juridiques par ce litteral -- "
+            "contrats/lib/docanalyze.js a change de forme",
+        )
+        self.assertEqual(self.fixture["formes_juridiques"], m.group(1).split("|"))
+
+    def test_tous_les_cas_du_jeu_dessai(self):
+        for cas in self.fixture["cas"]:
+            with self.subTest(attendu=cas["nom_attendu"], candidat=cas["candidat"], preuve=cas["preuve"]):
+                self.assertIs(cas["resultat"], _check_name(cas["candidat"], cas["nom_attendu"]))
+
+    def test_tous_les_cas_jusqu_a_name_matches(self):
+        # La fonction seule ne prouve pas ce que l'ecran recoit :
+        # map_docie_kbis_to_analysis peut neutraliser le verdict (branche
+        # « illisible »). On garde donc un siren pour rester hors de cette
+        # branche, et on verifie que nameMatches est bien le verdict de
+        # _check_name -- et que le message bloquant n'est ajoute aux `issues`
+        # que sur False, jamais sur None.
+        bloquant = "La société du document ne correspond pas au sous-traitant saisi."
+        for cas in self.fixture["cas"]:
+            with self.subTest(attendu=cas["nom_attendu"], candidat=cas["candidat"]):
+                envelope = {
+                    "schema_name": "kbis",
+                    "result": {
+                        "company_name": {"value": cas["candidat"], "confidence": 0.9, "evidence_ids": ["e1"]},
+                        "siren": {"value": "941091316", "confidence": 0.99, "evidence_ids": ["e2"]},
+                    },
+                    "validation": {"valid": True, "errors": [], "warnings": []},
+                }
+                analysis = map_docie_kbis_to_analysis(
+                    envelope, expected_name=cas["nom_attendu"], items=[{"id": "kbis"}]
+                ).analysis
+                self.assertIs(cas["resultat"], analysis["nameMatches"])
+                self.assertEqual(cas["resultat"] is False, bloquant in analysis["issues"])
 
 
 if __name__ == "__main__":
