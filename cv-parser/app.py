@@ -951,6 +951,8 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
         "name": str(data.get("name") or "").strip(),
         "title": str(data.get("title") or "").strip(),
         "years_experience": 0,
+        # D'où vient le nombre ci-dessus (#174) — voir la fin de la fonction.
+        "anciennete_source": "aucune",
         "contact": {},
         "experience": [],
         "education": [],
@@ -1160,15 +1162,37 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
     # (`Math.max(0, Math.round(Number(x) || 0))`) : un entier, un flottant ou
     # une chaîne numérique passent, tout le reste vaut 0 et laisse le calcul en
     # place. `True` est écarté avec le reste (str(True) n'est pas un nombre).
+    #
+    # #174 : la fiche DIT désormais laquelle des trois branches a produit le
+    # nombre (`anciennete_source`). Trois sources qui ne valent pas la même
+    # chose finissaient dans la même case, sans rien pour les distinguer : « 12
+    # ans » mesuré sur des dates de mission et « 12 ans » recopiés d'un
+    # en-tête de CV s'affichent pareil, et c'est ce nombre que
+    # /api/needs/<id>/match classe. Un utilisateur qui lit 12 doit pouvoir
+    # apprendre d'où vient ce 12 (infobulle de la pastille, cv_detail.html).
+    # Champ de PROVENANCE, comme `niveau_declare` pour les langues : calculé
+    # côté serveur, absent de CHAMPS_MODIFIABLES_CV, jamais renvoyé par
+    # l'écran.
     annees = compute_years_experience(normalized["experience"])
+    source = "periodes"
     if not periode_lisible(normalized["experience"]):
         try:
             annonce = int(float(str(data.get("years_experience")).strip()) + 0.5)
         except (TypeError, ValueError):
             annonce = 0
         if annonce > 0:
-            annees = annonce
+            annees, source = annonce, "docie"
+        elif annees > 0:
+            # Le forfait d'un an par période illisible : un ordre de grandeur,
+            # pas une mesure. C'est justement ce que l'infobulle doit dire.
+            source = "forfait"
+        else:
+            # Ni période lisible, ni période illisible, ni annonce de DocIE :
+            # le 0 affiché ne vient de rien. Le dire est plus honnête que de
+            # le faire passer pour un calcul.
+            source = "aucune"
     normalized["years_experience"] = annees
+    normalized["anciennete_source"] = source
 
     # Compétences absentes : on les reconstruit depuis l'environnement technique
     # des missions.
@@ -2307,6 +2331,13 @@ def store_cv():
         "llm_enriched": False,
         "docling_used": False,
         "extraction": "manuel",  # valeur distincte de "ia"/"bibliothèques"/"cache" (aucun lecteur actuel, juste traçabilité)
+        # #174 : aucune extraction ici non plus, donc aucune période mesurée et
+        # aucune valeur annoncée par DocIE — l'ancienneté d'une fiche créée par
+        # cette route vient de son auteur, ou de nulle part. Calculé côté
+        # serveur comme les quatre au-dessus : `anciennete_source` n'est pas
+        # dans CHAMPS_MODIFIABLES_CV, un client ne choisit pas la provenance de
+        # sa propre valeur.
+        "anciennete_source": "manuel" if cv_data.get("years_experience") else "aucune",
     })
     # Calculé côté serveur à partir du contenu réellement retenu (cv_data
     # après liste blanche) — jamais depuis la valeur envoyée par le client.
@@ -2419,12 +2450,45 @@ def update_cv(cv_id):
         if cv is None:
             abort(404)
         preserver_niveau_declare(cv, updates)
+        marquer_anciennete_manuelle(cv, updates)
         for key, val in updates.items():
             cv[key] = val
         perimer_revue(cv, updates)
         cv["updated_at"] = datetime.now().isoformat()
         cvstore_pg.save_cv(cv_id, cv)
     return jsonify({"success": True})
+
+
+def marquer_anciennete_manuelle(cv, updates):
+    """Met `anciennete_source` à « manuel » quand le PATCH CHANGE l'ancienneté.
+
+    `anciennete_source` (#174) dit d'où vient le nombre d'années affiché :
+    `periodes` (mesuré sur les dates de mission), `docie` (annoncé par
+    l'extraction, faute de période lisible), `forfait` (un an par période
+    illisible), `manuel` (saisi ici). Le champ est calculé côté serveur et
+    volontairement absent de CHAMPS_MODIFIABLES_CV : un client ne choisit pas la
+    provenance de sa propre valeur.
+
+    Mais l'ancienneté, elle, est éditable à l'écran, et une valeur corrigée à la
+    main n'a plus rien à voir avec la source qui l'a produite : laisser
+    « Calculé depuis les périodes » sur un nombre retapé ferait mentir
+    l'infobulle. On retamponne donc ici, côté serveur.
+
+    Seulement si la valeur CHANGE : `collectData()` renvoie `years_experience` à
+    chaque enregistrement, touché ou non (c'est une case `[data-field]`), donc
+    tamponner sur la seule présence de la clé effacerait la provenance au premier
+    « Enregistrer » d'une fiche que personne n'a modifiée — exactement la panne
+    de `niveau_declare` juste en dessous, à l'envers.
+    """
+    if "years_experience" not in updates:
+        return
+    try:
+        avant = int(cv.get("years_experience") or 0)
+    except (TypeError, ValueError):
+        avant = 0
+    # _filtrer_champs_cv a déjà coercé la valeur entrante en int.
+    if int(updates["years_experience"] or 0) != avant:
+        updates["anciennete_source"] = "manuel"
 
 
 def preserver_niveau_declare(cv, updates):

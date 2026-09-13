@@ -567,8 +567,21 @@
         <div class="ph-name">{{ cv.name or 'Candidat' }}</div>
         <div class="ph-title">{{ cv.title or '—' }}</div>
         <div class="ph-badges">
+          {# #174 : dire D'OÙ vient ce nombre. Trois sources qui ne valent pas la
+             même chose y aboutissent (dates de mission mesurées, valeur annoncée
+             par DocIE, forfait d'un an par période illisible), et c'est ce nombre
+             que le rapprochement classe. La provenance est posée par
+             `normalize_cv_data` / le PATCH ; une fiche d'avant ce correctif n'a
+             pas la clé, `.get` rend alors '' et l'infobulle est simplement
+             absente. #}
+          {% set libelles_anciennete = {
+               'periodes': "Calculé depuis les périodes des missions de la fiche.",
+               'docie':    "Annoncé par l'extraction DocIE : aucune période de mission n'était lisible.",
+               'forfait':  "Estimé à un an par mission dont la période est illisible : un ordre de grandeur, pas une mesure.",
+               'manuel':   "Saisi à la main dans cette fiche.",
+               'aucune':   "Aucune source : ni période de mission, ni valeur annoncée par l'extraction."} %}
           {% if cv.years_experience %}
-          <span class="ph-badge exp">{{ cv.years_experience }} an{{ 's' if cv.years_experience|int > 1 else '' }} d'expérience</span>
+          <span class="ph-badge exp"{% if libelles_anciennete.get(cv.get('anciennete_source')) %} title="{{ libelles_anciennete.get(cv.get('anciennete_source')) }}"{% endif %}>{{ cv.years_experience }} an{{ 's' if cv.years_experience|int > 1 else '' }} d'expérience</span>
           {% endif %}
           {% if c.location %}<span class="ph-badge">📍 {{ c.location }}</span>{% endif %}
           {% if c.email %}<span class="ph-badge">✉️ {{ c.email }}</span>{% endif %}
