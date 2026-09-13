@@ -101,7 +101,8 @@ app.post("/api/import", async (req, res) => {
 
     const t0 = Date.now();
     // lib/import-pipeline choisit la voie d'extraction (locale par defaut,
-    // DocIE si DOCIE_EXTRACTION_ENABLED=true et fichier PDF — voir issue #152)
+    // DocIE si DOCIE_EXTRACTION_ENABLED=true : voie fichier pour un PDF, voie
+    // texte pour un depot texte — voir issues #152 et #180)
     // et gere elle-meme le repli local en cas d'echec DocIE.
     const master = await importerCv(buffer, filename);
     const hash = crypto.createHash("sha256").update(buffer).digest("hex");

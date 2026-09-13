@@ -1,8 +1,8 @@
 # Bridge DocIE — contrat serveur partagé
 
-Livrable #150 du milestone Bridge DocIE. Ce module prépare les migrations :
-il n'est pas encore branché sur les routes métier du Parser, OnePager ou Contrats.
-Deux transports (Python/requests et Node 22/fetch), mêmes vecteurs de contrat et
+Livrable #150 du milestone Bridge DocIE. Chaque branchement métier vit dans la
+PR de son service (#151–#153) ; côté OnePager les deux voies sont branchées
+derrière `DOCIE_EXTRACTION_ENABLED`. Deux transports (Python/requests et Node 22/fetch), mêmes vecteurs de contrat et
 même résultat normalisé, sans nouveau service réseau intermédiaire.
 
 ## Configuration à l'exécution
@@ -61,6 +61,18 @@ par `document-parsing/scripts/test_api.py` — le vecteur
 Pour une source qui **possède déjà** du texte lisible par machine : un `.txt`,
 les paragraphes d'un DOCX, la couche texte d'un PDF déjà lue. Jamais un repli
 après un échec de la voie fichier.
+
+Premier consommateur : `one-pager/lib/import-pipeline.js`. L'aiguillage y est
+un prédicat de format, `lib/ingest.js#estTexteBrut`, posé à côté de `isPdf`
+pour qu'il ne puisse pas diverger de ce que `ingest()` fait réellement du
+fichier. Un PDF — scanné ou non — n'y entre jamais : il garde la voie fichier,
+la seule qui déclenche l'OCR distant.
+
+`dynamic_schema` y est chargé depuis `document-parsing/schemas/adbi_resume.schema.json`,
+**à côté** de ce dossier et non dedans : un transport ne possède pas de schéma
+métier, mais un schéma partagé par plusieurs services ne peut pas non plus
+vivre dans un seul d'entre eux. `cv-parser/adbi_resume.schema.json` en garde
+pour l'instant une copie, qu'un test compare à celle-ci.
 
 `dynamic_schema` est le schéma de l'appelant et le reste : un transport ne
 possède pas de schéma métier. Il n'est pas optionnel en pratique pour un schéma
