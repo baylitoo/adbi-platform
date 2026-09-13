@@ -106,6 +106,44 @@ class DocIEClientTests(unittest.TestCase):
         with self.assertRaises(DocIEError):
             map_resume(self.output)
 
+    def test_schema_absent_est_traite_et_non_refuse(self):
+        """#177 ligne 21 : un schéma TU n'est pas un schéma FAUX.
+
+        Le bridge partagé, ses deux ports, accepte une réponse qui ne nomme
+        pas son schéma (`item is not None and item != expected`) ; ce client
+        la refusait. Le même document passait donc chez one-pager et échouait
+        chez cv-parser — une divergence de disponibilité, pas de donnée.
+        """
+        del self.output["schema_name"]
+        data = map_resume(self.output)
+        self.assertTrue(data["name"])
+        self.assertTrue(data["experience"])
+
+    def test_schema_absent_ne_laisse_pas_passer_un_autre_document(self):
+        """Ce que la tolérance ne coûte PAS : une réponse d'un autre schéma
+        ne survit pas aux contrôles de structure, faute d'un seul champ de CV."""
+        kbis = {"result": {"siren": "123456789", "denomination": "Numelia SAS"}}
+        with self.assertRaisesRegex(DocIEError, "aucune donnée"):
+            map_resume(kbis)
+
+    def test_schema_rapporte_remonte_dans_les_metadonnees(self):
+        """La tolérance n'est pas un silence : le fait est rendu au relecteur,
+        sous le même drapeau que le bridge (`schema_reported`), dont
+        docie_review fait l'avertissement `docie_schema_non_verifie`."""
+        (_, meta), _ = self.run_client([
+            (200, {"event_ids": ["event-1"]}),
+            (200, [{"status": "Completed", "output": self.output}]),
+        ])
+        self.assertIs(meta["schema_reported"], True)
+
+        sans_schema = dict(self.output)
+        del sans_schema["schema_name"]
+        (_, meta), _ = self.run_client([
+            (200, {"event_ids": ["event-1"]}),
+            (200, [{"status": "Completed", "output": sans_schema}]),
+        ])
+        self.assertIs(meta["schema_reported"], False)
+
     def test_timeout_is_bounded(self):
         with patch("docie_client.time.monotonic", side_effect=[0, 0, 11]):
             with self.assertRaisesRegex(DocIEError, "délai"):

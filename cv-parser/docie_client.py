@@ -65,10 +65,39 @@ def unwrap(value):
     return value
 
 
+def schema_rapporte(response):
+    """DocIE a-t-il NOMMÉ le schéma de sa réponse ? (#177 ligne 21)
+
+    Même question, même réponse que le bridge partagé
+    (document-parsing/bridge/docie_bridge.py::parse_response, qui la pose sur
+    trois sources et en fait `metadata.schema_reported`) : un schéma tu n'est
+    pas un schéma vérifié, et c'est au relecteur de le savoir — pas au client
+    de refuser le document pour autant.
+    """
+    return isinstance(response, dict) and response.get("schema_name") is not None
+
+
 def map_resume(response, expected_schema="resume"):
     if not isinstance(response, dict) or not isinstance(response.get("result"), dict):
         raise DocIEError("DocIE : résultat d'extraction absent ou invalide.")
-    if response.get("schema_name") != expected_schema:
+    # #177 ligne 21 : un schéma NOMMÉ et faux est refusé, un schéma TU est
+    # accepté — exactement l'arbitrage des deux ports du bridge
+    # (`any(item is not None and item != expected_schema ...)`), et donc le
+    # même document traité par les deux services.
+    #
+    # Refuser l'absence coûtait une disponibilité sans rien garantir de plus :
+    # la réponse est déjà corrélée à la requête (une réponse synchrone pour
+    # /v1/extract/text, un event_id que nous avons reçu pour /v1/studio/runs),
+    # et une réponse d'un AUTRE schéma ne survit de toute façon pas aux
+    # contrôles de structure ci-dessous — un kbis n'a ni name, ni title, ni
+    # experience, ni education, ni skills, donc « DocIE n'a extrait aucune
+    # donnée du CV ». Le seul cas réellement perdu est un document dont le
+    # schéma n'est pas nommé ET dont la forme est celle d'un CV.
+    #
+    # La tolérance n'est PAS un silence : `extract_resume` rend
+    # `schema_reported`, que `docie_review` (PR #176) transforme en
+    # avertissement `docie_schema_non_verifie`, le même code que one-pager.
+    if response.get("schema_name") not in (None, expected_schema):
         raise DocIEError("DocIE : le schéma du résultat ne correspond pas au schéma demandé.")
     data = unwrap(response["result"])
     for key in ("experience", "education", "skills", "languages", "projects", "certifications"):
@@ -178,7 +207,8 @@ def extract_resume(file_path, progress=None, *, session=None):
             data = map_resume(output, "adbi_resume")
             return data, {"event_id": output.get("request_id", ""),
                           "model_profile": output.get("model_profile", ""),
-                          "validation": output.get("validation") or {}}
+                          "validation": output.get("validation") or {},
+                          "schema_reported": schema_rapporte(output)}
         trigger = call("POST", "/v1/studio/extract", json=payload)
         ids = trigger.get("event_ids") if isinstance(trigger, dict) else None
         if not isinstance(ids, list) or not ids or not isinstance(ids[0], str) or not ids[0]:
@@ -200,7 +230,8 @@ def extract_resume(file_path, progress=None, *, session=None):
                     output = row["output"]
                     data = map_resume(output, payload["dynamic_schema_name"])
                     return data, {"event_id": event_id, "model_profile": output.get("model_profile", ""),
-                                  "validation": output.get("validation") or {}}
+                                  "validation": output.get("validation") or {},
+                                  "schema_reported": schema_rapporte(output)}
                 # Inngest's interim proxy can report Completed for a step while
                 # the extraction is still running. Only the durable list is
                 # authoritative; keep polling the wrapped {data: [...]} shape.
