@@ -278,6 +278,23 @@ def revue_docie(data, metadata):
                 if message:
                     warnings.append("%s:%s" % (prefixe, message))
 
+    # #177 ligne 21 : DocIE a-t-il seulement NOMMÉ le schéma de sa réponse ?
+    # Le bridge accepte une réponse qui ne le nomme pas (aucune des trois
+    # sources — `schema_name` du corps, `result.document_type`, celui des
+    # métadonnées de l'agent — n'est obligatoire) et pose `schema_reported`
+    # à False pour le dire : un schéma non contredit n'est pas un schéma
+    # vérifié. one-pager en fait l'avertissement `docie_schema_non_verifie`
+    # (lib/docie-extract.js) ; cv-parser, qui est la CVthèque, n'en faisait
+    # rien — la fiche entrait sans que personne sache de quel schéma elle
+    # venait. Même code d'avertissement des deux côtés, pas une seconde
+    # convention.
+    #
+    # `is False` et non `not` : la clé ABSENTE (chemin historique
+    # `docie_client` avant #173, bridge d'une version antérieure) ne signifie
+    # pas « non nommé », elle signifie « pas dit » — aucune revue inventée.
+    if metadata.get("schema_reported") is False:
+        warnings.append("docie_schema_non_verifie")
+
     confiances = metadata.get("field_confidence")
     for chemin_docie, confiance in (confiances if isinstance(confiances, dict) else {}).items():
         if isinstance(confiance, bool) or not isinstance(confiance, (int, float)):

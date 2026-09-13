@@ -180,6 +180,35 @@ class RevueMetadataTests(unittest.TestCase):
         _, metadata = self._extraire({"request_id": "req-1", "validation": None})
         self.assertIsNone(metadata["validation"])
 
+    def test_schema_non_nomme_traverse_jusqu_a_la_revue(self):
+        """#177 ligne 21 : le bridge tolère une réponse qui ne nomme pas son
+        schéma et pose `schema_reported` à False. Le drapeau était jeté ici,
+        donc la CVthèque acceptait la fiche sans rien dire là où one-pager
+        avertit (`docie_schema_non_verifie`)."""
+        from docie_review import revue_docie
+        data, metadata = self._extraire({
+            "request_id": "req-1", "validation": {"valid": True, "errors": [], "warnings": []},
+            "field_confidence": {}, "schema_reported": False})
+        self.assertIs(metadata["schema_reported"], False)
+        self.assertIn("docie_schema_non_verifie", revue_docie(data, metadata)["warnings"])
+
+    def test_schema_nomme_n_avertit_pas(self):
+        from docie_review import revue_docie
+        data, metadata = self._extraire({
+            "request_id": "req-1", "validation": {"valid": True, "errors": [], "warnings": []},
+            "field_confidence": {}, "schema_reported": True})
+        self.assertIs(metadata["schema_reported"], True)
+        self.assertEqual(revue_docie(data, metadata)["warnings"], [])
+
+    def test_bridge_sans_drapeau_de_schema_reste_compatible(self):
+        """Clé absente (bridge antérieur, chemin historique docie_client) :
+        « pas dit » n'est pas « non nommé » — aucune revue inventée."""
+        from docie_review import revue_docie
+        data, metadata = self._extraire({
+            "request_id": "req-1", "validation": {"valid": True, "errors": [], "warnings": []}})
+        self.assertIsNone(metadata["schema_reported"])
+        self.assertEqual(revue_docie(data, metadata)["warnings"], [])
+
     def test_bridge_sans_confiance_par_champ_reste_compatible(self):
         """Bridge antérieur à #173 : clé absente -> {}, aucune revue inventée."""
         _, metadata = self._extraire({"request_id": "req-1", "validation": {"valid": True}})

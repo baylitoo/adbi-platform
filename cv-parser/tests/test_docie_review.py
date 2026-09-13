@@ -167,6 +167,30 @@ class RevueTests(unittest.TestCase):
         revue = revue_docie({"name": "Camille"}, {"validation": None, "event_id": "e1"})
         self.assertEqual(revue["warnings"], ["docie_validation_absente"])
 
+    def test_schema_non_nomme_par_docie_est_signale(self):
+        """#177 ligne 21. `schema_reported` False = le bridge a accepté une
+        réponse dont aucune des trois sources ne nomme le schéma : un schéma
+        non contredit n'est pas un schéma vérifié."""
+        revue = revue_docie({"name": "Camille"},
+                            {"validation": {}, "schema_reported": False})
+        self.assertEqual(revue["warnings"], ["docie_schema_non_verifie"])
+
+    def test_drapeau_de_schema_absent_ou_vrai_n_avertit_pas(self):
+        """« Pas dit » n'est pas « non nommé » : rétrocompatibilité du chemin
+        historique docie_client et d'un bridge antérieur."""
+        for metadata in ({"validation": {}}, {"validation": {}, "schema_reported": True}):
+            self.assertEqual(revue_docie({"name": "Camille"}, metadata)["warnings"], [])
+
+    def test_meme_code_davertissement_que_one_pager(self):
+        """Le code est un contrat entre les deux services : le poser d'un seul
+        côté ferait deux vocabulaires pour le même fait (issue #175 :
+        « mêmes règles et même vocabulaire que quality.warnings côté
+        one-pager, pas une seconde convention »)."""
+        source_js = (Path(__file__).resolve().parents[2]
+                     / "one-pager/lib/docie-extract.js").read_text(encoding="utf-8")
+        for code in ("docie_schema_non_verifie", "docie_validation_negative"):
+            self.assertIn('"%s"' % code, source_js, code)
+
     def test_metadonnees_sans_revue_comportement_inchange(self):
         """Rétrocompatibilité : le chemin historique docie_client ne fournit
         pas field_confidence — deux listes vides, aucune marque inventée."""

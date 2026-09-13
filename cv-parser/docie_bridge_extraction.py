@@ -152,6 +152,14 @@ def extract_resume(file_path, progress=None, *, session=None):
         # (issue #172). Absent des métadonnées d'un bridge antérieur : {}, donc
         # aucune revue supplémentaire, comportement inchangé.
         "field_confidence": meta.get("field_confidence") or {},
+        # #177 ligne 21 : DocIE a-t-il nommé le schéma de sa réponse ? Le
+        # bridge tolère qu'il ne le nomme pas — aucune des trois sources n'est
+        # obligatoire — et pose ce drapeau à False pour le signaler. Il était
+        # jeté ici comme `field_confidence` l'était : one-pager avertit le
+        # relecteur (`docie_schema_non_verifie`), la CVthèque ne disait rien.
+        # Absent des métadonnées d'un bridge antérieur : None, donc aucune
+        # revue supplémentaire (docie_review teste `is False`).
+        "schema_reported": meta.get("schema_reported"),
         "transport": "docie-bridge",
     }
     return data, metadata
