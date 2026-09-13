@@ -1843,6 +1843,37 @@ def progression_analyse(jeton):
     return jsonify(etat or {"pct": 0, "etape": "Démarrage", "detail": ""})
 
 
+# Champs qui appartiennent au DÉPÔT et non à l'analyse : le nouveau fichier a
+# son identifiant, son nom, son extension et ses dates propres, et
+# `parse_summary` n'est pas stocké en base (il est recalculé pour la réponse).
+# Tout le reste EST le résultat de l'analyse et se reprend tel quel.
+CHAMPS_PROPRES_AU_DEPOT = ("id", "filename", "ext", "uploaded_at", "stored_at", "parse_summary")
+
+
+def fiche_depuis_le_cache(source):
+    """Reprend la fiche d'un document déjà analysé (même empreinte).
+
+    Le signal de relecture fait partie de l'analyse : `docie_review` (les
+    champs dont DocIE doute) **et** `parse_warning` (la phrase qui le dit au
+    commercial, posée par `process_cv`). `parse_warning` était jusqu'ici exclu
+    avec les champs du dépôt : un CV qui avertissait au premier dépôt se
+    re-déposait sans un mot, `parse_summary.avertissement` revenant vide alors
+    que `docie_review` était bien recopié — le signal disparaissait exactement
+    au moment où quelqu'un revérifie le document (issue #175).
+
+    La fiche reprise se comporte donc désormais comme la fiche d'origine, y
+    compris pour le repli du nom sur le nom de fichier (route d'upload) : une
+    extraction qui a averti n'invente pas d'identité, à la reprise comme au
+    premier dépôt.
+    """
+    fiche = {cle: valeur for cle, valeur in source.items()
+             if cle not in CHAMPS_PROPRES_AU_DEPOT}
+    fiche["llm_parsed"] = bool(source.get("llm_enriched"))
+    fiche["extraction"] = "cache"
+    fiche["copie_de"] = source.get("id", "")
+    return fiche
+
+
 @app.route("/api/upload", methods=["POST"])
 @require_auth
 def upload_cv():
@@ -1889,12 +1920,7 @@ def upload_cv():
 
     parse_warning = None
     if source_cache is not None:
-        cv_data = {k: v for k, v in source_cache.items()
-                   if k not in ("id", "filename", "ext", "uploaded_at",
-                                "stored_at", "parse_summary", "parse_warning")}
-        cv_data["llm_parsed"] = bool(source_cache.get("llm_enriched"))
-        cv_data["extraction"] = "cache"
-        cv_data["copie_de"] = source_cache.get("id", "")
+        cv_data = fiche_depuis_le_cache(source_cache)
         noter_progression(jeton, 100, "Déjà analysé", "fiche reprise du document identique")
         print(f"[PERF] cache d'empreinte : fiche reprise de {source_cache.get('id', '?')} — 0 s")
     else:
