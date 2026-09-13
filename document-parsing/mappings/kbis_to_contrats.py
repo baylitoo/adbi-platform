@@ -196,10 +196,27 @@ _NOMBRE_RE = re.compile(MOTIF_NOMBRE)
 _LEGAL_FORM_TOKENS = {"SARL", "SAS", "SASU", "EURL", "SA", "SCI", "GROUPE", "EI"}
 _NON_ALNUM_SPACE_RE = re.compile(r"[^A-Z0-9 ]")
 _MULTI_SPACE_RE = re.compile(r"\s+")
+# Ligatures francaises (issue #182). NFD ne les decompose PAS -- ce sont des
+# lettres a part entiere, pas des lettres accentuees -- elles tombaient donc
+# dans [^A-Z0-9 ] et devenaient une espace : « CŒUR DEFENSE » se normalisait
+# en « C UR DEFENSE » (un jeton coupe en deux jetons inutilisables) et
+# « Æ GROUPE » perdait un jeton entier. Saisi « COEUR DEFENSE » contre un Kbis
+# portant « CŒUR DEFENSE », le verdict etait False, donc le « ⛔ ce n'est PAS
+# le sous-traitant saisi » BLOQUANT sur une societe parfaitement legitime.
+# La translitteration est faite AVANT la mise en majuscules, donc sans
+# dependre du depliage de casse propre a chaque langage -- le portage JS
+# (contrats/lib/docanalyze.js::norm, celui qui tourne en production) applique
+# la MEME table, au meme endroit. ß n'y figure pas volontairement :
+# str.upper() le rend deja « SS » (et toUpperCase() aussi, mesure des deux
+# cotes), l'ajouter serait du code mort.
+# Regle partagee : document-parsing/fixtures/nom_docie.json (`ligatures`).
+_LIGATURES = (("Œ", "OE"), ("œ", "oe"), ("Æ", "AE"), ("æ", "ae"))
 
 
 def _norm(s: Any) -> str:
     text = "" if s is None else str(s)
+    for ligature, remplacement in _LIGATURES:
+        text = text.replace(ligature, remplacement)
     text = text.upper()
     text = unicodedata.normalize("NFD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))

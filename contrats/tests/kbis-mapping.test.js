@@ -10,10 +10,15 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("path");
+const fs = require("fs");
 const {
   DOCANALYZE_BASE_KEYS, ENRICHED_KEYS, MAPPED_FIELDS, mapKbisResult,
   MOTIF_NOMBRE, normalizeNumber, ANNEE_MIN, ANNEE_MAX, normalizeDate,
 } = require("../lib/kbis-mapping");
+// checkName vient de docanalyze.js : c'est LA fonction que kbis-mapping.js
+// importe pour produire nameMatches, et celle dont kbis_to_contrats.py est le
+// portage Python (#179 ligne B7).
+const { checkName, norm } = require("../lib/docanalyze");
 // Jeu d'essai PARTAGÉ avec les trois autres portages du même normaliseur
 // (kbis_to_contrats.py, contract_to_contrats.py, lib/docie-contract-import.js) :
 // c'est lui qui empêche la divergence de #179 (lignes B2/B3) de revenir.
@@ -325,4 +330,94 @@ test("capital social réduit à des espaces : vide, jamais un 0 fabriqué (#179 
   assert.equal(analysis.capitalSocial, "");
   assert.equal(analysis.capitalSocialDevise, "EUR");
   assert.ok(!warnings.some((w) => /nombre non reconnu/.test(w)));
+});
+
+// ---------------------------------------------------------------------------
+// #179 ligne B7 : la correspondance de nom a DEUX implémentations — celle-ci
+// (docanalyze.js::checkName, importée telle quelle par lib/kbis-mapping.js,
+// c'est-à-dire celle qui tourne en production) et son portage Python dans
+// document-parsing/mappings/kbis_to_contrats.py::_check_name. #179 les avait
+// mesurées d'accord sur les fixtures du dépôt, mais RIEN ne les comparait
+// l'une à l'autre : la première dérive serait passée inaperçue jusqu'à
+// l'écran. L'enjeu est concret — `nameMatches === false` fait afficher à
+// public/app.js::analyzeChecklistDoc un « ⛔ ce n'est PAS le sous-traitant
+// saisi » BLOQUANT, donc une divergence accuse à tort un sous-traitant
+// légitime. Même discipline que nombre_docie.json et date_docie.json : la
+// règle est écrite une seule fois, les deux portages s'y comparent.
+// ---------------------------------------------------------------------------
+const NOM = require(path.join(
+  __dirname, "..", "..", "document-parsing", "fixtures", "nom_docie.json"
+));
+// checkName garde ses trois constantes en littéraux à l'intérieur de la
+// fonction. Elles sont relues DANS LA SOURCE plutôt qu'exportées : c'est déjà
+// la façon dont test_kbis_to_contrats.py lit docanalyze.js (qui est une
+// fonction, pas une table statique), et cela évite de remanier un fichier de
+// production pour le seul confort d'un test.
+const DOCANALYZE_SRC = fs.readFileSync(path.join(__dirname, "..", "lib", "docanalyze.js"), "utf8");
+
+test("nom : les constantes de ce portage sont celles de la fixture partagée (#179 B7)", () => {
+  const formes = DOCANALYZE_SRC.match(/!\/\^\(([A-Z|]+)\)\$\/\.test\(t\)/);
+  assert.ok(formes, "checkName ne filtre plus les formes juridiques par ce littéral — docanalyze.js a changé de forme");
+  assert.deepEqual(formes[1].split("|"), NOM.formes_juridiques);
+
+  const longueur = DOCANALYZE_SRC.match(/t\.length >= (\d+)/);
+  assert.ok(longueur, "checkName ne filtre plus les tokens par leur longueur");
+  assert.equal(Number(longueur[1]), NOM.longueur_token_min);
+
+  const seuil = DOCANALYZE_SRC.match(/Math\.ceil\(tokens\.length \* ([\d.]+)\)/);
+  assert.ok(seuil, "checkName ne calcule plus son seuil par ce littéral");
+  assert.equal(Number(seuil[1]), NOM.seuil);
+
+  assert.ok(NOM._ports.includes("contrats/lib/docanalyze.js (JS)"));
+});
+
+test("nom : la table des ligatures de ce portage est celle de la fixture partagée (#182)", () => {
+  // Relue dans la source comme les trois autres constantes : LIGATURES n'est
+  // pas exportée, et l'exporter serait remanier un fichier de production pour
+  // le seul confort d'un test. La table est appliquée AVANT toUpperCase(),
+  // donc les entrées minuscules ne sont PAS redondantes — chacune des quatre
+  // a son cas dans `cas`, qui bascule si on la retire seule.
+  const m = DOCANALYZE_SRC.match(/const LIGATURES = (\[.*\]);/);
+  assert.ok(m, "docanalyze.js ne déclare plus la table des ligatures par ce littéral (#182)");
+  assert.deepEqual(JSON.parse(m[1]), NOM.ligatures);
+  // ß ne doit PAS y figurer : toUpperCase() le déplie déjà en « SS »
+  // (mesuré des deux côtés), une entrée serait du code mort. Voir
+  // `_pourquoi_pas_ss` dans la fixture et son témoin « MÜLLER STRAßE ».
+  assert.ok(!NOM.ligatures.some(([c]) => c === "ß"), "ß est déplié par la mise en majuscules, pas par la table");
+  // La translittération précède bien le passage [^A-Z0-9 ] : sans cela Œ
+  // redeviendrait une espace et le faux négatif bloquant de #182 reviendrait.
+  assert.equal(norm("CŒUR DEFENSE"), "COEUR DEFENSE");
+  assert.equal(norm("Æ GROUPE"), "AE GROUPE");
+  assert.equal(norm("ÉLECTRICITÉ"), "ELECTRICITE");
+});
+
+test("nom : les " + NOM.cas.length + " cas du jeu d'essai partagé (#179 B7)", () => {
+  for (const cas of NOM.cas) {
+    const verdict = checkName(cas.candidat, cas.nom_attendu);
+    assert.equal(
+      verdict, cas.resultat,
+      JSON.stringify(cas.nom_attendu) + " vs " + JSON.stringify(cas.candidat) +
+      " -> " + verdict + ", attendu " + cas.resultat + " (" + cas.preuve + ")"
+    );
+  }
+});
+
+test("nom : chaque cas du jeu d'essai traverse aussi mapKbisResult jusqu'à nameMatches (#179 B7)", () => {
+  // La fonction seule ne prouve pas ce que l'écran reçoit : mapKbisResult
+  // peut neutraliser le verdict (branche « illisible »). On garde donc un
+  // siren pour rester hors de cette branche, et on vérifie que nameMatches
+  // est bien le verdict de checkName — et que le message bloquant n'est
+  // ajouté aux `issues` que sur false, jamais sur null.
+  for (const cas of NOM.cas) {
+    const { analysis } = mapKbisResult(
+      { company_name: cas.candidat, siren: "941091316" },
+      { expectedName: cas.nom_attendu, items: [{ id: "kbis" }], validation: NOMINAL_VALIDATION }
+    );
+    assert.equal(analysis.nameMatches, cas.resultat, JSON.stringify(cas.nom_attendu) + " / " + JSON.stringify(cas.candidat));
+    assert.equal(
+      analysis.issues.includes("La société du document ne correspond pas au sous-traitant saisi."),
+      cas.resultat === false,
+      "message bloquant attendu uniquement sur false — " + JSON.stringify(cas.nom_attendu)
+    );
+  }
 });
