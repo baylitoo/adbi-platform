@@ -30,6 +30,30 @@ function chargerBridge() {
   return require("../../document-parsing/bridge/docie-bridge");
 }
 
+/**
+ * Definition du schema « adbi_resume », envoyee avec le texte.
+ *
+ * Chargee au meme moment et de la meme facon que le bridge — jamais au
+ * chargement du module : le fichier partage n'existe que si l'empaquetage
+ * Docker l'a copie, et le service doit demarrer sans lui drapeau baisse.
+ *
+ * Elle voyage parce que `schema_name` seul ne resout que le petit registre
+ * integre de DocIE (mesure par document-parsing/scripts/register_and_test.py,
+ * ligne 26) : « adbi_resume » est un schema personnalise, il doit partir avec
+ * sa definition. C'est la forme de la seule requete dont ce depot garde une
+ * reponse reelle reussie (cv-parser/docie_client.py, ligne 169).
+ *
+ * Le fichier vit dans document-parsing/schemas/ et non dans
+ * document-parsing/bridge/ : un transport ne possede pas de schema metier
+ * (README du bridge). cv-parser en garde pour l'instant sa propre copie, que
+ * tests/docie-extract.test.js compare octet a octet a celle-ci — le meme
+ * garde-fou que document-parsing/fixtures/mission_en_cours.json.
+ */
+function chargerSchemaResume() {
+  // eslint-disable-next-line global-require
+  return require("../../document-parsing/schemas/adbi_resume.schema.json");
+}
+
 /** Une valeur de champ DocIE peut etre une chaine, ou une liste d'objets `{item}`/`{interest}`. */
 function versListeDeChaines(valeur, cle) {
   if (valeur == null) return [];
@@ -503,8 +527,41 @@ async function extraireViaDocie(buffer, filename, { env = process.env, fetchImpl
   return mapperAdbiResume(result, metadata, { filename });
 }
 
+/**
+ * Point d'entree de la VOIE TEXTE : envoie a DocIE du texte deja lisible par
+ * machine (POST /v1/extract/text) et renvoie le meme cv_master.
+ *
+ * Ce n'est pas un repli de extraireViaDocie : c'est l'autre surface DocIE,
+ * pour les sources qui POSSEDENT du texte (#180). Un .txt en fait partie, un
+ * PDF scanne non — lui n'a que des pixels et reste sur la voie fichier.
+ *
+ * La reponse est reprojetee par la MEME fonction mapperAdbiResume : l'ancrage
+ * fonctionne a l'identique sur cette voie (le service decoupe le texte
+ * lui-meme), donc `field_confidence`, `validation` et `schema_reported`
+ * arrivent dans la meme forme et alimentent exactement le meme signal de
+ * relecture. Seul `metadata.agent` vaut null : il n'y a pas d'agent sur cette
+ * voie, et le pretendre nommerait un composant qui n'a pas participe.
+ *
+ * Ne rattrape aucune erreur : lib/import-pipeline.js decide du repli.
+ *
+ * @param {string} texteSource  texte du document, deja decode
+ * @param {string} filename
+ * @param {{env?: object, fetchImpl?: Function}} [options]
+ */
+async function extraireTexteViaDocie(texteSource, filename, { env = process.env, fetchImpl } = {}) {
+  const { extractText } = chargerBridge();
+  const { result, metadata } = await extractText(texteSource, {
+    kind: "resume",
+    dynamicSchema: chargerSchemaResume(),
+    env,
+    fetchImpl,
+  });
+  return mapperAdbiResume(result, metadata, { filename });
+}
+
 module.exports = {
   extraireViaDocie,
+  extraireTexteViaDocie,
   mapperAdbiResume,
   decouperDescription,
   // Exportes pour le test d'accord avec cv-parser (fixture partagee).

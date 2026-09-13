@@ -4,12 +4,23 @@
  * Voie historique (par defaut, toujours active) : lib/ingest -> lib/layout ->
  * lib/extract, heuristiques de mise en page sur du texte positionne.
  *
- * Voie DocIE (issue #152, derriere DOCIE_EXTRACTION_ENABLED) : le PDF est
- * envoye tel quel au bridge partage (document-parsing/bridge/docie-bridge.js,
+ * Voie DocIE (issues #152 et #180, derriere DOCIE_EXTRACTION_ENABLED) : le
+ * document est envoye au bridge partage (document-parsing/bridge/docie-bridge.js,
  * issue #150) puis reprojete dans le meme cv_master par lib/docie-extract.js.
- * Reservee aux PDF : DOCX et texte brut n'ont pas de contrat DocIE (voir
- * document-parsing/bridge/README.md) et continuent de passer par la voie
- * historique meme drapeau actif.
+ *
+ * DocIE expose DEUX surfaces, et on choisit celle qui correspond a ce que la
+ * source EST reellement — regle d'aiguillage de leur equipe (#180), pas une
+ * preference pour l'une des deux :
+ *
+ *   - un PDF part en fichier (/v1/agents/{agent}/chat/completions), qu'il
+ *     porte une couche texte ou qu'il soit scanne : c'est la seule voie qui
+ *     declenche l'OCR distant. On ne lui substitue jamais la voie texte, un
+ *     scan n'ayant aucun texte a envoyer ;
+ *   - un depot texte part en texte (/v1/extract/text), sans enveloppe data
+ *     URI : il possede deja ce que l'autre voie devrait faire reconstruire.
+ *
+ * DOCX reste sur la voie historique : lib/ingest en tire deja du texte via
+ * mammoth, mais le brancher demande sa propre validation (voir #180).
  *
  * En cas d'echec DocIE (configuration, reseau, timeout, reponse invalide...),
  * on se replie sur la voie historique pour CETTE requete plutot que de
@@ -18,10 +29,10 @@
  * et `quality.warnings`, jamais silencieux.
  */
 
-const { ingest, isPdf } = require("./ingest");
+const { ingest, isPdf, estTexteBrut } = require("./ingest");
 const { segment } = require("./layout");
 const { extract } = require("./extract");
-const { extraireViaDocie } = require("./docie-extract");
+const { extraireViaDocie, extraireTexteViaDocie } = require("./docie-extract");
 
 class ImportError extends Error {
   constructor(status, message) {
@@ -51,15 +62,39 @@ async function extractionLocale(buffer, filename) {
 }
 
 /**
+ * Choisit la surface DocIE qui correspond a ce que le fichier EST, ou null
+ * quand aucune ne convient (le fichier reste alors sur la voie historique).
+ *
+ * Renvoie une fonction plutot qu'un identifiant de voie : le repli en cas
+ * d'echec doit rester UN SEUL bloc `catch`, identique pour les deux surfaces.
+ * Deux copies de la regle de repli, c'est deux conventions qui divergent.
+ */
+function voieDocie(buffer, filename) {
+  if (isPdf(buffer)) {
+    return (options) => extraireViaDocie(buffer, filename, options);
+  }
+  if (estTexteBrut(buffer, filename)) {
+    // Meme decodage que lib/ingest#readTxt, pour que les deux voies lisent le
+    // meme document. La marque d'ordre des octets est retiree : elle n'est pas
+    // du contenu, et DocIE recevrait un premier caractere invisible.
+    const brut = buffer.toString("utf8");
+    const contenu = brut.charCodeAt(0) === 0xfeff ? brut.slice(1) : brut;
+    return (options) => extraireTexteViaDocie(contenu, filename, options);
+  }
+  return null;
+}
+
+/**
  * @param {Buffer} buffer
  * @param {string} filename
  * @param {{env?: object, fetchImpl?: Function}} [options]
  * @returns {Promise<object>} cv_master
  */
 async function importerCv(buffer, filename, { env = process.env, fetchImpl } = {}) {
-  if (docieActif(env) && isPdf(buffer)) {
+  const voie = docieActif(env) ? voieDocie(buffer, filename) : null;
+  if (voie) {
     try {
-      return await extraireViaDocie(buffer, filename, { env, fetchImpl });
+      return await voie({ env, fetchImpl });
     } catch (e) {
       const code = (e && e.code) || "error";
       console.warn(`[docie:repli_local] ${code} — ${(e && e.message) || e}`);
@@ -72,4 +107,4 @@ async function importerCv(buffer, filename, { env = process.env, fetchImpl } = {
   return extractionLocale(buffer, filename);
 }
 
-module.exports = { importerCv, ImportError, docieActif };
+module.exports = { importerCv, ImportError, docieActif, voieDocie };
