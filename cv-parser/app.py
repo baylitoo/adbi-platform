@@ -1611,11 +1611,21 @@ def _enrich_cv_background(cv_id: str) -> None:
                 cvstore_pg.save_cv(cv_id, cv)
                 return
             cv["experience"] = llm_enrich_experiences(experience)
-            # Le chemin le plus insidieux des quatre (#175) : il tourne en
-            # tache de fond juste apres le depot, donc la marque posee par
-            # `revue_docie` sur une description tronquee pouvait etre perimee
-            # par une reecriture que personne n'a jamais vue passer. Seule
-            # `experience` est remplacee ici.
+            # Garde-fou, et RIEN DE PLUS aujourd'hui : ce fil ne peut pas
+            # rencontrer de marque à périmer. `docie_review` n'est posé que par
+            # process_cv, qui pose dans le même geste `llm_parsed = True` ; or
+            # upload_cv ne lance ce fil que `if not llm_parsed`. Fiche marquée
+            # et enrichissement de fond s'excluent donc par construction, et
+            # l'appel ci-dessous ressort immédiatement (revue absente).
+            #
+            # Il est quand même écrit, parce que l'inverse serait bien pire que
+            # de ne rien faire : ce fil tourne juste après le dépôt, sans
+            # personne devant l'écran. S'il devenait un jour joignable depuis
+            # une fiche marquée, il périmerait la marque d'une description
+            # tronquée en la remplaçant par un texte plausible que personne
+            # n'aurait vu passer. Ce jour-là, la question à trancher n'est pas
+            # « périmer ou non » mais « enrichir ou non une mission marquée » —
+            # et elle se tranchera ici, à côté de cette ligne.
             perimer_revue(cv, {"experience"})
             cv["llm_enriched"] = True
             cvstore_pg.save_cv(cv_id, cv)
