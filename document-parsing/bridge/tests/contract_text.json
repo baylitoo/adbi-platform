@@ -1,0 +1,141 @@
+[
+  {
+    "name": "recorded_text_extraction",
+    "comment": "Trimmed from a REAL answer of POST /v1/extract/text on the deployment (obtained with document-parsing/scripts/test_api.py; fields removed, no value altered). Three things this vector pins down: the response is FLAT — no choices, no finish_reason, so the chat parser cannot read it; grounding survives the text path — every leaf still arrives as {value, confidence, evidence_ids}, which is what keeps the #172/#173/#175 review chain working; and the envelope of a field DocIE did not find is an empty value at confidence 0, not a missing key.",
+    "body": {
+      "request_id": "3686a389-faf1-4a79-a056-daca2f393be1",
+      "schema_name": "adbi_resume",
+      "model_profile": "lfm2.5-2.6b",
+      "document_hash": "sha256:31b2b9ea869ba09aa85cd008d14a3aa45a080651909ef8d6239d5306b6a1e58c",
+      "result": {
+        "document_type": "adbi_resume",
+        "extraction_notes": [],
+        "name": { "value": "Alice Dupont", "evidence_ids": ["b1_0_21d72c02db6f"], "confidence": 1.0 },
+        "title": { "value": "Développeuse Python Senior", "evidence_ids": ["b1_1_70580dd487cd"], "confidence": 1.0 },
+        "contact": {
+          "email": { "value": "alice.dupont@example.com", "evidence_ids": ["b1_3_aebc99933cbd"], "confidence": 1.0 },
+          "phone": { "value": "06 12 34 56 78", "evidence_ids": ["b1_3_aebc99933cbd"], "confidence": 1.0 },
+          "linkedin": null,
+          "github": null,
+          "location": { "value": "Paris, France", "evidence_ids": ["b1_4_c2ca15e71418"], "confidence": 1.0 }
+        },
+        "experience": [
+          {
+            "company": { "value": "Société Generale", "evidence_ids": ["b1_8_3221a7185ff4"], "confidence": 1.0 },
+            "title": { "value": "Développeuse Full Stack", "evidence_ids": ["b1_8_3221a7185ff4"], "confidence": 1.0 },
+            "start_date": { "value": "Janvier 2022", "evidence_ids": ["b1_9_c89daa4fd4d8"], "confidence": 1.0 },
+            "end_date": { "value": "Present", "evidence_ids": ["b1_9_c89daa4fd4d8"], "confidence": 1.0 }
+          },
+          {
+            "company": { "value": "Capgemini (La Défense)", "evidence_ids": ["b1_14_384a5bf6eb28"], "confidence": 1.0 },
+            "title": { "value": "Ingénieure logiciel", "evidence_ids": ["b1_14_384a5bf6eb28"], "confidence": 1.0 },
+            "description": { "value": "", "evidence_ids": [], "confidence": 0.0 }
+          }
+        ],
+        "skills": [
+          {
+            "category": { "value": "Langages", "evidence_ids": ["b1_24_18c5180f8de0"], "confidence": 1.0 },
+            "items": [
+              { "item": { "value": "Python", "evidence_ids": ["b1_24_18c5180f8de0"], "confidence": 1.0 } },
+              { "item": { "value": "SQL", "evidence_ids": ["b1_24_18c5180f8de0"], "confidence": 1.0 } }
+            ]
+          }
+        ]
+      },
+      "validation": { "valid": true, "errors": [], "warnings": [] },
+      "usage": { "prompt_tokens": 2093, "completion_tokens": 3239, "total_tokens": 5332 },
+      "latency_ms": 127245,
+      "routing": null,
+      "response_format_style": "openai_json_schema"
+    },
+    "expected_result": {
+      "document_type": "adbi_resume",
+      "extraction_notes": [],
+      "name": "Alice Dupont",
+      "title": "Développeuse Python Senior",
+      "contact": {
+        "email": "alice.dupont@example.com",
+        "phone": "06 12 34 56 78",
+        "linkedin": null,
+        "github": null,
+        "location": "Paris, France"
+      },
+      "experience": [
+        {
+          "company": "Société Generale",
+          "title": "Développeuse Full Stack",
+          "start_date": "Janvier 2022",
+          "end_date": "Present"
+        },
+        {
+          "company": "Capgemini (La Défense)",
+          "title": "Ingénieure logiciel",
+          "description": ""
+        }
+      ],
+      "skills": [
+        {
+          "category": "Langages",
+          "items": [{ "item": "Python" }, { "item": "SQL" }]
+        }
+      ]
+    },
+    "expected_field_confidence": {
+      "name": 1.0,
+      "title": 1.0,
+      "contact.email": 1.0,
+      "contact.phone": 1.0,
+      "contact.location": 1.0,
+      "experience[0].company": 1.0,
+      "experience[0].title": 1.0,
+      "experience[0].start_date": 1.0,
+      "experience[0].end_date": 1.0,
+      "experience[1].company": 1.0,
+      "experience[1].title": 1.0,
+      "experience[1].description": 0.0,
+      "skills[0].category": 1.0,
+      "skills[0].items[0].item": 1.0,
+      "skills[0].items[1].item": 1.0
+    },
+    "expected_metadata": {
+      "request_id": "3686a389-faf1-4a79-a056-daca2f393be1",
+      "agent": null,
+      "model": "lfm2.5-2.6b",
+      "latency_ms": 127245
+    },
+    "schema_reported": true
+  },
+  {
+    "name": "unreported_schema_not_invented",
+    "comment": "Same arbitration as the chat path: a SILENT schema is accepted, and schema_reported=false tells the consumer this transport did not verify it (one-pager turns that into the docie_schema_non_verifie warning). Absent validation stays absent — no synthetic success.",
+    "body": {
+      "result": {
+        "name": { "value": "Ada Lovelace", "evidence_ids": ["b1"], "confidence": 0.93 }
+      }
+    },
+    "expected_result": { "name": "Ada Lovelace" },
+    "expected_field_confidence": { "name": 0.93 },
+    "expected_metadata": { "request_id": null, "agent": null, "model": null },
+    "schema_reported": false
+  },
+  {
+    "name": "flattened_text_result_with_reported_field_confidence",
+    "comment": "DocIE's own field_confidence map, read from the flat body as it is read from docie_agent on the chat path: authoritative when present, because a flattened result has no envelope left to inspect. Entries without a usable confidence are dropped, not defaulted. A negative validation is preserved verbatim.",
+    "body": {
+      "request_id": "req-flat",
+      "schema_name": "adbi_resume",
+      "model_profile": "nuextract3_local_127",
+      "result": { "name": "Ada Lovelace", "experience": [{ "title": "Analyste" }] },
+      "validation": { "valid": false, "errors": ["contact manquant"], "warnings": [] },
+      "field_confidence": {
+        "name": { "confidence": 0.93, "evidence_ids": ["b1"] },
+        "experience[0].title": { "confidence": 0.5, "evidence_ids": ["b4"] },
+        "experience[0].company": { "evidence_ids": [] }
+      }
+    },
+    "expected_result": { "name": "Ada Lovelace", "experience": [{ "title": "Analyste" }] },
+    "expected_field_confidence": { "name": 0.93, "experience[0].title": 0.5 },
+    "expected_metadata": { "request_id": "req-flat", "agent": null, "model": "nuextract3_local_127" },
+    "schema_reported": true
+  }
+]

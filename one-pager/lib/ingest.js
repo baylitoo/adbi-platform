@@ -507,8 +507,36 @@ function isPdf(buffer) {
   return buffer && buffer.length > 4 && buffer.slice(0, 5).toString("latin1") === "%PDF-";
 }
 
-// isPdf est exportee en plus de `ingest` : lib/import-pipeline.js (issue #152)
-// en a besoin pour decider si un fichier peut passer par le bridge DocIE
-// (PDF uniquement, voir document-parsing/bridge/README.md) avant de lire
-// l'integralite du document.
-module.exports = { ingest, cleanText, isPdf };
+/**
+ * « Ce depot est-il du texte deja lisible par machine ? »
+ *
+ * Repond exactement a la branche `else` de ingest() ci-dessus (ni PDF, ni
+ * DOCX : readTxt), plus deux verifications que ingest() n'a pas besoin de
+ * faire parce qu'elle ne sort pas du processus :
+ *
+ *  - un octet nul signale un binaire (un .docx renomme en .txt commence par
+ *    « PK\0 » ) : readTxt en tirerait du charabia localement, mais l'envoyer
+ *    a DocIE ferait payer un aller-retour reseau pour le meme charabia ;
+ *  - un fichier vide n'a rien a envoyer, et la voie locale sait deja le
+ *    refuser proprement (ImportError 422).
+ *
+ * Regle d'aiguillage de l'equipe DocIE (#180), reprise telle quelle par le
+ * bridge : on utilise la structure que la source POSSEDE. Un PDF — scanne ou
+ * non — n'entre jamais ici : sa voie reste extractDocument(), la seule qui
+ * declenche l'OCR distant.
+ */
+function estTexteBrut(buffer, filename) {
+  if (!buffer || !buffer.length || isPdf(buffer)) return false;
+  const ext = path.extname(filename || "").toLowerCase();
+  if (ext === ".pdf" || ext === ".docx" || ext === ".doc") return false;
+  if (buffer.includes(0)) return false;
+  return buffer.toString("utf8").trim() !== "";
+}
+
+// isPdf et estTexteBrut sont exportees en plus de `ingest` :
+// lib/import-pipeline.js (issues #152 et #180) en a besoin pour choisir la
+// voie DocIE — fichier (PDF/images) ou texte (/v1/extract/text), voir
+// document-parsing/bridge/README.md — avant de lire l'integralite du document.
+// La detection de format vit ici, avec ingest(), pour que les deux decisions
+// ne puissent pas diverger.
+module.exports = { ingest, cleanText, isPdf, estTexteBrut };

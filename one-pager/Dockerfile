@@ -21,6 +21,13 @@ COPY --chown=node:node one-pager/ ./
 # N'est utilise que si DOCIE_EXTRACTION_ENABLED=true ; son absence ne bloque
 # pas le demarrage du service (voir lib/docie-extract.js#chargerBridge).
 COPY --chown=node:node document-parsing/bridge/docie-bridge.js /document-parsing/bridge/docie-bridge.js
+# Definition du schema « adbi_resume », envoyee avec le texte sur la voie
+# /v1/extract/text (issue #180) : `schema_name` seul ne resout que le registre
+# integre de DocIE, un schema personnalise doit voyager avec sa definition.
+# Elle n'est pas dans bridge/ — un transport ne possede pas de schema metier.
+# Sans cette ligne, l'image embarquerait le code de la voie texte sans ce
+# qu'elle envoie, et chaque import texte se replierait en local.
+COPY --chown=node:node document-parsing/schemas/adbi_resume.schema.json /document-parsing/schemas/adbi_resume.schema.json
 
 ENV NODE_ENV=production
 # Sans ca, server.js lie 127.0.0.1 (defaut poste de dev) : injoignable via le
