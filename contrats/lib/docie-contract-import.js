@@ -167,8 +167,11 @@ function extractMoney(result, docieKey, warnings) {
 
 // docieResult est le `result` DÉJÀ déballé par docie-bridge.js::unwrap()
 // (voir le commentaire d'en-tête) — pas l'enveloppe brute que lit
-// contract_to_contrats.py.
-function mapContractResult(docieResult) {
+// contract_to_contrats.py. `validation` est docieResponse.metadata.validation,
+// que le pont range là (et PAS dans `result`, contrairement à l'enveloppe
+// brute que lit le module Python) : même convention d'appel que
+// lib/kbis-mapping.js::mapKbisResult.
+function mapContractResult(docieResult, { validation } = {}) {
   if (docieResult === null || typeof docieResult !== "object" || Array.isArray(docieResult)) {
     throw new Error("Résultat DocIE 'contract' invalide (objet attendu).");
   }
@@ -191,6 +194,15 @@ function mapContractResult(docieResult) {
 
   for (const note of docieResult.extraction_notes || []) {
     warnings.push("DocIE extraction_notes: " + note);
+  }
+  // Ce que DocIE dit lui-même de son extraction. Le front affiche les trois
+  // premiers `warnings` sous le formulaire pré-rempli (public/app.js) : s'en
+  // priver, c'est cacher au relecteur le seul signal que le service a émis
+  // sur sa propre confiance. Le module Python miroir les reporte depuis
+  // toujours ; ce portage les jetait (inventaire de divergence #179, A1).
+  if (validation) {
+    for (const w of validation.warnings || []) warnings.push("DocIE validation.warnings: " + w);
+    for (const e of validation.errors || []) warnings.push("DocIE validation.errors: " + e);
   }
 
   const errors = [];
@@ -227,8 +239,9 @@ async function extractContractValues(body = {}, deps = {}) {
   const options = { kind: DOCIE_KIND, env };
   if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;
   const response = await extractDocument(buffer, mime, options);
-  const mapped = mapContractResult(response.result);
-  return Object.assign({ requestId: (response.metadata && response.metadata.request_id) || null }, mapped);
+  const metadata = response.metadata || {};
+  const mapped = mapContractResult(response.result, { validation: metadata.validation });
+  return Object.assign({ requestId: metadata.request_id || null }, mapped);
 }
 
 module.exports = {

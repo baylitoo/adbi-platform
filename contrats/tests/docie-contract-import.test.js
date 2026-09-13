@@ -231,3 +231,35 @@ test("intégration réelle du bridge partagé, fixture RAW non déballée (fetch
   assert.equal(result.values.delaiPaiement, "45");
   assert.equal(result.ok, true);
 });
+
+// ---------------------------------------------------------------------------
+// Inventaire de divergence #179, ligne A1 : les avertissements et erreurs que
+// DocIE émet SUR SA PROPRE EXTRACTION (`validation`) étaient reportés par le
+// module Python miroir et jetés par ce portage — alors que le pont les range
+// bel et bien dans `metadata.validation` (mesuré) et que public/app.js
+// affiche les trois premiers `warnings` sous le formulaire pré-rempli.
+// ---------------------------------------------------------------------------
+test("mapContractResult: validation DocIE -> avertissements reportés (parité avec contract_to_contrats.py, #179 A1)", () => {
+  const validation = { valid: false, errors: ["tjm hors bornes plausibles"], warnings: ["low overall confidence"] };
+  const mapped = mapContractResult(NOMINAL_RESULT, { validation });
+  assert.ok(mapped.warnings.includes("DocIE validation.warnings: low overall confidence"));
+  assert.ok(mapped.warnings.includes("DocIE validation.errors: tjm hors bornes plausibles"));
+  // `validation` absente (agent qui n'en émet pas) : aucun avertissement
+  // fabriqué, et surtout aucun plantage.
+  assert.ok(!mapContractResult(NOMINAL_RESULT).warnings.some((w) => /validation/.test(w)));
+  assert.ok(!mapContractResult(NOMINAL_RESULT, { validation: { valid: true, errors: [], warnings: [] } })
+    .warnings.some((w) => /validation/.test(w)));
+});
+
+test("extractContractValues: la validation du pont traverse jusqu'aux avertissements rendus (#179 A1)", async () => {
+  const env = { DOCIE_EXTRACTION_ENABLED: "true" };
+  const extractDocument = async () => ({
+    schema_name: "contract",
+    result: NOMINAL_RESULT,
+    metadata: { request_id: "req-43", validation: { valid: true, errors: [], warnings: ["low overall confidence"] } },
+  });
+  const body = { dataBase64: Buffer.from("%PDF-1.4 fake").toString("base64"), mimeType: "application/pdf" };
+  const result = await extractContractValues(body, { env, extractDocument });
+  assert.equal(result.requestId, "req-43");
+  assert.ok(result.warnings.includes("DocIE validation.warnings: low overall confidence"));
+});
