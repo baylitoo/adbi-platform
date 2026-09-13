@@ -1,0 +1,41 @@
+{
+  "_description": "Jeu d'essai partage : « ce texte est-il un nombre, et sous quelle forme l'ecrire dans le formulaire contrats ? ». DocIE type tjm / share_capital en `money` et delai_paiement en `number`, et serialise ses Decimal en CHAINE (pydantic v2 mode=\"json\") : les quatre portages du mapping recoivent donc du texte, pas un nombre. Ils s'en remettaient chacun au parseur de nombres de leur langage -- float() cote Python, Number() cote JS -- qui n'acceptent PAS les memes textes : inventaire de divergence #179, lignes A2 a A6 et B2/B3. Six des neuf ecarts mesures venaient de la, dans les DEUX sens. Ce fichier est la regle unique : les quatre portages comparent leur motif compile a `motif` et leur sortie a `cas`, donc une nouvelle divergence redevient un echec de test.",
+  "_ports": [
+    "document-parsing/mappings/contract_to_contrats.py (Python)",
+    "document-parsing/mappings/kbis_to_contrats.py (Python)",
+    "contrats/lib/docie-contract-import.js (JS)",
+    "contrats/lib/kbis-mapping.js (JS)"
+  ],
+  "_regle": "(1) null / absent / chaine vide -> \"\", sans avertissement. (2) Sinon le texte est debarrasse de ses espaces de tete et de fin ; s'il ne reste rien -> \"\", sans avertissement : « champ vu, rien trouve » est deja le traitement documente de {\"value\": null}, et fabriquer un 0 pour un champ vide serait un mensonge (un delai de paiement de 0 jour, un TJM de 0 euro). (3) Si le texte restant ne correspond pas a `motif` -> avertissement « nombre non reconnu » et texte rendu TEL QUEL : mieux vaut une valeur visiblement fausse dans le formulaire, que le relecteur corrigera, qu'une valeur plausible fabriquee en silence. (4) Sinon la mise en forme est PUREMENT LEXICALE, jamais un aller-retour par le flottant du langage.",
+  "_regle_forme": "Sur le texte deja reconnu par `motif` : le signe « + » est retire, le signe « - » conserve ; les zeros de tete de la partie entiere sont retires, en gardant au moins un chiffre ; les zeros de fin de la partie decimale sont retires, puis le point s'il ne reste rien apres lui ; si le resultat vaut « 0 », le signe « - » est retire. Aucun flottant n'intervient : str(1e16) rend « 1e+16 » en Python et String(1e16) rend « 10000000000000000 » en JS, donc tout rendu passant par le flottant rediverge des que le nombre grandit.",
+  "_motif_pourquoi": "Le motif s'ecrit avec [0-9] et non \\d : en Python \\d reconnait AUSSI les chiffres arabes-indiens et devanagari, en JS non (c'est le miroir inverse du piege re.ASCII de #177). Les chiffres non ASCII sont donc refuses des deux cotes, explicitement, plutot que de dependre du langage. La notation exponentielle est refusee pour la meme raison : son rendu differe entre les deux langages (voir _regle_forme) et aucun document contractuel ne l'ecrit.",
+  "motif": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)$",
+  "cas": [
+    { "valeur": "450", "sortie": "450", "avertit": false, "preuve": "valeur reelle de result.tjm.amount dans mappings/fixtures/contract_extraction_sample.json" },
+    { "valeur": "45", "sortie": "45", "avertit": false, "preuve": "valeur reelle de result.delai_paiement.value, meme fixture ; c'est aussi le defaut de contrats/lib/fields.js::delaiPaiement" },
+    { "valeur": "500", "sortie": "500", "avertit": false, "preuve": "valeur reelle de result.tjm.amount dans mappings/fixtures/contract_extraction_sample_edge_cases.json" },
+    { "valeur": "30.0", "sortie": "30", "avertit": false, "preuve": "valeur reelle de result.delai_paiement.value, meme fixture : un Decimal entier serialise par pydantic garde sa decimale" },
+    { "valeur": "1000", "sortie": "1000", "avertit": false, "preuve": "valeur reelle de result.share_capital.amount dans mappings/fixtures/kbis_extraction_sample.json" },
+    { "valeur": "5000.00", "sortie": "5000", "avertit": false, "preuve": "valeur reelle de result.share_capital.amount dans mappings/fixtures/kbis_extraction_sample_edge_cases.json : deux decimales nulles, forme monetaire usuelle" },
+    { "valeur": "", "sortie": "", "avertit": false, "preuve": "chaine vide : « champ vu, rien trouve », traite comme une cle absente (docstring de contract_to_contrats.py)" },
+    { "valeur": "   ", "sortie": "", "avertit": false, "preuve": "#179 lignes A2/A3/B2 : le JS rendait « 0 » (Number(\"\") vaut 0 et 0 est fini), Python rendait \"\" avec un avertissement. Un delai de paiement de 0 jour ou un capital social de 0 euro fabrique de toutes pieces" },
+    { "valeur": "nan", "sortie": "nan", "avertit": true, "preuve": "#179 lignes A6/B3 : Python levait ValueError: cannot convert float NaN to integer -- le int() etait hors du try -- et l'exception remontait jusqu'a l'appelant" },
+    { "valeur": "inf", "sortie": "inf", "avertit": true, "preuve": "idem, OverflowError: cannot convert float infinity to integer" },
+    { "valeur": "1_000", "sortie": "1_000", "avertit": true, "preuve": "#179 ligne A4 : float() accepte le separateur de milliers de la SYNTAXE PYTHON et rendait « 1000 » sans le moindre avertissement, la ou le JS avertissait. Aucun document n'ecrit un nombre ainsi" },
+    { "valeur": "0x1e", "sortie": "0x1e", "avertit": true, "preuve": "#179 ligne A5 : Number() lit l'hexadecimal et rendait « 30 », la ou Python avertissait" },
+    { "valeur": "45,5", "sortie": "45,5", "avertit": true, "preuve": "virgule decimale francaise : les deux portages avertissaient deja (accord mesure #179 ligne A7), fige ici pour qu'il le reste" },
+    { "valeur": "1e3", "sortie": "1e3", "avertit": true, "preuve": "notation exponentielle refusee : son rendu diverge entre les langages (voir _regle_forme), et aucun contrat ne l'ecrit" },
+    { "valeur": "450.5", "sortie": "450.5", "avertit": false, "preuve": "un Decimal non entier reste possible, tjm est type `money` cote DocIE : la decimale doit survivre" },
+    { "valeur": "450.50", "sortie": "450.5", "avertit": false, "preuve": "meme cas, zero decimal de fin retire -- sinon les deux portages rediraient deux chaines differentes pour un meme montant" },
+    { "valeur": "+45", "sortie": "45", "avertit": false, "preuve": "garde-fou : le motif accepte un signe explicite, il faut donc dire ce qu'il en advient -- sans quoi les deux portages differeraient" },
+    { "valeur": "-1", "sortie": "-1", "avertit": false, "preuve": "garde-fou : un nombre negatif est une valeur aberrante a MONTRER au relecteur, pas a masquer" },
+    { "valeur": "007", "sortie": "7", "avertit": false, "preuve": "garde-fou : zeros de tete retires lexicalement" },
+    { "valeur": "000", "sortie": "0", "avertit": false, "preuve": "garde-fou : au moins un chiffre est conserve" },
+    { "valeur": ".5", "sortie": "0.5", "avertit": false, "preuve": "garde-fou : partie entiere absente, le motif l'accepte" },
+    { "valeur": "45.", "sortie": "45", "avertit": false, "preuve": "garde-fou : point sans decimale, le point est retire" },
+    { "valeur": "-0.00", "sortie": "0", "avertit": false, "preuve": "garde-fou : un zero n'a pas de signe -- sans cette regle un portage rendrait « -0 » et l'autre « 0 »" },
+    { "valeur": " 450 ", "sortie": "450", "avertit": false, "preuve": "garde-fou : espaces de tete et de fin retires avant tout" },
+    { "valeur": "1 000", "sortie": "1 000", "avertit": true, "preuve": "garde-fou : espace interne (separateur de milliers francais) -- refuse, la valeur brute part au relecteur" },
+    { "valeur": "٤٥", "sortie": "٤٥", "avertit": true, "preuve": "garde-fou : chiffres arabes-indiens. Avec \\d, Python les aurait reconnus et le JS non (voir _motif_pourquoi) ; [0-9] les refuse des deux cotes" }
+  ]
+}

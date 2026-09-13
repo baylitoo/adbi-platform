@@ -208,4 +208,10 @@ module.exports = {
   isEnabled,
   isEligible,
   ELIGIBLE_ITEM_ID,
+  // Exportés pour réutilisation par d'autres consommateurs du bridge côté
+  // contrats (ex. lib/docie-contract-import.js) : même flag DOCIE_EXTRACTION_ENABLED,
+  // même chemin vers le module partagé, même détection MIME — pas de raison
+  // de dupliquer ce câblage par kind de document.
+  loadBridge,
+  sniffMime,
 };
