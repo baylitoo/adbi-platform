@@ -134,10 +134,32 @@ def extract_resume(file_path, progress=None, *, session=None):
 
     data = docie_client.map_resume(bridge_result, expected_schema=_EXPECTED_SCHEMA)
     meta = bridge_result.get("metadata") or {}
+    validation = meta.get("validation")
     metadata = {
         "event_id": meta.get("request_id") or "",
         "model_profile": meta.get("model") or meta.get("agent") or "",
-        "validation": meta.get("validation") or {},
+        # `validation` est conservée telle quelle, y compris None : le bridge
+        # renvoie None quand DocIE n'en a PAS joint, et une extraction terminée
+        # en porte toujours une (listes vides quand tout va bien). La replier
+        # sur {} comme avant confondait « rien à signaler » avec « réponse
+        # qu'on n'a pas pu vérifier » — voir docie_review.revue_docie. Le type
+        # attendu en aval (app.py, dict) est préservé dans tous les autres cas.
+        "validation": validation if isinstance(validation, dict) else None,
+        # Confiance par champ, rendue par le bridge sous une clé de chemin
+        # stable ({"experience[0].title": 0.5}) AVANT que le déballage des
+        # enveloppes ne l'efface. C'était le seul signal par champ que DocIE
+        # émette — « valeur partielle, à faire relire » — et il était jeté ici
+        # (issue #172). Absent des métadonnées d'un bridge antérieur : {}, donc
+        # aucune revue supplémentaire, comportement inchangé.
+        "field_confidence": meta.get("field_confidence") or {},
+        # #177 ligne 21 : DocIE a-t-il nommé le schéma de sa réponse ? Le
+        # bridge tolère qu'il ne le nomme pas — aucune des trois sources n'est
+        # obligatoire — et pose ce drapeau à False pour le signaler. Il était
+        # jeté ici comme `field_confidence` l'était : one-pager avertit le
+        # relecteur (`docie_schema_non_verifie`), la CVthèque ne disait rien.
+        # Absent des métadonnées d'un bridge antérieur : None, donc aucune
+        # revue supplémentaire (docie_review teste `is False`).
+        "schema_reported": meta.get("schema_reported"),
         "transport": "docie-bridge",
     }
     return data, metadata

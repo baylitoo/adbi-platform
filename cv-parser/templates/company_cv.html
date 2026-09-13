@@ -189,6 +189,9 @@
     }
     .exp-company { font-size: 12pt; font-weight: 900; color: var(--orange); }
     .exp-client-inline { font-size: 9.5pt; font-weight: 700; color: var(--orange3); font-style: italic; }
+    /* Lieu de mission (#177 ligne 17) : même ligne que la société, en retrait
+       visuel — c'est un repère, pas une rubrique. */
+    .exp-location-inline { font-size: 9.5pt; font-weight: 600; color: #666; }
     .exp-period  { font-size: 10pt; font-weight: 700; color: var(--orange); white-space: nowrap; }
     .exp-role    { font-size: 9.5pt; font-weight: 700; font-style: italic; margin-bottom: 3mm; }
     .exp-field   { margin-bottom: 2mm; line-height: 1.4; }
@@ -286,7 +289,7 @@
       {% for cert in cv.certifications %}
       <tr>
         <td>{{ cert.year or '' }}</td>
-        <td>{{ cert.name }}</td>
+        <td>{{ cert.name }}{% if cert.issuer %} — {{ cert.issuer }}{% endif %}</td>
       </tr>
       {% endfor %}
     </table>
@@ -351,7 +354,8 @@
       <!-- Entreprise + Client inline + Période -->
       <div class="exp-hdr">
         <div class="exp-company">
-          {{ exp_company }}{% if exp.client %}<span class="exp-client-inline"> — {{ exp.client }}</span>{% endif %}
+          {# Lieu de mission (#177 ligne 17), sur la ligne d'en-tête. #}
+          {{ exp_company }}{% if exp.client %}<span class="exp-client-inline"> — {{ exp.client }}</span>{% endif %}{% if exp.location %}<span class="exp-location-inline"> — {{ exp.location }}</span>{% endif %}
         </div>
         <div class="exp-period">{{ exp.period or '' }}</div>
       </div>

@@ -34,30 +34,32 @@ def document_payload(path):
     return {"filename": path.name, "text": text}
 
 
-# Clés qui signalent une enveloppe de champ ancré {value, ...}. La clé de logprob
-# en fait partie : la confiance par logprob de DocIE l'ajoute comme quatrième clé,
-# et une détection qui l'ignore laisse un scalaire arriver sous forme de dict —
-# « Ada » devenant {"value": "Ada", ...} jusque dans la fiche.
+# Clés qui font d'un objet une ENVELOPPE de preuve autour d'un scalaire, plutôt
+# qu'un objet du schéma. Le test est « une clé `value` ET au moins un marqueur »
+# (#171).
 #
-# Les DEUX orthographes de la clé logprob sont acceptées : DocIE a renommé
-# `model_confidence` en `model_logprob` (la valeur est une log-probabilité
-# naturelle, pas un score 0-1 — l'ancien nom invitait précisément à cette
-# confusion), mais ce renommage est dans une PR non mergée. Accepter les deux
-# garde le déballage correct quel que soit le côté qui déploie en premier.
+# Les deux derniers manquaient, et ce n'est pas théorique : DocIE renvoie
+# `{value, model_confidence}` quand son `_flatten_agent_result` échoue à
+# aplatir, et `{value, model_logprob}` depuis le renommage de la
+# log-probabilité. Sans eux, `unwrap` rend le DICTIONNAIRE tel quel — et comme
+# `map_resume` alimente `normalize_cv_data`, un `location` de cette forme
+# n'explose pas : il entre dans la CVthèque et s'affiche
+# « {'value': 'Lyon', 'model_confidence': 0.82} ». Même famille de perte
+# silencieuse que #174, sur la même voie.
 #
-# Seul `confidence` sert de signal de revue. `model_logprob` est une
-# log-probabilité (<= 0, plus proche de 0 = plus confiant), volontairement NON
-# renormalisée en amont : la comparer au seuil 0-1 de `confidence` signalerait
-# tous les champs qui en portent une (-7,5 est très en dessous de tout seuil
-# 0-1). Elle classe les champs entre eux, elle n'alimente pas un seuil.
-# Même liste que document-parsing/bridge/docie_bridge.py::ENVELOPE_MARKERS.
-_MARQUEURS_ENVELOPPE = ("confidence", "evidence_ids", "model_confidence", "model_logprob")
+# Les deux ponts partagés (document-parsing/bridge/docie_bridge.py et
+# docie-bridge.js) portent la même liste, écrite trois fois en tout. Elles ne
+# doivent plus pouvoir diverger dans le sens dangereux : un pont qui connaît un
+# marqueur que ce fichier ignore laisserait de nouveau passer un dictionnaire.
+# tests/test_enveloppe_docie.py lit donc les marqueurs directement dans la
+# source des deux ponts et exige que cette liste-ci les couvre tous.
+ENVELOPE_MARKERS = ("confidence", "evidence_ids", "model_confidence", "model_logprob")
 
 
 def unwrap(value):
     """Strip evidence envelopes, preserving nested objects and lists."""
     if isinstance(value, dict):
-        if "value" in value and any(cle in value for cle in _MARQUEURS_ENVELOPPE):
+        if "value" in value and any(k in value for k in ENVELOPE_MARKERS):
             return unwrap(value["value"])
         return {k: unwrap(v) for k, v in value.items()}
     if isinstance(value, list):

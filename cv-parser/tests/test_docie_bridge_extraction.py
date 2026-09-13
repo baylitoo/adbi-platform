@@ -144,6 +144,78 @@ class BridgeExtractionFailureTests(unittest.TestCase):
         session.post.assert_not_called()
 
 
+class RevueMetadataTests(unittest.TestCase):
+    """Ce que DocIE dit de son extraction doit traverser ce module (issue #172).
+
+    Le bridge est bouché ici plutôt que son transport HTTP : `field_confidence`
+    est rendu par le bridge (PR #173) et ce test porte sur ce que CE module en
+    fait — le recopier au lieu de le jeter — pas sur sa collecte.
+    """
+
+    def _extraire(self, metadata_bridge):
+        resultat = {"schema_name": "adbi_resume", "result": {
+            "name": "Alice Dupont", "title": "Développeuse",
+            "experience": [{"company": "Numelia", "description": "A"}],
+            "education": [], "skills": [], "languages": [], "projects": [],
+            "certifications": [], "interests": []}, "metadata": metadata_bridge}
+        faux_bridge = MagicMock()
+        faux_bridge.extract_document.return_value = resultat
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "cv.pdf"
+            path.write_bytes(b"%PDF-fake")
+            with patch("docie_bridge_extraction._load_bridge", return_value=faux_bridge):
+                return bridge_extraction.extract_resume(path)
+
+    def test_field_confidence_arrive_au_consommateur(self):
+        _, metadata = self._extraire({
+            "request_id": "req-1", "model": "spark-x2.5-1.7b",
+            "validation": {"valid": True, "errors": [], "warnings": []},
+            "field_confidence": {"experience[0].description": 0.5, "name": 1}})
+        self.assertEqual(metadata["field_confidence"],
+                         {"experience[0].description": 0.5, "name": 1})
+
+    def test_validation_absente_reste_absente(self):
+        """None (DocIE n'a rien joint) ne doit plus être replié sur {} : une
+        réponse non vérifiée n'est pas une réponse propre."""
+        _, metadata = self._extraire({"request_id": "req-1", "validation": None})
+        self.assertIsNone(metadata["validation"])
+
+    def test_schema_non_nomme_traverse_jusqu_a_la_revue(self):
+        """#177 ligne 21 : le bridge tolère une réponse qui ne nomme pas son
+        schéma et pose `schema_reported` à False. Le drapeau était jeté ici,
+        donc la CVthèque acceptait la fiche sans rien dire là où one-pager
+        avertit (`docie_schema_non_verifie`)."""
+        from docie_review import revue_docie
+        data, metadata = self._extraire({
+            "request_id": "req-1", "validation": {"valid": True, "errors": [], "warnings": []},
+            "field_confidence": {}, "schema_reported": False})
+        self.assertIs(metadata["schema_reported"], False)
+        self.assertIn("docie_schema_non_verifie", revue_docie(data, metadata)["warnings"])
+
+    def test_schema_nomme_n_avertit_pas(self):
+        from docie_review import revue_docie
+        data, metadata = self._extraire({
+            "request_id": "req-1", "validation": {"valid": True, "errors": [], "warnings": []},
+            "field_confidence": {}, "schema_reported": True})
+        self.assertIs(metadata["schema_reported"], True)
+        self.assertEqual(revue_docie(data, metadata)["warnings"], [])
+
+    def test_bridge_sans_drapeau_de_schema_reste_compatible(self):
+        """Clé absente (bridge antérieur, chemin historique docie_client) :
+        « pas dit » n'est pas « non nommé » — aucune revue inventée."""
+        from docie_review import revue_docie
+        data, metadata = self._extraire({
+            "request_id": "req-1", "validation": {"valid": True, "errors": [], "warnings": []}})
+        self.assertIsNone(metadata["schema_reported"])
+        self.assertEqual(revue_docie(data, metadata)["warnings"], [])
+
+    def test_bridge_sans_confiance_par_champ_reste_compatible(self):
+        """Bridge antérieur à #173 : clé absente -> {}, aucune revue inventée."""
+        _, metadata = self._extraire({"request_id": "req-1", "validation": {"valid": True}})
+        self.assertEqual(metadata["field_confidence"], {})
+        self.assertEqual(metadata["validation"], {"valid": True})
+
+
 class DocxDelegationTests(unittest.TestCase):
     def test_docx_delegates_to_legacy_client_single_call(self):
         with tempfile.TemporaryDirectory() as directory:
