@@ -1,0 +1,135 @@
+{
+  "request_id": "req-fixture-urssaf-0001",
+  "schema_name": "urssaf",
+  "model_profile": "nuextract3_ollama",
+  "document_hash": "sha256:req-fixture-urssaf-0001",
+  "result": {
+    "document_type": "urssaf",
+    "extraction_notes": [],
+    "company_name": {
+      "value": "SUND INDUSTRY SYSTEM",
+      "evidence_ids": [],
+      "confidence": 0.97
+    },
+    "siren": {
+      "value": "941091316",
+      "evidence_ids": [],
+      "confidence": 0.99
+    },
+    "siret": {
+      "value": "94109131600013",
+      "evidence_ids": [],
+      "confidence": 0.99
+    },
+    "registered_address": {
+      "value": "12 rue de la Paix, 75002 Paris",
+      "evidence_ids": [],
+      "confidence": 0.9
+    },
+    "issued_date": {
+      "value": "2026-03-04",
+      "evidence_ids": [],
+      "confidence": 0.95
+    },
+    "valid_until": {
+      "value": "04/09/2026",
+      "evidence_ids": [],
+      "confidence": 0.9
+    },
+    "security_code": {
+      "value": "A1B2C3D4E5",
+      "evidence_ids": [],
+      "confidence": 0.93
+    },
+    "urssaf_agency": {
+      "value": "URSSAF Ile-de-France",
+      "evidence_ids": [],
+      "confidence": 0.9
+    },
+    "employee_count": {
+      "value": "12",
+      "evidence_ids": [],
+      "confidence": 0.88
+    },
+    "declared_payroll": {
+      "amount": "480000.00",
+      "currency": "EUR",
+      "evidence_ids": [],
+      "confidence": 0.85
+    }
+  },
+  "validation": {
+    "valid": true,
+    "errors": [],
+    "warnings": []
+  },
+  "usage": null,
+  "latency_ms": 54321,
+  "dynamic_schema": {
+    "document_type": "urssaf",
+    "fields": [
+      {
+        "name": "company_name",
+        "type": "string",
+        "description": "Denomination sociale du cotisant a qui l'attestation est delivree",
+        "fields": []
+      },
+      {
+        "name": "siren",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "siret",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "registered_address",
+        "type": "string",
+        "description": "Adresse du cotisant telle qu'imprimee sur l'attestation",
+        "fields": []
+      },
+      {
+        "name": "issued_date",
+        "type": "date",
+        "description": "Date de delivrance / d'edition de l'attestation",
+        "fields": []
+      },
+      {
+        "name": "valid_until",
+        "type": "date",
+        "description": "Date de fin de validite imprimee sur l'attestation, quand elle y figure",
+        "fields": []
+      },
+      {
+        "name": "security_code",
+        "type": "string",
+        "description": "Code de securite permettant de verifier l'attestation sur urssaf.fr",
+        "fields": []
+      },
+      {
+        "name": "urssaf_agency",
+        "type": "string",
+        "description": "URSSAF emettrice (region / organisme)",
+        "fields": []
+      },
+      {
+        "name": "employee_count",
+        "type": "number",
+        "description": "Nombre de salaries declare sur l'attestation",
+        "fields": []
+      },
+      {
+        "name": "declared_payroll",
+        "type": "money",
+        "description": "Montant des remunerations declarees (masse salariale) figurant sur l'attestation",
+        "fields": []
+      }
+    ]
+  },
+  "routing": null,
+  "response_format_style": "json_schema"
+}

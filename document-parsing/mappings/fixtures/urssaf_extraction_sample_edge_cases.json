@@ -1,0 +1,137 @@
+{
+  "request_id": "req-fixture-urssaf-edge-0001",
+  "schema_name": "urssaf",
+  "model_profile": "nuextract3_ollama",
+  "document_hash": "sha256:req-fixture-urssaf-edge-0001",
+  "result": {
+    "document_type": "urssaf",
+    "extraction_notes": [
+      "low confidence on valid_until"
+    ],
+    "company_name": {
+      "value": "SUND INDUSTRY SYSTEM",
+      "evidence_ids": [],
+      "confidence": 0.7
+    },
+    "siren": {
+      "value": "941091316",
+      "evidence_ids": [],
+      "confidence": 0.7
+    },
+    "siret": null,
+    "registered_address": {
+      "value": null,
+      "evidence_ids": [],
+      "confidence": 0.0
+    },
+    "issued_date": {
+      "value": "31/08/2026",
+      "evidence_ids": [],
+      "confidence": 0.6
+    },
+    "valid_until": {
+      "value": "30/02/2027",
+      "evidence_ids": [],
+      "confidence": 0.4
+    },
+    "security_code": {
+      "value": "   ",
+      "evidence_ids": [],
+      "confidence": 0.2
+    },
+    "urssaf_agency": {
+      "value": "URSSAF Provence-Alpes-Cote d'Azur",
+      "evidence_ids": [],
+      "confidence": 0.8
+    },
+    "employee_count": {
+      "value": "douze",
+      "evidence_ids": [],
+      "confidence": 0.3
+    },
+    "declared_payroll": {
+      "amount": "480000",
+      "currency": "CHF",
+      "evidence_ids": [],
+      "confidence": 0.5
+    }
+  },
+  "validation": {
+    "valid": false,
+    "errors": [
+      "valid_until incoherente"
+    ],
+    "warnings": [
+      "confiance faible"
+    ]
+  },
+  "usage": null,
+  "latency_ms": 54321,
+  "dynamic_schema": {
+    "document_type": "urssaf",
+    "fields": [
+      {
+        "name": "company_name",
+        "type": "string",
+        "description": "Denomination sociale du cotisant a qui l'attestation est delivree",
+        "fields": []
+      },
+      {
+        "name": "siren",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "siret",
+        "type": "string",
+        "description": null,
+        "fields": []
+      },
+      {
+        "name": "registered_address",
+        "type": "string",
+        "description": "Adresse du cotisant telle qu'imprimee sur l'attestation",
+        "fields": []
+      },
+      {
+        "name": "issued_date",
+        "type": "date",
+        "description": "Date de delivrance / d'edition de l'attestation",
+        "fields": []
+      },
+      {
+        "name": "valid_until",
+        "type": "date",
+        "description": "Date de fin de validite imprimee sur l'attestation, quand elle y figure",
+        "fields": []
+      },
+      {
+        "name": "security_code",
+        "type": "string",
+        "description": "Code de securite permettant de verifier l'attestation sur urssaf.fr",
+        "fields": []
+      },
+      {
+        "name": "urssaf_agency",
+        "type": "string",
+        "description": "URSSAF emettrice (region / organisme)",
+        "fields": []
+      },
+      {
+        "name": "employee_count",
+        "type": "number",
+        "description": "Nombre de salaries declare sur l'attestation",
+        "fields": []
+      },
+      {
+        "name": "declared_payroll",
+        "type": "money",
+        "description": "Montant des remunerations declarees (masse salariale) figurant sur l'attestation",
+        "fields": []
+      }
+    ]
+  },
+  "routing": null,
+  "response_format_style": "json_schema"
+}
