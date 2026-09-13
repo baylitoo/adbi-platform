@@ -9,7 +9,7 @@ const path = require("path");
 const {
   extractContractValues, mapContractResult, MAPPED_FIELDS,
   CONSTANT_FIELDS_NOT_FROM_DOCIE, GAP_FIELDS_NO_DOCIE_EQUIVALENT, ALL_ACCOUNTED_KEYS,
-  MOTIF_NOMBRE, normalizeNumber,
+  MOTIF_NOMBRE, normalizeNumber, ANNEE_MIN, ANNEE_MAX, normalizeDate,
 } = require("../lib/docie-contract-import");
 const { sousTraitance } = require("../lib/fields");
 // Fixture RAW (enveloppe {value,confidence,evidence_ids} non déballée),
@@ -25,6 +25,13 @@ const RAW_FIXTURE = require(path.join(
 // lui qui empêche la divergence de #179 (lignes A2 à A6) de revenir.
 const NOMBRE = require(path.join(
   __dirname, "..", "..", "document-parsing", "fixtures", "nombre_docie.json"
+));
+// Même discipline pour les dates : jeu d'essai PARTAGÉ par les quatre mêmes
+// portages, qui empêche le retour des lignes A8/A9 de #179 — le rare cas où
+// Python et JS étaient d'accord ET tous les deux faux (« 01/13/2026 » rendu
+// en « 2026-13-01 », que <input type="date"> affiche vide).
+const DATE = require(path.join(
+  __dirname, "..", "..", "document-parsing", "fixtures", "date_docie.json"
 ));
 
 test("garde-fou anti-dérive : ALL_ACCOUNTED_KEYS == exactement les clés de fields.js::sousTraitance", () => {
@@ -290,6 +297,59 @@ test("nombre : null/absent -> vide, nombre JS natif accepté", () => {
   assert.equal(normalizeNumber(450, "champ", warnings), "450");
   assert.equal(normalizeNumber(450.5, "champ", warnings), "450.5");
   assert.deepEqual(warnings, []);
+});
+
+// ---------------------------------------------------------------------------
+// #179 lignes A8/A9 : les deux motifs de date ne comptaient que des chiffres,
+// jamais leurs bornes. Mesuré avant correction, sur ce module ET sur son
+// miroir Python : « 01/13/2026 » -> « 2026-13-01 » et « 45/02/2026 » ->
+// « 2026-02-45 », des deux côtés, sans un seul avertissement. Le navigateur
+// vide alors le <input type="date"> déclaré par fields.js : la date extraite
+// disparaît en silence, et la panne ressemble à « DocIE n'a rien trouvé ».
+// La règle est désormais écrite une seule fois, dans la fixture partagée.
+// ---------------------------------------------------------------------------
+test("date : les bornes de ce portage sont celles de la fixture partagée (#179 A8/A9)", () => {
+  assert.equal(ANNEE_MIN, DATE.annee_min);
+  assert.equal(ANNEE_MAX, DATE.annee_max);
+  assert.ok(DATE._ports.includes("contrats/lib/docie-contract-import.js (JS)"));
+});
+
+test("date : les " + DATE.cas.length + " cas du jeu d'essai partagé (#179 A8/A9)", () => {
+  for (const cas of DATE.cas) {
+    const warnings = [];
+    const sortie = normalizeDate(cas.valeur, "champ", warnings);
+    assert.equal(sortie, cas.sortie, cas.valeur + " -> " + JSON.stringify(sortie) + " (" + cas.preuve + ")");
+    assert.equal(warnings.length > 0, cas.avertit, "avertissement attendu=" + cas.avertit + " pour " + JSON.stringify(cas.valeur));
+  }
+});
+
+test("date : une date impossible s'avertit AUTREMENT qu'une date illisible, et cite le champ", () => {
+  // Deux pannes qui ne se corrigent pas de la même façon : « DocIE a lu une
+  // date fausse » n'est pas « DocIE n'a rien su lire ». Le relecteur doit
+  // pouvoir les distinguer, et retrouver la valeur brute dans le message —
+  // c'est là qu'elle survit, puisque le champ, lui, reste vide.
+  const impossible = [];
+  assert.equal(normalizeDate("01/13/2026", "date_debut", impossible), "");
+  assert.match(impossible[0], /date_debut/);
+  assert.match(impossible[0], /date impossible/);
+  assert.match(impossible[0], /01\/13\/2026/);
+
+  const illisible = [];
+  assert.equal(normalizeDate("le 5 courant", "date_redaction", illisible), "");
+  assert.match(illisible[0], /date non reconnue/);
+  assert.ok(!/date impossible/.test(illisible[0]));
+});
+
+test("date : mapContractResult refuse un mois 13 sur date_debut, sans toucher aux autres champs (#179 A8)", () => {
+  const mapped = mapContractResult({
+    numero_contrat: "C-2026-001", st_nom: "ACME", date_debut: "01/13/2026", date_fin: "2026-12-31",
+  });
+  assert.equal(mapped.values.dateDebut, "");
+  assert.equal(mapped.values.dateFin, "2026-12-31");
+  assert.ok(mapped.warnings.some((w) => /date_debut/.test(w) && /date impossible/.test(w)));
+  // Refusée, jamais réparée : surtout pas un 2026-01-13 (jour et mois
+  // échangés) ni un 2026-12-01 rabattu sur la borne du mois.
+  assert.ok(!mapped.warnings.some((w) => /date_fin/.test(w)));
 });
 
 test("extractContractValues: la validation du pont traverse jusqu'aux avertissements rendus (#179 A1)", async () => {

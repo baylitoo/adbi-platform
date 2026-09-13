@@ -115,22 +115,90 @@ const ALL_ACCOUNTED_KEYS = new Set([
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const FR_DATE_RE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
 
+// Bornes de date PARTAGÉES avec les trois autres portages du mapping, fixées
+// dans document-parsing/fixtures/date_docie.json (champs `annee_min` /
+// `annee_max`), que les tests des deux côtés comparent à ces deux constantes.
+// 1950-2100 n'est pas un chiffre tiré au sort : c'est la fenêtre d'années
+// déjà retenue ailleurs dans le dépôt pour la même question (#176), et en
+// adopter une seconde ici créerait exactement le genre de divergence que
+// recense #179. Le faux positif assumé — l'immatriculation d'une société
+// antérieure à 1950 — sort en avertissement citant la valeur brute, jamais
+// en valeur perdue ni fabriquée ; la fenêtre attrape en échange l'OCR à
+// quatre chiffres du genre « 0202-05-14 », qu'un <input type="date"> accepte
+// sans broncher en affichant l'an 202.
+const ANNEE_MIN = 1950;
+const ANNEE_MAX = 2100;
+
+const JOURS_PAR_MOIS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+function estBissextile(annee) {
+  return annee % 4 === 0 && (annee % 100 !== 0 || annee % 400 === 0);
+}
+
+// Le triplet désigne-t-il une date réelle, dans la fenêtre d'années retenue ?
+// Bornes écrites à la main plutôt que déléguées à `new Date()`, qui reporte
+// silencieusement un 30 février au 2 mars — ce qui FABRIQUERAIT une date au
+// lieu de la refuser — et dont les années 0-99 basculent en 1900+. La règle
+// complète est écrite dans `_regle` côté fixture.
+function dateExiste(annee, mois, jour) {
+  if (annee < ANNEE_MIN || annee > ANNEE_MAX) return false;
+  if (mois < 1 || mois > 12) return false;
+  const dernier = mois === 2 && estBissextile(annee) ? 29 : JOURS_PAR_MOIS[mois - 1];
+  return jour >= 1 && jour <= dernier;
+}
+
 // Le DateField de DocIE ne garantit pas l'ISO ("ISO-8601 quand possible")
 // alors que contrats/lib/fields.js attend un <input type="date">
 // (YYYY-MM-DD). ISO transparent ; DD/MM/YYYY converti ; tout le reste ->
 // vide + avertissement (jamais de valeur injectée dans un champ date que le
 // navigateur ne saura pas afficher).
+//
+// Règle partagée : document-parsing/fixtures/date_docie.json. Les deux motifs
+// ne comptent que des chiffres, jamais leurs bornes : « 01/13/2026 »
+// ressortait en « 2026-13-01 » et « 45/02/2026 » en « 2026-02-45 », ici comme
+// dans les trois autres portages, sans un seul avertissement (inventaire de
+// divergence #179, lignes A8 et A9 — le rare cas où Python et JS sont
+// d'accord ET tous les deux faux). Le navigateur refuse silencieusement une
+// telle valeur dans <input type="date"> : le champ s'affiche VIDE et la date
+// est perdue sans erreur, si bien que la panne ressemble à « DocIE n'a rien
+// trouvé ». Une date hors calendrier ou hors fenêtre est désormais refusée
+// explicitement, avec un avertissement DISTINCT de « date non reconnue » :
+// les deux pannes ne se corrigent pas de la même façon. Elle n'est jamais
+// réparée ni tronquée — pas de 2026-02-28 pour un 30 février.
 function normalizeDate(raw, fieldKey, warnings) {
   if (raw === null || raw === undefined || raw === "") return "";
   const s = String(raw).trim();
-  if (ISO_DATE_RE.test(s)) return s;
-  const m = FR_DATE_RE.exec(s);
-  if (m) {
-    const [, d, mo, y] = m;
-    return y + "-" + mo.padStart(2, "0") + "-" + d.padStart(2, "0");
+  // Un champ réduit à des espaces est un champ vide : « champ vu, rien
+  // trouvé », même règle que normalizeNumber. Avertir ici noierait les vrais
+  // avertissements sous un « date non reconnue ("") ».
+  if (s === "") return "";
+  let annee = null;
+  let mois = null;
+  let jour = null;
+  if (ISO_DATE_RE.test(s)) {
+    annee = Number(s.slice(0, 4));
+    mois = Number(s.slice(5, 7));
+    jour = Number(s.slice(8, 10));
+  } else {
+    const m = FR_DATE_RE.exec(s);
+    if (m) {
+      annee = Number(m[3]);
+      mois = Number(m[2]);
+      jour = Number(m[1]);
+    }
   }
-  warnings.push(fieldKey + ": date non reconnue (" + JSON.stringify(s) + "), laissée vide — à corriger manuellement");
-  return "";
+  if (annee === null) {
+    warnings.push(fieldKey + ": date non reconnue (" + JSON.stringify(s) + "), laissée vide — à corriger manuellement");
+    return "";
+  }
+  if (!dateExiste(annee, mois, jour)) {
+    warnings.push(
+      fieldKey + ": date impossible (" + JSON.stringify(s) + "), laissée vide — jour/mois hors calendrier ou année hors "
+      + ANNEE_MIN + "-" + ANNEE_MAX + " ; à corriger manuellement"
+    );
+    return "";
+  }
+  return String(annee).padStart(4, "0") + "-" + String(mois).padStart(2, "0") + "-" + String(jour).padStart(2, "0");
 }
 
 // « Ce texte est-il un nombre ? » — motif PARTAGÉ, identique caractère pour
@@ -287,4 +355,7 @@ module.exports = {
   DOCIE_KIND,
   MOTIF_NOMBRE,
   normalizeNumber,
+  ANNEE_MIN,
+  ANNEE_MAX,
+  normalizeDate,
 };
