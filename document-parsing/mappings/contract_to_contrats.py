@@ -128,6 +128,17 @@ ALL_ACCOUNTED_KEYS: set[str] = (
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _FR_DATE_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 
+# « Ce texte est-il un nombre ? » -- motif PARTAGE, identique caractere pour
+# caractere au litteral JS (contrats/lib/docie-contract-import.js) et au champ
+# `motif` de document-parsing/fixtures/nombre_docie.json, que les tests des
+# deux cotes comparent a ce litteral : ajouter une forme d'un seul cote casse
+# le test de l'autre service. [0-9] et non \d parce que \d reconnait aussi les
+# chiffres arabes-indiens en Python et pas en JS (miroir inverse du piege
+# re.ASCII de #177) ; la notation exponentielle est refusee parce que son
+# rendu diverge entre les deux langages.
+MOTIF_NOMBRE = r"^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$"
+_NOMBRE_RE = re.compile(MOTIF_NOMBRE)
+
 
 class ContractMappingError(ValueError):
     """L'entree n'est pas une extraction DocIE valide du schema 'contract'."""
@@ -171,21 +182,46 @@ def _normalize_date(raw: Any, field_key: str, warnings: list[str]) -> str:
     return ""
 
 
+def _forme_nombre(texte: str) -> str:
+    """Mise en forme PUREMENT LEXICALE d'un texte deja reconnu par
+    MOTIF_NOMBRE : jamais d'aller-retour par le flottant du langage, dont le
+    rendu differe (str(1e16) rend "1e+16" en Python, String(1e16) rend
+    "10000000000000000" en JS). Voir `_regle_forme` dans la fixture."""
+    negatif = texte[:1] == "-"
+    corps = texte[1:] if texte[:1] in ("+", "-") else texte
+    entier, _, frac = corps.partition(".")
+    entier = entier.lstrip("0") or "0"
+    frac = frac.rstrip("0")
+    sortie = entier + ("." + frac if frac else "")
+    return "-" + sortie if negatif and sortie != "0" else sortie
+
+
 def _normalize_number(raw: Any, field_key: str, warnings: list[str]) -> str:
     """fields.js type "number" attend une chaine numerique simple (ex:
     "420", "45") ; DocIE serialise ses Decimal en str (pydantic v2
-    mode="json"). Entier -> sans decimales ; sinon valeur telle quelle."""
+    mode="json").
+
+    Regle partagee : document-parsing/fixtures/nombre_docie.json. Ce module
+    s'en remettait a float(), qui accepte des textes que Number() cote JS
+    refuse -- et inversement -- d'ou six des neuf ecarts mesures de
+    l'inventaire #179. float("1_000") rendait "1000" SANS avertissement (le
+    separateur de milliers de la syntaxe Python, qu'aucun document n'ecrit),
+    et float("nan") / float("inf") faisaient remonter une exception depuis
+    le int() laisse hors du try. Un texte non reconnu ressort desormais tel
+    quel avec un avertissement : une valeur visiblement fausse que le
+    relecteur corrige vaut mieux qu'une valeur plausible fabriquee."""
     if raw is None or raw == "":
         return ""
     raw_s = str(raw).strip()
-    try:
-        as_float = float(raw_s)
-    except ValueError:
+    if raw_s == "":
+        # Un champ reduit a des espaces est un champ vide : "champ vu, rien
+        # trouve", meme traitement que {"value": null}. Surtout pas un 0
+        # (un delai de paiement de 0 jour, un TJM de 0 euro).
+        return ""
+    if not _NOMBRE_RE.match(raw_s):
         warnings.append(f"{field_key}: nombre non reconnu ({raw_s!r}), reporte tel quel")
         return raw_s
-    if as_float == int(as_float):
-        return str(int(as_float))
-    return str(as_float)
+    return _forme_nombre(raw_s)
 
 
 def _extract_scalar(result: dict, docie_key: str) -> Any:
@@ -293,6 +329,7 @@ __all__ = [
     "CONSTANT_FIELDS_NOT_FROM_DOCIE",
     "GAP_FIELDS_NO_DOCIE_EQUIVALENT",
     "ALL_ACCOUNTED_KEYS",
+    "MOTIF_NOMBRE",
     "ContractMappingError",
     "MappingResult",
     "map_docie_contract_to_sous_traitance",

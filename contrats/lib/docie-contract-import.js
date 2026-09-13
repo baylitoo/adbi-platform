@@ -133,20 +133,53 @@ function normalizeDate(raw, fieldKey, warnings) {
   return "";
 }
 
+// « Ce texte est-il un nombre ? » — motif PARTAGÉ, identique caractère pour
+// caractère au littéral Python (document-parsing/mappings/
+// contract_to_contrats.py::MOTIF_NOMBRE) et au champ `motif` de
+// document-parsing/fixtures/nombre_docie.json, que les tests des deux côtés
+// comparent à ce littéral : ajouter une forme d'un seul côté casse le test de
+// l'autre service. [0-9] et non \d parce que \d reconnaît aussi les chiffres
+// arabes-indiens en Python et pas en JS ; l'exponentielle est refusée parce
+// que son rendu diverge entre les deux langages.
+const MOTIF_NOMBRE = "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)$";
+const NOMBRE_RE = new RegExp(MOTIF_NOMBRE);
+
+// Mise en forme PUREMENT LEXICALE d'un texte déjà reconnu par NOMBRE_RE :
+// jamais d'aller-retour par le nombre du langage, dont le rendu diffère
+// (String(1e16) rend "10000000000000000", str(1e16) rend "1e+16" côté
+// Python). Voir `_regle_forme` dans la fixture partagée.
+function formeNombre(texte) {
+  const negatif = texte.startsWith("-");
+  const corps = (texte.startsWith("+") || negatif) ? texte.slice(1) : texte;
+  const point = corps.indexOf(".");
+  const entier = (point === -1 ? corps : corps.slice(0, point)).replace(/^0+/, "") || "0";
+  const frac = (point === -1 ? "" : corps.slice(point + 1)).replace(/0+$/, "");
+  const sortie = entier + (frac ? "." + frac : "");
+  return negatif && sortie !== "0" ? "-" + sortie : sortie;
+}
+
 // fields.js type "number" attend une chaîne numérique simple (ex: "420",
-// "45"). Entier -> sans décimales ; sinon valeur telle quelle. Accepte un
-// nombre JS natif ou une chaîne (l'agent DocIE, via l'API chat, ne
-// sérialise pas forcément un Decimal en chaîne comme le ferait pydantic
-// v2 côté studio — ne pas supposer une seule forme).
+// "45"). Accepte un nombre JS natif ou une chaîne (l'agent DocIE, via l'API
+// chat, ne sérialise pas forcément un Decimal en chaîne comme le ferait
+// pydantic v2 côté studio — ne pas supposer une seule forme).
+//
+// Règle partagée : document-parsing/fixtures/nombre_docie.json. Ce module
+// s'en remettait à Number(), qui accepte des textes que float() côté Python
+// refuse — et inversement — d'où six des neuf écarts mesurés de l'inventaire
+// #179. Number("") vaut 0 et 0 est fini : un champ réduit à des espaces
+// ressortait en « 0 » (un délai de paiement de 0 jour, un TJM de 0 €,
+// fabriqués de toutes pièces) ; Number("0x1e") rendait « 30 ».
 function normalizeNumber(raw, fieldKey, warnings) {
   if (raw === null || raw === undefined || raw === "") return "";
   const s = String(raw).trim();
-  const asFloat = Number(s);
-  if (!Number.isFinite(asFloat)) {
+  // Un champ réduit à des espaces est un champ vide : « champ vu, rien
+  // trouvé », même traitement que {"value": null}.
+  if (s === "") return "";
+  if (!NOMBRE_RE.test(s)) {
     warnings.push(fieldKey + ": nombre non reconnu (" + JSON.stringify(s) + "), reporté tel quel");
     return s;
   }
-  return String(asFloat);
+  return formeNombre(s);
 }
 
 function extractMoney(result, docieKey, warnings) {
@@ -252,4 +285,6 @@ module.exports = {
   GAP_FIELDS_NO_DOCIE_EQUIVALENT,
   ALL_ACCOUNTED_KEYS,
   DOCIE_KIND,
+  MOTIF_NOMBRE,
+  normalizeNumber,
 };

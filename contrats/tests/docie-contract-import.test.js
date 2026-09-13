@@ -9,6 +9,7 @@ const path = require("path");
 const {
   extractContractValues, mapContractResult, MAPPED_FIELDS,
   CONSTANT_FIELDS_NOT_FROM_DOCIE, GAP_FIELDS_NO_DOCIE_EQUIVALENT, ALL_ACCOUNTED_KEYS,
+  MOTIF_NOMBRE, normalizeNumber,
 } = require("../lib/docie-contract-import");
 const { sousTraitance } = require("../lib/fields");
 // Fixture RAW (enveloppe {value,confidence,evidence_ids} non déballée),
@@ -18,6 +19,12 @@ const { sousTraitance } = require("../lib/fields");
 // d'intégration), pas seulement le mapping sur une forme déjà déballée.
 const RAW_FIXTURE = require(path.join(
   __dirname, "..", "..", "document-parsing", "mappings", "fixtures", "contract_extraction_sample.json"
+));
+// Jeu d'essai PARTAGÉ avec les trois autres portages du même normaliseur
+// (contract_to_contrats.py, kbis_to_contrats.py, lib/kbis-mapping.js) : c'est
+// lui qui empêche la divergence de #179 (lignes A2 à A6) de revenir.
+const NOMBRE = require(path.join(
+  __dirname, "..", "..", "document-parsing", "fixtures", "nombre_docie.json"
 ));
 
 test("garde-fou anti-dérive : ALL_ACCOUNTED_KEYS == exactement les clés de fields.js::sousTraitance", () => {
@@ -249,6 +256,40 @@ test("mapContractResult: validation DocIE -> avertissements reportés (parité a
   assert.ok(!mapContractResult(NOMINAL_RESULT).warnings.some((w) => /validation/.test(w)));
   assert.ok(!mapContractResult(NOMINAL_RESULT, { validation: { valid: true, errors: [], warnings: [] } })
     .warnings.some((w) => /validation/.test(w)));
+});
+
+// ---------------------------------------------------------------------------
+// Inventaire de divergence #179, lignes A2 à A6 : ce module s'en remettait à
+// Number(), le module Python miroir à float(), et les deux n'acceptent pas les
+// mêmes textes — dans les DEUX sens (« 0x1e » -> 30 ici, « 1_000 » -> 1000
+// là-bas, « nan » faisant carrément remonter une exception côté Python).
+// La règle est désormais écrite une seule fois, dans la fixture partagée, et
+// les quatre portages comparent leur motif ET leur sortie à ce fichier :
+// ajouter une forme d'un seul côté casse le test de l'autre service.
+// ---------------------------------------------------------------------------
+test("nombre : le motif de ce portage est celui de la fixture partagée (#179 A2-A6)", () => {
+  assert.equal(new RegExp(MOTIF_NOMBRE).source, NOMBRE.motif);
+  assert.ok(NOMBRE._ports.includes("contrats/lib/docie-contract-import.js (JS)"));
+});
+
+test("nombre : les " + NOMBRE.cas.length + " cas du jeu d'essai partagé (#179 A2-A6)", () => {
+  for (const cas of NOMBRE.cas) {
+    const warnings = [];
+    const sortie = normalizeNumber(cas.valeur, "champ", warnings);
+    assert.equal(sortie, cas.sortie, cas.valeur + " -> " + JSON.stringify(sortie) + " (" + cas.preuve + ")");
+    assert.equal(warnings.length > 0, cas.avertit, "avertissement attendu=" + cas.avertit + " pour " + JSON.stringify(cas.valeur));
+  }
+});
+
+test("nombre : null/absent -> vide, nombre JS natif accepté", () => {
+  const warnings = [];
+  assert.equal(normalizeNumber(null, "champ", warnings), "");
+  assert.equal(normalizeNumber(undefined, "champ", warnings), "");
+  // L'agent DocIE peut sérialiser un Decimal en nombre JSON natif plutôt
+  // qu'en chaîne : String(450) puis la règle lexicale rendent la même sortie.
+  assert.equal(normalizeNumber(450, "champ", warnings), "450");
+  assert.equal(normalizeNumber(450.5, "champ", warnings), "450.5");
+  assert.deepEqual(warnings, []);
 });
 
 test("extractContractValues: la validation du pont traverse jusqu'aux avertissements rendus (#179 A1)", async () => {

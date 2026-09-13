@@ -36,7 +36,9 @@ from contract_to_contrats import (  # noqa: E402
     CONSTANT_FIELDS_NOT_FROM_DOCIE,
     GAP_FIELDS_NO_DOCIE_EQUIVALENT,
     MAPPED_FIELDS,
+    MOTIF_NOMBRE,
     ContractMappingError,
+    _normalize_number,
     build_import_payload,
     map_docie_contract_to_sous_traitance,
 )
@@ -227,6 +229,42 @@ class TestEdgeCaseFixture(unittest.TestCase):
 
     def test_docie_validation_warnings_surface(self):
         self.assertTrue(any("low overall confidence" in w for w in self.mapping.warnings))
+
+
+class TestNombrePartage(unittest.TestCase):
+    """Inventaire de divergence #179, lignes A2 a A6 : ce module s'en remettait
+    a float(), le portage JS a Number(), et les deux n'acceptent pas les memes
+    textes -- dans les DEUX sens. La regle est desormais ecrite une seule fois,
+    dans document-parsing/fixtures/nombre_docie.json, et les quatre portages
+    comparent leur motif ET leur sortie a ce fichier : ajouter une forme d'un
+    seul cote casse le test de l'autre service."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(REPO_ROOT / "document-parsing" / "fixtures" / "nombre_docie.json", encoding="utf-8") as fh:
+            cls.fixture = json.load(fh)
+
+    def test_motif_identique_a_la_fixture(self):
+        self.assertEqual(self.fixture["motif"], MOTIF_NOMBRE)
+        self.assertIn(
+            "document-parsing/mappings/contract_to_contrats.py (Python)",
+            self.fixture["_ports"],
+        )
+
+    def test_tous_les_cas_du_jeu_dessai(self):
+        for cas in self.fixture["cas"]:
+            with self.subTest(valeur=cas["valeur"], preuve=cas["preuve"]):
+                warnings: list[str] = []
+                self.assertEqual(cas["sortie"], _normalize_number(cas["valeur"], "champ", warnings))
+                self.assertEqual(cas["avertit"], bool(warnings))
+
+    def test_none_et_nombre_natif(self):
+        warnings: list[str] = []
+        self.assertEqual("", _normalize_number(None, "champ", warnings))
+        # Un Decimal deja deserialise en float ne doit pas changer de forme.
+        self.assertEqual("450", _normalize_number(450, "champ", warnings))
+        self.assertEqual("450.5", _normalize_number(450.5, "champ", warnings))
+        self.assertEqual([], warnings)
 
 
 class TestSchemaGuard(unittest.TestCase):
