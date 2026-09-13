@@ -1,10 +1,45 @@
 "use strict";
 
 // Server-side counterpart of docie_bridge.py. No browser API key, OCR or retries.
+//
+// Our own caps, chosen locally before DocIE's were known. 20 MiB stays: it sits
+// inside DocIE's own guards. DocIE's documented limits, per its team: 25 MB
+// upload, 26 MB request body, 1,000,000 characters of text, 1,000 OCR blocks
+// per document, 20,000 characters per block, 50 metadata entries, 8 pages
+// (vision path only). Those are that service's DEFAULTS, not facts about the
+// instance we call -- an operator sets them per deployment, and nothing DocIE
+// exposes (/healthz, /readyz, /metrics, /v1/schemas) reports the values in
+// force, so this copy can be wrong from a deployment's first day.
+//
+// The 1,000-block ceiling is the limit that bites first on a long document: a
+// dense three-page PDF reaches it at a few megabytes, so MAX_DOCUMENT_BYTES
+// guards the wrong dimension and no local check can see that failure coming.
+// A document refused for it arrives here after the call, in one of three
+// already-handled shapes: HTTP 413 -> code "limits" (below), `validation`
+// errors (preserved verbatim in metadata, surfaced by the consumers), or a
+// non-"stop" finish_reason -> code "incomplete". Which shape DocIE actually
+// uses for the block ceiling is not recorded anywhere we can check; see #180.
 const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis" };
-const MIME_TYPES = new Set(["application/pdf", "image/png", "image/jpeg", "image/webp"]);
+// What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
+// This transport posts the document as an `image_url` data URI to
+// /v1/agents/<agent>/chat/completions, where DocIE OCRs it: liteparse renders
+// PDF pages, tesseract and paddle take images. So the OCR backends, not
+// `ALLOWED_UPLOAD_MIME_TYPES`, decide what may be sent here.
+//
+// `image/webp` was removed: DocIE's allowlist refuses it, so every WebP made a
+// pointless round-trip before failing remotely. It now fails locally, named.
+//
+// `text/plain` and `image/tiff` are in DocIE's upload allowlist but are NOT
+// added here. Text has no OCR backend behind the `image_url` wrapper; its
+// verified path is POST /v1/extract/text, which takes `text` in the body with
+// the same schema parameters and still grounds (cv-parser already routes text
+// and DOCX there -- docie_client.py). TIFF is plausible through the wrapper
+// but unverified, and acceptance depends on the deployment's OCR backend, not
+// on the allowlist alone. Neither is added on a reading of someone else's
+// configuration -- that is exactly how `image/webp` got here (#180).
+const MIME_TYPES = new Set(["application/pdf", "image/png", "image/jpeg"]);
 // A grounded field arrives as {value, ...} alongside at least one of these keys.
 // The logprob key is in the set on purpose: DocIE's logprob confidence adds it as
 // a fourth key, and an envelope test that ignores it lets a scalar reach the
@@ -137,7 +172,7 @@ function parseResponse(body, expectedSchema, agent) {
 async function extractDocument(content, mimeType, { kind = "resume", env = process.env, fetchImpl = fetch } = {}) {
   const { endpoint, key, agent, timeout, tokens } = configuration(kind, env);
   if (!Buffer.isBuffer(content) || !content.length || content.length > MAX_DOCUMENT_BYTES) fail("input", "Document must contain between 1 byte and 20 MiB.");
-  if (!MIME_TYPES.has(mimeType)) fail("input", "Unsupported document MIME type; use PDF, PNG, JPEG or WebP.");
+  if (!MIME_TYPES.has(mimeType)) fail("input", "Unsupported document MIME type; use PDF, PNG or JPEG.");
   const payload = { model: agent, parallel_extraction: true, stream: false, max_tokens: tokens,
     messages: [{ role: "user", content: [
       { type: "text", text: "Extract the document using your configured schema. Do not invent missing information." },
@@ -152,7 +187,13 @@ async function extractDocument(content, mimeType, { kind = "resume", env = proce
       headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (response.status !== 200) {
       await response.body?.cancel();
-      fail(({ 401: "auth", 403: "auth", 429: "rate_limit" })[response.status] || "upstream", "DocIE request failed (HTTP " + response.status + ").", response.status);
+      // 413 gets its own code: DocIE refuses a document that is beyond the
+      // limits its deployment configures, and a named failure beats a generic
+      // upstream one for the only limit we cannot measure before sending.
+      fail(({ 401: "auth", 403: "auth", 413: "limits", 429: "rate_limit" })[response.status] || "upstream",
+        response.status === 413
+          ? "DocIE refused the document as beyond its configured limits (size, OCR blocks or pages)."
+          : "DocIE request failed (HTTP " + response.status + ").", response.status);
     }
     if (!response.body) fail("response", "DocIE returned an empty response.");
     reader = response.body.getReader();

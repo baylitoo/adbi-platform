@@ -90,9 +90,15 @@ class BridgeTests(unittest.TestCase):
         for change in changes:
             with self.subTest(change=change), self.assertRaises(DocIEBridgeError):
                 extract_document(b"pdf", "application/pdf", env=env | change, session=session)
-        for content, mime in ((b"", "application/pdf"), (b"x", "text/plain")):
-            with self.assertRaises(DocIEBridgeError):
+        # image/webp: DocIE refuses it, so it must fail HERE and not after a
+        # round trip. text/plain and image/tiff are in DocIE's upload allowlist
+        # but not on the agent chat path this transport uses (#180) — same
+        # local refusal.
+        for content, mime in ((b"", "application/pdf"), (b"x", "text/plain"),
+                              (b"x", "image/webp"), (b"x", "image/tiff")):
+            with self.subTest(mime=mime), self.assertRaises(DocIEBridgeError) as raised:
                 extract_document(content, mime, env=env, session=session)
+            self.assertEqual(raised.exception.code, "input")
         session.post.assert_not_called()
 
     def test_http_contract_and_sanitized_failures_no_retries(self):
@@ -126,12 +132,17 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(payload["model"], "adbi_agent_1")
             self.assertEqual(payload["max_tokens"], 8192)
             self.assertEqual(payload["messages"][0]["content"][1]["image_url"]["url"], "data:application/pdf;base64,cGRmLWJ5dGVz")
-            for status in (302, 401, 403, 429, 500, 502):
+            # 413 carries its own code: DocIE refuses documents beyond the
+            # limits its deployment configures (size, OCR blocks, pages), and
+            # the 1000-block ceiling cannot be checked locally before sending.
+            codes = {401: "auth", 403: "auth", 413: "limits", 429: "rate_limit"}
+            for status in (302, 401, 403, 413, 429, 500, 502):
                 state["status"] = status
                 before = len(state["calls"])
-                with self.assertRaises(DocIEBridgeError) as raised:
+                with self.subTest(status=status), self.assertRaises(DocIEBridgeError) as raised:
                     extract_document(b"pdf", "application/pdf", env=env)
                 self.assertEqual(raised.exception.status, status)
+                self.assertEqual(raised.exception.code, codes.get(status, "upstream"))
                 self.assertNotIn("test-secret", str(raised.exception))
                 self.assertEqual(len(state["calls"]), before + 1)
         finally:

@@ -13,9 +13,43 @@ from urllib.parse import urlsplit
 
 import requests
 
+# Our own caps, chosen locally before DocIE's were known. 20 MiB stays: it sits
+# inside DocIE's own guards. DocIE's documented limits, per its team: 25 MB
+# upload, 26 MB request body, 1,000,000 characters of text, 1,000 OCR blocks per
+# document, 20,000 characters per block, 50 metadata entries, 8 pages (vision
+# path only). Those are that service's DEFAULTS, not facts about the instance we
+# call -- an operator sets them per deployment, and nothing DocIE exposes
+# (/healthz, /readyz, /metrics, /v1/schemas) reports the values in force, so
+# this copy can be wrong from a deployment's first day.
+#
+# The 1,000-block ceiling is the limit that bites first on a long document: a
+# dense three-page PDF reaches it at a few megabytes, so MAX_DOCUMENT_BYTES
+# guards the wrong dimension and no local check can see that failure coming. A
+# document refused for it arrives here after the call, in one of three
+# already-handled shapes: HTTP 413 -> code "limits" (below), `validation` errors
+# (preserved verbatim in metadata, surfaced by the consumers), or a non-"stop"
+# finish_reason -> code "incomplete". Which shape DocIE actually uses for the
+# block ceiling is not recorded anywhere we can check; see #180.
 MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-MIME_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/webp"}
+# What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
+# This transport posts the document as an `image_url` data URI to
+# /v1/agents/<agent>/chat/completions, where DocIE OCRs it: liteparse renders
+# PDF pages, tesseract and paddle take images. So the OCR backends, not
+# `ALLOWED_UPLOAD_MIME_TYPES`, decide what may be sent here.
+#
+# `image/webp` was removed: DocIE's allowlist refuses it, so every WebP made a
+# pointless round-trip before failing remotely. It now fails locally, named.
+#
+# `text/plain` and `image/tiff` are in DocIE's upload allowlist but are NOT
+# added here. Text has no OCR backend behind the `image_url` wrapper; its
+# verified path is POST /v1/extract/text, which takes `text` in the body with
+# the same schema parameters and still grounds (cv-parser already routes text
+# and DOCX there -- docie_client.py). TIFF is plausible through the wrapper but
+# unverified, and acceptance depends on the deployment's OCR backend, not on the
+# allowlist alone. Neither is added on a reading of someone else's
+# configuration -- that is exactly how `image/webp` got here (#180).
+MIME_TYPES = {"application/pdf", "image/png", "image/jpeg"}
 SCHEMAS = {"resume": "adbi_resume", "contract": "contract", "kbis": "kbis"}
 # A grounded field arrives as {value, ...} alongside at least one of these keys.
 # The logprob key is in the set on purpose: DocIE's logprob confidence adds it as
@@ -200,15 +234,18 @@ def parse_response(body, expected_schema, agent):
 def extract_document(content, mime_type, *, kind="resume", env=None, session=None):
     """Send one PDF/image to the configured agent; never retry billable work.
 
-    Caller must authorize access to the document. DOCX/text conversion is a
-    consumer responsibility until a verified DocIE text-agent contract exists.
+    Caller must authorize access to the document. DOCX and text are not sent
+    here: the `image_url` wrapper feeds DocIE's OCR backends, which read PDF and
+    images only. Their verified path is POST /v1/extract/text (`text` in the
+    body, same schema parameters, grounding preserved), already used by
+    cv-parser's docie_client.py; wiring it into this transport is its own work.
     """
     env = os.environ if env is None else env
     endpoint, key, agent, timeout, tokens = configuration(kind, env)
     if not isinstance(content, bytes) or not 0 < len(content) <= MAX_DOCUMENT_BYTES:
         fail("input", "Document must contain between 1 byte and 20 MiB.")
     if mime_type not in MIME_TYPES:
-        fail("input", "Unsupported document MIME type; use PDF, PNG, JPEG or WebP.")
+        fail("input", "Unsupported document MIME type; use PDF, PNG or JPEG.")
     payload = {"model": agent, "parallel_extraction": True, "stream": False, "max_tokens": tokens,
                "messages": [{"role": "user", "content": [
                    {"type": "text", "text": "Extract the document using your configured schema. Do not invent missing information."},
@@ -221,8 +258,15 @@ def extract_document(content, mime_type, *, kind="resume", env=None, session=Non
         with session.post(endpoint, headers={"Authorization": "Bearer " + key}, json=payload,
                           timeout=(min(10, timeout), timeout), allow_redirects=False, stream=True) as response:
             if response.status_code != 200:
-                code = {401: "auth", 403: "auth", 429: "rate_limit"}.get(response.status_code, "upstream")
-                fail(code, "DocIE request failed (HTTP " + str(response.status_code) + ").", response.status_code)
+                # 413 gets its own code: DocIE refuses a document that is beyond
+                # the limits its deployment configures, and a named failure
+                # beats a generic upstream one for the only limit we cannot
+                # measure before sending.
+                code = {401: "auth", 403: "auth", 413: "limits", 429: "rate_limit"}.get(response.status_code, "upstream")
+                message = ("DocIE refused the document as beyond its configured limits (size, OCR blocks or pages)."
+                           if response.status_code == 413
+                           else "DocIE request failed (HTTP " + str(response.status_code) + ").")
+                fail(code, message, response.status_code)
             chunks, size = [], 0
             for chunk in response.iter_content(65536):
                 size += len(chunk)

@@ -48,8 +48,13 @@ test("configuration and input rejected before network", async () => {
     { DOCIE_TIMEOUT_SECONDS: "NaN" }, { DOCIE_MAX_TOKENS: "0" }]) {
     await assert.rejects(extractDocument(Buffer.from("pdf"), "application/pdf", { env: { ...env, ...change }, fetchImpl }), DocIEBridgeError);
   }
-  for (const [content, mime] of [[Buffer.alloc(0), "application/pdf"], [Buffer.from("x"), "text/plain"]]) {
-    await assert.rejects(extractDocument(content, mime, { env, fetchImpl }), DocIEBridgeError);
+  // image/webp: DocIE refuses it, so it must fail HERE and not after a round
+  // trip. text/plain and image/tiff are in DocIE's upload allowlist but not on
+  // the agent chat path this transport uses (#180) — same local refusal.
+  for (const [content, mime] of [[Buffer.alloc(0), "application/pdf"], [Buffer.from("x"), "text/plain"],
+    [Buffer.from("x"), "image/webp"], [Buffer.from("x"), "image/tiff"]]) {
+    await assert.rejects(extractDocument(content, mime, { env, fetchImpl }),
+      error => error instanceof DocIEBridgeError && error.code === "input");
   }
   assert.equal(calls, 0);
 });
@@ -95,10 +100,15 @@ test("loopback HTTP contract and sanitized failures without retries", async () =
     assert.equal(payload.model, "adbi_agent_1");
     assert.equal(payload.max_tokens, 8192);
     assert.equal(payload.messages[0].content[1].image_url.url, "data:application/pdf;base64,cGRmLWJ5dGVz");
-    for (const next of [302, 401, 403, 429, 500, 502]) {
+    // 413 carries its own code: DocIE refuses documents beyond the limits its
+    // deployment configures (size, OCR blocks, pages), and the 1000-block
+    // ceiling cannot be checked locally before sending.
+    const codes = { 401: "auth", 403: "auth", 413: "limits", 429: "rate_limit" };
+    for (const next of [302, 401, 403, 413, 429, 500, 502]) {
       status = next; const before = calls.length;
       await assert.rejects(extractDocument(Buffer.from("pdf"), "application/pdf", { env }), error => {
-        assert.equal(error.status, status); assert.ok(!error.message.includes("test-secret")); return true;
+        assert.equal(error.status, status); assert.equal(error.code, codes[status] || "upstream");
+        assert.ok(!error.message.includes("test-secret")); return true;
       });
       assert.equal(calls.length, before + 1);
     }

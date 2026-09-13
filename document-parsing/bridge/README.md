@@ -31,10 +31,35 @@ privé de confiance. Elle ne chiffre pas les échanges. TLS n'est jamais désact
 à `/v1/agents/{agent}/chat/completions` avec `model={agent}`, document en data URI
 dans `image_url`, **`parallel_extraction: true` et `stream: false`**.
 
-PDF et images PNG/JPEG/WebP sont acceptés, jusqu'à 20 MiB. Aucun OCR local,
+PDF et images PNG/JPEG sont acceptés, jusqu'à 20 MiB. Aucun OCR local,
 enregistrement de schéma, création d'agent ni retry automatique. L'OCR et son cache
 restent à DocIE. DOCX et texte ne sont pas envoyés avec un contrat inventé : leur
 adaptation fait partie des migrations des consommateurs et doit être testée.
+
+Cette liste est celle de la **voie agent/chat**, pas la liste d'upload de DocIE
+(`ALLOWED_UPLOAD_MIME_TYPES`) : le document part en data URI `image_url` et c'est
+l'OCR distant qui le lit (liteparse rend des pages PDF, tesseract et paddle
+prennent des images). `image/webp` a été retiré — DocIE le refuse, donc chaque
+WebP faisait un aller-retour réseau inutile avant d'échouer ; il échoue
+maintenant localement, avec les types acceptés nommés. `text/plain` et
+`image/tiff` figurent dans la liste d'upload DocIE mais **ne sont pas ajoutés
+ici** : le texte n'a aucun backend OCR derrière l'enveloppe `image_url`, sa voie
+vérifiée est `POST /v1/extract/text` (`text` dans le corps, mêmes paramètres de
+schéma, ancrage conservé — déjà utilisée par `cv-parser/docie_client.py`) ; le
+TIFF est plausible mais non vérifié, et son acceptation dépend du backend OCR du
+déploiement, pas de la seule liste d'upload. Voir #180.
+
+Limites documentées par DocIE : 25 Mo d'upload, 26 Mo de corps, 1 000 000
+caractères de texte, **1 000 blocs OCR par document**, 20 000 caractères par
+bloc, 50 entrées de métadonnées, 8 pages (voie vision uniquement). Ce sont des
+**valeurs par défaut, propres à chaque déploiement** : un opérateur les change et
+rien côté DocIE (`/healthz`, `/readyz`, `/metrics`, `/v1/schemas`) ne publie
+celles en vigueur. Notre plafond de 20 MiB tient — il est à l'intérieur du
+leur — mais il surveille la mauvaise dimension : un PDF dense de trois pages
+atteint 1 000 blocs à quelques mégaoctets, et aucun contrôle local ne peut le
+voir venir. Un refus pour dépassement revient donc après l'appel, sous l'une des
+formes déjà traitées : HTTP 413 → code `limits`, erreurs de `validation`
+conservées verbatim, ou `finish_reason` non « stop » → code `incomplete`.
 
 Sortie : `{schema_name, result, metadata}`. Les enveloppes de champs
 `{value,confidence,evidence_ids}` sont déballées sans conversion arbitraire des
@@ -69,7 +94,8 @@ d'extraction ou la réponse chat). Zéro n'est pas inventé si absent. Le temps 
 génération n'est pas déduit artificiellement du temps total.
 
 Les erreurs exposent un code stable (`configuration`, `input`, `auth`,
-`rate_limit`, `upstream`, `timeout`, `network`, `response`, `incomplete`, `schema`)
+`rate_limit`, `limits`, `upstream`, `timeout`, `network`, `response`,
+`incomplete`, `schema`)
 et éventuellement le statut HTTP, sans corps d'erreur distant ni clé. Une réponse
 tronquée/raisonnement seul n'est pas acceptée comme une extraction. Les réponses
 sont limitées à 8 MiB. Aucun suivi de redirection. Le timeout Node borne l'appel
