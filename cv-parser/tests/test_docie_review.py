@@ -306,6 +306,19 @@ class CheminsDeReecritureTests(unittest.TestCase):
         # Non-régression : le cas d'origine ne doit pas se perdre en route.
         self.assertTrue(self._appelle("update_cv", "perimer_revue"))
 
+    def test_les_cinq_chemins_de_remplacement_expirent_la_revue(self):
+        # Les quatre réécritures par le modèle posent le MÊME problème que la
+        # traduction, avec la même correction : `update_cv` était le seul des
+        # cinq à expirer la revue. Un sixième chemin qui remplacerait une
+        # rubrique sans relecture devra s'ajouter ici.
+        for nom in ("update_cv", "translate_cv", "enrich_cv_endpoint",
+                    "adapt_cv", "_enrich_cv_background"):
+            with self.subTest(chemin=nom):
+                self.assertTrue(
+                    self._appelle(nom, "perimer_revue"),
+                    f"{nom} remplace une rubrique sans expirer les marques « à vérifier » (#175)",
+                )
+
 
 class GabaritTests(unittest.TestCase):
     """L'écran de relecture (templates/cv_detail.html) doit montrer le signal.

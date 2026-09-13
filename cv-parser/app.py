@@ -1598,6 +1598,7 @@ def _enrich_cv_background(cv_id: str) -> None:
     thread attend le LLM était silencieusement écrasée à la sauvegarde
     finale, celle-ci partant d'une copie lue avant l'appel LLM.
     """
+    from docie_review import perimer_revue
     try:
         with _verrou_cv(cv_id):
             cv = cvstore_pg.get_cv(cv_id)
@@ -1610,6 +1611,12 @@ def _enrich_cv_background(cv_id: str) -> None:
                 cvstore_pg.save_cv(cv_id, cv)
                 return
             cv["experience"] = llm_enrich_experiences(experience)
+            # Le chemin le plus insidieux des quatre (#175) : il tourne en
+            # tache de fond juste apres le depot, donc la marque posee par
+            # `revue_docie` sur une description tronquee pouvait etre perimee
+            # par une reecriture que personne n'a jamais vue passer. Seule
+            # `experience` est remplacee ici.
+            perimer_revue(cv, {"experience"})
             cv["llm_enriched"] = True
             cvstore_pg.save_cv(cv_id, cv)
     except Exception:
@@ -3287,6 +3294,7 @@ def translate_cv(cv_id):
 @require_auth
 def enrich_cv_endpoint(cv_id):
     """Enrich CV bullet points and descriptions using LLM."""
+    from docie_review import perimer_revue
     with _verrou_cv(cv_id):
         cv = cvstore_pg.get_cv(cv_id)
         if cv is None:
@@ -3312,9 +3320,16 @@ def enrich_cv_endpoint(cv_id):
             if content.startswith("```"):
                 content = "\n".join(l for l in content.split("\n") if not l.startswith("```")).strip()
             enriched = json.loads(re.search(r"\{[\s\S]*\}", content).group(0))
+            champs_reecrits = set()
             for k in ("title", "experience", "skills", "interests"):
                 if enriched.get(k):
                     cv[k] = enriched[k]
+                    champs_reecrits.add(k)
+            # Même raison que la traduction (#175) : la rubrique réécrite n'est
+            # plus celle que DocIE a extraite, sa marque ne décrit plus rien —
+            # et « Enrichir » reformule justement les descriptions de missions,
+            # là où se posent la plupart des marques.
+            perimer_revue(cv, champs_reecrits)
             cv["enriched"] = True
             cvstore_pg.save_cv(cv_id, cv)
             return jsonify({"success": True})
@@ -3327,6 +3342,7 @@ def enrich_cv_endpoint(cv_id):
 @require_auth
 def adapt_cv(cv_id):
     """Adapt CV to a given job posting using LLM. Saves result directly."""
+    from docie_review import perimer_revue
     job_posting = (request.json or {}).get("job_posting", "").strip()
     if not job_posting:
         return jsonify({"error": "Fiche de poste manquante"}), 400
@@ -3356,9 +3372,15 @@ def adapt_cv(cv_id):
             if content.startswith("```"):
                 content = "\n".join(l for l in content.split("\n") if not l.startswith("```")).strip()
             adapted = json.loads(re.search(r"\{[\s\S]*\}", content).group(0))
+            champs_reecrits = set()
             for k in ("title", "experience", "skills", "interests"):
                 if adapted.get(k):
                     cv[k] = adapted[k]
+                    champs_reecrits.add(k)
+            # Idem (#175) : « Adapter au poste » reformule pour coller à une
+            # fiche de poste, donc réécrit encore plus franchement le texte
+            # extrait que « Enrichir ».
+            perimer_revue(cv, champs_reecrits)
             cv["adapted_to_job"] = True
             cvstore_pg.save_cv(cv_id, cv)
             return jsonify({"success": True})
