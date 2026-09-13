@@ -6,7 +6,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
-  analyzeDocument, mapDocieResult, resultToText, isEnabled, isEligible,
+  analyzeDocument, mapDocieResult, isEnabled, isEligible,
 } = require("../lib/docie-extraction");
 
 const LOCAL_SHAPE_KEYS = [
@@ -54,15 +54,26 @@ test("flag on but item non éligible (ex: urssaf): reste local (gap de schéma d
   assert.equal(result.summary, "local");
 });
 
-test("flag on + item kbis + succès DocIE: mapping correct, même forme que l'analyse locale", async () => {
+test("flag on + item kbis + succès DocIE: mapping correct, sur-ensemble de la forme locale", async () => {
   const env = { DOCIE_EXTRACTION_ENABLED: "true" };
+  // Champs réels du schéma DocIE "kbis" (document-parsing/scripts/
+  // register_and_test.py, PR #46) tels que déjà déballés par
+  // docie-bridge.js::unwrap() — valeurs nues, pas d'enveloppe {value,...}.
   const docieResponse = {
     schema_name: "kbis",
     result: {
       document_type: "kbis",
-      denomination_sociale: "ACME CONSEIL",
-      siren: "123 456 789",
-      date_delivrance: "2024-03-15",
+      company_name: "ACME CONSEIL",
+      siren: "123456789",
+      siret_siege: "12345678900012",
+      legal_form: "SAS",
+      share_capital: { amount: "1000", currency: "EUR" },
+      registration_date: "2015-06-01",
+      issued_date: "2024-03-15",
+      rcs_number: "123 456 789 RCS Paris",
+      registered_address: "1 rue de la Paix, 75002 Paris",
+      activity_code: "6202A",
+      legal_representative: "Monsieur Jean DUPONT",
     },
     metadata: { request_id: "req-1", agent: "kbis-agent-test", validation: null },
   };
@@ -82,30 +93,80 @@ test("flag on + item kbis + succès DocIE: mapping correct, même forme que l'an
   };
   const result = await analyzeDocument(body, { env, analyzeLocal, extractDocument });
   assert.equal(seenKind, "kbis");
-  assert.deepEqual(Object.keys(result).sort(), LOCAL_SHAPE_KEYS);
+  // Sur-ensemble STRICT des 8 clés locales : les clés enrichies (SIREN,
+  // SIRET, forme juridique, ...) s'y ajoutent, elles ne les remplacent pas.
+  for (const key of LOCAL_SHAPE_KEYS) assert.ok(Object.hasOwn(result, key), key + " manquante");
   assert.equal(result.documentType, "Extrait Kbis");
   assert.equal(result.matchedId, "kbis");
   assert.equal(result.isValid, true);
   assert.equal(result.companyName, "ACME CONSEIL");
   assert.equal(result.nameMatches, true);
-  // Champ DocIE probable en snake_case ("date_delivrance") -> repli ISO
-  // (extractIssuedDate local ne couvre que DD/MM/YYYY et "DD mois YYYY").
   assert.equal(result.issuedDate, "2024-03-15");
   assert.deepEqual(result.issues, []);
+  // Champs enrichis — perdus par l'ancienne stratégie « aplatir + regex »,
+  // désormais restitués tels quels par lib/kbis-mapping.js.
+  assert.equal(result.siren, "123456789");
+  assert.equal(result.siret, "12345678900012");
+  assert.equal(result.formeJuridique, "SAS");
+  assert.equal(result.dateImmatriculation, "2015-06-01");
+  assert.equal(result.rcsNumber, "123 456 789 RCS Paris");
+  assert.equal(result.adresseSiege, "1 rue de la Paix, 75002 Paris");
+  assert.equal(result.codeActivite, "6202A");
+  assert.equal(result.representantLegal, "Monsieur Jean DUPONT");
+  assert.equal(result.capitalSocial, "1000");
+  assert.equal(result.capitalSocialDevise, "EUR");
 });
 
-test("flag on + item kbis + validation DocIE négative: isValid=false + issue", async () => {
+test("flag on + item kbis + validation DocIE négative MAIS champs identifiants présents: isValid=false, champs conservés (pas de faux 'illisible')", async () => {
+  // docanalyze.js n'a aucune notion de validation DocIE à imiter : un
+  // validation.valid=false avec nom+SIREN bel et bien extraits ne doit pas
+  // jeter ces champs avec un message "PDF scanné" trompeur — comportement
+  // du module d'avant ce portage (issue #153), conservé ici.
   const env = { DOCIE_EXTRACTION_ENABLED: "true" };
   const docieResponse = {
     schema_name: "kbis",
-    result: { denomination_sociale: "ACME CONSEIL" },
+    result: { company_name: "ACME CONSEIL", siren: "123456789" },
     metadata: { validation: { valid: false, errors: ["champ manquant"] } },
   };
   const extractDocument = async () => docieResponse;
   const body = { dataBase64: "AA==", mimeType: "application/pdf", items: [{ id: "kbis" }] };
   const result = await analyzeDocument(body, { env, extractDocument, analyzeLocal: fakeLocal() });
   assert.equal(result.isValid, false);
-  assert.ok(result.issues.some((m) => /validé/.test(m)));
+  assert.equal(result.documentType, "Extrait Kbis");
+  assert.equal(result.companyName, "ACME CONSEIL");
+  assert.equal(result.siren, "123456789");
+  assert.ok(result.issues.some((m) => /n'a pas validé/.test(m)));
+});
+
+test("flag on + item kbis + validation DocIE négative ET aucun champ identifiant: bascule bien sur la branche illisible", async () => {
+  const env = { DOCIE_EXTRACTION_ENABLED: "true" };
+  const docieResponse = {
+    schema_name: "kbis",
+    result: {},
+    metadata: { validation: { valid: false, errors: ["scan illisible"] } },
+  };
+  const extractDocument = async () => docieResponse;
+  const body = { dataBase64: "AA==", mimeType: "application/pdf", items: [{ id: "kbis" }] };
+  const result = await analyzeDocument(body, { env, extractDocument, analyzeLocal: fakeLocal() });
+  assert.equal(result.isValid, false);
+  assert.equal(result.documentType, "Document");
+  assert.equal(result.companyName, null);
+  assert.equal(result.summary, "Document illisible.");
+  assert.ok(result.issues.some((m) => /Aucun texte lisible/.test(m)));
+});
+
+test("flag on + item kbis + aucun champ identifiant (nom/SIREN/SIRET absents): isValid=false même sans validation négative", async () => {
+  const env = { DOCIE_EXTRACTION_ENABLED: "true" };
+  const docieResponse = {
+    schema_name: "kbis",
+    result: { legal_form: "SAS" },
+    metadata: { validation: { valid: true } },
+  };
+  const extractDocument = async () => docieResponse;
+  const body = { dataBase64: "AA==", mimeType: "application/pdf", items: [{ id: "kbis" }] };
+  const result = await analyzeDocument(body, { env, extractDocument, analyzeLocal: fakeLocal() });
+  assert.equal(result.isValid, false);
+  assert.equal(result.summary, "Document illisible.");
 });
 
 test("flag on + échec DocIE (réseau/timeout/config): repli automatique sur l'analyse locale", async () => {
@@ -138,28 +199,26 @@ test("flag on + configuration DocIE absente (pas de clé/agent): repli local, ja
   assert.equal(result.summary, "local");
 });
 
-test("mapDocieResult: plusieurs dates ISO — choisit celle près d'un mot-clé de délivrance, pas la première du JSON", () => {
-  // date_creation (2015, ancienne immatriculation) apparaît AVANT
-  // date_delivrance (2024) dans l'objet : un "premier match" naïf renverrait
-  // à tort 2015, ce qui ferait déclarer le Kbis périmé côté front.
+test("mapDocieResult: registration_date (immatriculation) et issued_date (délivrance) ne sont plus ambigus — schéma structuré, pas de désambiguïsation par mot-clé à faire", () => {
+  // Contrairement à l'ancienne stratégie « aplatir en texte + regex » (qui
+  // devait deviner laquelle de plusieurs dates ISO était la délivrance), le
+  // schéma DocIE sépare déjà registration_date de issued_date : chacune va
+  // directement à sa clé de sortie, sans heuristique de proximité.
   const mapped = mapDocieResult({
-    result: { denomination_sociale: "ACME", date_creation: "2015-06-01", date_delivrance: "2024-03-15" },
+    result: { company_name: "ACME", registration_date: "2015-06-01", issued_date: "2024-03-15" },
     metadata: {},
   }, { items: [{ id: "kbis" }] });
   assert.equal(mapped.issuedDate, "2024-03-15");
+  assert.equal(mapped.dateImmatriculation, "2015-06-01");
 });
 
-test("resultToText / mapDocieResult: aplatissement clé:valeur, sans invention de schéma", () => {
-  const text = resultToText({ denomination_sociale: "ACME", adresse: { ville: "Lyon" }, pieces: ["a", "b"] });
-  assert.match(text, /denomination sociale: ACME/);
-  assert.match(text, /adresse ville: Lyon/);
-  assert.match(text, /pieces: a/);
-  assert.match(text, /pieces: b/);
-
-  const mapped = mapDocieResult({ result: { denomination_sociale: "ACME" }, metadata: {} }, { items: [{ id: "kbis" }] });
+test("mapDocieResult: champ manquant -> chaîne vide (pas d'invention de valeur), date de délivrance absente signalée", () => {
+  const mapped = mapDocieResult({ result: { company_name: "ACME", siren: "123456789" }, metadata: {} }, { items: [{ id: "kbis" }] });
   assert.equal(mapped.documentType, "Extrait Kbis");
   assert.equal(mapped.companyName, "ACME");
   assert.equal(mapped.issuedDate, "");
+  assert.equal(mapped.formeJuridique, "");
+  assert.equal(mapped.capitalSocial, "");
   assert.ok(mapped.issues.some((m) => /Date de délivrance/.test(m)));
 });
 
@@ -177,10 +236,18 @@ test("intégration réelle du bridge partagé (fetchImpl mocké, aucun réseau)"
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push({ url, body: JSON.parse(options.body) });
+    // Enveloppe brute telle que l'agent DocIE la renvoie réellement (champs
+    // wrappés {value, confidence, evidence_ids} / {amount, currency, ...}
+    // pour money) — document-parsing/mappings/fixtures/kbis_extraction_sample.json
+    // en est le pendant Python. C'est docie-bridge.js::unwrap() (exercé ici
+    // pour de vrai, aucun mock) qui la ramène à la forme lue par
+    // lib/kbis-mapping.js.
     const content = JSON.stringify({
       document_type: "kbis",
-      denomination_sociale: "ACME CONSEIL",
-      date_delivrance: "2024-03-15",
+      company_name: { value: "ACME CONSEIL", confidence: 0.97, evidence_ids: ["e1"] },
+      siren: { value: "123456789", confidence: 0.99, evidence_ids: ["e2"] },
+      issued_date: { value: "2024-03-15", confidence: 0.92, evidence_ids: ["e3"] },
+      share_capital: { amount: "1000", currency: "EUR", confidence: 0.85, evidence_ids: [] },
     });
     return new Response(JSON.stringify({
       id: "chatcmpl-test",
@@ -203,4 +270,10 @@ test("intégration réelle du bridge partagé (fetchImpl mocké, aucun réseau)"
   assert.equal(result.companyName, "ACME CONSEIL");
   assert.equal(result.issuedDate, "2024-03-15");
   assert.equal(result.nameMatches, true);
+  // Preuve que le déballage réel (unwrap) + le mapping structuré sont bien
+  // câblés bout en bout : le champ money reste {amount, currency} déballé,
+  // pas juste une chaîne aplatie.
+  assert.equal(result.siren, "123456789");
+  assert.equal(result.capitalSocial, "1000");
+  assert.equal(result.capitalSocialDevise, "EUR");
 });

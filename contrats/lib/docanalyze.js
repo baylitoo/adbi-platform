@@ -109,7 +109,11 @@ async function analyzeDocumentLocal({ dataBase64, mimeType, items, expectedName 
   };
 }
 
-// norm/checkName/extractCompanyName/extractIssuedDate sont aussi exportées
-// (issue #153) : réutilisées telles quelles par lib/docie-extraction.js pour
-// analyser le texte aplati d'une extraction DocIE, sans dupliquer ces règles.
+// checkName est aussi exportée (issue #153) : réutilisée telle quelle par
+// lib/kbis-mapping.js pour comparer le company_name structuré extrait par
+// DocIE au nom attendu, sans dupliquer cette règle de correspondance.
+// norm/extractCompanyName/extractIssuedDate restent exportées pour d'usage
+// direct (tests, autres consommateurs locaux) mais ne servent plus à
+// l'extraction DocIE depuis que celle-ci lit des champs structurés
+// (lib/kbis-mapping.js) plutôt que du texte aplati.
 module.exports = { analyzeDocumentLocal, extractText, norm, checkName, extractCompanyName, extractIssuedDate };

@@ -71,6 +71,11 @@ services:
       DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
       DOCIE_API_KEY: ${DOCIE_API_KEY:-}
       DOCIE_AGENT_KBIS: ${DOCIE_AGENT_KBIS:-}
+      # Pré-remplissage de l'import de contrat depuis un PDF — voir
+      # contrats/lib/docie-contract-import.js. Même piège que #164
+      # (DOCIE_ALLOW_HTTP documenté mais absent d'ici) : une variable listée
+      # dans contrats/.env.example sans sa ligne ici n'atteint jamais le conteneur.
+      DOCIE_AGENT_CONTRACT: ${DOCIE_AGENT_CONTRACT:-}
       INSEE_API_KEY: ${INSEE_API_KEY:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-}

@@ -16,6 +16,10 @@ const referentiels = require("./lib/referentiels");
 // Analyse de pièces : locale par défaut, DocIE en option (issue #153) — voir
 // lib/docie-extraction.js pour le détail du flag et du repli.
 const { analyzeDocument } = require("./lib/docie-extraction");
+// Pré-remplissage du formulaire d'import de contrat depuis un document
+// (schéma DocIE "contract", jusqu'ici enregistré côté DocIE mais jamais
+// câblé côté contrats) — voir lib/docie-contract-import.js.
+const { extractContractValues } = require("./lib/docie-contract-import");
 const signatures = require("./lib/signatures");
 const templatesPerso = require("./lib/templates-perso");
 const fournisseurs = require("./lib/fournisseurs");
@@ -1098,6 +1102,23 @@ app.delete("/api/contracts/:id/signe", async (req, res) => {
 // le PDF (souvent déjà signé) est archivé, et les informations clés (dates,
 // client final, consultant, TJM…) alimentent l'historique, les alertes de fin
 // et les récaps d'avenant exactement comme un contrat créé ici.
+// Pré-remplissage de l'import ci-dessous depuis un document (PDF/image) :
+// extraction DocIE (schéma "contract", DOCIE_EXTRACTION_ENABLED=true requis
+// — voir lib/docie-contract-import.js) puis mapping vers les `values` du
+// formulaire, pour relecture humaine AVANT l'appel à /api/contracts/importer
+// ci-dessous. N'écrit jamais en base ici. Pas de repli local (aucune analyse
+// locale équivalente à 19 champs structurés) : flag off ou config DocIE
+// absente renvoient une erreur explicite (code stable, jamais de secret) —
+// le front doit alors laisser le formulaire vide, comme aujourd'hui.
+app.post("/api/contracts/importer/extraire", async (req, res) => {
+  try {
+    res.json(await extractContractValues(req.body || {}));
+  } catch (e) {
+    console.error("[contracts/importer/extraire]", e && e.code, e && e.message);
+    res.status(400).json({ error: e.message, code: (e && e.code) || "erreur" });
+  }
+});
+
 app.post("/api/contracts/importer", async (req, res) => {
   try {
     const type = ["sous-traitance", "cds", "cdi", "cdd", "avenant"].includes(req.body.type) ? req.body.type : "sous-traitance";

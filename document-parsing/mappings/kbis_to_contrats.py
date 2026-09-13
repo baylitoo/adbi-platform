@@ -154,6 +154,33 @@ GAP_NOTES: dict[str, str] = {
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _FR_DATE_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 
+# Bornes de date PARTAGEES avec les trois autres portages du mapping, fixees
+# dans document-parsing/fixtures/date_docie.json (champs `annee_min` /
+# `annee_max`), que les tests des deux cotes comparent a ces deux constantes.
+# 1950-2100 n'est pas un chiffre tire au sort : c'est la fenetre d'annees deja
+# retenue ailleurs dans le depot pour la meme question (#176), et en adopter
+# une seconde ici creerait exactement le genre de divergence que recense #179.
+# Le faux positif assume -- l'immatriculation d'une societe anterieure a 1950
+# -- sort en avertissement citant la valeur brute, jamais en valeur perdue ni
+# fabriquee ; la fenetre attrape en echange l'OCR a quatre chiffres du genre
+# « 0202-05-14 », qu'un <input type="date"> accepte sans broncher.
+ANNEE_MIN = 1950
+ANNEE_MAX = 2100
+
+_JOURS_PAR_MOIS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
+# « Ce texte est-il un nombre ? » -- motif PARTAGE, identique caractere pour
+# caractere au litteral JS (contrats/lib/kbis-mapping.js), a celui de
+# contract_to_contrats.py, et au champ `motif` de
+# document-parsing/fixtures/nombre_docie.json, que les tests des quatre
+# portages comparent a ce litteral : ajouter une forme d'un seul cote casse le
+# test des autres. [0-9] et non \d parce que \d reconnait aussi les chiffres
+# arabes-indiens en Python et pas en JS (miroir inverse du piege re.ASCII de
+# #177) ; la notation exponentielle est refusee parce que son rendu diverge
+# entre les deux langages.
+MOTIF_NOMBRE = r"^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$"
+_NOMBRE_RE = re.compile(MOTIF_NOMBRE)
+
 # ---------------------------------------------------------------------------
 # Port fidele de contrats/lib/docanalyze.js::norm() / checkName() -- MEME
 # POLITIQUE de comparaison de nom, reutilisee ici plutot que reinventee (voir
@@ -195,36 +222,102 @@ def _check_name(candidate_text: Any, expected_name: str | None) -> bool | None:
     return found >= math.ceil(len(tokens) * 0.6)
 
 
+def _est_bissextile(annee: int) -> bool:
+    return annee % 4 == 0 and (annee % 100 != 0 or annee % 400 == 0)
+
+
+def _date_existe(annee: int, mois: int, jour: int) -> bool:
+    """Le triplet designe-t-il une date reelle, dans la fenetre d'annees
+    retenue ? Les bornes sont ecrites a la main plutot que deleguees a
+    datetime.date() : le portage JS n'a pas d'equivalent fiable (new Date()
+    reporte silencieusement un 30 fevrier au 2 mars, ce qui FABRIQUERAIT une
+    date au lieu de la refuser), et les deux cotes doivent rendre le meme
+    verdict. La regle complete est ecrite dans `_regle` cote fixture."""
+    if not ANNEE_MIN <= annee <= ANNEE_MAX:
+        return False
+    if not 1 <= mois <= 12:
+        return False
+    dernier = 29 if (mois == 2 and _est_bissextile(annee)) else _JOURS_PAR_MOIS[mois - 1]
+    return 1 <= jour <= dernier
+
+
 def _normalize_date(raw: Any, field_key: str, warnings: list[str]) -> str:
     """Port de contract_to_contrats.py::_normalize_date (meme politique :
-    ISO transparent, DD/MM/YYYY converti, sinon vide + avertissement)."""
+    ISO transparent, DD/MM/YYYY converti, sinon vide + avertissement).
+
+    Regle partagee : document-parsing/fixtures/date_docie.json. Les deux
+    motifs ne comptent que des chiffres, jamais leurs bornes : « 01/13/2026 »
+    ressortait en « 2026-13-01 » et « 45/02/2026 » en « 2026-02-45 », ici
+    comme dans les trois autres portages, sans un seul avertissement
+    (inventaire de divergence #179, lignes A8 et A9 -- le rare cas ou Python
+    et JS sont d'accord ET tous les deux faux). Le navigateur refuse
+    silencieusement une telle valeur dans <input type="date"> : le champ de
+    la checklist s'affiche VIDE et la date de delivrance est perdue sans
+    erreur. Une date hors calendrier ou hors fenetre est desormais refusee
+    explicitement, avec un avertissement DISTINCT de « date non reconnue »,
+    et n'est jamais reparee ni tronquee."""
     if raw is None or raw == "":
         return ""
     raw_s = str(raw).strip()
+    if raw_s == "":
+        # Un champ reduit a des espaces est un champ vide : "champ vu, rien
+        # trouve", meme regle que _normalize_number.
+        return ""
+    annee = mois = jour = None
     if _ISO_DATE_RE.match(raw_s):
-        return raw_s
-    m = _FR_DATE_RE.match(raw_s)
-    if m:
-        d, mo, y = m.groups()
-        return f"{y}-{int(mo):02d}-{int(d):02d}"
-    warnings.append(f"{field_key}: date non reconnue ({raw_s!r}), laissee vide -- a corriger manuellement")
-    return ""
+        annee, mois, jour = int(raw_s[0:4]), int(raw_s[5:7]), int(raw_s[8:10])
+    else:
+        m = _FR_DATE_RE.match(raw_s)
+        if m:
+            d, mo, y = m.groups()
+            annee, mois, jour = int(y), int(mo), int(d)
+    if annee is None:
+        warnings.append(f"{field_key}: date non reconnue ({raw_s!r}), laissee vide -- a corriger manuellement")
+        return ""
+    if not _date_existe(annee, mois, jour):
+        warnings.append(
+            f"{field_key}: date impossible ({raw_s!r}), laissee vide -- "
+            f"jour/mois hors calendrier ou annee hors {ANNEE_MIN}-{ANNEE_MAX} ; a corriger manuellement"
+        )
+        return ""
+    return f"{annee:04d}-{mois:02d}-{jour:02d}"
+
+
+def _forme_nombre(texte: str) -> str:
+    """Mise en forme PUREMENT LEXICALE d'un texte deja reconnu par
+    MOTIF_NOMBRE : jamais d'aller-retour par le flottant du langage, dont le
+    rendu differe (str(1e16) rend "1e+16" en Python, String(1e16) rend
+    "10000000000000000" en JS). Voir `_regle_forme` dans la fixture."""
+    negatif = texte[:1] == "-"
+    corps = texte[1:] if texte[:1] in ("+", "-") else texte
+    entier, _, frac = corps.partition(".")
+    entier = entier.lstrip("0") or "0"
+    frac = frac.rstrip("0")
+    sortie = entier + ("." + frac if frac else "")
+    return "-" + sortie if negatif and sortie != "0" else sortie
 
 
 def _normalize_number(raw: Any, field_key: str, warnings: list[str]) -> str:
-    """Port de contract_to_contrats.py::_normalize_number (Decimal serialise
-    en str par pydantic v2 mode="json" -> entier propre si possible)."""
+    """Regle partagee : document-parsing/fixtures/nombre_docie.json, la meme
+    que contract_to_contrats.py et que les deux portages JS.
+
+    Ce module s'en remettait a float(), qui accepte des textes que Number()
+    cote JS refuse -- et inversement -- d'ou les lignes B2/B3 de l'inventaire
+    de divergence #179 : float("nan") faisait remonter un
+    `ValueError: cannot convert float NaN to integer` depuis le int() laisse
+    hors du try, la ou le JS avertissait, et un montant reduit a des espaces
+    donnait "" ici mais "0" la-bas."""
     if raw is None or raw == "":
         return ""
     raw_s = str(raw).strip()
-    try:
-        as_float = float(raw_s)
-    except ValueError:
+    if raw_s == "":
+        # Un champ reduit a des espaces est un champ vide : "champ vu, rien
+        # trouve". Surtout pas un 0 (un capital social de 0 euro).
+        return ""
+    if not _NOMBRE_RE.match(raw_s):
         warnings.append(f"{field_key}: nombre non reconnu ({raw_s!r}), reporte tel quel")
         return raw_s
-    if as_float == int(as_float):
-        return str(int(as_float))
-    return str(as_float)
+    return _forme_nombre(raw_s)
 
 
 def _extract_scalar(result: dict, docie_key: str) -> Any:
@@ -343,26 +436,31 @@ def map_docie_kbis_to_analysis(
     # DocIE ayant reussi a produire des champs structures, considerer le
     # document comme lisible PAR DEFAUT (a la difference de docanalyze.js,
     # qui doit deviner la lisibilite depuis la longueur du texte OCR/pdf-
-    # parse brut). Deux signaux DocIE peuvent neanmoins renverser ce constat,
-    # mimant le "Document illisible" de docanalyze.js :
-    #   - validation.valid est explicitement False cote DocIE ;
-    #   - les 3 champs les plus identifiants (nom, SIREN, SIRET) sont TOUS
-    #     absents -- un Kbis dont on ne peut identifier ni le nom ni aucun
-    #     numero d'immatriculation n'a, en pratique, pas ete lu.
+    # parse brut). Deux signaux DocIE peuvent renverser ce constat, mais PAS
+    # de la meme facon :
+    #   - les 3 champs les plus identifiants (nom, SIREN, SIRET) TOUS absents
+    #     -- un Kbis dont on ne peut identifier ni le nom ni aucun numero
+    #     d'immatriculation n'a, en pratique, pas ete lu : c'est le seul cas
+    #     qui merite la branche "Document illisible" de docanalyze.js ;
+    #   - validation.valid explicitement False, ce qui rend l'extraction
+    #     DOUTEUSE mais pas illisible.
+    #
+    # Ce module traitait les deux de la meme facon, et jetait donc
+    # companyName / issuedDate / nameMatches d'une extraction ou le nom ET le
+    # SIREN avaient ete lus, en affichant "Aucun texte lisible (PDF scanne
+    # sans texte ou image floue)" -- un message faux. Or
+    # contrats/public/app.js::analyzeChecklistDoc ne lit QUE ces trois
+    # valeurs : c'etait exactement tout ce qui servait en aval qui
+    # disparaissait. Inventaire de divergence #179, ligne B1 ; le portage JS
+    # (contrats/lib/kbis-mapping.js) avait deja la bonne regle, c'est lui qui
+    # fait foi ici.
     validation = extraction_response.get("validation") or {}
     docie_says_invalid = validation.get("valid") is False
     nothing_identifying = not raw_company_name and not enriched["siren"] and not enriched["siret"]
     is_valid = not (docie_says_invalid or nothing_identifying)
 
     issues: list[str] = []
-    if is_valid:
-        document_type = "Extrait Kbis"
-        if name_matches is False:
-            issues.append("La société du document ne correspond pas au sous-traitant saisi.")
-        if not issued_date:
-            issues.append("Date de délivrance non trouvée dans le document.")
-        summary = document_type + (" — délivré le " + issued_date if issued_date else "")
-    else:
+    if nothing_identifying:
         # Miroir exact de la branche "Aucun texte lisible" de
         # analyzeDocumentLocal (memes cles, memes valeurs par defaut).
         document_type = "Document"
@@ -371,6 +469,15 @@ def map_docie_kbis_to_analysis(
         issued_date = ""
         issues = ["Aucun texte lisible (PDF scanné sans texte ou image floue). Fournir un PDF texte ou une image nette."]
         summary = "Document illisible."
+    else:
+        document_type = "Extrait Kbis"
+        if docie_says_invalid:
+            issues.append("DocIE n'a pas validé l'extraction (vérification manuelle recommandée).")
+        if name_matches is False:
+            issues.append("La société du document ne correspond pas au sous-traitant saisi.")
+        if not issued_date:
+            issues.append("Date de délivrance non trouvée dans le document.")
+        summary = document_type + (" — délivré le " + issued_date if issued_date else "")
 
     for note in result.get("extraction_notes") or []:
         warnings.append(f"DocIE extraction_notes: {note}")
@@ -407,6 +514,9 @@ __all__ = [
     "MAPPED_FIELDS",
     "ENRICHED_KEYS",
     "GAP_NOTES",
+    "MOTIF_NOMBRE",
+    "ANNEE_MIN",
+    "ANNEE_MAX",
     "KbisMappingError",
     "KbisMappingResult",
     "map_docie_kbis_to_analysis",

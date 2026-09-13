@@ -44,7 +44,12 @@ from kbis_to_contrats import (  # noqa: E402
     DOCANALYZE_BASE_KEYS,
     ENRICHED_KEYS,
     MAPPED_FIELDS,
+    ANNEE_MAX,
+    ANNEE_MIN,
+    MOTIF_NOMBRE,
     KbisMappingError,
+    _normalize_date,
+    _normalize_number,
     map_docie_kbis_to_analysis,
 )
 
@@ -278,11 +283,34 @@ class TestDocieValidationInvalid(unittest.TestCase):
     chemin en mutant une copie de la fixture nominale, pour ne pas laisser
     `docie_says_invalid` sans couverture."""
 
-    def test_validation_invalid_forces_illisible_shape_even_with_readable_fields(self):
+    def test_validation_invalid_marque_le_doute_sans_jeter_les_champs_lus(self):
+        """Inventaire de divergence #179, ligne B1. Ce module basculait sur la
+        branche "Document illisible" -- il jetait companyName, issuedDate et
+        nameMatches, c'est-a-dire EXACTEMENT les trois valeurs que
+        contrats/public/app.js::analyzeChecklistDoc lit -- et affichait
+        "Aucun texte lisible (PDF scanne sans texte ou image floue)" pour une
+        extraction ou le nom et le SIREN avaient ete lus. Une extraction
+        douteuse n'est pas une extraction illisible : le portage JS
+        (contrats/lib/kbis-mapping.js) avait deja la bonne regle."""
         envelope = json.loads(json.dumps(_load_fixture("kbis_extraction_sample.json")))
         envelope["validation"]["valid"] = False
-        mapping = map_docie_kbis_to_analysis(envelope)
+        mapping = map_docie_kbis_to_analysis(envelope, expected_name="SUND INDUSTRY SYSTEM")
         v = mapping.analysis
+        self.assertFalse(v["isValid"])
+        self.assertEqual("Extrait Kbis", v["documentType"])
+        self.assertEqual("SUND INDUSTRY SYSTEM", v["companyName"])
+        self.assertTrue(v["nameMatches"])
+        self.assertEqual("2026-09-04", v["issuedDate"])
+        self.assertEqual("941091316", v["siren"])
+        self.assertIn(
+            "DocIE n'a pas validé l'extraction (vérification manuelle recommandée).",
+            v["issues"],
+        )
+
+    def test_validation_invalide_ET_rien_didentifiant_reste_illisible(self):
+        envelope = json.loads(json.dumps(_load_fixture("kbis_extraction_sample_unreadable.json")))
+        envelope["validation"]["valid"] = False
+        v = map_docie_kbis_to_analysis(envelope).analysis
         self.assertFalse(v["isValid"])
         self.assertEqual("Document", v["documentType"])
         self.assertIsNone(v["companyName"])
@@ -326,6 +354,95 @@ class TestSchemaGuard(unittest.TestCase):
     def test_non_dict_input_raises(self):
         with self.assertRaises(KbisMappingError):
             map_docie_kbis_to_analysis(None)  # type: ignore[arg-type]
+
+
+class TestNombrePartage(unittest.TestCase):
+    """Inventaire de divergence #179, lignes B2/B3 : ce module s'en remettait a
+    float(), le portage JS a Number(), et les deux n'acceptent pas les memes
+    textes. La regle est desormais ecrite une seule fois, dans
+    document-parsing/fixtures/nombre_docie.json, et les quatre portages
+    comparent leur motif ET leur sortie a ce fichier."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(REPO_ROOT / "document-parsing" / "fixtures" / "nombre_docie.json", encoding="utf-8") as fh:
+            cls.fixture = json.load(fh)
+
+    def test_motif_identique_a_la_fixture(self):
+        self.assertEqual(self.fixture["motif"], MOTIF_NOMBRE)
+        self.assertIn(
+            "document-parsing/mappings/kbis_to_contrats.py (Python)",
+            self.fixture["_ports"],
+        )
+
+    def test_tous_les_cas_du_jeu_dessai(self):
+        for cas in self.fixture["cas"]:
+            with self.subTest(valeur=cas["valeur"], preuve=cas["preuve"]):
+                warnings: list[str] = []
+                self.assertEqual(cas["sortie"], _normalize_number(cas["valeur"], "champ", warnings))
+                self.assertEqual(cas["avertit"], bool(warnings))
+
+    def test_capital_reduit_a_des_espaces_ne_devient_pas_zero(self):
+        envelope = json.loads(json.dumps(_load_fixture("kbis_extraction_sample.json")))
+        envelope["result"]["share_capital"]["amount"] = "   "
+        mapping = map_docie_kbis_to_analysis(envelope)
+        self.assertEqual("", mapping.analysis["capitalSocial"])
+        self.assertEqual("EUR", mapping.analysis["capitalSocialDevise"])
+        self.assertFalse(any("nombre non reconnu" in w for w in mapping.warnings))
+
+
+class TestDatePartage(unittest.TestCase):
+    """Inventaire de divergence #179, lignes A8 et A9 -- meme normaliseur de
+    date que la paire `contract`, et meme defaut : les deux motifs ne comptent
+    que des chiffres, jamais leurs bornes. « 01/13/2026 » ressortait en
+    « 2026-13-01 » et « 45/02/2026 » en « 2026-02-45 », ici comme dans les
+    trois autres portages, sans un seul avertissement. La regle est desormais
+    ecrite une seule fois, dans document-parsing/fixtures/date_docie.json."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(REPO_ROOT / "document-parsing" / "fixtures" / "date_docie.json", encoding="utf-8") as fh:
+            cls.fixture = json.load(fh)
+
+    def test_bornes_identiques_a_la_fixture(self):
+        self.assertEqual(self.fixture["annee_min"], ANNEE_MIN)
+        self.assertEqual(self.fixture["annee_max"], ANNEE_MAX)
+        self.assertIn(
+            "document-parsing/mappings/kbis_to_contrats.py (Python)",
+            self.fixture["_ports"],
+        )
+
+    def test_tous_les_cas_du_jeu_dessai(self):
+        for cas in self.fixture["cas"]:
+            with self.subTest(valeur=cas["valeur"], preuve=cas["preuve"]):
+                warnings: list[str] = []
+                self.assertEqual(cas["sortie"], _normalize_date(cas["valeur"], "champ", warnings))
+                self.assertEqual(cas["avertit"], bool(warnings))
+
+    def test_date_impossible_et_date_illisible_ne_s_avertissent_pas_pareil(self):
+        impossible: list[str] = []
+        self.assertEqual("", _normalize_date("2026-02-30", "registration_date", impossible))
+        self.assertIn("registration_date", impossible[0])
+        self.assertIn("date impossible", impossible[0])
+
+        illisible: list[str] = []
+        self.assertEqual("", _normalize_date("le 12 mars 2019", "registration_date", illisible))
+        self.assertIn("date non reconnue", illisible[0])
+        self.assertNotIn("date impossible", illisible[0])
+
+    def test_date_de_delivrance_impossible_vide_le_champ_sans_rendre_illisible(self):
+        # contrats/public/app.js::analyzeChecklistDoc ne lit que issuedDate,
+        # companyName et nameMatches : une date de delivrance impossible est
+        # l'une des trois seules valeurs consommees en aval. Elle sort vide et
+        # avertie -- jamais reparee, et sans faire basculer le document dans
+        # la branche « illisible », qui jetterait les deux autres.
+        envelope = json.loads(json.dumps(_load_fixture("kbis_extraction_sample.json")))
+        envelope["result"]["issued_date"]["value"] = "01/13/2026"
+        mapping = map_docie_kbis_to_analysis(envelope)
+        self.assertEqual("", mapping.analysis["issuedDate"])
+        self.assertTrue(mapping.analysis["isValid"])
+        self.assertEqual("SUND INDUSTRY SYSTEM", mapping.analysis["companyName"])
+        self.assertTrue(any("issued_date" in w and "date impossible" in w for w in mapping.warnings))
 
 
 class TestFieldInventory(unittest.TestCase):
