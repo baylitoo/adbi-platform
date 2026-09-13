@@ -34,10 +34,32 @@ def document_payload(path):
     return {"filename": path.name, "text": text}
 
 
+# Clés qui font d'un objet une ENVELOPPE de preuve autour d'un scalaire, plutôt
+# qu'un objet du schéma. Le test est « une clé `value` ET au moins un marqueur »
+# (#171).
+#
+# Les deux derniers manquaient, et ce n'est pas théorique : DocIE renvoie
+# `{value, model_confidence}` quand son `_flatten_agent_result` échoue à
+# aplatir, et `{value, model_logprob}` depuis le renommage de la
+# log-probabilité. Sans eux, `unwrap` rend le DICTIONNAIRE tel quel — et comme
+# `map_resume` alimente `normalize_cv_data`, un `location` de cette forme
+# n'explose pas : il entre dans la CVthèque et s'affiche
+# « {'value': 'Lyon', 'model_confidence': 0.82} ». Même famille de perte
+# silencieuse que #174, sur la même voie.
+#
+# Les deux ponts partagés (document-parsing/bridge/docie_bridge.py et
+# docie-bridge.js) portent la même liste, écrite trois fois en tout. Elles ne
+# doivent plus pouvoir diverger dans le sens dangereux : un pont qui connaît un
+# marqueur que ce fichier ignore laisserait de nouveau passer un dictionnaire.
+# tests/test_enveloppe_docie.py lit donc les marqueurs directement dans la
+# source des deux ponts et exige que cette liste-ci les couvre tous.
+ENVELOPE_MARKERS = ("confidence", "evidence_ids", "model_confidence", "model_logprob")
+
+
 def unwrap(value):
     """Strip evidence envelopes, preserving nested objects and lists."""
     if isinstance(value, dict):
-        if "value" in value and ("confidence" in value or "evidence_ids" in value):
+        if "value" in value and any(k in value for k in ENVELOPE_MARKERS):
             return unwrap(value["value"])
         return {k: unwrap(v) for k, v in value.items()}
     if isinstance(value, list):
