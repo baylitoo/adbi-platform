@@ -154,6 +154,21 @@ GAP_NOTES: dict[str, str] = {
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _FR_DATE_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 
+# Bornes de date PARTAGEES avec les trois autres portages du mapping, fixees
+# dans document-parsing/fixtures/date_docie.json (champs `annee_min` /
+# `annee_max`), que les tests des deux cotes comparent a ces deux constantes.
+# 1950-2100 n'est pas un chiffre tire au sort : c'est la fenetre d'annees deja
+# retenue ailleurs dans le depot pour la meme question (#176), et en adopter
+# une seconde ici creerait exactement le genre de divergence que recense #179.
+# Le faux positif assume -- l'immatriculation d'une societe anterieure a 1950
+# -- sort en avertissement citant la valeur brute, jamais en valeur perdue ni
+# fabriquee ; la fenetre attrape en echange l'OCR a quatre chiffres du genre
+# « 0202-05-14 », qu'un <input type="date"> accepte sans broncher.
+ANNEE_MIN = 1950
+ANNEE_MAX = 2100
+
+_JOURS_PAR_MOIS = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
 # « Ce texte est-il un nombre ? » -- motif PARTAGE, identique caractere pour
 # caractere au litteral JS (contrats/lib/kbis-mapping.js), a celui de
 # contract_to_contrats.py, et au champ `motif` de
@@ -207,20 +222,65 @@ def _check_name(candidate_text: Any, expected_name: str | None) -> bool | None:
     return found >= math.ceil(len(tokens) * 0.6)
 
 
+def _est_bissextile(annee: int) -> bool:
+    return annee % 4 == 0 and (annee % 100 != 0 or annee % 400 == 0)
+
+
+def _date_existe(annee: int, mois: int, jour: int) -> bool:
+    """Le triplet designe-t-il une date reelle, dans la fenetre d'annees
+    retenue ? Les bornes sont ecrites a la main plutot que deleguees a
+    datetime.date() : le portage JS n'a pas d'equivalent fiable (new Date()
+    reporte silencieusement un 30 fevrier au 2 mars, ce qui FABRIQUERAIT une
+    date au lieu de la refuser), et les deux cotes doivent rendre le meme
+    verdict. La regle complete est ecrite dans `_regle` cote fixture."""
+    if not ANNEE_MIN <= annee <= ANNEE_MAX:
+        return False
+    if not 1 <= mois <= 12:
+        return False
+    dernier = 29 if (mois == 2 and _est_bissextile(annee)) else _JOURS_PAR_MOIS[mois - 1]
+    return 1 <= jour <= dernier
+
+
 def _normalize_date(raw: Any, field_key: str, warnings: list[str]) -> str:
     """Port de contract_to_contrats.py::_normalize_date (meme politique :
-    ISO transparent, DD/MM/YYYY converti, sinon vide + avertissement)."""
+    ISO transparent, DD/MM/YYYY converti, sinon vide + avertissement).
+
+    Regle partagee : document-parsing/fixtures/date_docie.json. Les deux
+    motifs ne comptent que des chiffres, jamais leurs bornes : « 01/13/2026 »
+    ressortait en « 2026-13-01 » et « 45/02/2026 » en « 2026-02-45 », ici
+    comme dans les trois autres portages, sans un seul avertissement
+    (inventaire de divergence #179, lignes A8 et A9 -- le rare cas ou Python
+    et JS sont d'accord ET tous les deux faux). Le navigateur refuse
+    silencieusement une telle valeur dans <input type="date"> : le champ de
+    la checklist s'affiche VIDE et la date de delivrance est perdue sans
+    erreur. Une date hors calendrier ou hors fenetre est desormais refusee
+    explicitement, avec un avertissement DISTINCT de « date non reconnue »,
+    et n'est jamais reparee ni tronquee."""
     if raw is None or raw == "":
         return ""
     raw_s = str(raw).strip()
+    if raw_s == "":
+        # Un champ reduit a des espaces est un champ vide : "champ vu, rien
+        # trouve", meme regle que _normalize_number.
+        return ""
+    annee = mois = jour = None
     if _ISO_DATE_RE.match(raw_s):
-        return raw_s
-    m = _FR_DATE_RE.match(raw_s)
-    if m:
-        d, mo, y = m.groups()
-        return f"{y}-{int(mo):02d}-{int(d):02d}"
-    warnings.append(f"{field_key}: date non reconnue ({raw_s!r}), laissee vide -- a corriger manuellement")
-    return ""
+        annee, mois, jour = int(raw_s[0:4]), int(raw_s[5:7]), int(raw_s[8:10])
+    else:
+        m = _FR_DATE_RE.match(raw_s)
+        if m:
+            d, mo, y = m.groups()
+            annee, mois, jour = int(y), int(mo), int(d)
+    if annee is None:
+        warnings.append(f"{field_key}: date non reconnue ({raw_s!r}), laissee vide -- a corriger manuellement")
+        return ""
+    if not _date_existe(annee, mois, jour):
+        warnings.append(
+            f"{field_key}: date impossible ({raw_s!r}), laissee vide -- "
+            f"jour/mois hors calendrier ou annee hors {ANNEE_MIN}-{ANNEE_MAX} ; a corriger manuellement"
+        )
+        return ""
+    return f"{annee:04d}-{mois:02d}-{jour:02d}"
 
 
 def _forme_nombre(texte: str) -> str:
@@ -455,6 +515,8 @@ __all__ = [
     "ENRICHED_KEYS",
     "GAP_NOTES",
     "MOTIF_NOMBRE",
+    "ANNEE_MIN",
+    "ANNEE_MAX",
     "KbisMappingError",
     "KbisMappingResult",
     "map_docie_kbis_to_analysis",

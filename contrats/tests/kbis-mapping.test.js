@@ -12,13 +12,20 @@ const assert = require("node:assert/strict");
 const path = require("path");
 const {
   DOCANALYZE_BASE_KEYS, ENRICHED_KEYS, MAPPED_FIELDS, mapKbisResult,
-  MOTIF_NOMBRE, normalizeNumber,
+  MOTIF_NOMBRE, normalizeNumber, ANNEE_MIN, ANNEE_MAX, normalizeDate,
 } = require("../lib/kbis-mapping");
 // Jeu d'essai PARTAGÉ avec les trois autres portages du même normaliseur
 // (kbis_to_contrats.py, contract_to_contrats.py, lib/docie-contract-import.js) :
 // c'est lui qui empêche la divergence de #179 (lignes B2/B3) de revenir.
 const NOMBRE = require(path.join(
   __dirname, "..", "..", "document-parsing", "fixtures", "nombre_docie.json"
+));
+// Même discipline pour les dates : jeu d'essai PARTAGÉ par les quatre mêmes
+// portages, qui empêche le retour des lignes A8/A9 de #179 — le rare cas où
+// Python et JS étaient d'accord ET tous les deux faux (« 01/13/2026 » rendu
+// en « 2026-13-01 », que <input type="date"> affiche vide).
+const DATE = require(path.join(
+  __dirname, "..", "..", "document-parsing", "fixtures", "date_docie.json"
 ));
 
 const NOMINAL = {
@@ -256,6 +263,58 @@ test("nombre : les " + NOMBRE.cas.length + " cas du jeu d'essai partagé (#179 B
     assert.equal(sortie, cas.sortie, cas.valeur + " -> " + JSON.stringify(sortie) + " (" + cas.preuve + ")");
     assert.equal(warnings.length > 0, cas.avertit, "avertissement attendu=" + cas.avertit + " pour " + JSON.stringify(cas.valeur));
   }
+});
+
+// ---------------------------------------------------------------------------
+// #179 lignes A8/A9, même normaliseur de date que la paire `contract`. Mesuré
+// avant correction sur ce module ET sur kbis_to_contrats.py : « 01/13/2026 »
+// -> « 2026-13-01 » et « 45/02/2026 » -> « 2026-02-45 », des deux côtés, sans
+// un seul avertissement. contrats/public/app.js::analyzeChecklistDoc ne lit
+// que issuedDate, companyName et nameMatches : une date de délivrance
+// impossible était donc l'une des trois seules valeurs utilisées en aval.
+// ---------------------------------------------------------------------------
+test("date : les bornes de ce portage sont celles de la fixture partagée (#179 A8/A9)", () => {
+  assert.equal(ANNEE_MIN, DATE.annee_min);
+  assert.equal(ANNEE_MAX, DATE.annee_max);
+  assert.ok(DATE._ports.includes("contrats/lib/kbis-mapping.js (JS)"));
+});
+
+test("date : les " + DATE.cas.length + " cas du jeu d'essai partagé (#179 A8/A9)", () => {
+  for (const cas of DATE.cas) {
+    const warnings = [];
+    const sortie = normalizeDate(cas.valeur, "champ", warnings);
+    assert.equal(sortie, cas.sortie, cas.valeur + " -> " + JSON.stringify(sortie) + " (" + cas.preuve + ")");
+    assert.equal(warnings.length > 0, cas.avertit, "avertissement attendu=" + cas.avertit + " pour " + JSON.stringify(cas.valeur));
+  }
+});
+
+test("date de délivrance impossible : champ vide + avertissement nommé, jamais une date réparée (#179 A8/A9)", () => {
+  const { analysis, warnings } = mapKbisResult(
+    Object.assign({}, NOMINAL, { issued_date: "01/13/2026" }),
+    { validation: NOMINAL_VALIDATION }
+  );
+  assert.equal(analysis.issuedDate, "");
+  // Surtout pas un 2026-01-13 (jour et mois échangés) ni un 2026-12-01.
+  assert.ok(warnings.some((w) => /issued_date/.test(w) && /date impossible/.test(w) && /01\/13\/2026/.test(w)));
+  // Le document reste lisible : seule la date manque, et l'écran le dit déjà.
+  assert.equal(analysis.isValid, true);
+  assert.equal(analysis.companyName, "SUND INDUSTRY SYSTEM");
+  assert.ok(analysis.issues.includes("Date de délivrance non trouvée dans le document."));
+});
+
+test("date : une date impossible s'avertit AUTREMENT qu'une date illisible", () => {
+  // Deux pannes qui ne se corrigent pas de la même façon : « DocIE a lu une
+  // date fausse » n'est pas « DocIE n'a rien su lire ». La valeur brute
+  // survit dans le message, puisque le champ, lui, reste vide.
+  const impossible = [];
+  assert.equal(normalizeDate("2026-02-30", "registration_date", impossible), "");
+  assert.match(impossible[0], /registration_date/);
+  assert.match(impossible[0], /date impossible/);
+
+  const illisible = [];
+  assert.equal(normalizeDate("le 12 mars 2019", "registration_date", illisible), "");
+  assert.match(illisible[0], /date non reconnue/);
+  assert.ok(!/date impossible/.test(illisible[0]));
 });
 
 test("capital social réduit à des espaces : vide, jamais un 0 fabriqué (#179 B2)", () => {
