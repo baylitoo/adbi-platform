@@ -18,7 +18,7 @@ const {
 // checkName vient de docanalyze.js : c'est LA fonction que kbis-mapping.js
 // importe pour produire nameMatches, et celle dont kbis_to_contrats.py est le
 // portage Python (#179 ligne B7).
-const { checkName } = require("../lib/docanalyze");
+const { checkName, norm } = require("../lib/docanalyze");
 // Jeu d'essai PARTAGÉ avec les trois autres portages du même normaliseur
 // (kbis_to_contrats.py, contract_to_contrats.py, lib/docie-contract-import.js) :
 // c'est lui qui empêche la divergence de #179 (lignes B2/B3) de revenir.
@@ -369,6 +369,26 @@ test("nom : les constantes de ce portage sont celles de la fixture partagée (#1
   assert.equal(Number(seuil[1]), NOM.seuil);
 
   assert.ok(NOM._ports.includes("contrats/lib/docanalyze.js (JS)"));
+});
+
+test("nom : la table des ligatures de ce portage est celle de la fixture partagée (#182)", () => {
+  // Relue dans la source comme les trois autres constantes : LIGATURES n'est
+  // pas exportée, et l'exporter serait remanier un fichier de production pour
+  // le seul confort d'un test. La table est appliquée AVANT toUpperCase(),
+  // donc les entrées minuscules ne sont PAS redondantes — chacune des quatre
+  // a son cas dans `cas`, qui bascule si on la retire seule.
+  const m = DOCANALYZE_SRC.match(/const LIGATURES = (\[.*\]);/);
+  assert.ok(m, "docanalyze.js ne déclare plus la table des ligatures par ce littéral (#182)");
+  assert.deepEqual(JSON.parse(m[1]), NOM.ligatures);
+  // ß ne doit PAS y figurer : toUpperCase() le déplie déjà en « SS »
+  // (mesuré des deux côtés), une entrée serait du code mort. Voir
+  // `_pourquoi_pas_ss` dans la fixture et son témoin « MÜLLER STRAßE ».
+  assert.ok(!NOM.ligatures.some(([c]) => c === "ß"), "ß est déplié par la mise en majuscules, pas par la table");
+  // La translittération précède bien le passage [^A-Z0-9 ] : sans cela Œ
+  // redeviendrait une espace et le faux négatif bloquant de #182 reviendrait.
+  assert.equal(norm("CŒUR DEFENSE"), "COEUR DEFENSE");
+  assert.equal(norm("Æ GROUPE"), "AE GROUPE");
+  assert.equal(norm("ÉLECTRICITÉ"), "ELECTRICITE");
 });
 
 test("nom : les " + NOM.cas.length + " cas du jeu d'essai partagé (#179 B7)", () => {

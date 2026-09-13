@@ -7,8 +7,26 @@ const { PDFParse } = require("pdf-parse");
 const pad = (n) => String(n).padStart(2, "0");
 const FR_MONTHS = ["janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre"];
 
+// Ligatures françaises (issue #182). NFD ne les décompose PAS — ce sont des
+// lettres à part entière, pas des lettres accentuées — elles tombaient donc
+// dans [^A-Z0-9 ] et devenaient une espace : « CŒUR DEFENSE » se normalisait
+// en « C UR DEFENSE » (un jeton coupé en deux jetons inutilisables) et
+// « Æ GROUPE » perdait un jeton entier. Saisi « COEUR DEFENSE » contre un
+// Kbis portant « CŒUR DEFENSE », checkName rendait false et public/app.js
+// affichait le « ⛔ ce n'est PAS le sous-traitant saisi » BLOQUANT sur une
+// société parfaitement légitime (CŒUR DÉFENSE, immeuble de La Défense).
+// La translittération est faite AVANT la mise en majuscules, donc sans
+// dépendre du dépliage de casse propre à chaque langage — le portage Python
+// (kbis_to_contrats.py::_norm) applique la MÊME table, au même endroit.
+// ß n'y figure pas volontairement : toUpperCase() le rend déjà « SS » (et
+// str.upper() aussi, mesuré des deux côtés), l'ajouter serait du code mort.
+// Règle partagée : document-parsing/fixtures/nom_docie.json (`ligatures`).
+const LIGATURES = [["Œ", "OE"], ["œ", "oe"], ["Æ", "AE"], ["æ", "ae"]];
+
 function norm(s) {
-  return String(s || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+  let t = String(s || "");
+  for (const [lig, rep] of LIGATURES) t = t.split(lig).join(rep);
+  return t.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
     .replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 }
 

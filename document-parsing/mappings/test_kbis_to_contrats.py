@@ -49,7 +49,9 @@ from kbis_to_contrats import (  # noqa: E402
     MOTIF_NOMBRE,
     KbisMappingError,
     _LEGAL_FORM_TOKENS,
+    _LIGATURES,
     _check_name,
+    _norm,
     _normalize_date,
     _normalize_number,
     map_docie_kbis_to_analysis,
@@ -495,6 +497,36 @@ class TestNomPartage(unittest.TestCase):
             "contrats/lib/docanalyze.js a change de forme",
         )
         self.assertEqual(self.fixture["formes_juridiques"], m.group(1).split("|"))
+
+    def test_ligatures_identiques_a_la_fixture(self):
+        # Issue #182. NFD ne decompose PAS Œ/Æ (ce sont des lettres, pas des
+        # lettres accentuees) : sans cette table elles tombaient dans
+        # [^A-Z0-9 ] et coupaient le jeton, d'ou un « ⛔ ce n'est PAS le
+        # sous-traitant saisi » BLOQUANT sur « CŒUR DEFENSE ».
+        self.assertEqual(
+            [list(paire) for paire in _LIGATURES], self.fixture["ligatures"]
+        )
+        # ß n'a PAS a y figurer : str.upper() le deplie deja en « SS » des
+        # deux cotes (mesure). Voir `_pourquoi_pas_ss` et son temoin.
+        self.assertNotIn("ß", [paire[0] for paire in _LIGATURES])
+        self.assertEqual("SS", _norm("ß"))
+        # La translitteration precede bien le passage [^A-Z0-9 ].
+        self.assertEqual("COEUR DEFENSE", _norm("CŒUR DEFENSE"))
+        self.assertEqual("AE GROUPE", _norm("Æ GROUPE"))
+        self.assertEqual("ELECTRICITE", _norm("ÉLECTRICITÉ"))
+
+    def test_ligatures_du_portage_js_identiques_a_la_fixture(self):
+        # Meme garde-fou que pour les formes juridiques : docanalyze.js est
+        # relu EN DIRECT, LIGATURES n'etant pas exportee. Modifier la table
+        # d'un seul cote sans toucher la fixture casse donc ce test.
+        source = DOCANALYZE_JS.read_text(encoding="utf-8")
+        m = re.search(r"const LIGATURES = (\[.*\]);", source)
+        self.assertIsNotNone(
+            m,
+            "contrats/lib/docanalyze.js ne declare plus la table des ligatures "
+            "par ce litteral (#182)",
+        )
+        self.assertEqual(self.fixture["ligatures"], json.loads(m.group(1)))
 
     def test_tous_les_cas_du_jeu_dessai(self):
         for cas in self.fixture["cas"]:
