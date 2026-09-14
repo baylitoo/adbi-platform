@@ -1,6 +1,7 @@
 """DocIE Studio extraction client; no local OCR or model runtime."""
 import base64
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -256,6 +257,27 @@ def map_resume(response, expected_schema="resume"):
     return data
 
 
+_ILLISIBLE = object()
+
+
+def modele_en_chargement(corps):
+    """Corps de chargement de DocIE sur /v1/extract/text (#194) :
+    `{"detail": {"status": "loading", "eta_seconds": …, "message": …}}`."""
+    detail = corps.get("detail") if isinstance(corps, dict) else None
+    return isinstance(detail, dict) and detail.get("status") == "loading"
+
+
+def message_chargement(corps):
+    """Message pour l'utilisateur, qui relance lui-même (« échouer
+    bruyamment », #194). Le `message` amont n'est jamais recopié ; le délai
+    n'est cité que s'il est un nombre fini et positif ou nul."""
+    detail = corps.get("detail") if isinstance(corps, dict) else None
+    eta = detail.get("eta_seconds") if isinstance(detail, dict) else None
+    if isinstance(eta, (int, float)) and not isinstance(eta, bool) and math.isfinite(eta) and eta >= 0:
+        return f"DocIE : modèle en cours de chargement, réessayez dans environ {math.ceil(eta)} s."
+    return "DocIE : modèle en cours de chargement, réessayez dans quelques instants."
+
+
 def extract_resume(file_path, progress=None, *, session=None):
     base = os.environ.get("DOCIE_BASE_URL", "").strip().rstrip("/")
     parsed = urlsplit(base)
@@ -318,9 +340,18 @@ def extract_resume(file_path, progress=None, *, session=None):
         if not 200 <= response.status_code < 300:
             raise DocIEError(f"DocIE : erreur HTTP {response.status_code}. Vérifiez le schéma et le service.")
         try:
-            return response.json()
+            corps = response.json()
         except ValueError:
-            raise DocIEError("DocIE : réponse JSON invalide.") from None
+            corps = _ILLISIBLE
+        # Voie texte seulement (#194) : un `store:` pas encore chargé répond
+        # 202 sans mettre la requête en file. On échoue tout de suite, sans
+        # relance ni attente. Pas sur la voie studio : un 202 y peut porter
+        # des `event_ids` légitimes, et rien ici ne montre qu'elle charge.
+        if mode == "inline" and (response.status_code == 202 or modele_en_chargement(corps)):
+            raise DocIEError(message_chargement(corps))
+        if corps is _ILLISIBLE:
+            raise DocIEError("DocIE : réponse JSON invalide.")
+        return corps
 
     try:
         if progress:
