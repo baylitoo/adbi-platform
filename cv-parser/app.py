@@ -1659,7 +1659,8 @@ def _enrich_cv_background(cv_id: str) -> None:
             # Garde-fou, et RIEN DE PLUS aujourd'hui : ce fil ne peut pas
             # rencontrer de marque à périmer. `docie_review` n'est posé que par
             # process_cv, qui pose dans le même geste `llm_parsed = True` ; or
-            # upload_cv ne lance ce fil que `if not llm_parsed`. Fiche marquée
+            # le dépôt (_enregistrer_depot) ne lance ce fil que `if not
+            # llm_parsed`. Fiche marquée
             # et enrichissement de fond s'excluent donc par construction, et
             # l'appel ci-dessous ressort immédiatement (revue absente).
             #
