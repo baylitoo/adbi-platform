@@ -4,7 +4,8 @@ const assert = require("node:assert/strict");
 const http = require("node:http");
 const cases = require("./contract.json");
 const textCases = require("./contract_text.json");
-const { extractDocument, extractText, parseResponse, parseTextResponse, DocIEBridgeError } = require("../docie-bridge");
+const errorCases = require("./contract_errors.json");
+const { extractDocument, extractText, parseResponse, parseTextResponse, filePayload, DocIEBridgeError } = require("../docie-bridge");
 
 const RESUME_SCHEMA = { document_type: "adbi_resume", fields: [{ name: "name", type: "string" }] };
 
@@ -16,6 +17,8 @@ test("shared contract vectors, latency, validation and per-field confidence pres
     // Same keys and numbers as docie_bridge.py::field_confidences — the two
     // bridges feed the same review signal to their respective consumers.
     assert.deepEqual(result.metadata.field_confidence, c.expected_field_confidence);
+    // #190 : transport seul, null quand DocIE ne l'a pas (ou pas lisiblement) rapporté.
+    assert.equal(result.metadata.prompt_profile, c.expected_prompt_profile ?? null, c.name);
   }
   assert.equal(parseResponse(cases[0].body, "adbi_resume", "adbi_agent_1").metadata.queue_wait_ms, 125);
   assert.equal(parseResponse(cases[1].body, "adbi_resume", "adbi_agent_1").metadata.validation.valid, false);
@@ -78,6 +81,57 @@ test("timeouts, network errors, response limits and reflected keys", async () =>
   const result = await extractDocument(input, "application/pdf", { env,
     fetchImpl: async () => new Response(JSON.stringify(cases[0].body).replace("Alice Dupont", "test-secret")) });
   assert.equal(result.result.name, "[REDACTED]");
+});
+
+// #190 — corps d'erreur SYNTHÉTIQUES (tests/contract_errors.json), partagés avec
+// test_bridge.py : le dépassement de contexte se reconnaît au texte, jamais au
+// seul statut, et le message ne recopie jamais le corps (ni donc la clé).
+test("error bodies: context overflow named by its text, other failures unchanged", async () => {
+  const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret", DOCIE_AGENT_RESUME: "adbi_agent_1" };
+  const check = c => error => {
+    assert.ok(error instanceof DocIEBridgeError, c.name);
+    assert.equal(error.code, c.expected_code, c.name);
+    assert.equal(error.status, c.status, c.name);
+    assert.ok(!error.message.includes("test-secret"), c.name);
+    assert.ok(!/exceeds the available|exceed_context_size_error/.test(error.message), c.name);
+    return true;
+  };
+  for (const c of errorCases) {
+    let calls = 0;
+    const fetchImpl = async () => { calls++; return new Response(c.body, { status: c.status }); };
+    await assert.rejects(extractDocument(Buffer.from("pdf"), "application/pdf", { env, fetchImpl }), check(c));
+    // Même postJson pour la voie texte : même classement.
+    await assert.rejects(extractText("CV", { env, fetchImpl }), check(c));
+    assert.equal(calls, 2, c.name);
+  }
+});
+
+// #190 — plafond de la voie fichier : ce que le bridge accepte tient sous les
+// 26 MiB de corps de DocIE. Pire cas autorisé : agent de 128 caractères,
+// max_tokens 65536, application/pdf. Côté Node (JSON.stringify compact) MAX+1
+// tiendrait encore ; la borne commune est fixée par l'enveloppe Python, plus
+// grosse — test_bridge.py vérifie que MAX+1 y dépasserait.
+test("file path: largest accepted document fits DocIE's 26 MiB request body, one byte more is refused locally", async () => {
+  const LIMIT = 26 * 1024 * 1024, MAX = 20446896;
+  const agent = "a".repeat(128);
+  const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret", DOCIE_AGENT_RESUME: agent, DOCIE_MAX_TOKENS: "65536" };
+  const sent = [];
+  const fetchImpl = async (url, options) => { sent.push(Buffer.byteLength(options.body)); return new Response(JSON.stringify(cases[2].body)); };
+  const result = await extractDocument(Buffer.alloc(MAX), "application/pdf", { env, fetchImpl });
+  assert.equal(result.result.name, "Alice Dupont");
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0] <= LIMIT, "sent " + sent[0] + " > " + LIMIT);
+  assert.equal(sent[0], Buffer.byteLength(JSON.stringify(filePayload(Buffer.alloc(MAX), "application/pdf", agent, 65536))));
+  await assert.rejects(extractDocument(Buffer.alloc(MAX + 1), "application/pdf", { env, fetchImpl }),
+    error => error.code === "input" && error.message.includes(String(MAX)));
+  assert.equal(sent.length, 1);
+  // La voie texte garde sa borne propre (pas de base64) : 20 MiB d'UTF-8.
+  const textSent = [];
+  const textFetch = async (url, options) => { textSent.push(options.body.length); return new Response(JSON.stringify(textCases[1].body)); };
+  await extractText("a".repeat(MAX + 1), { env, fetchImpl: textFetch });
+  await extractText("a".repeat(20 * 1024 * 1024), { env, fetchImpl: textFetch });
+  await assert.rejects(extractText("a".repeat(20 * 1024 * 1024 + 1), { env, fetchImpl: textFetch }), error => error.code === "input");
+  assert.equal(textSent.length, 2);
 });
 
 test("loopback HTTP contract and sanitized failures without retries", async () => {
