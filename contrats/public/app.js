@@ -277,6 +277,7 @@ function buildFieldEl(f) {
     if (String(input.value).trim()) input.classList.remove("invalid");
     renderPreview();
     updateWizardProgress();
+    majNoteCoordonnees();
     if (f.key === "clientFinal") onClientChange();
   };
   input.addEventListener("input", onChange);
@@ -516,6 +517,22 @@ function buildChecklist() {
       item.appendChild(status);
       const saved = state.dateState[it.id];
       if (saved && typeof saved === "object") renderChecklistDocResult(status, saved);
+      // Kbis : proposition des valeurs lues à reporter dans le contrat (#170).
+      if (it.id === "kbis") {
+        const prop = document.createElement("div");
+        prop.className = "lookup-candidates hidden";
+        prop.dataset.kbisProposition = "1";
+        item.appendChild(prop);
+        if (saved && typeof saved === "object") renderPropositionKbis(prop, saved);
+      }
+    }
+
+    // Coordonnées : le Kbis n'en couvre qu'une partie — annotation, jamais la case cochée.
+    if (it.id === "coordonnees") {
+      const note = document.createElement("div");
+      note.dataset.coordKbis = "1";
+      item.appendChild(note);
+      majNoteCoordonnees(note);
     }
 
     host.appendChild(item);
@@ -548,8 +565,15 @@ async function analyzeChecklistDoc(it, fileObj, statusEl, btn) {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
     const res = { issuedDate: d.issuedDate || "", companyName: d.companyName || "", nameMatches: d.nameMatches, fileName: fileObj.name };
+    // Kbis : on garde aussi les champs officiels lus par DocIE (SIREN, SIRET,
+    // forme juridique, adresse, représentant…), pour les PROPOSER au contrat —
+    // liste blanche de public/kbis-champs.js. Analyse locale : {} (rien à proposer).
+    if (it.id === "kbis") res.kbis = CONTRATS_KBIS_CHAMPS.extraire(d);
     state.dateState[it.id] = res;
     renderChecklistDocResult(statusEl, res);
+    const prop = statusEl.parentNode && statusEl.parentNode.querySelector("[data-kbis-proposition]");
+    if (prop) renderPropositionKbis(prop, res);
+    majNoteCoordonnees();
   } catch (e) {
     statusEl.textContent = "Erreur : " + e.message;
     statusEl.className = "chk-doc-status err";
@@ -586,6 +610,100 @@ function renderChecklistDocResult(el, res) {
   } else {
     el.className = "chk-doc-status ok";
     el.textContent = "✅ " + societe + dlv + ", valable jusqu'au " + frDate(isoOf(limit));
+  }
+}
+
+// Proposition des valeurs lues sur le Kbis (issue #170) — logique dans
+// public/kbis-champs.js. Rien n'est écrit sans clic ; un champ déjà rempli
+// avec une autre valeur est gardé tant que l'utilisateur ne choisit pas le Kbis.
+// Jamais affichée si le document est au nom d'une autre société (nameMatches === false).
+function renderPropositionKbis(host, res, annonce) {
+  const K = CONTRATS_KBIS_CHAMPS;
+  host.innerHTML = "";
+  const prop = res ? K.proposer(res.kbis, res.nameMatches, state.values) : null;
+  host.classList.toggle("hidden", !prop);
+  if (!prop) return;
+  const noeud = (tag, cls, texte) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (texte != null) n.textContent = texte;
+    return n;
+  };
+  const libelle = (cle) => (state.fields.find((f) => f.key === cle) || {}).label || cle;
+  const choix = K.choixParDefaut(prop);
+
+  host.appendChild(noeud("div", "lookup-msg", "📋 Lu sur le Kbis — à relire avant de reporter dans le contrat" +
+    (prop.nomVerifie ? "" : " (raison sociale du sous-traitant non saisie : rien ne vérifie que ce Kbis est le sien)")));
+
+  prop.champs.forEach((c) => {
+    if (c.etat === "identique") {
+      host.appendChild(noeud("div", "cand-sub", "✓ " + libelle(c.cle) + " : " + c.kbis + " (déjà dans le contrat)"));
+      return;
+    }
+    if (c.etat === "vide") {
+      const lab = noeud("label", "lookup-cand");
+      const titre = noeud("span", "cand-nom");
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.checked = choix[c.cle] === true;
+      cb.addEventListener("change", () => { choix[c.cle] = cb.checked; });
+      titre.append(cb, " " + libelle(c.cle) + " ", noeud("em", "cand-forme", "champ vide"));
+      lab.append(titre, noeud("span", "cand-sub", c.kbis));
+      host.appendChild(lab);
+      return;
+    }
+    // Différent : l'utilisateur choisit ; la saisie actuelle est gardée par défaut.
+    const titre = noeud("div", "cand-nom", libelle(c.cle) + " ");
+    titre.appendChild(noeud("em", "cand-ei", "différent"));
+    host.appendChild(titre);
+    [["actuel", "Garder : ", c.actuel, false], ["kbis", "Prendre le Kbis : ", c.kbis, true]].forEach(([id, pre, val, prendre]) => {
+      const lab = noeud("label", "lookup-cand");
+      const rb = document.createElement("input");
+      rb.type = "radio"; rb.name = "kbisChoix_" + c.cle; rb.value = id; rb.checked = choix[c.cle] === prendre;
+      rb.addEventListener("change", () => { if (rb.checked) choix[c.cle] = prendre; });
+      const ligne = noeud("span", "cand-sub");
+      ligne.append(rb, " " + pre + val);
+      lab.appendChild(ligne);
+      host.appendChild(lab);
+    });
+  });
+
+  if (prop.infos.length) {
+    host.appendChild(noeud("div", "cand-sub", "Aussi lu (aucun champ du contrat) : " +
+      prop.infos.map((i) => i.libelle + " " + i.valeur).join(" · ")));
+  }
+
+  const aFaire = prop.champs.some((c) => c.etat !== "identique");
+  if (aFaire) {
+    const btn = noeud("button", "btn-up", "⬇ Reporter dans le contrat");
+    btn.type = "button";
+    btn.addEventListener("click", () => {
+      const { paires, modifies } = K.aReporter(prop, choix, state.values);
+      appliquerValeursChamps(paires);
+      res.reportes = [...new Set([...(res.reportes || []), ...paires.map(([cle]) => cle)])];
+      majNoteCoordonnees(); // après l'enregistrement de res.reportes (appliquerValeursChamps l'a appelé avant)
+      let texte = paires.length ? "✓ Reporté : " + paires.map(([cle]) => libelle(cle)).join(", ") : "Rien de coché à reporter.";
+      if (modifies.length) texte += " — modifié(s) entre-temps, non écrasé(s) : " + modifies.map(libelle).join(", ") + " (relire ci-dessus)";
+      renderPropositionKbis(host, res, { texte, classe: modifies.length ? "lookup-msg err" : "lookup-msg ok" });
+    });
+    host.appendChild(btn);
+  }
+  if (annonce) host.appendChild(noeud("div", annonce.classe, annonce.texte));
+}
+
+// Annotation de la pièce « coordonnees » après un report depuis le Kbis :
+// ce qui en vient, et ce qui manque encore. Ne coche jamais la case.
+function majNoteCoordonnees(el) {
+  el = el || document.querySelector("[data-coord-kbis]");
+  if (!el) return;
+  const kbis = state.dateState.kbis;
+  const n = CONTRATS_KBIS_CHAMPS.noteCoordonnees(state.fields, state.values, kbis && typeof kbis === "object" ? kbis.reportes : null);
+  if (!n) { el.className = "hidden"; el.textContent = ""; return; }
+  if (n.complet) {
+    el.className = "chk-doc-status";
+    el.textContent = "ℹ️ Repris du Kbis : " + n.reportes.join(", ") + ". Champs Sous-Traitant renseignés — vérifier le reste (« etc. ») avant de cocher.";
+  } else {
+    el.className = "chk-doc-status warn";
+    el.textContent = "ℹ️ Partiellement couvert par le Kbis (" + n.reportes.join(", ") + "). Reste à obtenir : " + n.manquants.join(", ") + ".";
   }
 }
 
@@ -1491,11 +1609,7 @@ function renderCandidates(results, list, msg, profile) {
 function selectCompany(c, msg, list, profile) {
   profile = profile || LOOKUP_PROFILES.soustraitant;
   if (list) { list.classList.add("hidden"); list.innerHTML = ""; }
-  Object.keys(profile.map).forEach((key) => {
-    const val = companyValue(c, key);
-    if (val) setFieldValue(profile.map[key], val);
-  });
-  renderPreview();
+  appliquerValeursChamps(Object.keys(profile.map).map((key) => [profile.map[key], companyValue(c, key)]));
 
   const etabs = (c.etablissements || []).filter((e) => e.actif && e.siret);
   if (etabs.length > 1 && list && (profile.map.siret || profile.map.adresse)) {
@@ -2964,6 +3078,17 @@ function setFieldValue(key, val) {
   state.values[key] = val;
   const el = document.getElementById("f_" + key);
   if (el) { el.value = val; if (String(val).trim()) el.classList.remove("invalid"); }
+}
+
+// Écrit une liste [[clé, valeur], ...] dans le formulaire puis rafraîchit
+// l'aperçu et la progression. Chemin UNIQUE partagé par la recherche société
+// (selectCompany) et le report depuis le Kbis (renderPropositionKbis) : une
+// valeur vide n'efface jamais un champ.
+function appliquerValeursChamps(paires) {
+  paires.forEach(([cle, val]) => { if (val) setFieldValue(cle, val); });
+  renderPreview();
+  updateWizardProgress();
+  majNoteCoordonnees();
 }
 
 /* ------------------------------------------------------------------ */
