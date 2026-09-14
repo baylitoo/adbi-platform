@@ -15,6 +15,120 @@ class DocIEError(RuntimeError):
     pass
 
 
+# ── Texte d'un .docx pour /v1/extract/text ────────────────────────────────────
+# Ce texte est la SEULE entrée de DocIE pour un .docx : ce qu'il perd n'entre
+# pas dans la CVthèque. L'ancien rendu (`"".join(p.itertext())` sur chaque
+# `.//w:p`) collait le texte autour des éléments vides `w:br`/`w:cr`/`w:tab`
+# (`alice.dupont@example.com06 12 34 56 78Lille`), rendait les codes de champ
+# et les révisions supprimées, et comptait quatre fois une zone de texte.
+# Mesures et témoin : tests/test_texte_docx_docie.py. Même classe de défaut
+# que mammoth.extractRawText côté one-pager (#188).
+#
+# DocIE découpe ce texte en blocs, une ligne non vide = un bloc, et n'en passe
+# que 800 au modèle sur la plupart des profils : le nombre de lignes compte
+# (#190). D'où une rangée de tableau simple sur UNE ligne.
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_MC = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
+# Sous-arbres sans contenu : propriétés (dont `w:pPr/w:tabs/w:tab`, des taquets
+# de tabulation et non des caractères), code des champs (le résultat du champ,
+# lui, est dans des `w:t` ordinaires), révisions supprimées.
+_SANS_TEXTE = {_W + nom for nom in (
+    "pPr", "rPr", "tblPr", "tblPrEx", "trPr", "tcPr", "sectPr", "tblGrid",
+    "instrText", "delInstrText", "del", "delText",
+)}
+_SAUT = {_W + "br", _W + "cr"}
+
+
+def _enfants(element):
+    """Enfants porteurs de contenu, `mc:AlternateContent` résolu en UNE branche.
+
+    On garde le premier `mc:Choice` : c'est ce que Word affiche (zone de texte
+    DrawingML `wps`) ; `mc:Fallback` n'en est que la copie VML pour les
+    lecteurs antérieurs à Word 2010, avec le même `w:txbxContent`. Lire les
+    deux dupliquait le texte. Sans `mc:Choice`, on prend `mc:Fallback`."""
+    for enfant in element:
+        if enfant.tag == _MC + "AlternateContent":
+            branche = enfant.find(_MC + "Choice")
+            if branche is None:
+                branche = enfant.find(_MC + "Fallback")
+            if branche is not None:
+                yield from _enfants(branche)
+        elif enfant.tag not in _SANS_TEXTE:
+            yield enfant
+
+
+def _blocs(element):
+    """Lignes d'un conteneur de blocs (corps, cellule, zone de texte), dans
+    l'ordre du document. Les enveloppes (`w:sdt`, `w:customXml`...) sont
+    traversées."""
+    lignes = []
+    for enfant in _enfants(element):
+        if enfant.tag == _W + "p":
+            lignes.append(_paragraphe(enfant))
+        elif enfant.tag == _W + "tbl":
+            lignes.extend(_tableau(enfant))
+        else:
+            lignes.extend(_blocs(enfant))
+    return lignes
+
+
+def _paragraphe(p):
+    morceaux = []
+
+    def parcourir(element):
+        for enfant in _enfants(element):
+            if enfant.tag == _W + "t":
+                morceaux.append(enfant.text or "")
+            elif enfant.tag in _SAUT:
+                morceaux.append("\n")
+            elif enfant.tag == _W + "tab":
+                morceaux.append("\t")
+            elif enfant.tag == _W + "txbxContent":
+                # Zone de texte ancrée dans ce paragraphe : ses paragraphes
+                # sont des lignes à part, à l'endroit de l'ancre.
+                morceaux.append("\n" + "\n".join(_blocs(enfant)) + "\n")
+            else:
+                parcourir(enfant)
+
+    parcourir(p)
+    return "".join(morceaux)
+
+
+def _elements(element, tag):
+    """`tag` parmi les enfants, à travers les enveloppes (`w:sdt`...)."""
+    for enfant in _enfants(element):
+        if enfant.tag == tag:
+            yield enfant
+        else:
+            yield from _elements(enfant, tag)
+
+
+def _tableau(tbl):
+    """Une rangée SIMPLE (chaque cellule tient sur une ligne) donne une ligne,
+    cellules jointes par `\\t` : `Langages\\tPython, SQL` garde le lien entre
+    catégorie et éléments. Une rangée de MISE EN PAGE (une cellule sur
+    plusieurs lignes : barre latérale, tableau imbriqué, retour manuel) est
+    lue cellule par cellule, ligne par ligne — l'aplatir détruirait toutes ses
+    frontières de paragraphe. Un tableau imbriqué suit les mêmes règles."""
+    lignes = []
+    for rangee in _elements(tbl, _W + "tr"):
+        cellules = []
+        for cellule in _elements(rangee, _W + "tc"):
+            contenu = _blocs(cellule)
+            while contenu and not contenu[-1].strip():
+                contenu.pop()
+            while contenu and not contenu[0].strip():
+                contenu.pop(0)
+            cellules.append("\n".join(contenu))
+        if not any(c.strip() for c in cellules):
+            continue
+        if any("\n" in c for c in cellules):
+            lignes.extend(c for c in cellules if c.strip())
+        else:
+            lignes.append("\t".join(cellules))
+    return lignes
+
+
 def document_payload(path):
     """DocIE's file endpoint accepts PDF/images; DOCX uses its text input."""
     if path.suffix.lower() != ".docx":
@@ -27,8 +141,12 @@ def document_payload(path):
             root = ElementTree.fromstring(archive.read(info))
     except (BadZipFile, KeyError, ElementTree.ParseError):
         raise DocIEError("Document Word invalide.") from None
-    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-    text = "\n".join("".join(p.itertext()) for p in root.findall(".//w:p", ns)).strip()
+    try:
+        text = "\n".join(_blocs(root)).strip()
+    except RecursionError:
+        # Imbrication pathologique (le rendu est récursif) : même refus qu'un
+        # XML illisible, plutôt qu'une exception brute.
+        raise DocIEError("Document Word invalide.") from None
     if not text:
         raise DocIEError("Document Word sans texte lisible : exportez-le en PDF pour l'OCR DocIE.")
     return {"filename": path.name, "text": text}
