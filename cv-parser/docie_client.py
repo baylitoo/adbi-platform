@@ -1,6 +1,7 @@
 """DocIE Studio extraction client; no local OCR or model runtime."""
 import base64
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -15,6 +16,123 @@ class DocIEError(RuntimeError):
     pass
 
 
+# ── Texte d'un .docx pour /v1/extract/text ────────────────────────────────────
+# Ce texte est la SEULE entrée de DocIE pour un .docx : ce qu'il perd n'entre
+# pas dans la CVthèque. L'ancien rendu (`"".join(p.itertext())` sur chaque
+# `.//w:p`) collait le texte autour des éléments vides `w:br`/`w:cr`/`w:tab`
+# (`alice.dupont@example.com06 12 34 56 78Lille`), rendait les codes de champ
+# et les révisions supprimées, et comptait quatre fois une zone de texte.
+# Mesures et témoin : tests/test_texte_docx_docie.py. Même classe de défaut
+# que mammoth.extractRawText côté one-pager (#188).
+#
+# DocIE découpe ce texte en blocs, une ligne non vide = un bloc, et n'en passe
+# que 800 au modèle sur la plupart des profils : le nombre de lignes compte
+# (#190). D'où une rangée de tableau simple sur UNE ligne.
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_MC = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
+# Le texte ne vient QUE de `w:t` : le code d'un champ (`w:instrText`,
+# `HYPERLINK "mailto:..."`) et le texte supprimé (`w:delText`) ne sont donc
+# jamais rendus ; le résultat affiché d'un champ, lui, est dans des `w:t`.
+# Sous-arbres ignorés en entier : les propriétés (dont `w:pPr/w:tabs/w:tab`,
+# des taquets de tabulation et non des caractères) et les révisions supprimées
+# `w:del`, dont les `w:br`/`w:tab` supprimés ne doivent pas non plus compter.
+# Non traité : `w:moveFrom` (origine d'un déplacement suivi).
+_SANS_TEXTE = {_W + nom for nom in (
+    "pPr", "rPr", "tblPr", "tblPrEx", "trPr", "tcPr", "sectPr", "tblGrid", "del",
+)}
+_SAUT = {_W + "br", _W + "cr"}
+
+
+def _enfants(element):
+    """Enfants porteurs de contenu, `mc:AlternateContent` résolu en UNE branche.
+
+    On garde le premier `mc:Choice` : c'est ce que Word affiche (zone de texte
+    DrawingML `wps`) ; `mc:Fallback` n'en est que la copie VML pour les
+    lecteurs antérieurs à Word 2010, avec le même `w:txbxContent`. Lire les
+    deux dupliquait le texte. Sans `mc:Choice`, on prend `mc:Fallback`."""
+    for enfant in element:
+        if enfant.tag == _MC + "AlternateContent":
+            branche = enfant.find(_MC + "Choice")
+            if branche is None:
+                branche = enfant.find(_MC + "Fallback")
+            if branche is not None:
+                yield from _enfants(branche)
+        elif enfant.tag not in _SANS_TEXTE:
+            yield enfant
+
+
+def _blocs(element):
+    """Lignes d'un conteneur de blocs (corps, cellule, zone de texte), dans
+    l'ordre du document. Les enveloppes (`w:sdt`, `w:customXml`...) sont
+    traversées."""
+    lignes = []
+    for enfant in _enfants(element):
+        if enfant.tag == _W + "p":
+            lignes.append(_paragraphe(enfant))
+        elif enfant.tag == _W + "tbl":
+            lignes.extend(_tableau(enfant))
+        else:
+            lignes.extend(_blocs(enfant))
+    return lignes
+
+
+def _paragraphe(p):
+    morceaux = []
+
+    def parcourir(element):
+        for enfant in _enfants(element):
+            if enfant.tag == _W + "t":
+                morceaux.append(enfant.text or "")
+            elif enfant.tag in _SAUT:
+                morceaux.append("\n")
+            elif enfant.tag == _W + "tab":
+                morceaux.append("\t")
+            elif enfant.tag == _W + "txbxContent":
+                # Zone de texte ancrée dans ce paragraphe : ses paragraphes
+                # sont des lignes à part, à l'endroit de l'ancre.
+                morceaux.append("\n" + "\n".join(_blocs(enfant)) + "\n")
+            else:
+                parcourir(enfant)
+
+    parcourir(p)
+    return "".join(morceaux)
+
+
+def _elements(element, tag):
+    """`tag` parmi les enfants, à travers les enveloppes (`w:sdt`...)."""
+    for enfant in _enfants(element):
+        if enfant.tag == tag:
+            yield enfant
+        else:
+            yield from _elements(enfant, tag)
+
+
+def _tableau(tbl):
+    """Une rangée SIMPLE (chaque cellule tient sur une ligne) donne une ligne,
+    cellules jointes par `\\t` : `Langages\\tPython, SQL` garde le lien entre
+    catégorie et éléments. Une rangée de MISE EN PAGE (une cellule sur
+    plusieurs lignes : barre latérale, tableau imbriqué, retour manuel) est
+    lue cellule par cellule, ligne par ligne — l'aplatir détruirait toutes ses
+    frontières de paragraphe. Un tableau imbriqué suit les mêmes règles."""
+    lignes = []
+    for rangee in _elements(tbl, _W + "tr"):
+        cellules = []
+        for cellule in _elements(rangee, _W + "tc"):
+            contenu = _blocs(cellule)
+            while contenu and not contenu[-1].strip():
+                contenu.pop()
+            while contenu and not contenu[0].strip():
+                contenu.pop(0)
+            cellules.append("\n".join(contenu))
+        if not any(c.strip() for c in cellules):
+            continue
+        if any("\n" in c for c in cellules):
+            lignes.extend(c for c in cellules if c.strip())
+        else:
+            lignes.append("\t".join(cellules))
+    return lignes
+
+
 def document_payload(path):
     """DocIE's file endpoint accepts PDF/images; DOCX uses its text input."""
     if path.suffix.lower() != ".docx":
@@ -27,8 +145,12 @@ def document_payload(path):
             root = ElementTree.fromstring(archive.read(info))
     except (BadZipFile, KeyError, ElementTree.ParseError):
         raise DocIEError("Document Word invalide.") from None
-    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-    text = "\n".join("".join(p.itertext()) for p in root.findall(".//w:p", ns)).strip()
+    try:
+        text = "\n".join(_blocs(root)).strip()
+    except RecursionError:
+        # Imbrication pathologique (le rendu est récursif) : même refus qu'un
+        # XML illisible, plutôt qu'une exception brute.
+        raise DocIEError("Document Word invalide.") from None
     if not text:
         raise DocIEError("Document Word sans texte lisible : exportez-le en PDF pour l'OCR DocIE.")
     return {"filename": path.name, "text": text}
@@ -135,6 +257,27 @@ def map_resume(response, expected_schema="resume"):
     return data
 
 
+_ILLISIBLE = object()
+
+
+def modele_en_chargement(corps):
+    """Corps de chargement de DocIE sur /v1/extract/text (#194) :
+    `{"detail": {"status": "loading", "eta_seconds": …, "message": …}}`."""
+    detail = corps.get("detail") if isinstance(corps, dict) else None
+    return isinstance(detail, dict) and detail.get("status") == "loading"
+
+
+def message_chargement(corps):
+    """Message pour l'utilisateur, qui relance lui-même (« échouer
+    bruyamment », #194). Le `message` amont n'est jamais recopié ; le délai
+    n'est cité que s'il est un nombre fini et positif ou nul."""
+    detail = corps.get("detail") if isinstance(corps, dict) else None
+    eta = detail.get("eta_seconds") if isinstance(detail, dict) else None
+    if isinstance(eta, (int, float)) and not isinstance(eta, bool) and math.isfinite(eta) and eta >= 0:
+        return f"DocIE : modèle en cours de chargement, réessayez dans environ {math.ceil(eta)} s."
+    return "DocIE : modèle en cours de chargement, réessayez dans quelques instants."
+
+
 def extract_resume(file_path, progress=None, *, session=None):
     base = os.environ.get("DOCIE_BASE_URL", "").strip().rstrip("/")
     parsed = urlsplit(base)
@@ -197,9 +340,18 @@ def extract_resume(file_path, progress=None, *, session=None):
         if not 200 <= response.status_code < 300:
             raise DocIEError(f"DocIE : erreur HTTP {response.status_code}. Vérifiez le schéma et le service.")
         try:
-            return response.json()
+            corps = response.json()
         except ValueError:
-            raise DocIEError("DocIE : réponse JSON invalide.") from None
+            corps = _ILLISIBLE
+        # Voie texte seulement (#194) : un `store:` pas encore chargé répond
+        # 202 sans mettre la requête en file. On échoue tout de suite, sans
+        # relance ni attente. Pas sur la voie studio : un 202 y peut porter
+        # des `event_ids` légitimes, et rien ici ne montre qu'elle charge.
+        if mode == "inline" and (response.status_code == 202 or modele_en_chargement(corps)):
+            raise DocIEError(message_chargement(corps))
+        if corps is _ILLISIBLE:
+            raise DocIEError("DocIE : réponse JSON invalide.")
+        return corps
 
     try:
         if progress:
