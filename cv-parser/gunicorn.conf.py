@@ -28,9 +28,10 @@ bind = f"{hote}:{port}"
 #   - `_verrous_cv` (verrou par fiche CV, issue #53/PR #54) : sans mémoire
 #     partagée, deux workers Gunicorn pourraient à nouveau écraser la fiche
 #     l'un de l'autre — exactement le "lost update" que PR #54 a corrigé.
-#   - `PROGRESSION_ANALYSES` (barre de progression de /api/upload) : un
-#     sondage qui atterrit sur un autre worker que celui qui traite l'upload
-#     ne verrait jamais l'avancement.
+#   - `TACHES_UPLOAD` (taches_upload.py, issue #196 : analyses de CV en file,
+#     leur progression et leur résultat) : un sondage qui atterrit sur un
+#     autre worker que celui qui traite l'upload ne verrait jamais la tâche,
+#     et chaque worker appliquerait son propre plafond d'analyses simultanées.
 # Plusieurs workers Gunicorn (processus séparés, prefork) casseraient donc
 # silencieusement ces deux choses. Un seul worker avec plusieurs threads
 # (`gthread`) reproduit le modèle actuel à l'identique (même mémoire de

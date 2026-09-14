@@ -816,19 +816,32 @@ function resetUploadZone() {
  * fichiers sans déclencher, à chaque fois, le panneau de synthèse et les
  * messages destinés à un import isolé.
  */
-async function envoyerCv(file, discret) {
+async function envoyerCv(file, discret, suivi) {
   // Jeton de suivi : le serveur y note sa progression réelle, le widget la lit.
+  // C'est aussi l'identifiant de la tâche d'analyse (issue #196).
   const jeton = (crypto.randomUUID ? crypto.randomUUID()
                  : Date.now() + '-' + Math.random().toString(36).slice(2));
   if (!discret) ConvWidget.startLocal(file.name, jeton);   // en lot, la liste suffit
   const fd = new FormData(); fd.append('file', file); fd.append('jeton', jeton);
   try {
     const r = await fetch('/api/upload', { method: 'POST', body: fd, credentials: 'include' });
-    const data = await r.json();
+    let data = await r.json();
     if (!r.ok || data.error) {
       const erreur = data.error || `Erreur HTTP ${r.status}`;
       if (!discret) ConvWidget.fail(erreur);
       return { ok: false, erreur };
+    }
+    // 202 : l'analyse est une tâche serveur. 200 : fiche reprise du cache
+    // (document déjà analysé), réponse immédiate comme avant.
+    if (r.status === 202) {
+      // Jeton déjà pris côté serveur : il en a donné un autre, le widget le suit.
+      if (!discret && data.tache !== jeton) ConvWidget.startLocal(file.name, data.tache);
+      try {
+        data = await attendreAnalyse(data.tache, suivi);
+      } catch (e) {
+        if (!discret) ConvWidget.fail(e.message);
+        return { ok: false, erreur: e.message };
+      }
     }
     // `ConvWidget.done` émet `convDone` : c'est cet écouteur qui affiche la
     // synthèse et le message. Ne les répétez pas ici, ils sortaient en double.
@@ -838,6 +851,35 @@ async function envoyerCv(file, discret) {
     if (!discret) ConvWidget.fail('Impossible de contacter le serveur');
     return { ok: false, erreur: 'Impossible de contacter le serveur' };
   }
+}
+
+/* Suivi d'une tâche d'analyse (issue #196) : un grand CV prend plusieurs
+   minutes côté DocIE, trop pour une requête HTTP. On interroge l'état toutes
+   les 2 s ; plafond 30 min (un onglet oublié ne tourne pas indéfiniment) ;
+   3 échecs réseau d'affilée abandonnent, un seul ne doit pas perdre une
+   analyse de 4 minutes. Aucune relance d'une tâche en échec : son message
+   nommé s'affiche, l'utilisateur redépose. */
+const ANALYSE_INTERVALLE_MS = 2000, ANALYSE_MAX_INTERROGATIONS = 900, ANALYSE_MAX_ECHECS_RESEAU = 3;
+
+async function attendreAnalyse(tache, suivi) {
+  let echecsReseau = 0;
+  for (let n = 0; n < ANALYSE_MAX_INTERROGATIONS; n++) {
+    await new Promise(ok => setTimeout(ok, ANALYSE_INTERVALLE_MS));
+    let r, t;
+    try {
+      r = await fetch('/api/upload/progression/' + encodeURIComponent(tache), { credentials: 'include' });
+      t = await r.json();
+      echecsReseau = 0;
+    } catch {
+      if (++echecsReseau >= ANALYSE_MAX_ECHECS_RESEAU) throw new Error("Serveur injoignable pendant l'analyse");
+      continue;
+    }
+    if (!r.ok) throw new Error(t.error || `Suivi de l'analyse impossible (HTTP ${r.status})`);
+    if (t.etat === 'terminee') return t.resultat;
+    if (t.etat === 'echec') throw new Error((t.erreur && t.erreur.message) || 'Analyse impossible');
+    if (suivi) suivi(t);
+  }
+  throw new Error('Analyse trop longue : abandon du suivi après 30 minutes');
 }
 
 async function handleFile(file) {
@@ -885,9 +927,9 @@ async function lancerLot(fichiers) {
     `<span class="etat">·</span></li>`).join('');
   majBarreLot(0, fichiers.length, 0, 0);
 
-  // Deux envois SIMULTANÉS : le serveur encaisse (Flask multi-fils, quotas
-  // IA comptés par modèle), et un lot de 10 CV prend presque moitié moins de
-  // temps qu'en file simple. Au-delà de 2, l'OCR se marcherait dessus.
+  // Deux envois SIMULTANÉS : le serveur met chaque analyse en file et en
+  // traite ADBI_UPLOAD_MAX_CONCURRENT à la fois (2 par défaut, issue #196), et
+  // un lot de 10 CV prend presque moitié moins de temps qu'en file simple.
   let ok = 0, rates = 0, faits = 0, suivant = 0;
   const travailleur = async () => {
     while (!lotEnCours.annule && suivant < fichiers.length) {
@@ -897,7 +939,9 @@ async function lancerLot(fichiers) {
       li.querySelector('.etat').textContent = '◍';
       li.scrollIntoView({ block: 'nearest' });
 
-      const r = await envoyerCv(fichiers[i], true);
+      // Étape serveur (attente et position comprises) au survol de la ligne.
+      const r = await envoyerCv(fichiers[i], true,
+        t => { li.title = t.etape + (t.detail ? ` — ${t.detail}` : ''); });
       if (r.ok) {
         ok++; li.className = 'fait'; li.querySelector('.etat').textContent = '✓';
       } else {
