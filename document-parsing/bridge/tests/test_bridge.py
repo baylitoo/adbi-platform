@@ -334,5 +334,120 @@ class TextPathTests(unittest.TestCase):
             thread.join()
 
 
+def fake_session(answer, status=200):
+    """Frontière HTTP simulée : garde (url, corps envoyé) de chaque POST.
+
+    `answer(url, payload)` construit le corps renvoyé ; `status` est lu à
+    chaque appel (liste à un élément, modifiable par le test).
+    """
+    status = status if isinstance(status, list) else [status]
+    sent = []
+
+    def post(url, **kwargs):
+        sent.append((url, copy.deepcopy(kwargs["json"])))
+        response = MagicMock(status_code=status[0])
+        response.__enter__.return_value = response
+        body = json.dumps(answer(url, kwargs["json"])).encode()
+        response.iter_content.side_effect = lambda *args: iter([body])
+        return response
+
+    session = Mock()
+    session.post.side_effect = post
+    return session, sent
+
+
+class PerCallChoiceTests(unittest.TestCase):
+    """#194 -- modèle (voie texte) ou agent (voie agent) choisi par appel."""
+
+    def test_text_model_profile_overrides_env_for_that_call_only(self):
+        env = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "test-secret",
+               "DOCIE_MODEL_PROFILE": "store:env-default"}
+        snapshot = dict(env)
+        status = [200]
+        answer = dict(copy.deepcopy(TEXT_CASES[1]["body"]), model_profile="store:served-by-docie")
+        loading = {"detail": {"status": "loading", "deployment": "nuextract3", "eta_seconds": 42, "message": "test-secret"}}
+        session, sent = fake_session(lambda url, payload: answer if status[0] == 200 else loading, status)
+        # Surcharge : la requête change, metadata["model"] reste ce que DocIE rapporte.
+        chosen = extract_text("CV", model_profile="store:lfm2.5-2.6b", env=env, session=session)
+        self.assertEqual(sent[0][0], "https://docie.example/v1/extract/text")
+        self.assertEqual(sent[0][1], {"text": "CV", "schema_name": "adbi_resume", "model_profile": "store:lfm2.5-2.6b"})
+        self.assertEqual(chosen["metadata"]["model"], "store:served-by-docie")
+        # Même dict env, sans surcharge : la valeur d'environnement revient.
+        extract_text("CV", env=env, session=session)
+        self.assertEqual(sent[1][1], {"text": "CV", "schema_name": "adbi_resume", "model_profile": "store:env-default"})
+        # Ni surcharge ni variable : aucun `model_profile`, comme avant.
+        extract_text("CV", env={"DOCIE_BASE_URL": env["DOCIE_BASE_URL"], "DOCIE_API_KEY": env["DOCIE_API_KEY"]}, session=session)
+        self.assertEqual(sent[2][1], {"text": "CV", "schema_name": "adbi_resume"})
+        # Strip comme DOCIE_MODEL_PROFILE ; `store:<nom>` sans autre transformation.
+        extract_text("CV", model_profile="  store:NuExtract3_v1.2  ", env=env, session=session)
+        self.assertEqual(sent[3][1]["model_profile"], "store:NuExtract3_v1.2")
+        # Le `store:` choisi par appel mène au code `loading` déjà en place.
+        status[0] = 202
+        with self.assertRaises(DocIEBridgeError) as raised:
+            extract_text("CV", model_profile="store:nuextract3", env=env, session=session)
+        self.assertEqual((raised.exception.code, raised.exception.eta_seconds), ("loading", 42))
+        self.assertNotIn("test-secret", str(raised.exception))
+        self.assertEqual(sent[4][1]["model_profile"], "store:nuextract3")
+        self.assertEqual(len(sent), 5)
+        self.assertEqual(env, snapshot)
+
+    def test_agent_overrides_env_for_that_call_only(self):
+        env = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "test-secret", "DOCIE_AGENT_RESUME": "adbi_agent_1"}
+        snapshot = dict(env)
+
+        def answer(url, payload):
+            # Le faux DocIE répond au nom de l'agent présent dans l'URL.
+            body = copy.deepcopy(CASES[0]["body"])
+            body["docie_agent"]["agent"] = url.split("/")[5]
+            return body
+
+        session, sent = fake_session(answer)
+        chosen = extract_document(b"pdf", "application/pdf", agent="adbi_resume_nuextract3", env=env, session=session)
+        self.assertEqual(sent[0][0], "https://docie.example/v1/agents/adbi_resume_nuextract3/chat/completions")
+        # Corps inchangé à part l'agent : aucun champ `model` ajouté (DocIE l'écrase).
+        self.assertEqual(sent[0][1], file_payload(b"pdf", "application/pdf", "adbi_resume_nuextract3", 8192))
+        self.assertEqual(chosen["metadata"]["agent"], "adbi_resume_nuextract3")
+        # Même dict env, sans surcharge : l'agent d'environnement revient.
+        fallback = extract_document(b"pdf", "application/pdf", env=env, session=session)
+        self.assertEqual(sent[1][0], "https://docie.example/v1/agents/adbi_agent_1/chat/completions")
+        self.assertEqual(fallback["metadata"]["agent"], "adbi_agent_1")
+        self.assertEqual(env, snapshot)
+        # Avec un agent par appel, DOCIE_AGENT_RESUME n'est pas exigé ; sans, il l'est toujours.
+        no_agent_env = {"DOCIE_BASE_URL": env["DOCIE_BASE_URL"], "DOCIE_API_KEY": env["DOCIE_API_KEY"]}
+        self.assertEqual(extract_document(b"pdf", "application/pdf", agent=" spark ", env=no_agent_env,
+                                          session=session)["metadata"]["agent"], "spark")
+        self.assertEqual(sent[2][0], "https://docie.example/v1/agents/spark/chat/completions")
+        with self.assertRaises(DocIEBridgeError) as raised:
+            extract_document(b"pdf", "application/pdf", env=no_agent_env, session=session)
+        self.assertEqual(raised.exception.code, "configuration")
+        # Une réponse d'un autre agent que celui appelé reste refusée.
+        other, _ = fake_session(lambda url, payload: CASES[0]["body"])  # docie_agent.agent = adbi_agent_1
+        with self.assertRaises(DocIEBridgeError) as raised:
+            extract_document(b"pdf", "application/pdf", agent="adbi_resume_nuextract3", env=env, session=other)
+        self.assertEqual(raised.exception.code, "schema")
+        self.assertEqual(len(sent), 3)
+
+    def test_format_checked_before_network_with_input_code_no_allowlist(self):
+        env = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "test-secret",
+               "DOCIE_AGENT_RESUME": "adbi_agent_1", "DOCIE_MODEL_PROFILE": "store:env-default"}
+        session = Mock()
+        for profile in ("", "   ", "store:a\nb", "store:a\x00b", "a\tb", "a\x7fb", "x" * 129, "é" * 65, 42, {}):
+            with self.subTest(model_profile=profile), self.assertRaises(DocIEBridgeError) as raised:
+                extract_text("CV", model_profile=profile, env=env, session=session)
+            self.assertEqual(raised.exception.code, "input")
+        for agent in ("", "   ", "../x", "a/b", "store:x", "a b", "a" * 129, 7):
+            with self.subTest(agent=agent), self.assertRaises(DocIEBridgeError) as raised:
+                extract_document(b"pdf", "application/pdf", agent=agent, env=env, session=session)
+            self.assertEqual(raised.exception.code, "input")
+        session.post.assert_not_called()
+        # Forme seule : tout nom bien formé part, au plafond compris -- la liste est au catalogue.
+        text_ok, sent = fake_session(lambda url, payload: TEXT_CASES[1]["body"])
+        for profile in ("x" * 128, "é" * 64, "store:absent-de-tout-catalogue", "models.yaml-profile"):
+            extract_text("CV", model_profile=profile, env=env, session=text_ok)
+            self.assertEqual(sent[-1][1]["model_profile"], profile)
+        file_ok, _ = fake_session(lambda url, payload: CASES[2]["body"])
+        extract_document(b"pdf", "application/pdf", agent="a" * 128, env=env, session=file_ok)
+
+
 if __name__ == "__main__":
     unittest.main()
