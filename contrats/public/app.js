@@ -2560,16 +2560,42 @@ async function validerSigneExterne() {
 function ouvrirImportModal() {
   $("#impStatus").textContent = "";
   $("#impSigneLe").value = new Date().toISOString().slice(0, 10);
+  construireAutresChampsImport();
   $("#importModal").classList.remove("hidden");
   attacherDatalistContrats(); // alimente la liste des n° pour le rattachement d'avenant
   basculerChampsImport();
 }
 
+// Section « Autres informations extraites — à relire » : les 12 champs DocIE
+// que le modal ne montrait pas (voir public/import-champs.js). Générés une
+// seule fois, depuis la même liste que celle qui construit les `values`.
+function construireAutresChampsImport() {
+  const grille = $("#impAutresGrille");
+  if (!grille || grille.childElementCount) return;
+  CONTRATS_IMPORT_CHAMPS.CHAMPS_AUTRES.forEach((c) => {
+    const label = document.createElement("label");
+    if (c.full) label.className = "full";
+    label.appendChild(document.createTextNode(c.label));
+    const input = document.createElement(c.textarea ? "textarea" : "input");
+    input.id = c.id;
+    if (c.textarea) input.rows = 2;
+    else input.type = c.type || "text";
+    const ph = CONTRATS_IMPORT_CHAMPS.placeholder(c);
+    if (ph) input.placeholder = ph;
+    label.appendChild(input);
+    grille.appendChild(label);
+  });
+}
+
 function basculerChampsImport() {
-  const avenant = $("#impType").value === "avenant";
+  const type = $("#impType").value;
+  const avenant = type === "avenant";
   $("#impNumWrap").classList.toggle("hidden", avenant);
   $("#impNumAvWrap").classList.toggle("hidden", !avenant);
   $("#impInitialWrap").classList.toggle("hidden", !avenant);
+  // Clés de fields.js::sousTraitance : ni montrées ni envoyées pour un autre
+  // type (valeursImport les ignore de toute façon).
+  $("#impAutres").classList.toggle("hidden", !CONTRATS_IMPORT_CHAMPS.afficherAutresChamps(type));
 }
 
 async function validerImport() {
@@ -2578,20 +2604,13 @@ async function validerImport() {
   st.className = "status";
   try {
     const type = $("#impType").value;
-    const avenant = type === "avenant";
-    const values = {
-      stNom: avenant ? "" : $("#impSt").value.trim(),
-      avPartie2Nom: avenant ? $("#impSt").value.trim() : "",
-      clientFinal: $("#impClient").value.trim(),
-      consultantNom: $("#impConsultant").value.trim(),
-      tjm: $("#impTjm").value.trim(),
-      dateDebut: $("#impDebut").value,
-      dateFin: $("#impFin").value,
-      numeroContrat: avenant ? "" : $("#impNumero").value.trim(),
-      numeroAvenant: avenant ? $("#impNumAvenant").value.trim() : "",
-      numeroContratInitial: avenant ? $("#impInitial").value.trim() : "",
-      contratType: avenant ? "sous-traitance" : "",
-    };
+    // Construction des `values` : public/import-champs.js (logique pure,
+    // testée) — les 7 clés historiques à l'identique, plus les 12 autres
+    // champs de la sous-traitance quand ils sont renseignés.
+    const values = CONTRATS_IMPORT_CHAMPS.valeursImport(type, (id) => {
+      const el = document.getElementById(id);
+      return el ? el.value : "";
+    });
     const fichier = await lirePdf($("#impFichier"));
     if (!fichier) throw new Error("Choisis le PDF du contrat à importer.");
     const r = await fetch("/api/contracts/importer", {
@@ -2605,8 +2624,13 @@ async function validerImport() {
     const j = await r.json();
     if (!r.ok || j.error) throw new Error(j.error || "Erreur " + r.status);
     $("#importModal").classList.add("hidden");
-    ["impNumero", "impNumAvenant", "impInitial", "impSt", "impClient", "impConsultant", "impTjm", "impDebut", "impFin", "impFichier"]
-      .forEach((id) => { $("#" + id).value = ""; });
+    CONTRATS_IMPORT_CHAMPS.IDS_A_VIDER.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+    afficherAvertissementsImport([]);
+    $("#impPreremplirStatus").textContent = "";
+    $("#impAutres").open = false;
     setStatus("Contrat importé dans le dossier — PDF archivé, historique à jour.", "ok");
     showView("historique");
   } catch (e) {
@@ -2645,27 +2669,50 @@ async function preremplirImportDepuisPdf() {
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
     const v = d.values || {};
-    if (v.numeroContrat) $("#impNumero").value = v.numeroContrat;
-    if (v.stNom) $("#impSt").value = v.stNom;
-    if (v.clientFinal) $("#impClient").value = v.clientFinal;
-    if (v.consultantNom) $("#impConsultant").value = v.consultantNom;
-    if (v.tjm) $("#impTjm").value = v.tjm;
-    if (v.dateDebut) $("#impDebut").value = v.dateDebut;
-    if (v.dateFin) $("#impFin").value = v.dateFin;
-    const notes = (d.warnings || []).slice(0, 3).join(" — ");
+    // Les 19 champs extraits (7 principaux + 12 de la section « Autres
+    // informations »), non vides seulement : une saisie manuelle n'est
+    // jamais effacée par un champ que DocIE n'a pas trouvé.
+    construireAutresChampsImport();
+    CONTRATS_IMPORT_CHAMPS.preremplissage(v).forEach(([id, valeur]) => {
+      const el = document.getElementById(id);
+      if (el) el.value = valeur;
+    });
+    const warnings = d.warnings || [];
+    // Section dépliée dès qu'elle contient quelque chose à relire.
+    if (CONTRATS_IMPORT_CHAMPS.nbAutresPreremplis(v) || warnings.length) $("#impAutres").open = true;
+    // TOUS les avertissements, en liste sous la ligne d'état (auparavant
+    // tronqués aux 3 premiers dans la ligne d'état : avec 19 champs, un 4e
+    // avertissement portant sur un champ de la section restait invisible).
+    afficherAvertissementsImport(warnings);
+    const notes = warnings.length ? " (" + warnings.length + " avertissement" + (warnings.length > 1 ? "s" : "") + " ci-dessous)" : "";
     if (d.errors && d.errors.length) {
       st.className = "status warn";
-      st.textContent = "⚠️ Champs pré-remplis à vérifier — " + d.errors.join(" ") + (notes ? " (" + notes + ")" : "");
+      st.textContent = "⚠️ Champs pré-remplis à vérifier — " + d.errors.join(" ") + notes;
     } else {
       st.className = "status ok";
-      st.textContent = "✓ Champs pré-remplis depuis le PDF — à relire avant import" + (notes ? " (" + notes + ")" : "");
+      st.textContent = "✓ Champs pré-remplis depuis le PDF — à relire avant import" + notes;
     }
   } catch (e) {
+    afficherAvertissementsImport([]);
     st.textContent = "Pré-remplissage indisponible : " + e.message;
     st.className = "status err";
   } finally {
     btn.disabled = false; btn.textContent = old;
   }
+}
+
+// Liste des avertissements DocIE sous la ligne d'état du pré-remplissage
+// (texte brut, jamais interprété comme HTML). Vide -> liste masquée.
+function afficherAvertissementsImport(warnings) {
+  const ul = $("#impAvertissements");
+  if (!ul) return;
+  ul.innerHTML = "";
+  (warnings || []).forEach((w) => {
+    const li = document.createElement("li");
+    li.textContent = "⚠ " + w;
+    ul.appendChild(li);
+  });
+  ul.classList.toggle("hidden", !(warnings && warnings.length));
 }
 
 // Recharge la vue de suivi active (Signatures ou Historique) après une action.

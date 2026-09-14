@@ -172,10 +172,21 @@
             <input id="impFichier" type="file" accept="application/pdf" />
           </label>
         </div>
+        <!-- Les 12 autres champs extraits par DocIE (voir import-champs.js) :
+             affichés, modifiables, et enregistrés seulement au clic sur
+             « Importer ». Champs générés par app.js depuis CHAMPS_AUTRES.
+             Masqué pour les types autres que la sous-traitance. -->
+        <details id="impAutres" class="modal-note">
+          <summary>Autres informations extraites — à relire</summary>
+          <p class="muted modal-note">Reprises par les avenants (date du contrat initial, représentant, qualité),
+            la fiche entreprise (SIREN) et le PDF régénéré. Un champ laissé vide n'est pas enregistré.</p>
+          <div id="impAutresGrille" class="import-grille"></div>
+        </details>
         <div class="modal-actions">
           <button id="impPreremplir" class="btn-up" type="button" title="Extrait les champs ci-dessus depuis le PDF via DocIE (relecture obligatoire avant import)">🪄 Pré-remplir depuis le PDF</button>
           <span id="impPreremplirStatus" class="status"></span>
         </div>
+        <ul id="impAvertissements" class="ent-etabs hidden"></ul>
         <div class="modal-actions">
           <button id="impCreer" class="btn btn-primary" type="button">⬆ Importer dans le dossier</button>
           <span id="impStatus" class="status"></span>
@@ -397,6 +408,7 @@
     </section>
   </main>
 </div>
+<script src="/import-champs.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
