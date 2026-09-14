@@ -20,6 +20,10 @@ const { analyzeDocument } = require("./lib/docie-extraction");
 // (schéma DocIE "contract", jusqu'ici enregistré côté DocIE mais jamais
 // câblé côté contrats) — voir lib/docie-contract-import.js.
 const { extractContractValues } = require("./lib/docie-contract-import");
+// Ce pré-remplissage est une tâche asynchrone (issue #196) : gestionnaire en
+// mémoire (lib/taches-extraction.js) et routes (lib/import-extraction-routes.js).
+const { creerGestionnaire } = require("./lib/taches-extraction");
+const { monterPreremplissage } = require("./lib/import-extraction-routes");
 const signatures = require("./lib/signatures");
 const templatesPerso = require("./lib/templates-perso");
 const fournisseurs = require("./lib/fournisseurs");
@@ -1110,14 +1114,13 @@ app.delete("/api/contracts/:id/signe", async (req, res) => {
 // locale équivalente à 19 champs structurés) : flag off ou config DocIE
 // absente renvoient une erreur explicite (code stable, jamais de secret) —
 // le front doit alors laisser le formulaire vide, comme aujourd'hui.
-app.post("/api/contracts/importer/extraire", async (req, res) => {
-  try {
-    res.json(await extractContractValues(req.body || {}));
-  } catch (e) {
-    console.error("[contracts/importer/extraire]", e && e.code, e && e.message);
-    res.status(400).json({ error: e.message, code: (e && e.code) || "erreur" });
-  }
-});
+//
+// Tâche asynchrone depuis l'issue #196 (un contrat long prend plusieurs
+// minutes côté DocIE) : POST /api/contracts/importer/extraire -> 202 { tache },
+// puis GET /api/taches/:id jusqu'au résultat. Contrat, concurrence (2), file
+// (20) et conservation (30 min) : lib/taches-extraction.js ; routes et
+// validation synchrone : lib/import-extraction-routes.js.
+monterPreremplissage(app, { extractContractValues, gestionnaire: creerGestionnaire() });
 
 app.post("/api/contracts/importer", async (req, res) => {
   try {

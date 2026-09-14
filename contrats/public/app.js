@@ -2646,7 +2646,16 @@ async function validerImport() {
 // de « ⬆ Importer dans le dossier » ci-dessous. Si DocIE est désactivé/non
 // configuré côté serveur, message clair — la saisie manuelle reste possible
 // exactement comme avant l'ajout de ce bouton.
+//
+// Tâche serveur (issue #196) : un contrat de 10-30 pages prend plusieurs
+// minutes côté DocIE, trop pour une seule requête HTTP. Le POST démarre la
+// tâche (202 { tache }), puis on interroge /api/taches/<id> toutes les 2 s.
+// Plafond : 900 interrogations (30 min, un onglet oublié ne tourne pas
+// indéfiniment) ; 3 échecs réseau d'affilée abandonnent, un seul ne doit pas
+// perdre une extraction de 5 minutes. Aucune relance automatique d'une tâche
+// en échec : le message nommé s'affiche, l'utilisateur relance.
 async function preremplirImportDepuisPdf() {
+  const INTERVALLE_MS = 2000, MAX_INTERROGATIONS = 900, MAX_ECHECS_RESEAU = 3;
   const st = $("#impPreremplirStatus");
   const btn = $("#impPreremplir");
   const f = $("#impFichier").files && $("#impFichier").files[0];
@@ -2666,8 +2675,27 @@ async function preremplirImportDepuisPdf() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mimeType: f.type || "application/pdf", dataBase64 }),
     });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    const depart = await r.json();
+    if (!r.ok) throw new Error(depart.error || ("HTTP " + r.status));
+    let d = null, echecsReseau = 0;
+    for (let n = 0; n < MAX_INTERROGATIONS && !d; n++) {
+      await new Promise((ok) => setTimeout(ok, INTERVALLE_MS));
+      let rt, t;
+      try {
+        rt = await fetch("/api/taches/" + encodeURIComponent(depart.tache));
+        t = await rt.json();
+        echecsReseau = 0;
+      } catch (e) {
+        if (++echecsReseau >= MAX_ECHECS_RESEAU) throw new Error("serveur injoignable pendant l'extraction.");
+        continue;
+      }
+      if (!rt.ok) throw new Error(t.error || ("HTTP " + rt.status));
+      if (t.etat === "terminee") d = t.resultat || {};
+      else if (t.etat === "echec") throw new Error((t.erreur && t.erreur.message) || "extraction en échec.");
+      else if (t.etape === "en_attente") st.textContent = "⏳ En attente d'une extraction libre" + (t.position ? " (position " + t.position + ")" : "") + "…";
+      else st.textContent = "🔎 Extraction DocIE en cours…";
+    }
+    if (!d) throw new Error("extraction trop longue : abandon du suivi après 30 minutes.");
     const v = d.values || {};
     // Les 19 champs extraits (7 principaux + 12 de la section « Autres
     // informations »), non vides seulement : une saisie manuelle n'est
