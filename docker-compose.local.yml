@@ -81,6 +81,10 @@ services:
       context: ./contrats
       additional_contexts:
         bridge: ./document-parsing/bridge
+        # Schémas dynamiques partagés (issue #170) : contrats/Dockerfile fait
+        # `COPY --from=schemas` sans condition — sans ce contexte, BuildKit
+        # cherche une image « schemas » sur Docker Hub et le build échoue.
+        schemas: ./document-parsing/schemas
     container_name: adbi-contrats
     ports:
       - "4100:4100"
