@@ -29,12 +29,15 @@ class DocIEError(RuntimeError):
 # (#190). D'où une rangée de tableau simple sur UNE ligne.
 _W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _MC = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
-# Sous-arbres sans contenu : propriétés (dont `w:pPr/w:tabs/w:tab`, des taquets
-# de tabulation et non des caractères), code des champs (le résultat du champ,
-# lui, est dans des `w:t` ordinaires), révisions supprimées.
+# Le texte ne vient QUE de `w:t` : le code d'un champ (`w:instrText`,
+# `HYPERLINK "mailto:..."`) et le texte supprimé (`w:delText`) ne sont donc
+# jamais rendus ; le résultat affiché d'un champ, lui, est dans des `w:t`.
+# Sous-arbres ignorés en entier : les propriétés (dont `w:pPr/w:tabs/w:tab`,
+# des taquets de tabulation et non des caractères) et les révisions supprimées
+# `w:del`, dont les `w:br`/`w:tab` supprimés ne doivent pas non plus compter.
+# Non traité : `w:moveFrom` (origine d'un déplacement suivi).
 _SANS_TEXTE = {_W + nom for nom in (
-    "pPr", "rPr", "tblPr", "tblPrEx", "trPr", "tcPr", "sectPr", "tblGrid",
-    "instrText", "delInstrText", "del", "delText",
+    "pPr", "rPr", "tblPr", "tblPrEx", "trPr", "tcPr", "sectPr", "tblGrid", "del",
 )}
 _SAUT = {_W + "br", _W + "cr"}
 

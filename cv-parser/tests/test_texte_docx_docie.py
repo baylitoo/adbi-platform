@@ -97,12 +97,13 @@ def _saut_de_ligne(doc):
 
 def _tabulation(doc):
     paragraphe = doc.add_paragraph()
-    # Taquet de tabulation : un `w:tab` dans `w:pPr/w:tabs`, qui n'est PAS
-    # un caractère et ne doit rien rendre.
-    paragraphe.paragraph_format.tab_stops.add_tab_stop(Cm(12))
     paragraphe.add_run("Data Engineer").add_tab()
     paragraphe.add_run("Mars 2022 - Aujourd'hui")
     paragraphe = doc.add_paragraph()
+    # Taquet de tabulation : un `w:tab` dans `w:pPr/w:tabs`, qui n'est PAS
+    # un caractère et ne doit rien rendre. Pas sur le premier paragraphe : le
+    # `.strip()` final y masquerait une tabulation parasite.
+    paragraphe.paragraph_format.tab_stops.add_tab_stop(Cm(12))
     paragraphe.add_run("Master Informatique").add_tab()
     paragraphe.add_run("Université de Lille").add_tab()
     paragraphe.add_run("2018")
@@ -168,7 +169,8 @@ _CHAMP = _p(
 
 _REVISION = _p(
     _r("Septembre 2018 - ")
-    + "<w:del><w:r><w:delText>Aujourd'hui</w:delText></w:r></w:del>"
+    # La suppression emporte aussi une tabulation : elle ne doit pas compter.
+    + "<w:del><w:r><w:delText>Aujourd'hui</w:delText><w:tab/></w:r></w:del>"
     + "<w:ins>" + _r("Février 2022") + "</w:ins>"
 )
 
