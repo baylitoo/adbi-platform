@@ -100,7 +100,7 @@ async function lancerFile(fichiers) {
     item.etat = "encours";
     dessinerFile();
     try {
-      const data = await analyser(item.fichier);
+      const data = await analyser(item.fichier, item);
       item.etat = "ok";
       item.resultat = data;
       item.detail = resumeImport(data.master);
@@ -125,7 +125,22 @@ async function lancerFile(fichiers) {
   notice(`${ok.length} CV prêts. Cliquez sur une ligne pour le valider.`, "ok");
 }
 
-async function analyser(file) {
+/*
+ * L'import est une tache serveur (issue #196) : un grand CV prend plusieurs
+ * minutes cote DocIE, trop pour une seule requete HTTP. On la demarre, puis on
+ * interroge son etat toutes les 2 s. Plafond : 30 min d'interrogation (un
+ * onglet oublie ne tourne pas indefiniment) ; trois echecs reseau d'affilee
+ * abandonnent, un seul ne doit pas perdre une extraction de 4 minutes.
+ */
+const TACHE_INTERVALLE_MS = 2000;
+const TACHE_MAX_INTERROGATIONS = 900;
+const TACHE_MAX_ECHECS_RESEAU = 3;
+const LIBELLE_ETAPE = {
+  en_attente: (t) => `en attente${t.position ? ` (position ${t.position})` : ""}…`,
+  extraction: () => "lecture du CV…",
+};
+
+async function analyser(file, item) {
   const contentBase64 = await lireBase64(file);
   const r = await fetch("/api/import", {
     method: "POST",
@@ -134,7 +149,29 @@ async function analyser(file) {
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error || "Import impossible.");
-  return data;
+  return attendreTache(data.tache, item);
+}
+
+async function attendreTache(id, item) {
+  let echecsReseau = 0;
+  for (let n = 0; n < TACHE_MAX_INTERROGATIONS; n++) {
+    await new Promise((ok) => setTimeout(ok, TACHE_INTERVALLE_MS));
+    let r, t;
+    try {
+      r = await fetch("/api/taches/" + encodeURIComponent(id));
+      t = await r.json();
+      echecsReseau = 0;
+    } catch (e) {
+      if (++echecsReseau >= TACHE_MAX_ECHECS_RESEAU) throw new Error("Serveur injoignable pendant l'analyse.");
+      continue;
+    }
+    if (!r.ok) throw new Error(t.error || "Suivi de l'import impossible.");
+    if (t.etat === "terminee") return t.resultat;
+    if (t.etat === "echec") throw new Error((t.erreur && t.erreur.message) || "Import impossible.");
+    const libelle = LIBELLE_ETAPE[t.etape];
+    if (item && libelle) { item.detail = libelle(t); dessinerFile(); }
+  }
+  throw new Error("Analyse trop longue : abandon du suivi après 30 minutes.");
 }
 
 function resumeImport(m) {
