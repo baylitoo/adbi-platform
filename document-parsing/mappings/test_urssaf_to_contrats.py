@@ -340,6 +340,18 @@ class TestValidite6Mois(unittest.TestCase):
         self.assertEqual("2026-07-15", iso2)
         self.assertGreater(self._jours_restants(iso2, (2026, 10, 1)), 30)
 
+    def test_date_de_delivrance_ecrite_en_toutes_lettres_est_lue(self):
+        # Ce module n'ecrit pas de normaliseur de date : il importe celui de
+        # kbis_to_contrats.py. La table de mois partagee (#179 A10/B10)
+        # l'atteint donc aussi -- mesure avant : "" + « date non reconnue »,
+        # donc validite 6 mois non calculable.
+        envelope = _load_fixture("urssaf_extraction_sample.json")
+        envelope["result"]["issued_date"]["value"] = "le 4 mars 2026"
+        mapping = map_docie_urssaf_to_analysis(envelope)
+        self.assertEqual("2026-03-04", mapping.analysis["issuedDate"])
+        self.assertFalse(any(w.startswith("issued_date:") for w in mapping.warnings), mapping.warnings)
+        self.assertNotIn("Date de délivrance non trouvée dans le document.", mapping.analysis["issues"])
+
     def test_sans_date_de_delivrance_le_probleme_est_nomme(self):
         envelope = _load_fixture("urssaf_extraction_sample.json")
         envelope["result"]["issued_date"]["value"] = None

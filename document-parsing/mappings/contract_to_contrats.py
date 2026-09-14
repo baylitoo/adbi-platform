@@ -41,8 +41,11 @@ provenance) et test_contract_to_contrats.py.
 
 from __future__ import annotations
 
+import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 DOCIE_SCHEMA_NAME = "contract"
@@ -197,12 +200,41 @@ def _date_existe(annee: int, mois: int, jour: int) -> bool:
     return 1 <= jour <= dernier
 
 
+# Table des noms de mois PARTAGEE (#179 lignes A10/B10) : LUE dans
+# document-parsing/fixtures/date_mission.json, jamais recopiee. Quatre copies
+# independantes de ce normaliseur ont produit les divergences de #179 ; une
+# table ecrite a la main ici en serait une de plus. C'est la table deja lue par
+# one-pager/lib/normalize.js. Seule la TABLE est partagee, pas la regle de
+# date_mission.json, qui rend un mois la ou <input type="date"> exige un jour
+# (voir `_ecart_assume_avec_date_mission` dans date_docie.json).
+TABLE_MOIS_CHEMIN = Path(__file__).resolve().parents[1] / "fixtures" / "date_mission.json"
+MOIS: dict[str, int] = json.loads(TABLE_MOIS_CHEMIN.read_text(encoding="utf-8"))["mois"]
+
+# Date ecrite en toutes lettres (« le 12 mars 2019 ») -- motif PARTAGE,
+# identique caractere pour caractere au champ `motif_date_ecrite` de
+# date_docie.json et aux trois autres portages. [0-9]/[a-z] et separateurs
+# enumeres plutot que \d/\s, que Python et JS ne definissent pas pareil.
+MOTIF_DATE_ECRITE = r"^(?:le[ \t\n\r\u00a0]+)?([0-9]{1,2})[ \t\n\r\u00a0]+([a-z]{3,10})\.?[ \t\n\r\u00a0]+([0-9]{4})$"
+_DATE_ECRITE_RE = re.compile(MOTIF_DATE_ECRITE)
+# Bloc U+0300-U+036F seulement, exactement comme le portage JS -- et non
+# unicodedata.combining(), qui retire aussi des marques que le JS laisse en
+# place (#179 ligne B11, a ne pas reproduire ici).
+_MARQUES_RE = re.compile("[\u0300-\u036f]")
+
+
+def _forme_ecrite(texte: str) -> str:
+    """Minuscules, NFD, marques U+0300-U+036F retirees : la forme sous
+    laquelle le mot du mois est cherche dans MOIS (cles desaccentuees)."""
+    return _MARQUES_RE.sub("", unicodedata.normalize("NFD", texte.lower()))
+
+
 def _normalize_date(raw: Any, field_key: str, warnings: list[str]) -> str:
     """DocIE's DateField ne garantit PAS l'ISO ("ISO-8601 quand possible" --
     docie_bench/schemas/common.py) alors que contrats/lib/fields.js attend un
     <input type="date"> (YYYY-MM-DD). ISO transparent ; DD/MM/YYYY converti ;
-    tout le reste -> vide + avertissement (jamais de valeur injectee dans un
-    champ date que le navigateur ne saura pas afficher).
+    date ecrite en toutes lettres (« le 12 mars 2019 ») lue via la table de
+    mois partagee ; tout le reste -> vide + avertissement (jamais de valeur
+    injectee dans un champ date que le navigateur ne saura pas afficher).
 
     Regle partagee : document-parsing/fixtures/date_docie.json. Les deux
     motifs ne comptent que des chiffres, jamais leurs bornes : « 01/13/2026 »
@@ -234,6 +266,15 @@ def _normalize_date(raw: Any, field_key: str, warnings: list[str]) -> str:
         if m:
             d, mo, y = m.groups()
             annee, mois, jour = int(y), int(mo), int(d)
+        else:
+            # Troisieme voie (#179 A10) : le mot doit etre une cle de la table
+            # partagee, sinon rien n'est lu et la date reste « non reconnue ».
+            # Un jour ou une annee hors bornes est en revanche LU, et tombe
+            # donc dans « date impossible » ci-dessous, comme par les deux
+            # autres voies.
+            e = _DATE_ECRITE_RE.match(_forme_ecrite(raw_s))
+            if e and e.group(2) in MOIS:
+                annee, mois, jour = int(e.group(3)), MOIS[e.group(2)], int(e.group(1))
     if annee is None:
         warnings.append(f"{field_key}: date non reconnue ({raw_s!r}), laissee vide -- a corriger manuellement")
         return ""

@@ -38,7 +38,10 @@ from contract_to_contrats import (  # noqa: E402
     MAPPED_FIELDS,
     ANNEE_MAX,
     ANNEE_MIN,
+    MOIS,
+    MOTIF_DATE_ECRITE,
     MOTIF_NOMBRE,
+    TABLE_MOIS_CHEMIN,
     ContractMappingError,
     _normalize_date,
     _normalize_number,
@@ -300,6 +303,11 @@ class TestDatePartage(unittest.TestCase):
                 warnings: list[str] = []
                 self.assertEqual(cas["sortie"], _normalize_date(cas["valeur"], "champ", warnings))
                 self.assertEqual(cas["avertit"], bool(warnings))
+                if cas["avertit"]:
+                    # La NATURE de la panne, pas seulement sa presence : une
+                    # date ecrite au jour impossible ne doit pas glisser vers
+                    # « non reconnue », ni l'inverse.
+                    self.assertIn(cas["avertissement"], warnings[0])
 
     def test_date_impossible_et_date_illisible_ne_s_avertissent_pas_pareil(self):
         # Deux pannes qui ne se corrigent pas de la meme facon : « DocIE a lu
@@ -315,6 +323,27 @@ class TestDatePartage(unittest.TestCase):
         self.assertEqual("", _normalize_date("le 5 courant", "date_redaction", illisible))
         self.assertIn("date non reconnue", illisible[0])
         self.assertNotIn("date impossible", illisible[0])
+
+        # Meme frontiere par la voie ecrite (#179 A10) : « le 45 mars 2019 »
+        # est une date LUE mais fausse -- jamais remise en forme, jamais
+        # « non reconnue ».
+        ecrite: list[str] = []
+        self.assertEqual("", _normalize_date("le 45 mars 2019", "date_debut", ecrite))
+        self.assertIn("date impossible", ecrite[0])
+        self.assertNotIn("date non reconnue", ecrite[0])
+
+    def test_table_des_mois_lue_dans_date_mission_jamais_recopiee(self):
+        # #179 ligne A10 : la table existe deja (date_mission.json). Elle est
+        # LUE, pas recopiee -- une cinquieme copie rouvrirait la porte de #179.
+        self.assertEqual(self.fixture["motif_date_ecrite"], MOTIF_DATE_ECRITE)
+        self.assertEqual((REPO_ROOT / self.fixture["table_mois"]).resolve(), TABLE_MOIS_CHEMIN)
+        with open(TABLE_MOIS_CHEMIN, encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["mois"], MOIS)
+        # json.load rend un objet neuf : l'identite n'est pas verifiable cote
+        # Python, d'ou le scan de la source -- une table litterale y ferait
+        # apparaitre ses cles entre guillemets.
+        source = (Path(__file__).parent / "contract_to_contrats.py").read_text(encoding="utf-8")
+        self.assertIsNone(re.search(r"[\"']janvier[\"']", source))
 
     def test_date_refusee_jamais_reparee(self):
         # Ni jour/mois echanges, ni jour rabattu sur la borne du mois : une

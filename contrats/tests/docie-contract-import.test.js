@@ -6,11 +6,39 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("path");
+const fs = require("fs");
+const { spawnSync } = require("child_process");
 const {
   extractContractValues, mapContractResult, MAPPED_FIELDS,
   CONSTANT_FIELDS_NOT_FROM_DOCIE, GAP_FIELDS_NO_DOCIE_EQUIVALENT, ALL_ACCOUNTED_KEYS,
   MOTIF_NOMBRE, normalizeNumber, ANNEE_MIN, ANNEE_MAX, normalizeDate,
+  MOTIF_DATE_ECRITE, tableMois,
 } = require("../lib/docie-contract-import");
+
+// Script exécuté dans un processus Node séparé : charge `module` en faisant
+// échouer la résolution de date_mission.json comme dans l'image Docker de
+// contrats, qui n'embarque pas document-parsing/fixtures. Prouve que le module
+// se charge quand même, et ce que rend alors une date écrite.
+function scriptSansTableMois(module) {
+  return `
+const Module = require("module");
+const resoudre = Module._resolveFilename;
+Module._resolveFilename = function (demande, ...reste) {
+  if (String(demande).endsWith("date_mission.json")) {
+    const err = new Error("Cannot find module " + demande);
+    err.code = "MODULE_NOT_FOUND";
+    throw err;
+  }
+  return resoudre.call(this, demande, ...reste);
+};
+const m = require(${JSON.stringify(module)});
+const warnings = [];
+const iso = m.normalizeDate("2019-03-12", "date_debut", []);
+const ecrite = m.normalizeDate("le 12 mars 2019", "date_debut", warnings);
+m.normalizeDate("le 5 courant", "date_debut", warnings);
+console.log("\\n" + JSON.stringify({ iso, ecrite, warnings }));
+`;
+}
 const { sousTraitance } = require("../lib/fields");
 // Fixture RAW (enveloppe {value,confidence,evidence_ids} non déballée),
 // générée depuis les vrais modèles pydantic de DocIE — voir
@@ -320,7 +348,42 @@ test("date : les " + DATE.cas.length + " cas du jeu d'essai partagé (#179 A8/A9
     const sortie = normalizeDate(cas.valeur, "champ", warnings);
     assert.equal(sortie, cas.sortie, cas.valeur + " -> " + JSON.stringify(sortie) + " (" + cas.preuve + ")");
     assert.equal(warnings.length > 0, cas.avertit, "avertissement attendu=" + cas.avertit + " pour " + JSON.stringify(cas.valeur));
+    // La NATURE de la panne, pas seulement sa présence : une date écrite au
+    // jour impossible ne doit pas glisser vers « non reconnue », ni l'inverse.
+    if (cas.avertit) {
+      assert.ok(warnings[0].includes(cas.avertissement),
+        JSON.stringify(cas.valeur) + " : attendu « " + cas.avertissement + " », reçu " + warnings[0]);
+    }
   }
+});
+
+// ---------------------------------------------------------------------------
+// #179 ligne A10 : « le 12 mars 2019 » sortait vide + « date non reconnue »
+// ici comme côté Python. La table de mois existe déjà (date_mission.json) :
+// elle est LUE, jamais recopiée, et les tests le vérifient.
+// ---------------------------------------------------------------------------
+test("date écrite : motif identique à la fixture, table de mois LUE dans date_mission.json (#179 A10)", () => {
+  assert.equal(MOTIF_DATE_ECRITE, DATE.motif_date_ecrite);
+  // Même objet que le cache de require : une table recopiée à la main, même
+  // identique clé pour clé, échoue ici.
+  assert.equal(tableMois(), require(path.join(__dirname, "..", "..", DATE.table_mois)).mois);
+  const source = fs.readFileSync(path.join(__dirname, "..", "lib", "docie-contract-import.js"), "utf8");
+  assert.ok(!/["']janvier["']/.test(source), "docie-contract-import.js ne doit pas porter de table de mois littérale");
+});
+
+test("date écrite : table de mois absente (image sans document-parsing/fixtures) -> démarrage intact, cause nommée", () => {
+  const r = spawnSync(process.execPath, ["-e", scriptSansTableMois(path.join(__dirname, "..", "lib", "docie-contract-import.js"))],
+    { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const { iso, ecrite, warnings } = JSON.parse(r.stdout.trim().split("\n").pop());
+  assert.equal(iso, "2019-03-12");
+  assert.equal(ecrite, "");
+  assert.equal(warnings.length, 2, warnings.join(" | "));
+  assert.match(warnings[0], /le 12 mars 2019/);
+  assert.match(warnings[0], /table des mois introuvable/);
+  assert.ok(!/date non reconnue|date impossible/.test(warnings[0]));
+  // Une forme qui n'est pas une date écrite ne dépend pas de la table.
+  assert.match(warnings[1], /date non reconnue/);
 });
 
 test("date : une date impossible s'avertit AUTREMENT qu'une date illisible, et cite le champ", () => {

@@ -51,8 +51,16 @@ test("normaliseurs : ce portage pointe sur la règle unique, il n'en écrit pas 
   const kbis = require("../lib/kbis-mapping");
   assert.equal(MOTIF_NOMBRE, kbis.MOTIF_NOMBRE);
   const source = fs.readFileSync(path.join(RACINE, "contrats", "lib", "urssaf-mapping.js"), "utf8");
-  assert.ok(!/function normalizeDate|function normalizeNumber|function checkName/.test(source),
+  // Déclaration sous forme de fonction OU de constante (fonction fléchée) : la
+  // seconde forme passait sous le seul motif `function X`.
+  assert.ok(!/function\s+(normalizeDate|normalizeNumber|checkName|extractMoneyPair)\b|(const|let|var)\s+(normalizeDate|normalizeNumber|checkName|extractMoneyPair)\s*=/.test(source),
     "urssaf-mapping.js ne doit PAS redéfinir un normaliseur partagé");
+  // extractMoneyPair : même règle. Ce module en portait une copie, faute
+  // d'export côté kbis-mapping.js, alors que le portage Python l'importait
+  // déjà — une implémentation côté Python, deux côté JS.
+  assert.ok(/\bextractMoneyPair\b/.test(source) && typeof kbis.extractMoneyPair === "function",
+    "extractMoneyPair doit venir de kbis-mapping.js");
+  assert.ok(/require\("\.\/kbis-mapping"\)/.test(source));
   // `_ports` énumère les COPIES de la règle : ce module n'en est pas une.
   for (const f of [NOMBRE, DATE]) {
     assert.equal(f._ports.length, 4);
@@ -161,6 +169,20 @@ test("garde-fou : un résultat non-objet lève une erreur explicite", () => {
   for (const mauvais of [null, undefined, [], "x", 3]) {
     assert.throws(() => mapUrssafResult(mauvais), /Résultat DocIE 'urssaf' invalide/);
   }
+});
+
+test("date de délivrance écrite en toutes lettres : lue, par la voie importée de kbis-mapping.js (#179 A10/B10)", () => {
+  // Ce module n'écrit pas de normaliseur de date : il importe celui de
+  // kbis-mapping.js. La table de mois partagée l'atteint donc aussi — mesuré
+  // avant : "" + « date non reconnue », donc validité 6 mois non calculable.
+  // On passe par le VRAI pont, comme en production.
+  const env = enveloppe("urssaf_extraction_sample.json");
+  env.result.issued_date.value = "le 4 mars 2026";
+  const { result, metadata } = parseTextResponse(env, "urssaf");
+  const { analysis, warnings } = mapUrssafResult(result, { validation: metadata.validation });
+  assert.equal(analysis.issuedDate, "2026-03-04");
+  assert.ok(!warnings.some((w) => w.startsWith("issued_date:")), warnings.join(" | "));
+  assert.ok(!analysis.issues.includes("Date de délivrance non trouvée dans le document."));
 });
 
 test("sans date de délivrance : champ vide, problème nommé, validité 6 mois non calculable", () => {

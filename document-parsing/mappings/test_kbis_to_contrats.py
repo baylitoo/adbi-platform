@@ -46,7 +46,10 @@ from kbis_to_contrats import (  # noqa: E402
     MAPPED_FIELDS,
     ANNEE_MAX,
     ANNEE_MIN,
+    MOIS,
+    MOTIF_DATE_ECRITE,
     MOTIF_NOMBRE,
+    TABLE_MOIS_CHEMIN,
     KbisMappingError,
     _LEGAL_FORM_TOKENS,
     _LIGATURES,
@@ -255,10 +258,12 @@ class TestEdgeCaseFixture(unittest.TestCase):
             self.assertEqual("", v[key])
         self.assertEqual("", v["siret"])
 
-    def test_unparseable_date_is_blanked_with_warning(self):
+    def test_written_french_date_is_read_via_shared_month_table(self):
+        # #179 ligne B10, mesure avant, ici comme cote JS : "" + « date non
+        # reconnue ('le 12 mars 2019') » -- une date parfaitement lisible, perdue.
         mapping = map_docie_kbis_to_analysis(self.envelope)
-        self.assertEqual("", mapping.analysis["dateImmatriculation"])
-        self.assertTrue(any("registration_date" in w and "le 12 mars 2019" in w for w in mapping.warnings))
+        self.assertEqual("2019-03-12", mapping.analysis["dateImmatriculation"])
+        self.assertFalse(any(w.startswith("registration_date:") for w in mapping.warnings), mapping.warnings)
 
     def test_iso_issued_date_passes_through(self):
         mapping = map_docie_kbis_to_analysis(self.envelope)
@@ -422,6 +427,9 @@ class TestDatePartage(unittest.TestCase):
                 warnings: list[str] = []
                 self.assertEqual(cas["sortie"], _normalize_date(cas["valeur"], "champ", warnings))
                 self.assertEqual(cas["avertit"], bool(warnings))
+                if cas["avertit"]:
+                    # La NATURE de la panne, pas seulement sa presence.
+                    self.assertIn(cas["avertissement"], warnings[0])
 
     def test_date_impossible_et_date_illisible_ne_s_avertissent_pas_pareil(self):
         impossible: list[str] = []
@@ -429,10 +437,32 @@ class TestDatePartage(unittest.TestCase):
         self.assertIn("registration_date", impossible[0])
         self.assertIn("date impossible", impossible[0])
 
+        # « le 12 mars 2019 » servait de temoin illisible jusqu'a #179 B10 :
+        # elle est desormais lue. Le temoin est un mot qui n'est pas un mois.
         illisible: list[str] = []
-        self.assertEqual("", _normalize_date("le 12 mars 2019", "registration_date", illisible))
+        self.assertEqual("", _normalize_date("le 12 truc 2019", "registration_date", illisible))
         self.assertIn("date non reconnue", illisible[0])
         self.assertNotIn("date impossible", illisible[0])
+
+        # Meme frontiere par la voie ecrite : « le 45 mars 2019 » est une date
+        # LUE mais fausse -- jamais remise en forme, jamais « non reconnue ».
+        ecrite: list[str] = []
+        self.assertEqual("", _normalize_date("le 45 mars 2019", "registration_date", ecrite))
+        self.assertIn("date impossible", ecrite[0])
+        self.assertNotIn("date non reconnue", ecrite[0])
+
+    def test_table_des_mois_lue_dans_date_mission_jamais_recopiee(self):
+        # #179 ligne B10 : la table existe deja (date_mission.json). Elle est
+        # LUE, pas recopiee -- une cinquieme copie rouvrirait la porte de #179.
+        self.assertEqual(self.fixture["motif_date_ecrite"], MOTIF_DATE_ECRITE)
+        self.assertEqual((REPO_ROOT / self.fixture["table_mois"]).resolve(), TABLE_MOIS_CHEMIN)
+        with open(TABLE_MOIS_CHEMIN, encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["mois"], MOIS)
+        # json.load rend un objet neuf : l'identite n'est pas verifiable cote
+        # Python, d'ou le scan de la source -- une table litterale y ferait
+        # apparaitre ses cles entre guillemets.
+        source = (Path(__file__).parent / "kbis_to_contrats.py").read_text(encoding="utf-8")
+        self.assertIsNone(re.search(r"[\"']janvier[\"']", source))
 
     def test_date_de_delivrance_impossible_vide_le_champ_sans_rendre_illisible(self):
         # contrats/public/app.js::analyzeChecklistDoc ne lit que issuedDate,
