@@ -104,12 +104,14 @@ const MIME_TYPES = new Set(["application/pdf", "image/png", "image/jpeg"]);
 // ranks fields within one extraction; it is not a threshold input.
 const ENVELOPE_MARKERS = ["confidence", "evidence_ids", "model_confidence", "model_logprob"];
 
+// `eta_seconds` : seul le code `loading` le renseigne (délai annoncé par DocIE,
+// nombre fini >= 0) ; null partout ailleurs. Même nom que côté Python.
 class DocIEBridgeError extends Error {
-  constructor(code, message, status = null) {
-    super(message); this.name = "DocIEBridgeError"; this.code = code; this.status = status;
+  constructor(code, message, status = null, etaSeconds = null) {
+    super(message); this.name = "DocIEBridgeError"; this.code = code; this.status = status; this.eta_seconds = etaSeconds;
   }
 }
-function fail(code, message, status) { throw new DocIEBridgeError(code, message, status); }
+function fail(code, message, status, etaSeconds = null) { throw new DocIEBridgeError(code, message, status, etaSeconds); }
 function object(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
 // API root, access key and timeout — what BOTH DocIE paths need. Split out of
@@ -235,6 +237,24 @@ function parseResponse(body, expectedSchema, agent) {
   return { schema_name: expectedSchema, result: unwrap(result), metadata };
 }
 
+// Démarrage à froid sur la voie texte (#194). Un `model_profile` `store:<nom>`
+// dont le modèle n'est pas encore chargé : `api.resolve_profile` de DocIE
+// déclenche le chargement et lève HTTPException(status_code=202) SANS mettre la
+// requête en file — corps `{"detail": {"status": "loading", "deployment",
+// "eta_seconds", "message"}}`, aucun `result`. Code `loading`, délai annoncé
+// porté par error.eta_seconds, message constant : le `message` amont n'est
+// jamais recopié (même garantie sur la clé que `context`). Pas de relance
+// automatique, décision « échouer bruyamment » de #194 : le consommateur affiche
+// le délai, l'utilisateur relance.
+function loadingDetail(body) {
+  return object(body) && object(body.detail) && body.detail.status === "loading" ? body.detail : null;
+}
+function failLoading(detail, status) {
+  const eta = detail ? detail.eta_seconds : null;
+  fail("loading", "DocIE is still loading the requested model; retry later (no automatic retry).", status,
+    number(eta) && eta >= 0 ? eta : null);
+}
+
 // POST /v1/extract/text answers FLAT — no `choices`, no `finish_reason`. A real
 // recorded answer (document-parsing/scripts/test_api.py against the deployment)
 // carries: request_id, schema_name, model_profile, document_hash, result,
@@ -255,6 +275,8 @@ function parseResponse(body, expectedSchema, agent) {
 //     "not capped" (#190).
 function parseTextResponse(body, expectedSchema) {
   if (!object(body)) fail("response", "Invalid DocIE extraction response.");
+  const loading = loadingDetail(body);
+  if (loading) failLoading(loading, null);
   const result = body.result;
   if (!object(result) || !Object.keys(result).length) fail("response", "DocIE returned an empty or malformed result.");
   // Same arbitration as the chat path: a NAMED and wrong schema is refused, a
@@ -298,7 +320,7 @@ async function readErrorText(response, key) {
 // timeout and the reflected-key redaction are the same guarantees whichever
 // DocIE surface is called, and a second copy of them is exactly the drift this
 // module exists to prevent.
-async function postJson(endpoint, headers, payload, key, timeout, fetchImpl) {
+async function postJson(endpoint, headers, payload, key, timeout, fetchImpl, { loading = false } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout * 1000);
   const started = performance.now();
@@ -317,9 +339,18 @@ async function postJson(endpoint, headers, payload, key, timeout, fetchImpl) {
           ? "DocIE refused the document as beyond its configured limits (size, OCR blocks or pages)."
           : "DocIE request failed (HTTP " + response.status + ").", response.status);
       }
+      const text = await readErrorText(response, key);
+      // `loading` : voie texte seulement (voir loadingDetail). Un 202, ou un
+      // corps `detail.status == "loading"` sous un autre statut.
+      if (loading) {
+        let parsed = null;
+        try { parsed = JSON.parse(text); } catch {}
+        const detail = loadingDetail(parsed);
+        if (response.status === 202 || detail) failLoading(detail, response.status);
+      }
       // Message constant : le corps amont sert à classer, jamais à informer —
       // c'est ce qui garantit qu'une clé réfléchie ne sort pas d'ici.
-      if (CONTEXT_OVERFLOW.test(await readErrorText(response, key))) {
+      if (CONTEXT_OVERFLOW.test(text)) {
         fail("context", "DocIE's model server refused the prompt as beyond its context size: the document is too long for this profile.", response.status);
       }
       fail("upstream", "DocIE request failed (HTTP " + response.status + ").", response.status);
@@ -370,6 +401,9 @@ async function extractDocument(content, mimeType, { kind = "resume", env = proce
   }
   if (!MIME_TYPES.has(mimeType)) fail("input", "Unsupported document MIME type; use PDF, PNG or JPEG.");
   const payload = filePayload(content, mimeType, agent, tokens);
+  // Pas de `loading` ici : sur la voie agent, un modèle `store:` froid ne
+  // répond pas 202 mais une 500 non rattrapée côté DocIE (#194). Un 202 y reste
+  // un échec `upstream`.
   const { body, elapsed } = await postJson(endpoint, { Authorization: "Bearer " + key }, payload, key, timeout, fetchImpl);
   const result = parseResponse(body, SCHEMAS[kind], agent);
   result.metadata.elapsed_ms = elapsed;
@@ -421,7 +455,7 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, env = 
   // success on this endpoint used (cv-parser/docie_client.py, the response saved
   // by document-parsing/scripts/test_api.py). The chat path keeps its own
   // header, equally by measurement.
-  const { body, elapsed } = await postJson(base + "/v1/extract/text", { "x-api-key": key }, payload, key, timeout, fetchImpl);
+  const { body, elapsed } = await postJson(base + "/v1/extract/text", { "x-api-key": key }, payload, key, timeout, fetchImpl, { loading: true });
   const result = parseTextResponse(body, schema);
   result.metadata.elapsed_ms = elapsed;
   return result;

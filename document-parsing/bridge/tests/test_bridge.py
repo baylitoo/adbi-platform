@@ -120,15 +120,21 @@ class BridgeTests(unittest.TestCase):
             response.__enter__.return_value = response
             response.iter_content.side_effect = lambda *args, body=case["body"]: iter([body.encode("utf-8")] if body else [])
             session.post.return_value = response
-            # Même post_json pour la voie texte : même classement.
-            for call in (lambda: extract_document(b"pdf", "application/pdf", env=env, session=session),
-                         lambda: extract_text("CV", env=env, session=session)):
-                with self.subTest(case=case["name"]), self.assertRaises(DocIEBridgeError) as raised:
+            # Même post_json pour la voie texte : même classement, plus `loading`.
+            # `expected_code_text` / `expected_eta_seconds` : le code `loading`
+            # (#194) n'existe que sur la voie texte ; la voie agent garde `expected_code`.
+            paths = (("agent", lambda: extract_document(b"pdf", "application/pdf", env=env, session=session),
+                      case["expected_code"], None),
+                     ("text", lambda: extract_text("CV", env=env, session=session),
+                      case.get("expected_code_text", case["expected_code"]), case.get("expected_eta_seconds")))
+            for path, call, code, eta in paths:
+                with self.subTest(case=case["name"], path=path), self.assertRaises(DocIEBridgeError) as raised:
                     call()
-                self.assertEqual(raised.exception.code, case["expected_code"])
+                self.assertEqual(raised.exception.code, code)
                 self.assertEqual(raised.exception.status, case["status"])
+                self.assertEqual(raised.exception.eta_seconds, eta)
                 self.assertNotIn("test-secret", str(raised.exception))
-                self.assertNotRegex(str(raised.exception), "exceeds the available|exceed_context_size_error")
+                self.assertNotRegex(str(raised.exception), "exceeds the available|exceed_context_size_error|is starting|Retry in")
             self.assertEqual(session.post.call_count, 2)
 
     def test_file_path_limit_fits_docie_request_body(self):
@@ -253,6 +259,11 @@ class TextPathTests(unittest.TestCase):
         for body in bad:
             with self.subTest(body=body), self.assertRaises(DocIEBridgeError):
                 parse_text_response(body, "adbi_resume")
+        # #194 : un corps `detail.status == "loading"` n'est jamais lu comme une extraction.
+        with self.assertRaises(DocIEBridgeError) as raised:
+            parse_text_response({"detail": {"status": "loading", "eta_seconds": 3, "message": "test-secret"}}, "adbi_resume")
+        self.assertEqual((raised.exception.code, raised.exception.eta_seconds, raised.exception.status), ("loading", 3, None))
+        self.assertNotIn("test-secret", str(raised.exception))
 
     def test_text_input_and_configuration_fail_before_network(self):
         session = Mock()

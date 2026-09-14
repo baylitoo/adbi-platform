@@ -68,5 +68,59 @@
     "body": "exceeds the available context size",
     "expected_code": "auth",
     "comment": "SYNTHETIC body, not a captured response. Same precedence for auth."
+  },
+  {
+    "name": "text_store_model_loading_202",
+    "status": 202,
+    "body": "{\"detail\":{\"status\":\"loading\",\"deployment\":\"lfm2.5-2.6b\",\"eta_seconds\":42.0,\"message\":\"Model 'lfm2.5-2.6b' is starting — this can take a moment the first time. Retry in ~42s.\"}}",
+    "expected_code": "upstream",
+    "expected_code_text": "loading",
+    "expected_eta_seconds": 42.0,
+    "comment": "SYNTHETIC body, not a captured response. Modelled on DocIE api.resolve_profile read on origin/dev-agents-milestone (HTTPException(status_code=202, detail={status, deployment, eta_seconds, message})). Text path -> loading; the agent path never answers 202 for a cold model, so there it stays upstream. The nominal cold start: ETA carried as data, upstream message never echoed."
+  },
+  {
+    "name": "loading_message_reflects_key",
+    "status": 202,
+    "body": "{\"detail\":{\"status\":\"loading\",\"deployment\":\"lfm2.5-2.6b\",\"eta_seconds\":0,\"message\":\"Model is starting. Retry in ~0s. key test-secret\"}}",
+    "expected_code": "upstream",
+    "expected_code_text": "loading",
+    "expected_eta_seconds": 0,
+    "comment": "SYNTHETIC body, not a captured response. Modelled on DocIE api.resolve_profile read on origin/dev-agents-milestone (HTTPException(status_code=202, detail={status, deployment, eta_seconds, message})). Text path -> loading; the agent path never answers 202 for a cold model, so there it stays upstream. detail.message carries the API key: it must not leak. An ETA of 0 is a valid number, not null."
+  },
+  {
+    "name": "loading_eta_not_a_number",
+    "status": 202,
+    "body": "{\"detail\":{\"status\":\"loading\",\"deployment\":\"lfm2.5-2.6b\",\"eta_seconds\":\"soon\",\"message\":\"Model 'lfm2.5-2.6b' is starting — this can take a moment the first time. Retry in ~42s.\"}}",
+    "expected_code": "upstream",
+    "expected_code_text": "loading",
+    "expected_eta_seconds": null,
+    "comment": "SYNTHETIC body, not a captured response. Modelled on DocIE api.resolve_profile read on origin/dev-agents-milestone (HTTPException(status_code=202, detail={status, deployment, eta_seconds, message})). Text path -> loading; the agent path never answers 202 for a cold model, so there it stays upstream. Unusable ETA -> null."
+  },
+  {
+    "name": "loading_eta_negative",
+    "status": 202,
+    "body": "{\"detail\":{\"status\":\"loading\",\"deployment\":\"lfm2.5-2.6b\",\"eta_seconds\":-3,\"message\":\"Model 'lfm2.5-2.6b' is starting — this can take a moment the first time. Retry in ~42s.\"}}",
+    "expected_code": "upstream",
+    "expected_code_text": "loading",
+    "expected_eta_seconds": null,
+    "comment": "SYNTHETIC body, not a captured response. Modelled on DocIE api.resolve_profile read on origin/dev-agents-milestone (HTTPException(status_code=202, detail={status, deployment, eta_seconds, message})). Text path -> loading; the agent path never answers 202 for a cold model, so there it stays upstream. Negative ETA -> null."
+  },
+  {
+    "name": "loading_202_unreadable_body",
+    "status": 202,
+    "body": "",
+    "expected_code": "upstream",
+    "expected_code_text": "loading",
+    "expected_eta_seconds": null,
+    "comment": "SYNTHETIC body, not a captured response. Modelled on DocIE api.resolve_profile read on origin/dev-agents-milestone (HTTPException(status_code=202, detail={status, deployment, eta_seconds, message})). Text path -> loading; the agent path never answers 202 for a cold model, so there it stays upstream. A 202 alone is enough on the text path; ETA unknown -> null."
+  },
+  {
+    "name": "loading_detail_under_other_status",
+    "status": 503,
+    "body": "{\"detail\":{\"status\":\"loading\",\"deployment\":\"lfm2.5-2.6b\",\"eta_seconds\":10,\"message\":\"Model 'lfm2.5-2.6b' is starting — this can take a moment the first time. Retry in ~42s.\"}}",
+    "expected_code": "upstream",
+    "expected_code_text": "loading",
+    "expected_eta_seconds": 10,
+    "comment": "SYNTHETIC body, not a captured response. Modelled on DocIE api.resolve_profile read on origin/dev-agents-milestone (HTTPException(status_code=202, detail={status, deployment, eta_seconds, message})). Text path -> loading; the agent path never answers 202 for a cold model, so there it stays upstream. detail.status == loading under a non-202 status is still loading on the text path."
   }
 ]

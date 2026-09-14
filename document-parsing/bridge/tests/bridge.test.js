@@ -88,20 +88,24 @@ test("timeouts, network errors, response limits and reflected keys", async () =>
 // seul statut, et le message ne recopie jamais le corps (ni donc la clé).
 test("error bodies: context overflow named by its text, other failures unchanged", async () => {
   const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret", DOCIE_AGENT_RESUME: "adbi_agent_1" };
-  const check = c => error => {
+  // `expected_code_text` / `expected_eta_seconds` : le code `loading` (#194)
+  // n'existe que sur la voie texte ; la voie agent garde `expected_code`.
+  const check = (c, path) => error => {
+    const text = path === "text";
     assert.ok(error instanceof DocIEBridgeError, c.name);
-    assert.equal(error.code, c.expected_code, c.name);
+    assert.equal(error.code, text ? (c.expected_code_text ?? c.expected_code) : c.expected_code, c.name + " " + path);
     assert.equal(error.status, c.status, c.name);
+    assert.equal(error.eta_seconds, text ? (c.expected_eta_seconds ?? null) : null, c.name + " " + path);
     assert.ok(!error.message.includes("test-secret"), c.name);
-    assert.ok(!/exceeds the available|exceed_context_size_error/.test(error.message), c.name);
+    assert.ok(!/exceeds the available|exceed_context_size_error|is starting|Retry in/.test(error.message), c.name);
     return true;
   };
   for (const c of errorCases) {
     let calls = 0;
     const fetchImpl = async () => { calls++; return new Response(c.body, { status: c.status }); };
-    await assert.rejects(extractDocument(Buffer.from("pdf"), "application/pdf", { env, fetchImpl }), check(c));
-    // Même postJson pour la voie texte : même classement.
-    await assert.rejects(extractText("CV", { env, fetchImpl }), check(c));
+    await assert.rejects(extractDocument(Buffer.from("pdf"), "application/pdf", { env, fetchImpl }), check(c, "agent"));
+    // Même postJson pour la voie texte : même classement, plus `loading`.
+    await assert.rejects(extractText("CV", { env, fetchImpl }), check(c, "text"));
     assert.equal(calls, 2, c.name);
   }
 });
@@ -203,6 +207,9 @@ test("reject malformed and wrong-schema text responses", () => {
     { result: { document_type: "kbis", name: "Alice" } },
     { result: { name: "Alice" }, validation: "ok" }];
   for (const body of bad) assert.throws(() => parseTextResponse(body, "adbi_resume"), DocIEBridgeError);
+  // #194 : un corps `detail.status == "loading"` n'est jamais lu comme une extraction.
+  assert.throws(() => parseTextResponse({ detail: { status: "loading", eta_seconds: 3, message: "test-secret" } }, "adbi_resume"),
+    error => error.code === "loading" && error.eta_seconds === 3 && error.status === null && !error.message.includes("test-secret"));
 });
 
 test("text input and configuration rejected before network", async () => {

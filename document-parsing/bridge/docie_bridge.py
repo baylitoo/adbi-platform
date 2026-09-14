@@ -117,14 +117,17 @@ ENVELOPE_MARKERS = ("confidence", "evidence_ids", "model_confidence", "model_log
 
 
 class DocIEBridgeError(RuntimeError):
-    def __init__(self, code, message, status=None):
+    # `eta_seconds` : seul le code `loading` le renseigne (délai annoncé par
+    # DocIE, nombre fini >= 0) ; None partout ailleurs. Même nom que côté Node.
+    def __init__(self, code, message, status=None, eta_seconds=None):
         super().__init__(message)
         self.code = code
         self.status = status
+        self.eta_seconds = eta_seconds
 
 
-def fail(code, message, status=None):
-    raise DocIEBridgeError(code, message, status)
+def fail(code, message, status=None, eta_seconds=None):
+    raise DocIEBridgeError(code, message, status, eta_seconds)
 
 
 def connection(env):
@@ -309,6 +312,29 @@ def parse_response(body, expected_schema, agent):
     return {"schema_name": expected_schema, "result": unwrap(result), "metadata": metadata}
 
 
+def loading_detail(body):
+    """Démarrage à froid sur la voie texte (#194).
+
+    Un `model_profile` `store:<nom>` dont le modèle n'est pas encore chargé :
+    `api.resolve_profile` de DocIE déclenche le chargement et lève
+    HTTPException(status_code=202) SANS mettre la requête en file -- corps
+    `{"detail": {"status": "loading", "deployment", "eta_seconds", "message"}}`,
+    aucun `result`. Code `loading`, délai annoncé porté par
+    DocIEBridgeError.eta_seconds, message constant : le `message` amont n'est
+    jamais recopié (même garantie sur la clé que `context`). Pas de relance
+    automatique, décision « échouer bruyamment » de #194 : le consommateur
+    affiche le délai, l'utilisateur relance.
+    """
+    detail = body.get("detail") if isinstance(body, dict) else None
+    return detail if isinstance(detail, dict) and detail.get("status") == "loading" else None
+
+
+def fail_loading(detail, status):
+    eta = detail.get("eta_seconds") if detail else None
+    fail("loading", "DocIE is still loading the requested model; retry later (no automatic retry).", status,
+         eta if number(eta) and eta >= 0 else None)
+
+
 def parse_text_response(body, expected_schema):
     """POST /v1/extract/text answers FLAT — no `choices`, no `finish_reason`.
 
@@ -332,6 +358,9 @@ def parse_text_response(body, expected_schema):
     """
     if not isinstance(body, dict):
         fail("response", "Invalid DocIE extraction response.")
+    loading = loading_detail(body)
+    if loading:
+        fail_loading(loading, None)
     result = body.get("result")
     if not isinstance(result, dict) or not result:
         fail("response", "DocIE returned an empty or malformed result.")
@@ -375,7 +404,7 @@ def read_error_text(response, key):
     return b"".join(chunks)[:MAX_ERROR_BYTES].decode("utf-8", "replace").replace(key, "[REDACTED]")
 
 
-def post_json(endpoint, headers, payload, key, timeout, session):
+def post_json(endpoint, headers, payload, key, timeout, session, *, loading=False):
     """One POST, never a retry: DocIE work is potentially billable.
 
     Shared by both entry points on purpose. Status classification, the response
@@ -400,10 +429,22 @@ def post_json(endpoint, headers, payload, key, timeout, session):
                     message = ("DocIE refused the document as beyond its configured limits (size, OCR blocks or pages)."
                                if status == 413 else "DocIE request failed (HTTP " + str(status) + ").")
                     fail(code, message, status)
+                text = read_error_text(response, key)
+                # `loading` : voie texte seulement (voir loading_detail). Un
+                # 202, ou un corps `detail.status == "loading"` sous un autre
+                # statut.
+                if loading:
+                    try:
+                        parsed = json.loads(text)
+                    except ValueError:
+                        parsed = None
+                    detail = loading_detail(parsed)
+                    if status == 202 or detail:
+                        fail_loading(detail, status)
                 # Message constant : le corps amont sert à classer, jamais à
                 # informer -- c'est ce qui garantit qu'une clé réfléchie ne sort
                 # pas d'ici.
-                if CONTEXT_OVERFLOW.search(read_error_text(response, key)):
+                if CONTEXT_OVERFLOW.search(text):
                     fail("context", "DocIE's model server refused the prompt as beyond its context size: "
                                     "the document is too long for this profile.", status)
                 fail("upstream", "DocIE request failed (HTTP " + str(status) + ").", status)
@@ -461,6 +502,9 @@ def extract_document(content, mime_type, *, kind="resume", env=None, session=Non
     if mime_type not in MIME_TYPES:
         fail("input", "Unsupported document MIME type; use PDF, PNG or JPEG.")
     payload = file_payload(content, mime_type, agent, tokens)
+    # Pas de `loading` ici : sur la voie agent, un modèle `store:` froid ne
+    # répond pas 202 mais une 500 non rattrapée côté DocIE (#194). Un 202 y reste
+    # un échec `upstream`.
     body, elapsed = post_json(endpoint, {"Authorization": "Bearer " + key}, payload, key, timeout, session)
     result = parse_response(body, SCHEMAS[kind], agent)
     result["metadata"]["elapsed_ms"] = elapsed
@@ -518,7 +562,7 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, env=None, session=
     # recorded success on this endpoint used (cv-parser/docie_client.py, the
     # response saved by document-parsing/scripts/test_api.py). The chat path
     # keeps its own header, equally by measurement.
-    body, elapsed = post_json(base + "/v1/extract/text", {"x-api-key": key}, payload, key, timeout, session)
+    body, elapsed = post_json(base + "/v1/extract/text", {"x-api-key": key}, payload, key, timeout, session, loading=True)
     result = parse_text_response(body, schema)
     result["metadata"]["elapsed_ms"] = elapsed
     return result

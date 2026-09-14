@@ -165,9 +165,11 @@ d'extraction ou la réponse chat). Zéro n'est pas inventé si absent. Le temps 
 génération n'est pas déduit artificiellement du temps total.
 
 Les erreurs exposent un code stable (`configuration`, `input`, `auth`,
-`rate_limit`, `limits`, `context`, `upstream`, `timeout`, `network`, `response`,
+`rate_limit`, `limits`, `context`, `loading`, `upstream`, `timeout`, `network`, `response`,
 `incomplete`, `schema`)
-et éventuellement le statut HTTP, sans corps d'erreur distant ni clé. Une réponse
+et éventuellement le statut HTTP, sans corps d'erreur distant ni clé. `loading` (voie
+texte, modèle `store:` en cours de chargement, #194) porte `eta_seconds` et n'est
+jamais relancé automatiquement. Une réponse
 tronquée/raisonnement seul n'est pas acceptée comme une extraction. Les réponses
 sont limitées à 8 MiB. Aucun suivi de redirection. Le timeout Node borne l'appel
 entier ; requests utilise des timeouts connexion/lecture et un contrôle de durée
