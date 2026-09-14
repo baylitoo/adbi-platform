@@ -85,6 +85,9 @@ services:
         # `COPY --from=schemas` sans condition — sans ce contexte, BuildKit
         # cherche une image « schemas » sur Docker Hub et le build échoue.
         schemas: ./document-parsing/schemas
+        # Table de mois partagée (#179 A10), même piège : `COPY --from=fixtures`
+        # sans condition. Voir contrats/Dockerfile, étape 5.
+        fixtures: ./document-parsing/fixtures
     container_name: adbi-contrats
     ports:
       - "4100:4100"
