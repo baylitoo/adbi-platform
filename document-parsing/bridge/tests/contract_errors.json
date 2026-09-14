@@ -1,0 +1,126 @@
+[
+  {
+    "name": "agent_route_wraps_llama_context_overflow",
+    "status": 400,
+    "body": "{\"error\":{\"message\":\"Model endpoint returned 400: {\\\"error\\\":{\\\"code\\\":400,\\\"message\\\":\\\"request (9214 tokens) exceeds the available context size (8192 tokens), try increasing it\\\",\\\"type\\\":\\\"exceed_context_size_error\\\",\\\"n_prompt_tokens\\\":9214,\\\"n_ctx\\\":8192}}\",\"type\":\"upstream_error\",\"code\":\"upstream_error\"}}",
+    "expected_code": "context",
+    "comment": "SYNTHETIC body, not a captured response. Modelled on #190's quoted llama-server text and on DocIE's own code read on origin/dev-agents-milestone (llm/model_gateway.py classify_response_error, agents/api.py _openai_error): the upstream JSON arrives escaped inside error.message."
+  },
+  {
+    "name": "same_overflow_other_status",
+    "status": 502,
+    "body": "{\"error\":{\"message\":\"Model endpoint returned 400: {\\\"error\\\":{\\\"code\\\":400,\\\"message\\\":\\\"request (9214 tokens) exceeds the available context size (8192 tokens), try increasing it\\\",\\\"type\\\":\\\"exceed_context_size_error\\\",\\\"n_prompt_tokens\\\":9214,\\\"n_ctx\\\":8192}}\",\"type\":\"upstream_error\",\"code\":\"upstream_error\"}}",
+    "expected_code": "context",
+    "comment": "SYNTHETIC body, not a captured response. DocIE says the status is read, not traced end to end: the text decides, not the status."
+  },
+  {
+    "name": "plain_text_with_surrounding_text",
+    "status": 500,
+    "body": "upstream said: request (40001 tokens) exceeds the available context size (32768 tokens), try increasing it -- giving up",
+    "expected_code": "context",
+    "comment": "SYNTHETIC body, not a captured response. Not JSON at all, phrase in the middle of other text."
+  },
+  {
+    "name": "type_token_only",
+    "status": 400,
+    "body": "{\"error\":{\"message\":\"Model endpoint returned 400: {\\\"error\\\":{\\\"code\\\":400,\\\"type\\\":\\\"exceed_context_size_error\\\"}}\",\"type\":\"upstream_error\",\"code\":\"upstream_error\"}}",
+    "expected_code": "context",
+    "comment": "SYNTHETIC body, not a captured response. llama-server's error type without its sentence."
+  },
+  {
+    "name": "reflected_key_in_overflow_body",
+    "status": 400,
+    "body": "{\"error\":{\"message\":\"Model endpoint returned 400: {\\\"error\\\":{\\\"code\\\":400,\\\"message\\\":\\\"request (9214 tokens) exceeds the available context size (8192 tokens), try increasing it (key test-secret)\\\",\\\"type\\\":\\\"exceed_context_size_error\\\",\\\"n_prompt_tokens\\\":9214,\\\"n_ctx\\\":8192}}\",\"type\":\"upstream_error\",\"code\":\"upstream_error\"}}",
+    "expected_code": "context",
+    "comment": "SYNTHETIC body, not a captured response. The body reflects the API key: the code is still context and the message must not carry the key."
+  },
+  {
+    "name": "unrelated_invalid_request_same_status",
+    "status": 400,
+    "body": "{\"error\":{\"message\":\"document has 30 pages, more than the 8 allowed\",\"type\":\"invalid_request_error\",\"code\":\"invalid_request_error\"}}",
+    "expected_code": "upstream",
+    "comment": "SYNTHETIC body, not a captured response. Same 400, another failure: it must NOT be read as a context overflow."
+  },
+  {
+    "name": "generic_upstream_error",
+    "status": 503,
+    "body": "{\"error\":{\"message\":\"Model endpoint returned 503: service unavailable\",\"type\":\"upstream_error\",\"code\":\"upstream_error\"}}",
+    "expected_code": "upstream",
+    "comment": "SYNTHETIC body, not a captured response. DocIE's model server is down: upstream, not context."
+  },
+  {
+    "name": "empty_body",
+    "status": 500,
+    "body": "",
+    "expected_code": "upstream",
+    "comment": "SYNTHETIC body, not a captured response. Nothing to read: falls back to upstream."
+  },
+  {
+    "name": "explicit_413_wins",
+    "status": 413,
+    "body": "{\"error\":{\"message\":\"Model endpoint returned 400: {\\\"error\\\":{\\\"code\\\":400,\\\"message\\\":\\\"request (9214 tokens) exceeds the available context size (8192 tokens), try increasing it\\\",\\\"type\\\":\\\"exceed_context_size_error\\\",\\\"n_prompt_tokens\\\":9214,\\\"n_ctx\\\":8192}}\",\"type\":\"upstream_error\",\"code\":\"upstream_error\"}}",
+    "expected_code": "limits",
+    "comment": "SYNTHETIC body, not a captured response. The explicit status codes (401/403/413/429) keep precedence over the body."
+  },
+  {
+    "name": "explicit_401_wins",
+    "status": 401,
+    "body": "exceeds the available context size",
+    "expected_code": "auth",
+    "comment": "SYNTHETIC body, not a captured response. Same precedence for auth."
+  },
+  {
+    "name": "text_store_model_loading_202",
+    "status": 202,
+    "body": "{\"detail\":{\"status\":\"loading\",\"deployment\":\"lfm2.5-2.6b\",\"eta_seconds\":42.0,\"message\":\"Model 'lfm2.5-2.6b' is starting — this can take a moment the first time. Retry in ~42s.\"}}",
+    "expected_code": "upstream",
+    "expected_code_text": "loading",
+    "expected_eta_seconds": 42.0,
+    "comment": "SYNTHETIC body, not a captured response. Modelled on DocIE api.resolve_profile read on origin/dev-agents-milestone (HTTPException(status_code=202, detail={status, deployment, eta_seconds, message})). Text path -> loading; the agent path never answers 202 for a cold model, so there it stays upstream. The nominal cold start: ETA carried as data, upstream message never echoed."
+  },
+  {
+    "name": "loading_message_reflects_key",
+    "status": 202,
+    "body": "{\"detail\":{\"status\":\"loading\",\"deployment\":\"lfm2.5-2.6b\",\"eta_seconds\":0,\"message\":\"Model is starting. Retry in ~0s. key test-secret\"}}",
+    "expected_code": "upstream",
+    "expected_code_text": "loading",
+    "expected_eta_seconds": 0,
+    "comment": "SYNTHETIC body, not a captured response. Modelled on DocIE api.resolve_profile read on origin/dev-agents-milestone (HTTPException(status_code=202, detail={status, deployment, eta_seconds, message})). Text path -> loading; the agent path never answers 202 for a cold model, so there it stays upstream. detail.message carries the API key: it must not leak. An ETA of 0 is a valid number, not null."
+  },
+  {
+    "name": "loading_eta_not_a_number",
+    "status": 202,
+    "body": "{\"detail\":{\"status\":\"loading\",\"deployment\":\"lfm2.5-2.6b\",\"eta_seconds\":\"soon\",\"message\":\"Model 'lfm2.5-2.6b' is starting — this can take a moment the first time. Retry in ~42s.\"}}",
+    "expected_code": "upstream",
+    "expected_code_text": "loading",
+    "expected_eta_seconds": null,
+    "comment": "SYNTHETIC body, not a captured response. Modelled on DocIE api.resolve_profile read on origin/dev-agents-milestone (HTTPException(status_code=202, detail={status, deployment, eta_seconds, message})). Text path -> loading; the agent path never answers 202 for a cold model, so there it stays upstream. Unusable ETA -> null."
+  },
+  {
+    "name": "loading_eta_negative",
+    "status": 202,
+    "body": "{\"detail\":{\"status\":\"loading\",\"deployment\":\"lfm2.5-2.6b\",\"eta_seconds\":-3,\"message\":\"Model 'lfm2.5-2.6b' is starting — this can take a moment the first time. Retry in ~42s.\"}}",
+    "expected_code": "upstream",
+    "expected_code_text": "loading",
+    "expected_eta_seconds": null,
+    "comment": "SYNTHETIC body, not a captured response. Modelled on DocIE api.resolve_profile read on origin/dev-agents-milestone (HTTPException(status_code=202, detail={status, deployment, eta_seconds, message})). Text path -> loading; the agent path never answers 202 for a cold model, so there it stays upstream. Negative ETA -> null."
+  },
+  {
+    "name": "loading_202_unreadable_body",
+    "status": 202,
+    "body": "",
+    "expected_code": "upstream",
+    "expected_code_text": "loading",
+    "expected_eta_seconds": null,
+    "comment": "SYNTHETIC body, not a captured response. Modelled on DocIE api.resolve_profile read on origin/dev-agents-milestone (HTTPException(status_code=202, detail={status, deployment, eta_seconds, message})). Text path -> loading; the agent path never answers 202 for a cold model, so there it stays upstream. A 202 alone is enough on the text path; ETA unknown -> null."
+  },
+  {
+    "name": "loading_detail_under_other_status",
+    "status": 503,
+    "body": "{\"detail\":{\"status\":\"loading\",\"deployment\":\"lfm2.5-2.6b\",\"eta_seconds\":10,\"message\":\"Model 'lfm2.5-2.6b' is starting — this can take a moment the first time. Retry in ~42s.\"}}",
+    "expected_code": "upstream",
+    "expected_code_text": "loading",
+    "expected_eta_seconds": 10,
+    "comment": "SYNTHETIC body, not a captured response. Modelled on DocIE api.resolve_profile read on origin/dev-agents-milestone (HTTPException(status_code=202, detail={status, deployment, eta_seconds, message})). Text path -> loading; the agent path never answers 202 for a cold model, so there it stays upstream. detail.status == loading under a non-202 status is still loading on the text path."
+  }
+]

@@ -11,10 +11,12 @@ from unittest.mock import Mock, MagicMock
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from docie_bridge import extract_document, extract_text, parse_response, parse_text_response, DocIEBridgeError
+from docie_bridge import (extract_document, extract_text, file_payload, parse_response, parse_text_response,
+                          DocIEBridgeError)
 
 CASES = json.loads(Path(__file__).with_name("contract.json").read_text(encoding="utf-8"))
 TEXT_CASES = json.loads(Path(__file__).with_name("contract_text.json").read_text(encoding="utf-8"))
+ERROR_CASES = json.loads(Path(__file__).with_name("contract_errors.json").read_text(encoding="utf-8"))
 RESUME_SCHEMA = {"document_type": "adbi_resume", "fields": [{"name": "name", "type": "string"}]}
 
 
@@ -53,6 +55,8 @@ class BridgeTests(unittest.TestCase):
                 # Same keys and numbers as docie-bridge.js::fieldConfidences — the
                 # two bridges feed the same review signal to their consumers.
                 self.assertEqual(result["metadata"]["field_confidence"], case["expected_field_confidence"])
+                # #190 : transport seul, None quand DocIE ne l'a pas (ou pas lisiblement) rapporté.
+                self.assertEqual(result["metadata"]["prompt_profile"], case.get("expected_prompt_profile"))
         meta = parse_response(CASES[0]["body"], "adbi_resume", "adbi_agent_1")["metadata"]
         self.assertEqual(meta["queue_wait_ms"], 125)
         self.assertFalse(parse_response(CASES[1]["body"], "adbi_resume", "adbi_agent_1")["metadata"]["validation"]["valid"])
@@ -102,6 +106,76 @@ class BridgeTests(unittest.TestCase):
                 extract_document(content, mime, env=env, session=session)
             self.assertEqual(raised.exception.code, "input")
         session.post.assert_not_called()
+
+    def test_error_bodies_context_overflow_named_by_text(self):
+        """#190 -- corps d'erreur SYNTHÉTIQUES (tests/contract_errors.json), partagés avec bridge.test.js.
+
+        Le dépassement de contexte se reconnaît au texte, jamais au seul statut,
+        et le message ne recopie jamais le corps (ni donc la clé).
+        """
+        env = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "test-secret", "DOCIE_AGENT_RESUME": "adbi_agent_1"}
+        for case in ERROR_CASES:
+            session = Mock()
+            response = MagicMock(status_code=case["status"])
+            response.__enter__.return_value = response
+            response.iter_content.side_effect = lambda *args, body=case["body"]: iter([body.encode("utf-8")] if body else [])
+            session.post.return_value = response
+            # Même post_json pour la voie texte : même classement, plus `loading`.
+            # `expected_code_text` / `expected_eta_seconds` : le code `loading`
+            # (#194) n'existe que sur la voie texte ; la voie agent garde `expected_code`.
+            paths = (("agent", lambda: extract_document(b"pdf", "application/pdf", env=env, session=session),
+                      case["expected_code"], None),
+                     ("text", lambda: extract_text("CV", env=env, session=session),
+                      case.get("expected_code_text", case["expected_code"]), case.get("expected_eta_seconds")))
+            for path, call, code, eta in paths:
+                with self.subTest(case=case["name"], path=path), self.assertRaises(DocIEBridgeError) as raised:
+                    call()
+                self.assertEqual(raised.exception.code, code)
+                self.assertEqual(raised.exception.status, case["status"])
+                self.assertEqual(raised.exception.eta_seconds, eta)
+                self.assertNotIn("test-secret", str(raised.exception))
+                self.assertNotRegex(str(raised.exception), "exceeds the available|exceed_context_size_error|is starting|Retry in")
+            self.assertEqual(session.post.call_count, 2)
+
+    def test_file_path_limit_fits_docie_request_body(self):
+        """#190 -- ce que le bridge accepte tient sous les 26 MiB de corps de DocIE.
+
+        Pire cas autorisé : agent de 128 caractères, max_tokens 65536,
+        application/pdf, sérialisé exactement comme requests l'envoie (json=).
+        Les deux côtés de la borne : MAX tient, MAX+1 dépasserait et est refusé
+        localement, avant tout appel.
+        """
+        limit, maximum, agent = 26 * 1024 * 1024, 20446896, "a" * 128
+
+        def wire_size(payload):
+            prepared = requests.models.PreparedRequest()
+            prepared.prepare(method="POST", url="https://docie.example/", json=payload)
+            return int(prepared.headers["Content-Length"])
+
+        env = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "test-secret",
+               "DOCIE_AGENT_RESUME": agent, "DOCIE_MAX_TOKENS": "65536"}
+        session = Mock()
+        response = MagicMock(status_code=200)
+        response.__enter__.return_value = response
+        response.iter_content.return_value = [json.dumps(CASES[2]["body"]).encode()]
+        session.post.return_value = response
+        result = extract_document(bytes(maximum), "application/pdf", env=env, session=session)
+        self.assertEqual(result["result"]["name"], "Alice Dupont")
+        self.assertLessEqual(wire_size(session.post.call_args.kwargs["json"]), limit)
+        self.assertGreater(wire_size(file_payload(bytes(maximum + 1), "application/pdf", agent, 65536)), limit)
+        with self.assertRaises(DocIEBridgeError) as raised:
+            extract_document(bytes(maximum + 1), "application/pdf", env=env, session=session)
+        self.assertEqual(raised.exception.code, "input")
+        self.assertIn(str(maximum), str(raised.exception))
+        self.assertEqual(session.post.call_count, 1)
+        # La voie texte garde sa borne propre (pas de base64) : 20 MiB d'UTF-8.
+        response.iter_content.return_value = [json.dumps(TEXT_CASES[1]["body"]).encode()]
+        extract_text("a" * (maximum + 1), env=env, session=session)
+        extract_text("a" * (20 * 1024 * 1024), env=env, session=session)
+        with self.assertRaises(DocIEBridgeError) as raised:
+            extract_text("a" * (20 * 1024 * 1024 + 1), env=env, session=session)
+        self.assertEqual(raised.exception.code, "input")
+        self.assertEqual(session.post.call_count, 3)
 
     def test_http_contract_and_sanitized_failures_no_retries(self):
         state = {"status": 200, "calls": []}
@@ -185,6 +259,11 @@ class TextPathTests(unittest.TestCase):
         for body in bad:
             with self.subTest(body=body), self.assertRaises(DocIEBridgeError):
                 parse_text_response(body, "adbi_resume")
+        # #194 : un corps `detail.status == "loading"` n'est jamais lu comme une extraction.
+        with self.assertRaises(DocIEBridgeError) as raised:
+            parse_text_response({"detail": {"status": "loading", "eta_seconds": 3, "message": "test-secret"}}, "adbi_resume")
+        self.assertEqual((raised.exception.code, raised.exception.eta_seconds, raised.exception.status), ("loading", 3, None))
+        self.assertNotIn("test-secret", str(raised.exception))
 
     def test_text_input_and_configuration_fail_before_network(self):
         session = Mock()

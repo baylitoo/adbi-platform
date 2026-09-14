@@ -28,10 +28,8 @@ from urllib.parse import urlsplit
 
 import requests
 
-# Our own caps, chosen locally before DocIE's were known. 20 MiB stays: it sits
-# inside DocIE's own guards. DocIE's documented limits, per its team: 25 MB
-# upload, 26 MB request body, 1,000,000 characters of text, 1,000 OCR blocks per
-# document, 20,000 characters per block, 50 metadata entries, 8 pages (vision
+# Our own caps. DocIE's documented limits, per its team: 25 MB upload, 26 MB
+# request body, 1,000,000 characters of text, 1,000 OCR blocks per document, 20,000 characters per block, 50 metadata entries, 8 pages (vision
 # path only). Those are that service's DEFAULTS, not facts about the instance we
 # call -- an operator sets them per deployment, and nothing DocIE exposes
 # (/healthz, /readyz, /metrics, /v1/schemas) reports the values in force, so
@@ -45,8 +43,41 @@ import requests
 # (preserved verbatim in metadata, surfaced by the consumers), or a non-"stop"
 # finish_reason -> code "incomplete". Which shape DocIE actually uses for the
 # block ceiling is not recorded anywhere we can check; see #180.
-MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
+#
+# Plafond de la voie fichier (#190), calculé et non estimé. Le middleware DocIE
+# (api.py, `enforce_request_content_length`) refuse en 413 tout corps dont
+# l'en-tête Content-Length dépasse `max_request_body_mb` = 26 MiB (26*1024*1024,
+# refus strict `>`), et aucun autre contrôle de taille ne s'applique au data URI
+# de la voie agent. Or cette voie envoie le document en base64 (4*ceil(n/3)
+# octets) dans une enveloppe JSON. Enveloppe MESURÉE en construisant la charge
+# réelle, dans le pire cas autorisé ici (nom d'agent de 128 caractères,
+# max_tokens 65536, `application/pdf`) : 445 octets avec `requests` (séparateurs
+# ", " et ": "), 425 avec JSON.stringify côté Node. La plus grande des deux fixe
+# la borne commune aux deux portages : floor((26 MiB - 445) / 4) * 3 =
+# 20 446 896 octets bruts (~19,5 MiB ; 19,5 MiB pile dépasserait de 336
+# octets). Au-delà, DocIE refuserait en 413 un document déjà transmis.
+#
+# La voie texte garde sa propre borne, inchangée : le texte n'y est pas encodé
+# en base64 (`{text, schema_name, ...}`), et le plafond de 1 000 000 caractères
+# de DocIE (défaut de déploiement, non vérifié ici) mord bien avant 20 MiB.
+DOCIE_MAX_REQUEST_BODY_BYTES = 26 * 1024 * 1024
+FILE_ENVELOPE_MAX_BYTES = 445
+MAX_DOCUMENT_BYTES = (DOCIE_MAX_REQUEST_BODY_BYTES - FILE_ENVELOPE_MAX_BYTES) // 4 * 3
+MAX_TEXT_BYTES = 20 * 1024 * 1024
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+# Corps d'erreur lu pour le seul classement, jamais recopié dans un message.
+# DocIE tronque déjà le corps amont à 500 caractères : 64 KiB suffit largement.
+MAX_ERROR_BYTES = 64 * 1024
+# Dépassement de contexte du serveur de modèle (#190). Sur un profil à prompt
+# « document entier », un document trop long fait refuser le prompt par
+# llama-server (« request (N tokens) exceeds the available context size »,
+# type `exceed_context_size_error`) ; DocIE (classify_response_error puis
+# _openai_error) renvoie alors le statut amont avec error.type="upstream_error"
+# et ce corps dans le message. Le statut exact est « lu, non tracé » de bout en
+# bout, et 400 est aussi celui d'une requête invalide : on reconnaît donc le
+# TEXTE, où qu'il soit dans le corps (JSON imbriqué échappé ou texte brut), et
+# tout le reste retombe sur `upstream`.
+CONTEXT_OVERFLOW = re.compile(r"exceeds the available context size|exceed_context_size_error", re.IGNORECASE)
 # What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
 # This transport posts the document as an `image_url` data URI to
 # /v1/agents/<agent>/chat/completions, where DocIE OCRs it: liteparse renders
@@ -86,14 +117,17 @@ ENVELOPE_MARKERS = ("confidence", "evidence_ids", "model_confidence", "model_log
 
 
 class DocIEBridgeError(RuntimeError):
-    def __init__(self, code, message, status=None):
+    # `eta_seconds` : seul le code `loading` le renseigne (délai annoncé par
+    # DocIE, nombre fini >= 0) ; None partout ailleurs. Même nom que côté Node.
+    def __init__(self, code, message, status=None, eta_seconds=None):
         super().__init__(message)
         self.code = code
         self.status = status
+        self.eta_seconds = eta_seconds
 
 
-def fail(code, message, status=None):
-    raise DocIEBridgeError(code, message, status)
+def fail(code, message, status=None, eta_seconds=None):
+    raise DocIEBridgeError(code, message, status, eta_seconds)
 
 
 def connection(env):
@@ -211,6 +245,21 @@ def reported_field_confidence(meta):
     return reported
 
 
+def prompt_profile(meta):
+    """`docie_agent.prompt_profile` (#190) : le prompt qui a servi.
+
+    Seul indice que le plafond silencieux de 800 blocs OCR de DocIE a PU
+    s'appliquer. Transport seulement : aucune règle ici sur les profils
+    plafonnés -- elle est imprécise (surévalue les profils vision, `docie_agent`
+    ne porte pas `vision`) et appartient aux consommateurs. Traité comme ses
+    voisins facultatifs (`field_confidence`, durées) et non comme `validation` :
+    une valeur absente, non textuelle ou vide donne None (« inconnu ») au lieu de
+    refuser une extraction valide pour un indice illisible.
+    """
+    value = meta.get("prompt_profile")
+    return value if isinstance(value, str) and value else None
+
+
 def parse_response(body, expected_schema, agent):
     if not isinstance(body, dict):
         fail("response", "Invalid DocIE chat envelope.")
@@ -254,12 +303,36 @@ def parse_response(body, expected_schema, agent):
     metadata = {"request_id": body.get("id"), "agent": agent, "model": body.get("model"),
                 "validation": validation, "usage": body.get("usage"),
                 "field_confidence": field_confidences(result) if confidence is None else confidence,
+                "prompt_profile": prompt_profile(meta),
                 "schema_reported": any(item is not None for item in reported)}
     for name in ("queue_wait_ms", "latency_ms", "generation_ms"):
         value = meta.get(name, extracted.get(name, body.get(name)))
         if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
             metadata[name] = value
     return {"schema_name": expected_schema, "result": unwrap(result), "metadata": metadata}
+
+
+def loading_detail(body):
+    """Démarrage à froid sur la voie texte (#194).
+
+    Un `model_profile` `store:<nom>` dont le modèle n'est pas encore chargé :
+    `api.resolve_profile` de DocIE déclenche le chargement et lève
+    HTTPException(status_code=202) SANS mettre la requête en file -- corps
+    `{"detail": {"status": "loading", "deployment", "eta_seconds", "message"}}`,
+    aucun `result`. Code `loading`, délai annoncé porté par
+    DocIEBridgeError.eta_seconds, message constant : le `message` amont n'est
+    jamais recopié (même garantie sur la clé que `context`). Pas de relance
+    automatique, décision « échouer bruyamment » de #194 : le consommateur
+    affiche le délai, l'utilisateur relance.
+    """
+    detail = body.get("detail") if isinstance(body, dict) else None
+    return detail if isinstance(detail, dict) and detail.get("status") == "loading" else None
+
+
+def fail_loading(detail, status):
+    eta = detail.get("eta_seconds") if detail else None
+    fail("loading", "DocIE is still loading the requested model; retry later (no automatic retry).", status,
+         eta if number(eta) and eta >= 0 else None)
 
 
 def parse_text_response(body, expected_schema):
@@ -279,9 +352,15 @@ def parse_text_response(body, expected_schema):
       * no `incomplete` code. That code reads `finish_reason`, which a chat
         completion has and this response does not. A truncation shows up here
         as `validation` errors or an HTTP 413 -> `limits`, both already handled.
+      * `prompt_profile` is None. DocIE's ExtractionResponse (extra="forbid")
+        carries `model_profile` only; None here means "not reported", never
+        "not capped" (#190).
     """
     if not isinstance(body, dict):
         fail("response", "Invalid DocIE extraction response.")
+    loading = loading_detail(body)
+    if loading:
+        fail_loading(loading, None)
     result = body.get("result")
     if not isinstance(result, dict) or not result:
         fail("response", "DocIE returned an empty or malformed result.")
@@ -298,6 +377,7 @@ def parse_text_response(body, expected_schema):
                 "model": body.get("model_profile"), "validation": validation,
                 "usage": body.get("usage"),
                 "field_confidence": field_confidences(result) if confidence is None else confidence,
+                "prompt_profile": None,
                 "schema_reported": any(item is not None for item in reported)}
     for name in ("queue_wait_ms", "latency_ms", "generation_ms"):
         value = body.get(name)
@@ -306,7 +386,25 @@ def parse_text_response(body, expected_schema):
     return {"schema_name": expected_schema, "result": unwrap(result), "metadata": metadata}
 
 
-def post_json(endpoint, headers, payload, key, timeout, session):
+def read_error_text(response, key):
+    """Lecture bornée d'un corps d'erreur, pour le seul classement.
+
+    Un corps illisible (flux coupé, délai) vaut "" : l'échec reste classé par
+    statut.
+    """
+    chunks, size = [], 0
+    try:
+        for chunk in response.iter_content(65536):
+            chunks.append(chunk)
+            size += len(chunk)
+            if size >= MAX_ERROR_BYTES:
+                break
+    except requests.RequestException:
+        pass
+    return b"".join(chunks)[:MAX_ERROR_BYTES].decode("utf-8", "replace").replace(key, "[REDACTED]")
+
+
+def post_json(endpoint, headers, payload, key, timeout, session, *, loading=False):
     """One POST, never a retry: DocIE work is potentially billable.
 
     Shared by both entry points on purpose. Status classification, the response
@@ -325,11 +423,31 @@ def post_json(endpoint, headers, payload, key, timeout, session):
                 # the limits its deployment configures, and a named failure
                 # beats a generic upstream one for the only limit we cannot
                 # measure before sending.
-                code = {401: "auth", 403: "auth", 413: "limits", 429: "rate_limit"}.get(response.status_code, "upstream")
-                message = ("DocIE refused the document as beyond its configured limits (size, OCR blocks or pages)."
-                           if response.status_code == 413
-                           else "DocIE request failed (HTTP " + str(response.status_code) + ").")
-                fail(code, message, response.status_code)
+                status = response.status_code
+                code = {401: "auth", 403: "auth", 413: "limits", 429: "rate_limit"}.get(status)
+                if code:
+                    message = ("DocIE refused the document as beyond its configured limits (size, OCR blocks or pages)."
+                               if status == 413 else "DocIE request failed (HTTP " + str(status) + ").")
+                    fail(code, message, status)
+                text = read_error_text(response, key)
+                # `loading` : voie texte seulement (voir loading_detail). Un
+                # 202, ou un corps `detail.status == "loading"` sous un autre
+                # statut.
+                if loading:
+                    try:
+                        parsed = json.loads(text)
+                    except ValueError:
+                        parsed = None
+                    detail = loading_detail(parsed)
+                    if status == 202 or detail:
+                        fail_loading(detail, status)
+                # Message constant : le corps amont sert à classer, jamais à
+                # informer -- c'est ce qui garantit qu'une clé réfléchie ne sort
+                # pas d'ici.
+                if CONTEXT_OVERFLOW.search(text):
+                    fail("context", "DocIE's model server refused the prompt as beyond its context size: "
+                                    "the document is too long for this profile.", status)
+                fail("upstream", "DocIE request failed (HTTP " + str(status) + ").", status)
             chunks, size = [], 0
             for chunk in response.iter_content(65536):
                 size += len(chunk)
@@ -354,6 +472,20 @@ def post_json(endpoint, headers, payload, key, timeout, session):
             session.close()
 
 
+def file_payload(content, mime_type, agent, tokens):
+    """Corps de la voie fichier.
+
+    Isolé pour que le test de borne mesure la charge réellement envoyée : toute
+    modification de l'enveloppe (texte d'instruction, nouveau champ) doit
+    repasser sous FILE_ENVELOPE_MAX_BYTES, sinon ce test casse.
+    """
+    return {"model": agent, "parallel_extraction": True, "stream": False, "max_tokens": tokens,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": "Extract the document using your configured schema. Do not invent missing information."},
+                {"type": "image_url", "image_url": {"url": "data:" + mime_type + ";base64," + base64.b64encode(content).decode("ascii")}},
+            ]}]}
+
+
 def extract_document(content, mime_type, *, kind="resume", env=None, session=None):
     """Send one PDF/image to the configured agent; never retry billable work.
 
@@ -365,14 +497,14 @@ def extract_document(content, mime_type, *, kind="resume", env=None, session=Non
     env = os.environ if env is None else env
     endpoint, key, agent, timeout, tokens = configuration(kind, env)
     if not isinstance(content, bytes) or not 0 < len(content) <= MAX_DOCUMENT_BYTES:
-        fail("input", "Document must contain between 1 byte and 20 MiB.")
+        fail("input", "Document must contain between 1 byte and " + str(MAX_DOCUMENT_BYTES)
+             + " bytes (DocIE's 26 MiB request body, base64 included).")
     if mime_type not in MIME_TYPES:
         fail("input", "Unsupported document MIME type; use PDF, PNG or JPEG.")
-    payload = {"model": agent, "parallel_extraction": True, "stream": False, "max_tokens": tokens,
-               "messages": [{"role": "user", "content": [
-                   {"type": "text", "text": "Extract the document using your configured schema. Do not invent missing information."},
-                   {"type": "image_url", "image_url": {"url": "data:" + mime_type + ";base64," + base64.b64encode(content).decode("ascii")}},
-               ]}]}
+    payload = file_payload(content, mime_type, agent, tokens)
+    # Pas de `loading` ici : sur la voie agent, un modèle `store:` froid ne
+    # répond pas 202 mais une 500 non rattrapée côté DocIE (#194). Un 202 y reste
+    # un échec `upstream`.
     body, elapsed = post_json(endpoint, {"Authorization": "Bearer " + key}, payload, key, timeout, session)
     result = parse_response(body, SCHEMAS[kind], agent)
     result["metadata"]["elapsed_ms"] = elapsed
@@ -412,7 +544,7 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, env=None, session=
     schema = SCHEMAS[kind]
     if not isinstance(text, str) or not text.strip():
         fail("input", "Document text must not be empty.")
-    if len(text.encode("utf-8")) > MAX_DOCUMENT_BYTES:
+    if len(text.encode("utf-8")) > MAX_TEXT_BYTES:
         fail("input", "Document must contain between 1 byte and 20 MiB.")
     payload = {"text": text, "schema_name": schema}
     if dynamic_schema is not None:
@@ -430,7 +562,7 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, env=None, session=
     # recorded success on this endpoint used (cv-parser/docie_client.py, the
     # response saved by document-parsing/scripts/test_api.py). The chat path
     # keeps its own header, equally by measurement.
-    body, elapsed = post_json(base + "/v1/extract/text", {"x-api-key": key}, payload, key, timeout, session)
+    body, elapsed = post_json(base + "/v1/extract/text", {"x-api-key": key}, payload, key, timeout, session, loading=True)
     result = parse_text_response(body, schema)
     result["metadata"]["elapsed_ms"] = elapsed
     return result

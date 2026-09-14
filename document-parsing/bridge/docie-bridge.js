@@ -16,8 +16,7 @@
 // Routing rule, from DocIE's team (#180): use the structure the source actually
 // has. Not "prefer the text path" -- a scanned PDF has no text at all.
 //
-// Our own caps, chosen locally before DocIE's were known. 20 MiB stays: it sits
-// inside DocIE's own guards. DocIE's documented limits, per its team: 25 MB
+// Our own caps. DocIE's documented limits, per its team: 25 MB
 // upload, 26 MB request body, 1,000,000 characters of text, 1,000 OCR blocks
 // per document, 20,000 characters per block, 50 metadata entries, 8 pages
 // (vision path only). Those are that service's DEFAULTS, not facts about the
@@ -33,8 +32,41 @@
 // errors (preserved verbatim in metadata, surfaced by the consumers), or a
 // non-"stop" finish_reason -> code "incomplete". Which shape DocIE actually
 // uses for the block ceiling is not recorded anywhere we can check; see #180.
-const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
+//
+// Plafond de la voie fichier (#190), calculé et non estimé. Le middleware DocIE
+// (api.py, `enforce_request_content_length`) refuse en 413 tout corps dont
+// l'en-tête Content-Length dépasse `max_request_body_mb` = 26 MiB (26*1024*1024,
+// refus strict `>`), et aucun autre contrôle de taille ne s'applique au data URI
+// de la voie agent. Or cette voie envoie le document en base64 (4*ceil(n/3)
+// octets) dans une enveloppe JSON. Enveloppe MESURÉE en construisant la charge
+// réelle, dans le pire cas autorisé ici (nom d'agent de 128 caractères,
+// max_tokens 65536, `application/pdf`) : 425 octets avec JSON.stringify, 445
+// avec `requests` côté Python (séparateurs ", " et ": "). La plus grande des deux
+// fixe la borne commune aux deux portages : floor((26 MiB - 445) / 4) * 3 =
+// 20 446 896 octets bruts (~19,5 MiB ; 19,5 MiB pile dépasserait de 336
+// octets). Au-delà, DocIE refuserait en 413 un document déjà transmis.
+//
+// La voie texte garde sa propre borne, inchangée : le texte n'y est pas encodé
+// en base64 (`{text, schema_name, ...}`), et le plafond de 1 000 000 caractères
+// de DocIE (défaut de déploiement, non vérifié ici) mord bien avant 20 MiB.
+const DOCIE_MAX_REQUEST_BODY_BYTES = 26 * 1024 * 1024;
+const FILE_ENVELOPE_MAX_BYTES = 445;
+const MAX_DOCUMENT_BYTES = Math.floor((DOCIE_MAX_REQUEST_BODY_BYTES - FILE_ENVELOPE_MAX_BYTES) / 4) * 3;
+const MAX_TEXT_BYTES = 20 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+// Corps d'erreur lu pour le seul classement, jamais recopié dans un message.
+// DocIE tronque déjà le corps amont à 500 caractères : 64 KiB suffit largement.
+const MAX_ERROR_BYTES = 64 * 1024;
+// Dépassement de contexte du serveur de modèle (#190). Sur un profil à prompt
+// « document entier », un document trop long fait refuser le prompt par
+// llama-server (« request (N tokens) exceeds the available context size »,
+// type `exceed_context_size_error`) ; DocIE (classify_response_error puis
+// _openai_error) renvoie alors le statut amont avec error.type="upstream_error"
+// et ce corps dans le message. Le statut exact est « lu, non tracé » de bout en
+// bout, et 400 est aussi celui d'une requête invalide : on reconnaît donc le
+// TEXTE, où qu'il soit dans le corps (JSON imbriqué échappé ou texte brut), et
+// tout le reste retombe sur `upstream`.
+const CONTEXT_OVERFLOW = /exceeds the available context size|exceed_context_size_error/i;
 const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf" };
 // What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
 // This transport posts the document as an `image_url` data URI to
@@ -72,12 +104,14 @@ const MIME_TYPES = new Set(["application/pdf", "image/png", "image/jpeg"]);
 // ranks fields within one extraction; it is not a threshold input.
 const ENVELOPE_MARKERS = ["confidence", "evidence_ids", "model_confidence", "model_logprob"];
 
+// `eta_seconds` : seul le code `loading` le renseigne (délai annoncé par DocIE,
+// nombre fini >= 0) ; null partout ailleurs. Même nom que côté Python.
 class DocIEBridgeError extends Error {
-  constructor(code, message, status = null) {
-    super(message); this.name = "DocIEBridgeError"; this.code = code; this.status = status;
+  constructor(code, message, status = null, etaSeconds = null) {
+    super(message); this.name = "DocIEBridgeError"; this.code = code; this.status = status; this.eta_seconds = etaSeconds;
   }
 }
-function fail(code, message, status) { throw new DocIEBridgeError(code, message, status); }
+function fail(code, message, status, etaSeconds = null) { throw new DocIEBridgeError(code, message, status, etaSeconds); }
 function object(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
 // API root, access key and timeout — what BOTH DocIE paths need. Split out of
@@ -159,6 +193,18 @@ function reportedFieldConfidence(meta) {
   return reported;
 }
 
+// `docie_agent.prompt_profile` (#190) : le prompt qui a servi, seul indice que
+// le plafond silencieux de 800 blocs OCR de DocIE a PU s'appliquer. Transport
+// seulement : aucune règle ici sur les profils plafonnés — elle est imprécise
+// (surévalue les profils vision, `docie_agent` ne porte pas `vision`) et
+// appartient aux consommateurs. Traité comme ses voisins facultatifs
+// (`field_confidence`, durées) et non comme `validation` : une valeur absente,
+// non textuelle ou vide donne null (« inconnu ») au lieu de refuser une
+// extraction valide pour un indice illisible.
+function promptProfile(meta) {
+  return typeof meta.prompt_profile === "string" && meta.prompt_profile ? meta.prompt_profile : null;
+}
+
 function parseResponse(body, expectedSchema, agent) {
   if (!object(body)) fail("response", "Invalid DocIE chat envelope.");
   const choice = Array.isArray(body.choices) && body.choices[0];
@@ -183,12 +229,30 @@ function parseResponse(body, expectedSchema, agent) {
   const confidence = reportedFieldConfidence(meta);
   const metadata = { request_id: body.id ?? null, agent, model: body.model ?? null,
     validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
-    schema_reported: reported.some(item => item != null) };
+    prompt_profile: promptProfile(meta), schema_reported: reported.some(item => item != null) };
   for (const name of ["queue_wait_ms", "latency_ms", "generation_ms"]) {
     const value = Object.hasOwn(meta, name) ? meta[name] : (Object.hasOwn(extracted, name) ? extracted[name] : body[name]);
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) metadata[name] = value;
   }
   return { schema_name: expectedSchema, result: unwrap(result), metadata };
+}
+
+// Démarrage à froid sur la voie texte (#194). Un `model_profile` `store:<nom>`
+// dont le modèle n'est pas encore chargé : `api.resolve_profile` de DocIE
+// déclenche le chargement et lève HTTPException(status_code=202) SANS mettre la
+// requête en file — corps `{"detail": {"status": "loading", "deployment",
+// "eta_seconds", "message"}}`, aucun `result`. Code `loading`, délai annoncé
+// porté par error.eta_seconds, message constant : le `message` amont n'est
+// jamais recopié (même garantie sur la clé que `context`). Pas de relance
+// automatique, décision « échouer bruyamment » de #194 : le consommateur affiche
+// le délai, l'utilisateur relance.
+function loadingDetail(body) {
+  return object(body) && object(body.detail) && body.detail.status === "loading" ? body.detail : null;
+}
+function failLoading(detail, status) {
+  const eta = detail ? detail.eta_seconds : null;
+  fail("loading", "DocIE is still loading the requested model; retry later (no automatic retry).", status,
+    number(eta) && eta >= 0 ? eta : null);
 }
 
 // POST /v1/extract/text answers FLAT — no `choices`, no `finish_reason`. A real
@@ -206,8 +270,13 @@ function parseResponse(body, expectedSchema, agent) {
 //   * no `incomplete` code. That code reads `finish_reason`, which a chat
 //     completion has and this response does not. A truncation shows up here as
 //     `validation` errors or an HTTP 413 -> `limits`, both already handled.
+//   * `prompt_profile` is null. DocIE's ExtractionResponse (extra="forbid")
+//     carries `model_profile` only; null here means "not reported", never
+//     "not capped" (#190).
 function parseTextResponse(body, expectedSchema) {
   if (!object(body)) fail("response", "Invalid DocIE extraction response.");
+  const loading = loadingDetail(body);
+  if (loading) failLoading(loading, null);
   const result = body.result;
   if (!object(result) || !Object.keys(result).length) fail("response", "DocIE returned an empty or malformed result.");
   // Same arbitration as the chat path: a NAMED and wrong schema is refused, a
@@ -219,7 +288,7 @@ function parseTextResponse(body, expectedSchema) {
   const confidence = reportedFieldConfidence(body);
   const metadata = { request_id: body.request_id ?? null, agent: null, model: body.model_profile ?? null,
     validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
-    schema_reported: reported.some(item => item != null) };
+    prompt_profile: null, schema_reported: reported.some(item => item != null) };
   for (const name of ["queue_wait_ms", "latency_ms", "generation_ms"]) {
     const value = body[name];
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) metadata[name] = value;
@@ -227,12 +296,31 @@ function parseTextResponse(body, expectedSchema) {
   return { schema_name: expectedSchema, result: unwrap(result), metadata };
 }
 
+// Lecture bornée d'un corps d'erreur, pour le seul classement. Un corps
+// illisible (flux coupé, délai) vaut "" : l'échec reste classé par statut.
+async function readErrorText(response, key) {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks = []; let size = 0;
+  try {
+    while (size < MAX_ERROR_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength; chunks.push(Buffer.from(value));
+    }
+  } catch {} finally {
+    try { await reader.cancel(); } catch {}
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks).subarray(0, MAX_ERROR_BYTES).toString("utf8").split(key).join("[REDACTED]");
+}
+
 // One POST, never a retry: DocIE work is potentially billable. Shared by both
 // entry points on purpose — status classification, the response ceiling, the
 // timeout and the reflected-key redaction are the same guarantees whichever
 // DocIE surface is called, and a second copy of them is exactly the drift this
 // module exists to prevent.
-async function postJson(endpoint, headers, payload, key, timeout, fetchImpl) {
+async function postJson(endpoint, headers, payload, key, timeout, fetchImpl, { loading = false } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout * 1000);
   const started = performance.now();
@@ -241,14 +329,31 @@ async function postJson(endpoint, headers, payload, key, timeout, fetchImpl) {
     const response = await fetchImpl(endpoint, { method: "POST", redirect: "manual", signal: controller.signal,
       headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (response.status !== 200) {
-      await response.body?.cancel();
       // 413 gets its own code: DocIE refuses a document that is beyond the
       // limits its deployment configures, and a named failure beats a generic
       // upstream one for the only limit we cannot measure before sending.
-      fail(({ 401: "auth", 403: "auth", 413: "limits", 429: "rate_limit" })[response.status] || "upstream",
-        response.status === 413
+      const mapped = ({ 401: "auth", 403: "auth", 413: "limits", 429: "rate_limit" })[response.status];
+      if (mapped) {
+        await response.body?.cancel();
+        fail(mapped, response.status === 413
           ? "DocIE refused the document as beyond its configured limits (size, OCR blocks or pages)."
           : "DocIE request failed (HTTP " + response.status + ").", response.status);
+      }
+      const text = await readErrorText(response, key);
+      // `loading` : voie texte seulement (voir loadingDetail). Un 202, ou un
+      // corps `detail.status == "loading"` sous un autre statut.
+      if (loading) {
+        let parsed = null;
+        try { parsed = JSON.parse(text); } catch {}
+        const detail = loadingDetail(parsed);
+        if (response.status === 202 || detail) failLoading(detail, response.status);
+      }
+      // Message constant : le corps amont sert à classer, jamais à informer —
+      // c'est ce qui garantit qu'une clé réfléchie ne sort pas d'ici.
+      if (CONTEXT_OVERFLOW.test(text)) {
+        fail("context", "DocIE's model server refused the prompt as beyond its context size: the document is too long for this profile.", response.status);
+      }
+      fail("upstream", "DocIE request failed (HTTP " + response.status + ").", response.status);
     }
     if (!response.body) fail("response", "DocIE returned an empty response.");
     reader = response.body.getReader();
@@ -274,19 +379,31 @@ async function postJson(endpoint, headers, payload, key, timeout, fetchImpl) {
   }
 }
 
+// Corps de la voie fichier. Isolé pour que le test de borne mesure la charge
+// réellement envoyée : toute modification de l'enveloppe (texte d'instruction,
+// nouveau champ) doit repasser sous FILE_ENVELOPE_MAX_BYTES, sinon ce test casse.
+function filePayload(content, mimeType, agent, tokens) {
+  return { model: agent, parallel_extraction: true, stream: false, max_tokens: tokens,
+    messages: [{ role: "user", content: [
+      { type: "text", text: "Extract the document using your configured schema. Do not invent missing information." },
+      { type: "image_url", image_url: { url: "data:" + mimeType + ";base64," + content.toString("base64") } },
+    ] }] };
+}
+
 // Send one PDF/image to the configured agent. DOCX and text are not sent here:
 // the `image_url` wrapper feeds DocIE's OCR backends, which read PDF and images
 // only. A source that already carries machine-readable text goes to
 // extractText() instead — a different endpoint, not a MIME type to add above.
 async function extractDocument(content, mimeType, { kind = "resume", env = process.env, fetchImpl = fetch } = {}) {
   const { endpoint, key, agent, timeout, tokens } = configuration(kind, env);
-  if (!Buffer.isBuffer(content) || !content.length || content.length > MAX_DOCUMENT_BYTES) fail("input", "Document must contain between 1 byte and 20 MiB.");
+  if (!Buffer.isBuffer(content) || !content.length || content.length > MAX_DOCUMENT_BYTES) {
+    fail("input", "Document must contain between 1 byte and " + MAX_DOCUMENT_BYTES + " bytes (DocIE's 26 MiB request body, base64 included).");
+  }
   if (!MIME_TYPES.has(mimeType)) fail("input", "Unsupported document MIME type; use PDF, PNG or JPEG.");
-  const payload = { model: agent, parallel_extraction: true, stream: false, max_tokens: tokens,
-    messages: [{ role: "user", content: [
-      { type: "text", text: "Extract the document using your configured schema. Do not invent missing information." },
-      { type: "image_url", image_url: { url: "data:" + mimeType + ";base64," + content.toString("base64") } },
-    ] }] };
+  const payload = filePayload(content, mimeType, agent, tokens);
+  // Pas de `loading` ici : sur la voie agent, un modèle `store:` froid ne
+  // répond pas 202 mais une 500 non rattrapée côté DocIE (#194). Un 202 y reste
+  // un échec `upstream`.
   const { body, elapsed } = await postJson(endpoint, { Authorization: "Bearer " + key }, payload, key, timeout, fetchImpl);
   const result = parseResponse(body, SCHEMAS[kind], agent);
   result.metadata.elapsed_ms = elapsed;
@@ -324,7 +441,7 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, env = 
   const { base, key, timeout } = connection(env);
   const schema = SCHEMAS[kind];
   if (typeof text !== "string" || !text.trim()) fail("input", "Document text must not be empty.");
-  if (Buffer.byteLength(text, "utf8") > MAX_DOCUMENT_BYTES) fail("input", "Document must contain between 1 byte and 20 MiB.");
+  if (Buffer.byteLength(text, "utf8") > MAX_TEXT_BYTES) fail("input", "Document must contain between 1 byte and 20 MiB.");
   const payload = { text, schema_name: schema };
   if (dynamicSchema != null) {
     if (!object(dynamicSchema) || !Object.keys(dynamicSchema).length) fail("input", "dynamic_schema must be a non-empty schema object.");
@@ -338,10 +455,11 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, env = 
   // success on this endpoint used (cv-parser/docie_client.py, the response saved
   // by document-parsing/scripts/test_api.py). The chat path keeps its own
   // header, equally by measurement.
-  const { body, elapsed } = await postJson(base + "/v1/extract/text", { "x-api-key": key }, payload, key, timeout, fetchImpl);
+  const { body, elapsed } = await postJson(base + "/v1/extract/text", { "x-api-key": key }, payload, key, timeout, fetchImpl, { loading: true });
   const result = parseTextResponse(body, schema);
   result.metadata.elapsed_ms = elapsed;
   return result;
 }
 
-module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, DocIEBridgeError };
+module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload,
+  MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };

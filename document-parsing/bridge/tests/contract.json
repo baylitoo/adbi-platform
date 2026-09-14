@@ -245,5 +245,57 @@
       "title": 0.5
     },
     "schema_reported": true
+  },
+  {
+    "name": "agent_reports_prompt_profile",
+    "comment": "#190: docie_agent.prompt_profile names the prompt that served (DocIE origin/dev-agents-milestone, agents/runtime.py, next to model_profile). It is the only hint that DocIE's silent 800-OCR-block prompt cap could have applied. The bridge copies it verbatim into metadata.prompt_profile and applies no rule about which profiles are capped: that belongs to the consumers. Every vector without the key expects null.",
+    "body": {
+      "id": "chatcmpl-agent-profile",
+      "model": "contract",
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "message": {
+            "content": "{\"document_type\":\"adbi_resume\",\"name\":\"Ada Lovelace\"}"
+          }
+        }
+      ],
+      "docie_agent": {
+        "agent": "adbi_agent_1",
+        "model_profile": "lfm2.5-2.6b",
+        "prompt_profile": "strict_extraction_v1"
+      }
+    },
+    "expected_result": {
+      "document_type": "adbi_resume",
+      "name": "Ada Lovelace"
+    },
+    "expected_field_confidence": {},
+    "expected_prompt_profile": "strict_extraction_v1",
+    "schema_reported": true
+  },
+  {
+    "name": "unusable_prompt_profile_is_null",
+    "comment": "A non-string prompt_profile is treated like the neighbouring optional hints (field_confidence, timings): null, i.e. unknown. It does not refuse an otherwise valid extraction the way a malformed `validation` does.",
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "message": {
+            "content": "{\"name\":\"Ada Lovelace\"}"
+          }
+        }
+      ],
+      "docie_agent": {
+        "agent": "adbi_agent_1",
+        "prompt_profile": 800
+      }
+    },
+    "expected_result": {
+      "name": "Ada Lovelace"
+    },
+    "expected_field_confidence": {},
+    "expected_prompt_profile": null,
+    "schema_reported": false
   }
 ]

@@ -1,7 +1,7 @@
 [
   {
     "name": "recorded_text_extraction",
-    "comment": "Trimmed from a REAL answer of POST /v1/extract/text on the deployment (obtained with document-parsing/scripts/test_api.py; fields removed, no value altered). Three things this vector pins down: the response is FLAT — no choices, no finish_reason, so the chat parser cannot read it; grounding survives the text path — every leaf still arrives as {value, confidence, evidence_ids}, which is what keeps the #172/#173/#175 review chain working; and the envelope of a field DocIE did not find is an empty value at confidence 0, not a missing key.",
+    "comment": "Trimmed from a REAL answer of POST /v1/extract/text on the deployment (obtained with document-parsing/scripts/test_api.py; fields removed, no value altered). prompt_profile is null on every text vector: DocIE's ExtractionResponse (extra=forbid) has model_profile only, so this path never reports it (#190) -- null means not reported, never not capped. Three things this vector pins down: the response is FLAT — no choices, no finish_reason, so the chat parser cannot read it; grounding survives the text path — every leaf still arrives as {value, confidence, evidence_ids}, which is what keeps the #172/#173/#175 review chain working; and the envelope of a field DocIE did not find is an empty value at confidence 0, not a missing key.",
     "body": {
       "request_id": "3686a389-faf1-4a79-a056-daca2f393be1",
       "schema_name": "adbi_resume",
@@ -101,6 +101,7 @@
       "request_id": "3686a389-faf1-4a79-a056-daca2f393be1",
       "agent": null,
       "model": "lfm2.5-2.6b",
+      "prompt_profile": null,
       "latency_ms": 127245
     },
     "schema_reported": true
@@ -115,7 +116,7 @@
     },
     "expected_result": { "name": "Ada Lovelace" },
     "expected_field_confidence": { "name": 0.93 },
-    "expected_metadata": { "request_id": null, "agent": null, "model": null },
+    "expected_metadata": { "request_id": null, "agent": null, "model": null, "prompt_profile": null },
     "schema_reported": false
   },
   {
@@ -135,7 +136,7 @@
     },
     "expected_result": { "name": "Ada Lovelace", "experience": [{ "title": "Analyste" }] },
     "expected_field_confidence": { "name": 0.93, "experience[0].title": 0.5 },
-    "expected_metadata": { "request_id": "req-flat", "agent": null, "model": "nuextract3_local_127" },
+    "expected_metadata": { "request_id": "req-flat", "agent": null, "model": "nuextract3_local_127", "prompt_profile": null },
     "schema_reported": true
   }
 ]
