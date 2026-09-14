@@ -289,6 +289,131 @@ async function readDocx(buffer) {
   return { pages: [singleColumnPage(lines, Math.max(800, lines.length * 14))], method: "docx_xml" };
 }
 
+/**
+ * Texte d'un DOCX pour la voie texte DocIE (/v1/extract/text, #180).
+ *
+ * Rendu a partir du MEME HTML mammoth que readDocx ci-dessus, pour que les deux
+ * voies lisent le meme document — comme la voie texte d'un .txt decode
+ * exactement comme readTxt. Pas `mammoth.extractRawText`, pour une raison
+ * mesuree sur les DOCX de document-parsing/fixtures/cv_samples/ :
+ *
+ *  - il SUPPRIME le retour a la ligne manuel (Maj+Entree, `w:br`) sans rien
+ *    mettre a sa place : « alice.dupont@example.com06 12 34 56 78Lille »,
+ *    « Mars 2022 - Aujourd'huiDecathlon, Lille ». Courriel, telephone, date de
+ *    fin et employeur deviennent un seul mot ; une date de fin perdue fait en
+ *    plus passer une mission terminee pour « en cours » (lib/docie-extract.js
+ *    #missionEnCours) ;
+ *  - il ecrit chaque cellule de tableau comme un paragraphe isole :
+ *    « Langages », puis « Python, SQL, Scala » deux lignes plus bas. Le lien
+ *    categorie -> valeurs, ou dates -> mission, n'existe plus dans le texte.
+ *
+ * Ici : un `<br>` devient un saut de ligne, une tabulation reste une
+ * tabulation, une puce Word garde « • », un titre est precede d'une ligne vide,
+ * et une ligne de tableau dont chaque cellule tient en une ligne est rendue sur
+ * UNE ligne, cellules separees par une tabulation. Une cellule qui contient
+ * plusieurs blocs (le tableau 1x2 des modeles « barre laterale + corps ») est
+ * rendue bloc par bloc, sinon toute la barre laterale serait collee au corps.
+ * Chaque segment passe par cleanText, comme chaque ligne de readDocx.
+ *
+ * Les images ne sont pas converties : une photo de CV encodee en base64 ne
+ * porte aucun texte et gonflerait le HTML pour rien.
+ */
+async function texteDocx(buffer) {
+  const mammoth = require("mammoth");
+  const { value: html } = await mammoth.convertToHtml(
+    { buffer },
+    { convertImage: mammoth.images.imgElement(() => ({ src: "" })) }
+  );
+  const lignes = [];
+  rendreBloc(arbreHtml(html), lignes);
+  return lignes.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+const BLOCS_HTML = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "ul", "ol", "table", "thead", "tbody", "tr", "td", "th"]);
+const VIDES_HTML = new Set(["br", "img", "hr"]);
+
+/** HTML mammoth (bien forme, echappe) -> arbre { tag, enfants } / { texte }. */
+function arbreHtml(html) {
+  const racine = { tag: "#racine", enfants: [] };
+  const pile = [racine];
+  const re = /<(\/?)([a-zA-Z0-9]+)[^>]*?(\/?)>|([^<]+)/g;
+  let m;
+  while ((m = re.exec(html))) {
+    const parent = pile[pile.length - 1];
+    if (m[4] !== undefined) {
+      parent.enfants.push({ texte: decoderEntites(m[4]) });
+      continue;
+    }
+    const tag = m[2].toLowerCase();
+    if (m[1]) {
+      for (let i = pile.length - 1; i > 0; i--) {
+        if (pile[i].tag === tag) { pile.length = i; break; }
+      }
+    } else if (m[3] || VIDES_HTML.has(tag)) {
+      parent.enfants.push({ tag, enfants: [] });
+    } else {
+      const noeud = { tag, enfants: [] };
+      parent.enfants.push(noeud);
+      pile.push(noeud);
+    }
+  }
+  return racine;
+}
+
+/** Les quatre entites que mammoth emet ; `&amp;` en dernier, sinon « &amp;lt; » deviendrait « < ». */
+function decoderEntites(s) {
+  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+}
+
+/** Texte en ligne d'un noeud : un `<br>` devient un saut de ligne, jamais rien. */
+function texteEnLigne(n) {
+  if (n.texte !== undefined) return n.texte;
+  if (n.tag === "br") return "\n";
+  return n.enfants.map(texteEnLigne).join("");
+}
+
+/** Decoupe en lignes, nettoie chaque segment entre tabulations, ecarte les lignes vides. */
+function pousserLignes(texte, lignes, prefixe = "") {
+  texte
+    .split("\n")
+    .map((l) => l.split("\t").map(cleanText).filter(Boolean).join("\t"))
+    .filter(Boolean)
+    .forEach((l, i) => lignes.push(i === 0 ? prefixe + l : l));
+}
+
+/** Une cellule « simple » tient en une ligne : au plus un paragraphe, sans liste, tableau ni `<br>`. */
+function celluleSimple(cellule) {
+  const blocs = cellule.enfants.filter((e) => e.tag && BLOCS_HTML.has(e.tag));
+  return blocs.every((b) => b.tag === "p") && blocs.length <= 1 && !texteEnLigne(cellule).trim().includes("\n");
+}
+
+function rendreBloc(n, lignes) {
+  if (n.texte !== undefined) return pousserLignes(n.texte, lignes);
+  const tag = n.tag;
+  if (/^h[1-6]$/.test(tag)) {
+    if (lignes.length) lignes.push("");
+    return pousserLignes(texteEnLigne(n), lignes);
+  }
+  if (tag === "p") return pousserLignes(texteEnLigne(n), lignes);
+  if (tag === "li") {
+    const sousListe = (e) => e.tag === "ul" || e.tag === "ol";
+    pousserLignes(n.enfants.filter((e) => !sousListe(e)).map(texteEnLigne).join(""), lignes, "• ");
+    return n.enfants.filter(sousListe).forEach((e) => rendreBloc(e, lignes));
+  }
+  if (tag === "tr") {
+    const cellules = n.enfants.filter((e) => e.tag === "td" || e.tag === "th");
+    if (cellules.every(celluleSimple)) {
+      const ligne = cellules.map((c) => cleanText(texteEnLigne(c))).join("\t").replace(/\t+$/, "");
+      if (ligne.replace(/\t/g, "")) lignes.push(ligne);
+      return;
+    }
+    return cellules.forEach((c) => rendreBloc(c, lignes));
+  }
+  if (BLOCS_HTML.has(tag) || tag === "#racine") return n.enfants.forEach((e) => rendreBloc(e, lignes));
+  // Balise en ligne hors paragraphe (rare chez mammoth) : lue comme du texte.
+  pousserLignes(texteEnLigne(n), lignes);
+}
+
 /** DOCX et TXT n'ont pas de geometrie : une seule colonne, pas de barre laterale. */
 function singleColumnPage(lines, height) {
   const tagged = lines.map((l) => ({ ...l, col: 0, sidebar: false }));
@@ -533,10 +658,28 @@ function estTexteBrut(buffer, filename) {
   return buffer.toString("utf8").trim() !== "";
 }
 
-// isPdf et estTexteBrut sont exportees en plus de `ingest` :
+/**
+ * « Ce depot est-il un DOCX dont on sait tirer le texte ? »
+ *
+ * Repond a la branche DOCX de ingest() ci-dessus, restreinte a `.docx` : un
+ * `.doc` (Word 97-2003, binaire OLE) n'est pas lu par mammoth, il reste sur la
+ * voie historique sans passer par DocIE. On exige en plus l'entete ZIP
+ * (« PK\x03\x04 ») : un fichier nomme .docx qui n'en est pas un echouerait de
+ * toute facon a la lecture, inutile de tracer un repli DocIE pour lui.
+ *
+ * Un DOCX POSSEDE du texte lisible par machine — de vrais paragraphes : il
+ * part donc sur la voie texte (#180), rendu par texteDocx.
+ */
+function estDocx(buffer, filename) {
+  if (!buffer || buffer.length < 4 || isPdf(buffer)) return false;
+  if (path.extname(filename || "").toLowerCase() !== ".docx") return false;
+  return buffer.slice(0, 4).toString("latin1") === "PK\x03\x04";
+}
+
+// isPdf, estTexteBrut, estDocx et texteDocx sont exportees en plus de `ingest` :
 // lib/import-pipeline.js (issues #152 et #180) en a besoin pour choisir la
 // voie DocIE — fichier (PDF/images) ou texte (/v1/extract/text), voir
 // document-parsing/bridge/README.md — avant de lire l'integralite du document.
 // La detection de format vit ici, avec ingest(), pour que les deux decisions
 // ne puissent pas diverger.
-module.exports = { ingest, cleanText, isPdf, estTexteBrut };
+module.exports = { ingest, cleanText, isPdf, estTexteBrut, estDocx, texteDocx };

@@ -63,8 +63,9 @@ les paragraphes d'un DOCX, la couche texte d'un PDF déjà lue. Jamais un repli
 après un échec de la voie fichier.
 
 Premier consommateur : `one-pager/lib/import-pipeline.js`. L'aiguillage y est
-un prédicat de format, `lib/ingest.js#estTexteBrut`, posé à côté de `isPdf`
-pour qu'il ne puisse pas diverger de ce que `ingest()` fait réellement du
+fait par des prédicats de format, `lib/ingest.js#estTexteBrut` (`.txt`) et
+`#estDocx` (`.docx`, texte rendu par `#texteDocx`), posés à côté de `isPdf`
+pour qu'ils ne puissent pas diverger de ce que `ingest()` fait réellement du
 fichier. Un PDF — scanné ou non — n'y entre jamais : il garde la voie fichier,
 la seule qui déclenche l'OCR distant.
 

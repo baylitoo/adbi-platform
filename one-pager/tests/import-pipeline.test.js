@@ -19,11 +19,16 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { importerCv, voieDocie } = require("../lib/import-pipeline");
-const { estTexteBrut } = require("../lib/ingest");
+const { estTexteBrut, estDocx, texteDocx } = require("../lib/ingest");
 
 const FIXTURES = path.join(__dirname, "..", "..", "document-parsing", "fixtures", "cv_samples");
 const CV_PDF = fs.readFileSync(path.join(FIXTURES, "cv_simple.pdf"));
 const CV_PDF_SCANNE = fs.readFileSync(path.join(FIXTURES, "cv_scanned.pdf"));
+// Trois DOCX au meme contenu, trois mises en forme Word courantes, generes par
+// document-parsing/scripts/generate_sample_docx_cvs.py (python-docx).
+const DOCX = Object.fromEntries(["titres", "sans_titres", "tableau"].map((nom) => [
+  nom, fs.readFileSync(path.join(FIXTURES, `cv_docx_${nom}.docx`)),
+]));
 const CV_TXT = Buffer.from("Alice Dupont\nData Engineer\nalice.dupont@example.com\n", "utf8");
 
 /** Schema partage envoye avec le texte — la meme source que lib/docie-extract. */
@@ -282,9 +287,16 @@ test("aiguillage : on suit ce que la source EST, jamais une preference pour le t
   assert.equal(estTexteBrut(CV_PDF, "cv.pdf"), false);
   assert.equal(estTexteBrut(CV_PDF, "cv.txt"), false, "l'entete %PDF- prime sur l'extension");
 
-  // DOCX hors perimetre (#180) : aucune voie DocIE, donc voie historique.
+  // Un .docx possede de vrais paragraphes : voie texte (#180). Un .doc
+  // (binaire Word 97-2003) n'est pas lu par mammoth : voie historique, meme
+  // si son contenu est en realite un DOCX renomme.
   const faux_docx = Buffer.from("PK  contenu", "latin1");
-  assert.equal(voieDocie(faux_docx, "cv.docx"), null);
+  assert.equal(typeof voieDocie(DOCX.titres, "cv.docx"), "function");
+  assert.equal(estDocx(DOCX.titres, "cv.docx"), true);
+  assert.equal(voieDocie(DOCX.titres, "cv.doc"), null);
+  assert.equal(estDocx(CV_PDF, "cv.docx"), false, "l'entete %PDF- prime sur l'extension");
+  assert.equal(voieDocie(Buffer.from("pas une archive"), "cv.docx"), null, "sans entete ZIP ce n'est pas un DOCX");
+  assert.equal(estTexteBrut(DOCX.titres, "cv.docx"), false, "un DOCX n'est pas du texte brut");
   assert.equal(estTexteBrut(Buffer.from("Alice"), "cv.doc"), false);
   // Un binaire renomme en .txt n'est pas du texte : il echouerait a distance.
   assert.equal(estTexteBrut(faux_docx, "cv.txt"), false);
@@ -293,6 +305,117 @@ test("aiguillage : on suit ce que la source EST, jamais une preference pour le t
   assert.equal(estTexteBrut(CV_TXT, "cv.txt"), true);
   // Sans extension connue, ingest() lit du texte : l'aiguillage fait pareil.
   assert.equal(estTexteBrut(CV_TXT, "cv"), true);
+});
+
+// ── DOCX : voie texte (#180) ───────────────────────────────────────────────
+
+test("drapeau baisse + .docx : voie historique inchangee, aucun appel reseau", async () => {
+  for (const valeur of [undefined, "false", "0", ""]) {
+    let appele = 0;
+    const fetchImpl = async () => { appele++; return new Response("{}", { status: 200 }); };
+    const env = { ...ENV_BASE };
+    if (valeur !== undefined) env.DOCIE_EXTRACTION_ENABLED = valeur;
+    for (const [nom, buffer] of Object.entries(DOCX)) {
+      const master = await importerCv(buffer, `cv_${nom}.docx`, { env, fetchImpl });
+      assert.equal(master.source.extraction_method, "docx_xml", `${nom} / ${valeur}`);
+    }
+    assert.equal(appele, 0, `drapeau ${JSON.stringify(valeur)} : fetchImpl jamais invoque`);
+  }
+});
+
+test("drapeau actif + .docx : part sur POST /v1/extract/text avec le texte rendu par texteDocx", async () => {
+  for (const [nom, buffer] of Object.entries(DOCX)) {
+    const { appels, fetchImpl } = espion(corpsTexte(RESULT_TEXTE));
+    const master = await importerCv(buffer, `cv_${nom}.docx`, {
+      env: { ...ENV_BASE, DOCIE_EXTRACTION_ENABLED: "true" },
+      fetchImpl,
+    });
+
+    assert.equal(appels.length, 1, nom);
+    const { url, headers, payload } = appels[0];
+    assert.equal(url, "https://docie.test/v1/extract/text");
+    assert.equal(headers["x-api-key"], "test-key");
+    assert.equal(headers.Authorization, undefined, "pas de Bearer : ce n'est pas la voie agent/chat");
+    assert.equal(payload.text, await texteDocx(buffer), "le texte envoye est exactement le rendu de texteDocx");
+    assert.equal(payload.schema_name, "adbi_resume");
+    assert.equal(payload.schema_mode, "dynamic");
+    assert.deepEqual(payload.dynamic_schema, SCHEMA_RESUME);
+    for (const absent of ["messages", "model", "max_tokens", "parallel_extraction", "ocr_blocks"]) {
+      assert.equal(Object.hasOwn(payload, absent), false, `${nom} : ${absent}`);
+    }
+
+    assert.equal(master.source.extraction_method, "docie");
+    assert.equal(master.source.docie.agent, null);
+    assert.equal(master.source.filename, `cv_${nom}.docx`);
+    assert.equal(master.experiences[0].company, "Decathlon");
+  }
+});
+
+test("drapeau actif + .docx + echec DocIE (HTTP 500) : repli local, meme convention, un seul POST", async () => {
+  const { appels, fetchImpl } = espion({ error: "boom" }, 500);
+  const master = await importerCv(DOCX.titres, "cv.docx", {
+    env: { ...ENV_BASE, DOCIE_EXTRACTION_ENABLED: "true" },
+    fetchImpl,
+  });
+  assert.equal(appels.length, 1, "un seul POST, jamais de retry");
+  assert.equal(master.source.extraction_method, "local_fallback:upstream");
+  assert.ok(master.quality.warnings.includes("docie_indisponible_repli_local:upstream"));
+  // Le repli est bien la lecture DOCX historique, pas une autre.
+  const local = await importerCv(DOCX.titres, "cv.docx", { env: { ...ENV_BASE } });
+  assert.deepEqual(
+    master.experiences.map((e) => e.role),
+    local.experiences.map((e) => e.role)
+  );
+});
+
+test("drapeau actif + .docx illisible : aucun appel reseau, meme refus que drapeau baisse", async () => {
+  // Entete ZIP valide, archive corrompue : mammoth echoue AVANT tout envoi.
+  const corrompu = Buffer.concat([Buffer.from("PK\x03\x04", "latin1"), Buffer.alloc(64, 1)]);
+  let appele = 0;
+  const fetchImpl = async () => { appele++; return new Response("{}", { status: 200 }); };
+  const baisse = await importerCv(corrompu, "cv.docx", { env: { ...ENV_BASE } }).then(() => null, (e) => e);
+  const actif = await importerCv(corrompu, "cv.docx", {
+    env: { ...ENV_BASE, DOCIE_EXTRACTION_ENABLED: "true" }, fetchImpl,
+  }).then(() => null, (e) => e);
+  assert.ok(baisse instanceof Error);
+  assert.ok(actif instanceof Error);
+  assert.equal(actif.message, baisse.message);
+  assert.equal(appele, 0);
+});
+
+test("texteDocx : retours manuels, tabulations, puces, titres et lignes de tableau conserves", async () => {
+  const sansTitres = await texteDocx(DOCX.sans_titres);
+  // Retour a la ligne manuel (Maj+Entree) : une vraie fin de ligne.
+  assert.ok(sansTitres.includes("alice.dupont@example.com\n06 12 34 56 78\nLille"), sansTitres);
+  assert.ok(sansTitres.includes("Data Engineer\tMars 2022 - Aujourd'hui\nDecathlon, Lille"), sansTitres);
+
+  const titres = await texteDocx(DOCX.titres);
+  // Une ligne de tableau reste UNE ligne : la categorie reste avec ses valeurs.
+  assert.ok(titres.includes("Langages\tPython, SQL, Scala\nCloud\tAzure, AWS"), titres);
+  assert.ok(titres.includes("2018\tMaster Informatique decisionnelle\tUniversite de Lille"), titres);
+  // Puces Word marquees, titres precedes d'une ligne vide, ordre du document.
+  assert.ok(titres.includes("\n• Conception de la plateforme data sur Databricks pour 40 equipes\n"), titres);
+  assert.ok(titres.includes("\n\nCompetences\n"), titres);
+  const ordre = ["Experiences professionnelles", "Competences", "Formation", "Langues"].map((t) => titres.indexOf(`\n${t}\n`));
+  assert.ok(ordre.every((p, i) => p > 0 && (i === 0 || p > ordre[i - 1])), ordre.join(","));
+
+  // Tableau de mise en page (barre laterale + corps) : lu cellule par cellule,
+  // jamais une ligne geante ou la barre laterale serait collee au corps.
+  const tableau = await texteDocx(DOCX.tableau);
+  assert.ok(tableau.indexOf("Espagnol : notions") < tableau.indexOf("EXPERIENCES"), tableau);
+  assert.ok(!tableau.includes("notions\tEXPERIENCES"), tableau);
+  assert.ok(tableau.includes("Mars 2022 - Aujourd'hui\nData Engineer - Decathlon (Lille)"), tableau);
+});
+
+test("texteDocx plutot que mammoth.extractRawText : ce dernier colle les lignes (mesure #180)", async () => {
+  // Garde-fou de la decision : si une version de mammoth cesse de supprimer
+  // les retours manuels, ce test tombe et invite a reconsiderer le choix.
+  const mammoth = require("mammoth");
+  const { value: brut } = await mammoth.extractRawText({ buffer: DOCX.sans_titres });
+  assert.ok(brut.includes("alice.dupont@example.com06 12 34 56 78Lille"), brut);
+  assert.ok(brut.includes("Aujourd'huiDecathlon"), brut);
+  const { value: brutTitres } = await mammoth.extractRawText({ buffer: DOCX.titres });
+  assert.ok(brutTitres.includes("Langages\n\nPython, SQL, Scala"), "cellules dispersees en paragraphes");
 });
 
 test("le schema partage est celui de cv-parser, octet a octet", () => {
