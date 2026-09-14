@@ -1044,7 +1044,6 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
             "description": str(edu.get("description") or "").strip(),
         })
         
-    _seen_items_global: set[str] = set()   # dedup across all categories
     for sk in (data.get("skills") or data.get("competences") or []):
         category = str(sk.get("category") or sk.get("categorie") or "").strip()
         items_src = sk.get("items") or sk.get("competences") or []
@@ -1052,15 +1051,37 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
             raw_items = [items_src]
         else:
             raw_items = [str(it).strip() for it in items_src if str(it).strip()]
-        # Deduplicate: within category (case-insensitive) AND across categories
+        # Dédoublonnage DANS la catégorie seulement, insensible à la casse
+        # (#177 ligne 13).
+        #
+        # Un ensemble partagé entre catégories (`_seen_items_global`) retirait
+        # « python » de « Scripting » dès que « Python » figurait sous
+        # « Langages » — et vidait une catégorie entière quand tous ses items
+        # étaient déjà apparus plus haut (« Bases : sql, postgresql » disparaissait
+        # derrière « Données : SQL, PostgreSQL »). Le groupe qui gardait l'item
+        # dépendait de l'ordre du document. one-pager ne dédoublonne que dans le
+        # groupe : le même CV donnait deux fiches, et c'est la CVthèque qui
+        # perdait.
+        #
+        # Une même technologie sous deux catégories est une lecture légitime du
+        # CV (un langage ET un outil de script) ; ce n'est pas à la fiche de
+        # choisir laquelle le consultant voulait dire.
+        #
+        # Le rapprochement n'y perd ni n'y gagne rien, mesuré sur tous les cas :
+        # core/matcher.py, /api/skills et la recherche lisent `skills_flat`, que
+        # `normalize_skills` dédoublonne déjà globalement (casse + alias) plus
+        # bas. Le dédoublonnage inter-catégories est donc fait là où la liste
+        # plate est consommée, pas au stockage.
+        #
+        # La clé reste `lower()` : l'accent et les alias (« k8s ») sont la
+        # question de la canonicalisation, distincte de celle de la portée.
         items: list[str] = []
         seen_local: set[str] = set()
         for it in raw_items:
             key = it.lower()
-            if key not in seen_local and key not in _seen_items_global:
+            if key not in seen_local:
                 items.append(it)
                 seen_local.add(key)
-                _seen_items_global.add(key)
         # Un groupe SANS catégorie garde ses compétences (#177 ligne 12).
         # `if category and items` les jetait : un CV dont la section
         # « Compétences » est une simple liste à puces — sans en-tête

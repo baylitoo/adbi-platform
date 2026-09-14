@@ -134,17 +134,19 @@ class CompetencesSansCategorieTests(unittest.TestCase):
         Les items du groupe sans catégorie étaient consommés par
         `_seen_items_global` AVANT que le groupe ne soit jeté : « Python » y
         disparaissait aussi de la catégorie « Langages » qui suivait. Mesuré,
-        avant ce correctif : la fiche ne gardait que `["SQL"]`.
+        avant le correctif de la ligne 12 : la fiche ne gardait que `["SQL"]` ;
+        après la ligne 12 et avant la ligne 13 : `Langages = ["SQL"]`.
 
-        Conservé ici en témoin. Quel groupe garde « Python » reste décidé par le
-        dédoublonnage inter-catégories de la ligne 13, non tranchée.
+        La ligne 13 est tranchée (tests/test_competences_portee.py) : le
+        dédoublonnage ne traverse plus les catégories, donc « Python » reste
+        sous les deux libellés que le CV lui donne.
         """
         groupes, fiche = self._groupes([
             {"category": "", "items": ["Python", "Docker"]},
             {"category": "Langages", "items": ["Python", "SQL"]},
         ])
         self.assertEqual(groupes, [("Compétences", ["Python", "Docker"]),
-                                   ("Langages", ["SQL"])])
+                                   ("Langages", ["Python", "SQL"])])
         self.assertEqual(fiche["skills_flat"], ["Python", "Docker", "SQL"])
 
     def test_une_vraie_section_prime_sur_le_repli_par_les_missions(self):
