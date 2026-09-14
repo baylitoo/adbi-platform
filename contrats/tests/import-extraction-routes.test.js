@@ -134,7 +134,15 @@ test("charge utile : extractContractValues REEL (DocIE simule par fetchImpl) -> 
     const { tache } = await (await srv.post(CORPS)).json();
     const vue = await attendreFin(srv, tache);
     assert.equal(vue.etat, "terminee");
-    assert.deepEqual(Object.keys(vue.resultat), ["requestId", "values", "warnings", "errors", "ok"]);
+    // Les cinq clés de la réponse d'avant doivent toutes rester présentes. On ne
+    // fige PAS la liste exacte : une clé ajoutée par ailleurs à
+    // extractContractValues (ex. controleSirenSiret, PR #201) doit traverser la
+    // tâche telle quelle — c'est ce que vérifient les deux assertions suivantes,
+    // qui comparent à l'appel direct. Figer la liste cassait la fusion avec #201
+    // sans aucun défaut réel.
+    for (const cle of ["requestId", "values", "warnings", "errors", "ok"]) {
+      assert.ok(Object.hasOwn(vue.resultat, cle), "clé attendue absente du résultat : " + cle);
+    }
     assert.deepEqual(Object.keys(vue.resultat), Object.keys(direct));
     assert.deepEqual(vue.resultat, direct);
     assert.equal(Object.keys(vue.resultat.values).length, 19);
