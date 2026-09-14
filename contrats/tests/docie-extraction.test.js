@@ -115,7 +115,16 @@ test("flag on + item kbis + succès DocIE: mapping correct, sur-ensemble de la f
   assert.equal(result.companyName, "ACME CONSEIL");
   assert.equal(result.nameMatches, true);
   assert.equal(result.issuedDate, "2024-03-15");
-  assert.deepEqual(result.issues, []);
+  // 123456789 / 12345678900012 sont des numéros d'essai dont la clé de Luhn
+  // est fausse (#194) : ce chemin de production ne rend que `analysis`, les
+  // `warnings` sont jetés, donc le contrôle DOIT arriver par `issues` et par
+  // `controleSirenSiret` — sans rendre le Kbis invalide ni vider les champs.
+  assert.deepEqual(result.issues, [
+    "SIREN « 123456789 » : clé de contrôle invalide, chiffre probablement mal lu — valeur conservée, à vérifier sur le document",
+    "SIRET « 12345678900012 » : clé de contrôle invalide, chiffre probablement mal lu — valeur conservée, à vérifier sur le document",
+  ]);
+  assert.equal(result.controleSirenSiret.siren.statut, "cle_invalide");
+  assert.equal(result.controleSirenSiret.siret.statut, "cle_invalide");
   // Champs enrichis — perdus par l'ancienne stratégie « aplatir + regex »,
   // désormais restitués tels quels par lib/kbis-mapping.js.
   assert.equal(result.siren, "123456789");

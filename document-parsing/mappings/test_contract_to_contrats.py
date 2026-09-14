@@ -376,5 +376,65 @@ class TestSchemaGuard(unittest.TestCase):
             map_docie_contract_to_sous_traitance(None)  # type: ignore[arg-type]
 
 
+class TestSirenSiretPartage(unittest.TestCase):
+    """#194 (liste retenue, « echouer bruyamment ») : le SIREN et le SIRET
+    n'etaient controles qu'en format. Chaque cas de
+    document-parsing/fixtures/siren_siret.json traverse ici le mapping de bout
+    en bout -- un validateur teste mais oublie par le mapping serait
+    exactement la derive que ce test doit attraper."""
+
+    CHAMPS = {"siren": "st_siren", "siret": "st_siret"}
+
+    @classmethod
+    def setUpClass(cls):
+        with open(REPO_ROOT / "document-parsing" / "fixtures" / "siren_siret.json", encoding="utf-8") as fh:
+            cls.fixture = json.load(fh)
+
+    def test_port_declare_dans_la_fixture(self):
+        self.assertIn("document-parsing/mappings/contract_to_contrats.py (Python)", self.fixture["_ports"])
+
+    def test_chaque_cas_traverse_le_mapping(self):
+        for cas in self.fixture["cas"]:
+            with self.subTest(siren=cas["siren"], siret=cas["siret"], preuve=cas["preuve"]):
+                envelope = {
+                    "schema_name": "contract",
+                    "result": {
+                        "numero_contrat": {"value": "C-2026-001"},
+                        "st_nom": {"value": "ACME"},
+                        "st_siren": {"value": cas["siren"]},
+                        "st_siret": {"value": cas["siret"]},
+                    },
+                }
+                mapping = map_docie_contract_to_sous_traitance(envelope)
+                # Valeur lue CONSERVEE, jamais videe : un chiffre mal lu se
+                # corrige en le voyant.
+                self.assertEqual("" if cas["siren"] is None else str(cas["siren"]), mapping.values["stSiren"])
+                self.assertEqual("" if cas["siret"] is None else str(cas["siret"]), mapping.values["stSiret"])
+                self.assertEqual(cas["statut_siren"], mapping.controle_siren_siret["siren"]["statut"])
+                self.assertEqual(cas["statut_siret"], mapping.controle_siren_siret["siret"]["statut"])
+                attendus = [f"{self.CHAMPS[m['champ']]}: {m['message']}" for m in cas["messages"]]
+                obtenus = [w for w in mapping.warnings if w.startswith(("st_siren: ", "st_siret: "))]
+                self.assertEqual(attendus, obtenus)
+                # Jamais bloquant, jamais dans `values`.
+                self.assertEqual([], mapping.errors)
+                self.assertEqual(
+                    {contrats_key for contrats_key, _ in MAPPED_FIELDS.values()}, set(mapping.values)
+                )
+
+    def test_siren_de_la_fixture_edge_signale_et_conserve(self):
+        # contract_extraction_sample_edge_cases.json porte st_siren 123456789,
+        # dont la cle est fausse : il passait sans un mot.
+        mapping = map_docie_contract_to_sous_traitance(_load_fixture("contract_extraction_sample_edge_cases.json"))
+        self.assertEqual("123456789", mapping.values["stSiren"])
+        self.assertEqual("cle_invalide", mapping.controle_siren_siret["siren"]["statut"])
+        self.assertTrue(any(w.startswith("st_siren: ") and "clé de contrôle invalide" in w for w in mapping.warnings))
+
+    def test_fixture_nominale_valide_sans_avertissement(self):
+        mapping = map_docie_contract_to_sous_traitance(_load_fixture("contract_extraction_sample.json"))
+        self.assertEqual("valide", mapping.controle_siren_siret["siren"]["statut"])
+        self.assertEqual("valide", mapping.controle_siren_siret["siret"]["statut"])
+        self.assertFalse(any(w.startswith(("st_siren: ", "st_siret: ")) for w in mapping.warnings))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

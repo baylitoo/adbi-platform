@@ -427,3 +427,51 @@ test("extractContractValues: la validation du pont traverse jusqu'aux avertissem
   assert.equal(result.requestId, "req-43");
   assert.ok(result.warnings.includes("DocIE validation.warnings: low overall confidence"));
 });
+
+// #194 (liste retenue, « échouer bruyamment ») : chaque cas du jeu d'essai
+// PARTAGÉ avec document-parsing/mappings/test_contract_to_contrats.py traverse
+// mapContractResult de bout en bout.
+const SIREN_SIRET = require(path.join(
+  __dirname, "..", "..", "document-parsing", "fixtures", "siren_siret.json"
+));
+const CHAMPS_CONTRAT = { siren: "st_siren", siret: "st_siret" };
+
+test("siren/siret : chaque cas du jeu d'essai traverse mapContractResult (#194)", () => {
+  assert.ok(SIREN_SIRET._ports.includes("contrats/lib/docie-contract-import.js (JS)"));
+  const clesMappees = Object.values(MAPPED_FIELDS).map(([k]) => k).sort();
+  for (const cas of SIREN_SIRET.cas) {
+    const libelle = JSON.stringify([cas.siren, cas.siret]) + " (" + cas.preuve + ")";
+    const mapped = mapContractResult({
+      numero_contrat: "C-2026-001", st_nom: "ACME", st_siren: cas.siren, st_siret: cas.siret,
+    });
+    // Valeur lue CONSERVÉE, jamais vidée.
+    assert.equal(mapped.values.stSiren, cas.siren === null ? "" : String(cas.siren), libelle);
+    assert.equal(mapped.values.stSiret, cas.siret === null ? "" : String(cas.siret), libelle);
+    assert.equal(mapped.controleSirenSiret.siren.statut, cas.statut_siren, libelle);
+    assert.equal(mapped.controleSirenSiret.siret.statut, cas.statut_siret, libelle);
+    assert.deepEqual(
+      mapped.warnings.filter((w) => w.startsWith("st_siren: ") || w.startsWith("st_siret: ")),
+      cas.messages.map((m) => CHAMPS_CONTRAT[m.champ] + ": " + m.message),
+      libelle
+    );
+    // Jamais bloquant, jamais dans `values`.
+    assert.deepEqual(mapped.errors, [], libelle);
+    assert.equal(mapped.ok, true, libelle);
+    assert.deepEqual(Object.keys(mapped.values).sort(), clesMappees, libelle);
+  }
+});
+
+test("siren/siret : le verdict traverse extractContractValues jusqu'à la réponse (#194)", async () => {
+  const env = { DOCIE_EXTRACTION_ENABLED: "true" };
+  const extractDocument = async () => ({
+    schema_name: "contract",
+    result: Object.assign({}, NOMINAL_RESULT, { st_siren: "941091317" }),
+    metadata: { request_id: "req-194", validation: null },
+  });
+  const body = { dataBase64: Buffer.from("%PDF-1.4 fake").toString("base64"), mimeType: "application/pdf" };
+  const result = await extractContractValues(body, { env, extractDocument });
+  assert.equal(result.values.stSiren, "941091317");
+  assert.equal(result.controleSirenSiret.siren.statut, "cle_invalide");
+  assert.equal(result.controleSirenSiret.siret.statut, "valide");
+  assert.ok(result.warnings[0].startsWith("st_siren: SIREN « 941091317 » : clé de contrôle invalide"));
+});

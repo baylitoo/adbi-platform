@@ -496,3 +496,52 @@ test("nom : chaque cas du jeu d'essai traverse aussi mapKbisResult jusqu'à name
     );
   }
 });
+
+// #194 (liste retenue, « échouer bruyamment ») : chaque cas du jeu d'essai
+// PARTAGÉ avec document-parsing/mappings/test_kbis_to_contrats.py traverse
+// mapKbisResult de bout en bout. Le verdict doit arriver dans `analysis`
+// (issues + controleSirenSiret) : lib/docie-extraction.js jette `warnings`.
+const SIREN_SIRET = require(path.join(
+  __dirname, "..", "..", "document-parsing", "fixtures", "siren_siret.json"
+));
+const CHAMPS_KBIS = { siren: "siren", siret: "siret_siege" };
+
+test("siren/siret : chaque cas du jeu d'essai traverse mapKbisResult (#194)", () => {
+  assert.ok(SIREN_SIRET._ports.includes("contrats/lib/kbis-mapping.js (JS)"));
+  for (const cas of SIREN_SIRET.cas) {
+    const libelle = JSON.stringify([cas.siren, cas.siret]) + " (" + cas.preuve + ")";
+    const { analysis, warnings } = mapKbisResult(
+      { company_name: "SUND INDUSTRY SYSTEM", siren: cas.siren, siret_siege: cas.siret, issued_date: "2026-09-04" },
+      { validation: NOMINAL_VALIDATION }
+    );
+    // Valeur lue CONSERVÉE, jamais vidée.
+    assert.equal(analysis.siren, cas.siren === null ? "" : String(cas.siren), libelle);
+    assert.equal(analysis.siret, cas.siret === null ? "" : String(cas.siret), libelle);
+    assert.equal(analysis.controleSirenSiret.siren.statut, cas.statut_siren, libelle);
+    assert.equal(analysis.controleSirenSiret.siret.statut, cas.statut_siret, libelle);
+    assert.deepEqual(analysis.issues, cas.messages.map((m) => m.message), libelle);
+    assert.deepEqual(
+      warnings.filter((w) => w.startsWith("siren: ") || w.startsWith("siret_siege: ")),
+      cas.messages.map((m) => CHAMPS_KBIS[m.champ] + ": " + m.message),
+      libelle
+    );
+    assert.equal(analysis.isValid, true, libelle);
+    assert.equal(analysis.documentType, "Extrait Kbis", libelle);
+  }
+});
+
+test("siren/siret : verdict hors ENRICHED_KEYS, présent aussi dans la branche illisible (#194)", () => {
+  assert.ok(!ENRICHED_KEYS.includes("controleSirenSiret"));
+  const { analysis } = mapKbisResult(UNREADABLE, {});
+  assert.equal(analysis.controleSirenSiret.siren.statut, "absent");
+  assert.equal(analysis.controleSirenSiret.siret.statut, "absent");
+});
+
+test("siren/siret : le SIREN 123456789 de la fixture edge est signalé, jamais vidé (#194)", () => {
+  const { analysis } = mapKbisResult(EDGE, {});
+  assert.equal(analysis.siren, "123456789");
+  assert.equal(analysis.controleSirenSiret.siren.statut, "cle_invalide");
+  assert.equal(analysis.documentType, "Extrait Kbis");
+  assert.equal(analysis.isValid, true);
+  assert.ok(analysis.issues.some((i) => i.includes("clé de contrôle invalide")));
+});
