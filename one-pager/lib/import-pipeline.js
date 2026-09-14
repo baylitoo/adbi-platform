@@ -17,10 +17,13 @@
  *     declenche l'OCR distant. On ne lui substitue jamais la voie texte, un
  *     scan n'ayant aucun texte a envoyer ;
  *   - un depot texte part en texte (/v1/extract/text), sans enveloppe data
- *     URI : il possede deja ce que l'autre voie devrait faire reconstruire.
- *
- * DOCX reste sur la voie historique : lib/ingest en tire deja du texte via
- * mammoth, mais le brancher demande sa propre validation (voir #180).
+ *     URI : il possede deja ce que l'autre voie devrait faire reconstruire ;
+ *   - un .docx part aussi en texte : ses paragraphes sont du texte. Il est rendu
+ *     par lib/ingest#texteDocx a partir du meme HTML mammoth que la voie
+ *     historique, et non par `mammoth.extractRawText`, qui colle les lignes
+ *     separees par un retour manuel et disperse les cellules de tableau —
+ *     mesure et detail sur texteDocx (#180). Un .doc (binaire, illisible par
+ *     mammoth) reste sur la voie historique.
  *
  * En cas d'echec DocIE (configuration, reseau, timeout, reponse invalide...),
  * on se replie sur la voie historique pour CETTE requete plutot que de
@@ -29,7 +32,7 @@
  * et `quality.warnings`, jamais silencieux.
  */
 
-const { ingest, isPdf, estTexteBrut } = require("./ingest");
+const { ingest, isPdf, estTexteBrut, estDocx, texteDocx } = require("./ingest");
 const { segment } = require("./layout");
 const { extract } = require("./extract");
 const { extraireViaDocie, extraireTexteViaDocie } = require("./docie-extract");
@@ -80,6 +83,12 @@ function voieDocie(buffer, filename) {
     const brut = buffer.toString("utf8");
     const contenu = brut.charCodeAt(0) === 0xfeff ? brut.slice(1) : brut;
     return (options) => extraireTexteViaDocie(contenu, filename, options);
+  }
+  if (estDocx(buffer, filename)) {
+    // Le rendu se fait DANS la fonction renvoyee : un DOCX que mammoth ne sait
+    // pas lire tombe dans le meme `catch` que les erreurs DocIE, et la voie
+    // historique le refuse ensuite exactement comme drapeau baisse.
+    return async (options) => extraireTexteViaDocie(await texteDocx(buffer), filename, options);
   }
   return null;
 }
