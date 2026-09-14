@@ -1262,7 +1262,7 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
     # ── Compétences plates + normalisées (pour la recherche et le filtrage) ──
     raw_flat = skills_to_flat(normalized["skills"])
     normalized["skills_flat"]       = normalize_skills(raw_flat)   # noms canoniques
-    normalized["skills_raw_flat"]   = raw_flat                     # brut avant normalisation
+    normalized["skills_raw_flat"]   = raw_flat                     # aplati avant normalize_skills (items déjà canoniques, #177 G/H)
 
     return normalized
 
