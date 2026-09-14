@@ -45,7 +45,9 @@ from periode_mission import (  # noqa: E402
     periode_lisible,
     titre_de_repli,
 )
-from skills_normalizer import compute_skills_flat, normalize_skills, skills_to_flat  # noqa: E402
+from skills_normalizer import (  # noqa: E402
+    canonique, cle_competence, compute_skills_flat, normalize_skills, skills_to_flat,
+)
 
 REPONSE_DOCIE = DEPOT / "document-parsing/fixtures/cv_samples/results/simple_docie.json"
 JEU_PARTAGE = DEPOT / "document-parsing/fixtures/competences_portee.json"
@@ -74,6 +76,7 @@ APP = _extraire(RACINE / "app.py", {"normalize_cv_data", "compute_years_experien
     "ordre_missions": ordre_missions, "index_mois": index_mois,
     "mois_courant": mois_courant, "periode_lisible": periode_lisible,
     "titre_de_repli": titre_de_repli, "niveau_cecrl": niveau_cecrl,
+    "canonique": canonique, "cle_competence": cle_competence,
     # Les vraies : c'est skills_flat, ce que lit le rapprochement, qu'on mesure.
     "normalize_skills": normalize_skills, "skills_to_flat": skills_to_flat,
     "compute_skills_flat": compute_skills_flat,
@@ -129,8 +132,8 @@ def _docie(*groupes):
     return [{"category": c, "items": [{"item": i} for i in items]} for c, items in groupes]
 
 
-# Cas hors jeu partagé : la clé diffère entre les services (accent, alias de
-# taxonomie), donc ils ne mesurent pas la portée. Ils servent à montrer que
+# Cas hors jeu partagé : ils mêlent la clé (accent, alias — fixée depuis par
+# competences_synonymes.json, #177 G/H) à la portée. Ils servent à montrer que
 # skills_flat ne bouge pas, quelle que soit la forme du doublon.
 CAS_CLE = {
     "accent_deux_categories": _docie(("Méthodes", ["Modélisation"]), ("Fonctionnel", ["Modelisation"])),
@@ -152,15 +155,18 @@ class TemoinPerteTests(unittest.TestCase):
         data = _donnees(_docie(("Langages", ["Python", "SQL"]), ("Outils", ["python", "Docker"])))
         self.assertEqual(_groupes(_ancien_dedoublonnage(data["skills"])),
                          [("Langages", ["Python", "SQL"]), ("Outils", ["Docker"])])
+        # Nom canonique depuis #177 G/H (competences_synonymes.json) : « python »
+        # est GARDÉ sous Outils — c'est la portée qu'on mesure ici — et stocké
+        # sous sa graphie canonique.
         self.assertEqual(_groupes(normalize_cv_data(data)),
-                         [("Langages", ["Python", "SQL"]), ("Outils", ["python", "Docker"])])
+                         [("Langages", ["Python", "SQL"]), ("Outils", ["Python", "Docker"])])
 
     def test_l_ancienne_regle_supprimait_une_categorie_entiere(self):
         data = _donnees(_docie(("Données", ["SQL", "PostgreSQL"]), ("Bases", ["sql", "postgresql"])))
         self.assertEqual(_groupes(_ancien_dedoublonnage(data["skills"])),
                          [("Données", ["SQL", "PostgreSQL"])])
         self.assertEqual(_groupes(normalize_cv_data(data)),
-                         [("Données", ["SQL", "PostgreSQL"]), ("Bases", ["sql", "postgresql"])])
+                         [("Données", ["SQL", "PostgreSQL"]), ("Bases", ["SQL", "PostgreSQL"])])
 
     def test_l_ancienne_regle_faisait_dependre_la_fiche_de_l_ordre_du_document(self):
         """Mêmes groupes, ordre inverse : l'ancienne règle ne gardait pas la même fiche."""
@@ -260,6 +266,10 @@ class SortiesTests(unittest.TestCase):
     sous deux catégories donne deux lignes DIFFÉRENTES, chacune fidèle à son
     libellé — jamais la même ligne deux fois, jamais un item répété dans une
     ligne. Mesuré sur chaque sortie.
+
+    Le CV écrit « python » sous Outils ; la fiche le stocke « Python » depuis
+    #177 G/H (nom canonique de competences_synonymes.json). La ligne Outils
+    reste distincte de la ligne Langages.
     """
 
     FICHE = {
@@ -267,7 +277,9 @@ class SortiesTests(unittest.TestCase):
         "years_experience": 7, "contact": {}, "languages": [], "education": [],
         "certifications": [],
         "experience": [{"company": "Numelia", "title": "Dev", "period": "Mars 2022 – Aujourd'hui",
-                        "env_technique": "Python, Docker", "description": "A"}],
+                        # Ordre inverse de la ligne Outils : les comptes de texte des
+                        # exports ne doivent mesurer que la ligne de compétences.
+                        "env_technique": "Docker, Python", "description": "A"}],
     }
 
     @classmethod
@@ -277,7 +289,7 @@ class SortiesTests(unittest.TestCase):
 
     def test_la_fiche_mesuree_est_bien_celle_d_un_doublon_inter_categories(self):
         self.assertEqual(_groupes(self.FICHE),
-                         [("Langages", ["Python", "SQL"]), ("Outils", ["python", "Docker"])])
+                         [("Langages", ["Python", "SQL"]), ("Outils", ["Python", "Docker"])])
 
     def test_ecran_de_la_fiche(self):
         html = _rendu("cv_detail.html", cv=self.FICHE, linked_cvs=[])
@@ -288,17 +300,17 @@ class SortiesTests(unittest.TestCase):
         self.assertEqual(html.count('class="skill-row"'), 2)
         lignes = re.findall(r'data-skill-items="\d+">(.*?)<input', html, re.S)
         items = [re.findall(r'<span class="tag">(.*?)<button', l) for l in lignes]
-        self.assertEqual(items, [["Python", "SQL"], ["python", "Docker"]])
+        self.assertEqual(items, [["Python", "SQL"], ["Python", "Docker"]])
 
     def test_dossier_adbi(self):
         html = _rendu("adbi_cv.html", cv=self.FICHE, pastilles=[], savoir_faire=[], max_familles=7)
         lignes = re.findall(r'<div class="intitule">(.*?)</div>\s*<div class="valeur">(.*?)</div>', html)
-        self.assertEqual(lignes, [("Langages", "Python, SQL"), ("Outils", "python, Docker")])
+        self.assertEqual(lignes, [("Langages", "Python, SQL"), ("Outils", "Python, Docker")])
 
     def test_dossier_client(self):
         html = _rendu("company_cv.html", cv=self.FICHE, anon=False, color="orange")
         lignes = re.findall(r"<tr>\s*<td>(.*?)</td>\s*<td>(.*?)</td>\s*</tr>", html)
-        self.assertEqual(lignes, [("Langages", "Python, SQL"), ("Outils", "python, Docker")])
+        self.assertEqual(lignes, [("Langages", "Python, SQL"), ("Outils", "Python, Docker")])
 
     def test_export_pdf(self):
         import fitz
@@ -306,7 +318,7 @@ class SortiesTests(unittest.TestCase):
         with fitz.open(stream=en_pdf(self.FICHE, [], []).read(), filetype="pdf") as document:
             texte = "\n".join(page.get_text() for page in document)
         self.assertEqual(texte.count("Python, SQL"), 1)
-        self.assertEqual(texte.count("python, Docker"), 1)
+        self.assertEqual(texte.count("Python, Docker"), 1)
 
     def test_export_word_de_export_dossier(self):
         from docx import Document
@@ -314,7 +326,7 @@ class SortiesTests(unittest.TestCase):
         document = Document(en_word(self.FICHE, [], []))
         lignes = [tuple(c.text for c in r.cells) for t in document.tables for r in t.rows
                   if len(r.cells) == 2 and r.cells[0].text in ("Langages", "Outils")]
-        self.assertEqual(lignes, [("Langages", "Python, SQL"), ("Outils", "python, Docker")])
+        self.assertEqual(lignes, [("Langages", "Python, SQL"), ("Outils", "Python, Docker")])
 
     def test_export_word_de_app(self):
         """La cinquième sortie (`app.py::export_word`), même harnais que
@@ -323,7 +335,7 @@ class SortiesTests(unittest.TestCase):
         from test_champs_conserves import _export_word
         texte = _export_word(self.FICHE)
         self.assertEqual(texte.count("Python, SQL"), 1)
-        self.assertEqual(texte.count("python, Docker"), 1)
+        self.assertEqual(texte.count("Python, Docker"), 1)
 
     def test_pastilles_du_dossier_adbi(self):
         """Clé en minuscules, déjà dédoublonnée : pas de « PYTHON » deux fois."""
@@ -334,7 +346,7 @@ class SortiesTests(unittest.TestCase):
     def test_profil_envoye_au_modele_du_rapprochement(self):
         espace = _extraire(RACINE / "core/rapprochement.py", {"_resume_candidat"}, {})
         texte = espace["_resume_candidat"]({"candidate_id": "cv1"}, self.FICHE)
-        self.assertIn("compétences: Langages: Python, SQL | Outils: python, Docker", texte)
+        self.assertIn("compétences: Langages: Python, SQL | Outils: Python, Docker", texte)
 
 
 if __name__ == "__main__":

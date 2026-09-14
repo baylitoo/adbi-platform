@@ -43,6 +43,7 @@ from psycopg.types.json import Jsonb  # noqa: E402
 from core import cvstore_pg  # noqa: E402
 from docie_client import map_resume  # noqa: E402
 from niveau_langue import niveau_cecrl  # noqa: E402
+from skills_normalizer import canonique, cle_competence  # noqa: E402
 from periode_mission import (  # noqa: E402
     analyser_periode,
     index_mois,
@@ -78,6 +79,7 @@ def _fonctions_de_app(noms):
         "index_mois": index_mois, "mois_courant": mois_courant,
         "periode_lisible": periode_lisible, "titre_de_repli": titre_de_repli,
         "niveau_cecrl": niveau_cecrl,
+        "canonique": canonique, "cle_competence": cle_competence,
         "normalize_skills": lambda *a, **k: {},
         "skills_to_flat": lambda *a, **k: [],
         "compute_skills_flat": lambda *a, **k: [],

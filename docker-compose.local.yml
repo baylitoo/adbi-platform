@@ -208,6 +208,9 @@ services:
         # Bridge DocIE partagé (issue #151, #150/#155) : source unique dans
         # document-parsing/bridge/, copiée dans l'image au build (Dockerfile).
         bridge: ./document-parsing/bridge
+        # Table de synonymes de compétences partagée (#177 G/H) : `COPY
+        # --from=fixtures` sans condition, lue au démarrage. Voir cv-parser/Dockerfile.
+        fixtures: ./document-parsing/fixtures
     extra_hosts:
       - "host.docker.internal:host-gateway"
     container_name: adbi-cv-parser

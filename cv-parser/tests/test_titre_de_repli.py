@@ -31,6 +31,7 @@ sys.path.insert(0, str(RACINE))
 from docie_client import map_resume  # noqa: E402
 from docie_review import AVERTISSEMENT_TITRE_DEDUIT, revue_docie  # noqa: E402
 from niveau_langue import niveau_cecrl  # noqa: E402
+from skills_normalizer import canonique, cle_competence  # noqa: E402
 from periode_mission import (  # noqa: E402
     analyser_periode,
     index_mois,
@@ -67,6 +68,7 @@ def _normalize_cv_data():
         "periode_lisible": periode_lisible,
         "titre_de_repli": titre_de_repli,
         "niveau_cecrl": niveau_cecrl,
+        "canonique": canonique, "cle_competence": cle_competence,
         "normalize_skills": lambda *a, **k: {},
         "skills_to_flat": lambda *a, **k: [],
         "compute_skills_flat": lambda *a, **k: [],

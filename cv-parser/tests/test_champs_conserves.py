@@ -34,6 +34,7 @@ sys.path.insert(0, str(RACINE))
 from docie_client import map_resume  # noqa: E402
 from docie_review import revue_docie  # noqa: E402
 from niveau_langue import niveau_cecrl  # noqa: E402
+from skills_normalizer import canonique, cle_competence  # noqa: E402
 from periode_mission import (  # noqa: E402
     analyser_periode,
     index_mois,
@@ -69,6 +70,7 @@ def _fonctions_de_app(noms):
         "periode_lisible": periode_lisible,
         "titre_de_repli": titre_de_repli,
         "niveau_cecrl": niveau_cecrl,
+        "canonique": canonique, "cle_competence": cle_competence,
         # Hors du périmètre mesuré ici (rapprochement, pas conservation).
         "normalize_skills": lambda *a, **k: {},
         "skills_to_flat": lambda *a, **k: [],

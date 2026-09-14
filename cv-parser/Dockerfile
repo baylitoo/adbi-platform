@@ -13,6 +13,13 @@ COPY . .
 # extraction.py) ; absent, le client DocIE historique (docie_client.py)
 # reste le chemin par défaut.
 COPY --from=bridge docie_bridge.py .
+# Table de synonymes de compétences partagée avec one-pager (#177 lignes G/H) :
+# contexte de build additionnel `fixtures` (document-parsing/fixtures/, voir
+# docker-compose*.yml). skills_normalizer.py la lit AU CHARGEMENT DU MODULE, et
+# app.py l'importe au démarrage : sans cette ligne, le service ne démarre pas.
+# UN SEUL fichier, pas le dossier (fixtures/ contient aussi des CV d'exemple).
+# Même chemin que dans le dépôt, relatif au module : /app/.. -> /document-parsing/.
+COPY --from=fixtures competences_synonymes.json /document-parsing/fixtures/competences_synonymes.json
 
 ENV PYTHONUNBUFFERED=1
 ENV ADBI_HOTE=0.0.0.0

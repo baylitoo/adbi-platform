@@ -34,8 +34,11 @@ COPY --chown=node:node document-parsing/schemas/adbi_resume.schema.json /documen
 # jusqu'a lui par lib/extract.js. Contrairement au client bridge ci-dessus, leur
 # absence ne degrade donc pas une fonctionnalite : elle empeche le service de
 # demarrer. Meme chemin relatif depuis /app/lib : ../../document-parsing/.
+# competences_synonymes.json (#177 G/H) : meme regime, lib/taxonomy.js le lit au
+# chargement — et taxonomy.js est requis par lib/extract.js.
 COPY --chown=node:node document-parsing/fixtures/mission_en_cours.json \
      document-parsing/fixtures/date_mission.json \
+     document-parsing/fixtures/competences_synonymes.json \
      /document-parsing/fixtures/
 
 ENV NODE_ENV=production
