@@ -39,6 +39,7 @@
 // chaînes/nombres). Porter ce module en relisant seulement le fichier
 // Python sans tenir compte de unwrap() produirait 19 champs vides,
 // silencieusement (piège vérifié avant d'écrire ce fichier).
+const path = require("path");
 const { isEnabled, loadBridge, sniffMime } = require("./docie-extraction");
 
 const DOCIE_KIND = "contract";
@@ -147,11 +148,54 @@ function dateExiste(annee, mois, jour) {
   return jour >= 1 && jour <= dernier;
 }
 
+// Table des noms de mois PARTAGÉE (#179 lignes A10/B10) : LUE dans
+// document-parsing/fixtures/date_mission.json, jamais recopiée. Quatre copies
+// indépendantes de ce normaliseur ont produit les divergences de #179 ; une
+// table écrite à la main ici en serait une de plus. C'est la table déjà lue
+// par one-pager/lib/normalize.js. Seule la TABLE est partagée, pas la règle
+// de date_mission.json, qui rend un mois là où <input type="date"> exige un
+// jour (voir `_ecart_assume_avec_date_mission` dans date_docie.json).
+//
+// Chargée PARESSEUSEMENT, et jamais au chargement du module : server.js
+// requiert ce fichier au démarrage, et l'image Docker de contrats n'embarque
+// aujourd'hui que document-parsing/bridge et document-parsing/schemas — pas
+// document-parsing/fixtures. Un require en tête de fichier empêcherait donc le
+// service de démarrer. Table absente : la date écrite sort vide avec un
+// avertissement qui NOMME la cause, plutôt qu'un « non reconnue » trompeur.
+const TABLE_MOIS_CHEMIN = path.join(__dirname, "..", "..", "document-parsing", "fixtures", "date_mission.json");
+let tableMoisCache; // undefined : pas encore cherchée ; null : introuvable
+function tableMois() {
+  if (tableMoisCache === undefined) {
+    try {
+      tableMoisCache = require(TABLE_MOIS_CHEMIN).mois;
+    } catch (err) {
+      if (!err || err.code !== "MODULE_NOT_FOUND") throw err;
+      tableMoisCache = null;
+    }
+  }
+  return tableMoisCache;
+}
+
+// Date écrite en toutes lettres (« le 12 mars 2019 ») — motif PARTAGÉ,
+// identique caractère pour caractère au champ `motif_date_ecrite` de
+// date_docie.json et aux trois autres portages. [0-9]/[a-z] et séparateurs
+// énumérés plutôt que \d/\s, que Python et JS ne définissent pas pareil.
+const MOTIF_DATE_ECRITE = "^(?:le[ \\t\\n\\r\\u00a0]+)?([0-9]{1,2})[ \\t\\n\\r\\u00a0]+([a-z]{3,10})\\.?[ \\t\\n\\r\\u00a0]+([0-9]{4})$";
+const DATE_ECRITE_RE = new RegExp(MOTIF_DATE_ECRITE);
+
+// Minuscules, NFD, marques U+0300–U+036F retirées : la forme sous laquelle le
+// mot du mois est cherché dans la table (clés désaccentuées). Même bloc que
+// le portage Python, qui ne retire volontairement pas davantage (#179 B11).
+function formeEcrite(texte) {
+  return texte.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 // Le DateField de DocIE ne garantit pas l'ISO ("ISO-8601 quand possible")
 // alors que contrats/lib/fields.js attend un <input type="date">
-// (YYYY-MM-DD). ISO transparent ; DD/MM/YYYY converti ; tout le reste ->
-// vide + avertissement (jamais de valeur injectée dans un champ date que le
-// navigateur ne saura pas afficher).
+// (YYYY-MM-DD). ISO transparent ; DD/MM/YYYY converti ; date écrite en toutes
+// lettres (« le 12 mars 2019 ») lue via la table de mois partagée ; tout le
+// reste -> vide + avertissement (jamais de valeur injectée dans un champ date
+// que le navigateur ne saura pas afficher).
 //
 // Règle partagée : document-parsing/fixtures/date_docie.json. Les deux motifs
 // ne comptent que des chiffres, jamais leurs bornes : « 01/13/2026 »
@@ -185,6 +229,25 @@ function normalizeDate(raw, fieldKey, warnings) {
       annee = Number(m[3]);
       mois = Number(m[2]);
       jour = Number(m[1]);
+    } else {
+      // Troisième voie (#179 A10) : le mot doit être une clé de la table
+      // partagée, sinon rien n'est lu et la date reste « non reconnue ». Un
+      // jour ou une année hors bornes est en revanche LU, et tombe donc dans
+      // « date impossible » ci-dessous, comme par les deux autres voies.
+      const e = DATE_ECRITE_RE.exec(formeEcrite(s));
+      if (e) {
+        const table = tableMois();
+        if (table === null) {
+          warnings.push(fieldKey + ": date en toutes lettres (" + JSON.stringify(s) + ") laissée vide — table des mois introuvable ("
+            + TABLE_MOIS_CHEMIN + ") ; à corriger manuellement");
+          return "";
+        }
+        if (Object.hasOwn(table, e[2])) {
+          annee = Number(e[3]);
+          mois = table[e[2]];
+          jour = Number(e[1]);
+        }
+      }
     }
   }
   if (annee === null) {
@@ -358,4 +421,6 @@ module.exports = {
   ANNEE_MIN,
   ANNEE_MAX,
   normalizeDate,
+  MOTIF_DATE_ECRITE,
+  tableMois,
 };

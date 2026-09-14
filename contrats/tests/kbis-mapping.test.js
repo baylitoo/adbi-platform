@@ -11,10 +11,37 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("path");
 const fs = require("fs");
+const { spawnSync } = require("child_process");
 const {
   DOCANALYZE_BASE_KEYS, ENRICHED_KEYS, MAPPED_FIELDS, mapKbisResult,
   MOTIF_NOMBRE, normalizeNumber, ANNEE_MIN, ANNEE_MAX, normalizeDate,
+  MOTIF_DATE_ECRITE, tableMois,
 } = require("../lib/kbis-mapping");
+
+// Script exécuté dans un processus Node séparé : charge `module` en faisant
+// échouer la résolution de date_mission.json comme dans l'image Docker de
+// contrats, qui n'embarque pas document-parsing/fixtures. Prouve que le module
+// se charge quand même, et ce que rend alors une date écrite.
+function scriptSansTableMois(module) {
+  return `
+const Module = require("module");
+const resoudre = Module._resolveFilename;
+Module._resolveFilename = function (demande, ...reste) {
+  if (String(demande).endsWith("date_mission.json")) {
+    const err = new Error("Cannot find module " + demande);
+    err.code = "MODULE_NOT_FOUND";
+    throw err;
+  }
+  return resoudre.call(this, demande, ...reste);
+};
+const m = require(${JSON.stringify(module)});
+const warnings = [];
+const iso = m.normalizeDate("2019-03-12", "registration_date", []);
+const ecrite = m.normalizeDate("le 12 mars 2019", "registration_date", warnings);
+m.normalizeDate("le 5 courant", "registration_date", warnings);
+console.log("\\n" + JSON.stringify({ iso, ecrite, warnings }));
+`;
+}
 // checkName vient de docanalyze.js : c'est LA fonction que kbis-mapping.js
 // importe pour produire nameMatches, et celle dont kbis_to_contrats.py est le
 // portage Python (#179 ligne B7).
@@ -178,10 +205,12 @@ test("edge cases: champs wrapper absents/null -> chaîne vide, jamais 'null'", (
   assert.equal(analysis.siret, "");
 });
 
-test("edge cases: date non reconnue -> vide + avertissement (jamais injectée telle quelle)", () => {
+test("edge cases: date écrite en toutes lettres -> lue via la table de mois partagée (#179 B10)", () => {
+  // Mesuré avant, ici comme côté Python : "" + « date non reconnue
+  // ("le 12 mars 2019") » — une date parfaitement lisible, perdue.
   const { analysis, warnings } = mapKbisResult(EDGE, { validation: NOMINAL_VALIDATION });
-  assert.equal(analysis.dateImmatriculation, "");
-  assert.ok(warnings.some((w) => w.includes("registration_date") && w.includes("le 12 mars 2019")));
+  assert.equal(analysis.dateImmatriculation, "2019-03-12");
+  assert.ok(!warnings.some((w) => w.startsWith("registration_date:")), warnings.join(" | "));
 });
 
 test("edge cases: issued_date déjà ISO passe telle quelle", () => {
@@ -290,7 +319,44 @@ test("date : les " + DATE.cas.length + " cas du jeu d'essai partagé (#179 A8/A9
     const sortie = normalizeDate(cas.valeur, "champ", warnings);
     assert.equal(sortie, cas.sortie, cas.valeur + " -> " + JSON.stringify(sortie) + " (" + cas.preuve + ")");
     assert.equal(warnings.length > 0, cas.avertit, "avertissement attendu=" + cas.avertit + " pour " + JSON.stringify(cas.valeur));
+    // La NATURE de la panne, pas seulement sa présence : une date écrite au
+    // jour impossible ne doit pas glisser vers « non reconnue », ni l'inverse.
+    if (cas.avertit) {
+      assert.ok(warnings[0].includes(cas.avertissement),
+        JSON.stringify(cas.valeur) + " : attendu « " + cas.avertissement + " », reçu " + warnings[0]);
+    }
   }
+});
+
+// ---------------------------------------------------------------------------
+// #179 ligne B10 : « le 12 mars 2019 » (registration_date de la fixture edge)
+// sortait vide + « date non reconnue » ici comme côté Python. La table de mois
+// existe déjà (date_mission.json) : elle est LUE, jamais recopiée. Comme
+// lib/urssaf-mapping.js importe normalizeDate d'ici, l'attestation URSSAF en
+// profite sans une ligne de plus.
+// ---------------------------------------------------------------------------
+test("date écrite : motif identique à la fixture, table de mois LUE dans date_mission.json (#179 B10)", () => {
+  assert.equal(MOTIF_DATE_ECRITE, DATE.motif_date_ecrite);
+  // Même objet que le cache de require : une table recopiée à la main, même
+  // identique clé pour clé, échoue ici.
+  assert.equal(tableMois(), require(path.join(__dirname, "..", "..", DATE.table_mois)).mois);
+  const source = fs.readFileSync(path.join(__dirname, "..", "lib", "kbis-mapping.js"), "utf8");
+  assert.ok(!/["']janvier["']/.test(source), "kbis-mapping.js ne doit pas porter de table de mois littérale");
+});
+
+test("date écrite : table de mois absente (image sans document-parsing/fixtures) -> démarrage intact, cause nommée", () => {
+  const r = spawnSync(process.execPath, ["-e", scriptSansTableMois(path.join(__dirname, "..", "lib", "kbis-mapping.js"))],
+    { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const { iso, ecrite, warnings } = JSON.parse(r.stdout.trim().split("\n").pop());
+  assert.equal(iso, "2019-03-12");
+  assert.equal(ecrite, "");
+  assert.equal(warnings.length, 2, warnings.join(" | "));
+  assert.match(warnings[0], /le 12 mars 2019/);
+  assert.match(warnings[0], /table des mois introuvable/);
+  assert.ok(!/date non reconnue|date impossible/.test(warnings[0]));
+  // Une forme qui n'est pas une date écrite ne dépend pas de la table.
+  assert.match(warnings[1], /date non reconnue/);
 });
 
 test("date de délivrance impossible : champ vide + avertissement nommé, jamais une date réparée (#179 A8/A9)", () => {
@@ -316,10 +382,19 @@ test("date : une date impossible s'avertit AUTREMENT qu'une date illisible", () 
   assert.match(impossible[0], /registration_date/);
   assert.match(impossible[0], /date impossible/);
 
+  // « le 12 mars 2019 » servait de témoin illisible jusqu'à #179 B10 : elle
+  // est désormais lue. Le témoin est un mot qui n'est pas un mois.
   const illisible = [];
-  assert.equal(normalizeDate("le 12 mars 2019", "registration_date", illisible), "");
+  assert.equal(normalizeDate("le 12 truc 2019", "registration_date", illisible), "");
   assert.match(illisible[0], /date non reconnue/);
   assert.ok(!/date impossible/.test(illisible[0]));
+
+  // Même frontière par la voie écrite : « le 45 mars 2019 » est une date LUE
+  // mais fausse — jamais remise en forme, jamais « non reconnue ».
+  const ecrite = [];
+  assert.equal(normalizeDate("le 45 mars 2019", "registration_date", ecrite), "");
+  assert.match(ecrite[0], /date impossible/);
+  assert.ok(!/date non reconnue/.test(ecrite[0]));
 });
 
 test("capital social réduit à des espaces : vide, jamais un 0 fabriqué (#179 B2)", () => {

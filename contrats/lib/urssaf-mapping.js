@@ -35,13 +35,21 @@
 // le même couple de types (date de délivrance + montant) et vers la même
 // forme de sortie.
 //
+// extractMoneyPair aussi : ce module en portait une copie d'une douzaine de
+// lignes (avertissement de devise non-EUR compris), faute d'export côté
+// kbis-mapping.js, alors que urssaf_to_contrats.py importe déjà
+// _extract_money_pair de kbis_to_contrats.py. Python avait donc une
+// implémentation, JS deux — exactement le départ des divergences de #179. Les
+// deux copies JS ont été exécutées sur les mêmes 21 entrées avant la
+// suppression : d'accord sur toutes. La copie est retirée, et le test de
+// source de urssaf-mapping.test.js l'empêche de revenir.
+//
 // Leur place naturelle serait un module de normalisation dédié, requis par
-// les cinq consommateurs. Ce déménagement n'est PAS fait ici : kbis-mapping.js
-// et son miroir Python sont pris par un autre travail en vol (#182), et un
-// module partagé se crée en touchant les fichiers d'où l'on déplace le code.
-// Le require ci-dessous ne touche à aucun des deux.
+// les cinq consommateurs. Ce déménagement n'est PAS fait ici.
 const { checkName } = require("./docanalyze");
-const { normalizeDate, normalizeNumber, MOTIF_NOMBRE, ANNEE_MIN, ANNEE_MAX } = require("./kbis-mapping");
+const {
+  normalizeDate, normalizeNumber, extractMoneyPair, MOTIF_NOMBRE, ANNEE_MIN, ANNEE_MAX,
+} = require("./kbis-mapping");
 
 const DOCIE_SCHEMA_NAME = "urssaf";
 
@@ -73,21 +81,6 @@ const ENRICHED_KEYS = [
   ...Object.values(MAPPED_FIELDS).map(([contratsKey]) => contratsKey),
   "masseSalariale", "masseSalarialeDevise",
 ];
-
-// Même politique que kbis-mapping.js::extractMoneyPair : montant ET devise
-// conservés en 2 clés séparées plutôt que la devise silencieusement perdue.
-function extractMoneyPair(result, docieKey, warnings) {
-  const wrapper = result[docieKey];
-  if (wrapper === null || typeof wrapper !== "object" || Array.isArray(wrapper)) return ["", ""];
-  const amount = wrapper.amount;
-  const currency = wrapper.currency;
-  const amountOut = (amount === null || amount === undefined || amount === "") ? "" : normalizeNumber(amount, docieKey, warnings);
-  const currencyOut = currency ? String(currency).toUpperCase() : "";
-  if (currencyOut && currencyOut !== "EUR") {
-    warnings.push(docieKey + ": devise " + JSON.stringify(currencyOut) + " != EUR — montant reporté tel quel sans conversion");
-  }
-  return [amountOut, currencyOut];
-}
 
 // docieResult est le `result` déjà déballé (voir en-tête). `validation` est
 // docieResponse.metadata.validation (le bridge la place là, pas dans `result`).
