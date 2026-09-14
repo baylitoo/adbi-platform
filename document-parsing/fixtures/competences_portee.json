@@ -1,0 +1,83 @@
+{
+  "_description": "Jeu d'essai partage : « jusqu'ou une competence en double est-elle retiree ? ». DocIE rend skills[]{category, items[]{item}} (dynamic_schema de cv_samples/results/simple_docie.json). cv-parser dedoublonnait a travers TOUTES les categories (`_seen_items_global`), one-pager dans le groupe seulement : le meme CV donnait deux jeux de competences, et c'est la CVtheque qui perdait — cf. inventaire de divergence #177, ligne 13. Ce fichier fixe la PORTEE du dedoublonnage ; les deux services le rejouent, donc une divergence de portee redevient un echec de test.",
+  "_ports": [
+    "cv-parser/app.py::normalize_cv_data, apres docie_client.py::map_resume (Python)",
+    "one-pager/lib/docie-extract.js::mapperAdbiResume (JS)"
+  ],
+  "_regle": "Un item est retire s'il repete, sans tenir compte de la casse, un item du MEME groupe. Jamais a travers les groupes : une meme technologie sous deux categories est une lecture legitime du CV. Un groupe sans categorie prend le libelle « Compétences » (#177 ligne 12). La comparaison des sorties est insensible a la casse.",
+  "_hors_regle": "La CLE de comparaison n'est pas fixee ici, seulement la portee. one-pager canonicalise par sa taxonomie (« k8s » -> « Kubernetes ») et desaccentue (« Modelisation » = « Modélisation ») ; cv-parser ne compare que la casse. Les cas ne contiennent donc que des termes que la taxonomie de one-pager laisse inchanges a la casse pres — le test JS le verifie avant de comparer.",
+  "cas": [
+    {
+      "id": "reponse_reelle",
+      "skills": [
+        {"category": "Langages", "items": [{"item": "Python"}, {"item": "JavaScript"}, {"item": "SQL"}]},
+        {"category": "Frameworks", "items": [{"item": "Django"}, {"item": "React"}, {"item": "Node.js"}]},
+        {"category": "Outils", "items": [{"item": "Docker"}, {"item": "Git"}, {"item": "Jenkins"}]}
+      ],
+      "attendu": [
+        ["Langages", ["Python", "JavaScript", "SQL"]],
+        ["Frameworks", ["Django", "React", "Node.js"]],
+        ["Outils", ["Docker", "Git", "Jenkins"]]
+      ],
+      "preuve": "valeurs deballees de result.skills dans fixtures/cv_samples/results/simple_docie.json ; aucun doublon, temoin que la regle ne touche pas un CV ordinaire"
+    },
+    {
+      "id": "meme_item_deux_categories",
+      "skills": [
+        {"category": "Langages", "items": [{"item": "Python"}, {"item": "SQL"}]},
+        {"category": "Outils", "items": [{"item": "Python"}, {"item": "Docker"}]}
+      ],
+      "attendu": [
+        ["Langages", ["Python", "SQL"]],
+        ["Outils", ["Python", "Docker"]]
+      ],
+      "preuve": "mesure avant correctif : cv-parser rendait Outils = [Docker], one-pager [Python, Docker]"
+    },
+    {
+      "id": "casse_differente_deux_categories",
+      "skills": [
+        {"category": "Langages", "items": [{"item": "Python"}]},
+        {"category": "Outils", "items": [{"item": "python"}, {"item": "Docker"}]}
+      ],
+      "attendu": [
+        ["Langages", ["Python"]],
+        ["Outils", ["python", "Docker"]]
+      ],
+      "preuve": "l'exemple meme de #177 ligne 13 (« Python en Langages masque python en Outils ») ; mesure avant correctif : cv-parser rendait Outils = [Docker]"
+    },
+    {
+      "id": "categorie_entierement_repetee",
+      "skills": [
+        {"category": "Données", "items": [{"item": "SQL"}, {"item": "PostgreSQL"}]},
+        {"category": "Bases", "items": [{"item": "SQL"}, {"item": "PostgreSQL"}]}
+      ],
+      "attendu": [
+        ["Données", ["SQL", "PostgreSQL"]],
+        ["Bases", ["SQL", "PostgreSQL"]]
+      ],
+      "preuve": "mesure avant correctif : cv-parser supprimait la categorie « Bases » ENTIERE (plus aucun item), one-pager la gardait"
+    },
+    {
+      "id": "groupe_sans_categorie_en_tete",
+      "skills": [
+        {"category": "", "items": [{"item": "Python"}, {"item": "Docker"}]},
+        {"category": "Langages", "items": [{"item": "Python"}, {"item": "SQL"}]}
+      ],
+      "attendu": [
+        ["Compétences", ["Python", "Docker"]],
+        ["Langages", ["Python", "SQL"]]
+      ],
+      "preuve": "cas de #177 ligne 12 ; mesure avant correctif : cv-parser rendait Langages = [SQL], quel groupe gardait Python dependait de l'ordre du document"
+    },
+    {
+      "id": "doublon_dans_le_groupe",
+      "skills": [
+        {"category": "Langages", "items": [{"item": "Python"}, {"item": "SQL"}, {"item": "python"}, {"item": "SQL"}]}
+      ],
+      "attendu": [
+        ["Langages", ["Python", "SQL"]]
+      ],
+      "preuve": "le dedoublonnage DANS le groupe demeure des deux cotes ; mesure : identique avant et apres correctif"
+    }
+  ]
+}
