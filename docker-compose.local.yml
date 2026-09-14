@@ -107,9 +107,16 @@ services:
       DOCIE_AGENT_KBIS: ${DOCIE_AGENT_KBIS:-}
       # Pré-remplissage de l'import de contrat depuis un PDF — voir
       # contrats/lib/docie-contract-import.js. Même piège que #164
-      # (DOCIE_ALLOW_HTTP documenté mais absent d'ici) : une variable listée
+      # (#164 : DOCIE_ALLOW_HTTP manquait côté one-pager) : une variable listée
       # dans contrats/.env.example sans sa ligne ici n'atteint jamais le conteneur.
       DOCIE_AGENT_CONTRACT: ${DOCIE_AGENT_CONTRACT:-}
+      # Le bridge refuse toute DOCIE_BASE_URL en http:// hors localhost sans
+      # DOCIE_ALLOW_HTTP=true (document-parsing/bridge/docie-bridge.js). Absente
+      # d'ici, elle n'atteignait jamais le conteneur : sur un DocIE en http
+      # privé, Kbis, URSSAF ET l'import de contrat échouaient tous en
+      # « configuration » avant le moindre appel. Même piège que #164.
+      DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
+      DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-900}
       INSEE_API_KEY: ${INSEE_API_KEY:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-}

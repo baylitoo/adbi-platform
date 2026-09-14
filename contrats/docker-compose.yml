@@ -49,6 +49,13 @@ services:
       # documenté mais absent d'ici) : une variable listée dans .env.example
       # sans sa ligne ici n'atteint jamais le conteneur.
       DOCIE_AGENT_CONTRACT: ${DOCIE_AGENT_CONTRACT:-}
+      # Le bridge refuse toute DOCIE_BASE_URL en http:// hors localhost sans
+      # DOCIE_ALLOW_HTTP=true (document-parsing/bridge/docie-bridge.js). Absente
+      # d'ici, elle n'atteignait jamais le conteneur : sur un DocIE en http
+      # privé, Kbis, URSSAF ET l'import de contrat échouaient tous en
+      # « configuration » avant le moindre appel. Même piège que #164.
+      DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
+      DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-360}
     restart: unless-stopped
     # Issue #138 : même plafond que le service `contrats` du docker-compose.yml
     # RACINE — sans lui, un pic mémoire ici n'est pas contenu au conteneur et
