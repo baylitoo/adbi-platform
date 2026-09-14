@@ -55,6 +55,10 @@ services:
         # urssaf voyage dans le corps de la requête DocIE, ce fichier doit donc
         # être dans l'image. Voir contrats/Dockerfile, étape 4.
         schemas: ./document-parsing/schemas
+        # Table de mois partagée (#179 A10) : lib/kbis-mapping.js et
+        # lib/docie-contract-import.js lisent fixtures/date_mission.json pour
+        # les dates écrites en toutes lettres. Voir contrats/Dockerfile, étape 5.
+        fixtures: ./document-parsing/fixtures
     volumes:
       - contrats-data:/app/data
     depends_on:

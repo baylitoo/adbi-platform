@@ -40,6 +40,16 @@ COPY --from=bridge --chown=node:node . /document-parsing/bridge
 #    piege de #164 (DOCIE_ALLOW_HTTP documente mais absent du compose).
 COPY --from=schemas --chown=node:node . /document-parsing/schemas
 
+# 5) Table de mois partagee (#179 A10) : lib/kbis-mapping.js et
+#    lib/docie-contract-import.js lisent document-parsing/fixtures/
+#    date_mission.json (cle `mois`) pour les dates ecrites en toutes lettres
+#    (« le 12 mars 2019 »), par le meme chemin relatif depuis /app/lib. Le
+#    chargement est paresseux : sans cette copie le service demarre, mais chaque
+#    date ecrite reste vide avec un avertissement « table des mois introuvable ».
+#    UN SEUL fichier, pas le dossier : fixtures/ contient aussi cv_samples/ (CV
+#    PDF) et des jeux d'essai lus uniquement par les tests.
+COPY --from=fixtures --chown=node:node date_mission.json /document-parsing/fixtures/date_mission.json
+
 # Les fichiers (referentiel, cle API, contrats generes) vivent dans
 # /app/data, monte comme volume pour persister hors du conteneur.
 # L'historique/signatures/corbeille/templates-perso vivent en PostgreSQL
