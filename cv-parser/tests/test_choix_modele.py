@@ -291,7 +291,8 @@ class ModeleServi(unittest.TestCase):
         self.assertIsInstance(appels[0]["choix"], choix_modele.Choix)
         self.assertEqual(fiche["modele_extraction"], {
             "voie": "texte", "demande": "nuextract3",
-            "servi": {"id": "lfm25_2_6b", "libelle": "LFM2.5 2.6B", "identifiant": "lfm2.5-2.6b"}})
+            "servi": {"id": "lfm25_2_6b", "libelle": "LFM2.5 2.6B", "identifiant": "lfm2.5-2.6b"},
+            "partiel": [], "troncature_possible": None})
 
     def test_sans_choix_modele_servi_enregistre_aussi(self):
         appels = []
@@ -311,6 +312,38 @@ class ModeleServi(unittest.TestCase):
             fiche = self.process_cv()("cv.pdf", modele="lfm25_2_6b")
         self.assertEqual(fiche["modele_extraction"]["voie"], "agent")
         self.assertEqual(fiche["modele_extraction"]["servi"]["id"], "lfm25_2_6b")
+
+    BOUCLE = ("skills: model output repeated itself (Python, Python); list truncated at the loop start, "
+              "remaining items dropped; confidence capped to 0.5 as a review flag")
+
+    def test_resultat_partiel_voie_agent_dit_pour_un_modele_choisi(self):
+        appels = []
+        partiel = [{"champ": "skills", "raison": "boucle"}, {"champ": "experience", "raison": "liste_plafonnee_possible"}]
+        with environnement(**DEUX_AGENT), patch(
+                "docie_bridge_extraction.extract_resume",
+                self.faux_extracteur(appels, {"model_profile": "agent_nu", "agent": "agent_nu",
+                                              "transport": "docie-bridge", "partiel": partiel})):
+            fiche = self.process_cv()("cv.pdf", modele="nuextract3")
+            sans = self.process_cv()("cv.pdf")
+        self.assertEqual(fiche["modele_extraction"]["partiel"], partiel)
+        self.assertIn("Résultat partiel du modèle choisi (skills, experience)", fiche["parse_warning"])
+        self.assertNotIn("partiel", sans["modele_extraction"], "sans choix : inchangé")
+        self.assertNotIn("Résultat partiel", sans.get("parse_warning", ""))
+
+    def test_resultat_partiel_voie_texte_releve_par_le_bridge(self):
+        appels = []
+        metadata = {"model_profile": "store:lfm2.5-2.6b"}
+        extracteur = self.faux_extracteur(appels, metadata)
+
+        def avec_boucle(chemin, progress=None, **options):
+            data, meta = extracteur(chemin, progress, **options)
+            meta["validation"] = {"valid": True, "errors": [], "warnings": [self.BOUCLE]}
+            return data, meta
+
+        with environnement(**DEUX_TEXTE), patch("docie_client.extract_resume", avec_boucle):
+            fiche = self.process_cv()("cv.pdf", modele="lfm25_2_6b")
+        self.assertEqual(fiche["modele_extraction"]["partiel"], [{"champ": "skills", "raison": "boucle"}])
+        self.assertIn("(skills)", fiche["parse_warning"])
 
     def test_modele_non_propose_refuse_avant_l_extraction(self):
         appels = []

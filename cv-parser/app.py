@@ -1641,6 +1641,24 @@ def process_cv(file_path, jeton=None, modele=None) -> dict:
     cv_data["docie_review"] = revue
     if revue["needs_review"] or revue["warnings"]:
         cv_data["parse_warning"] = "DocIE signale des champs à vérifier. Relisez la fiche extraite."
+    # Modèle explicitement choisi (#194) : un résultat partiel (#203) n'est
+    # jamais présenté comme complet. Il est enregistré avec le modèle servi et
+    # dit dans l'avertissement, champ par champ ; non vérifiable, il est dit aussi.
+    if modele:
+        partiel = choix_modele.resultat_partiel(metadata, raw_data)
+        cv_data["modele_extraction"]["partiel"] = partiel
+        cv_data["modele_extraction"]["troncature_possible"] = metadata.get("troncature_possible")
+        if partiel is None:
+            alerte = "Résultat partiel non vérifiable pour le modèle choisi : relisez la fiche."
+        elif partiel:
+            champs = ", ".join(dict.fromkeys(p.get("champ", "?") for p in partiel))
+            alerte = f"Résultat partiel du modèle choisi ({champs}) : relisez ces champs."
+        elif metadata.get("troncature_possible") is True:
+            alerte = "Document au-delà de 800 lignes non vides : le modèle a pu en ignorer la fin."
+        else:
+            alerte = ""
+        if alerte:
+            cv_data["parse_warning"] = " ".join(filter(None, (cv_data.get("parse_warning"), alerte)))
     return cv_data
 
 # load_db()/save_db() ont été retirées (issue #15, PR B) : la CVthèque vit

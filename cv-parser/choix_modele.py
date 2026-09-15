@@ -134,6 +134,24 @@ class Choix:
         return self._choisir("agent", {"pages": pages})
 
 
+def resultat_partiel(metadata, data):
+    """Résultat partiel d'une extraction (#203) : [{champ, raison}], ou None si
+    on n'a pas pu le vérifier.
+
+    Voie agent : relevé par le bridge (`metadata["partiel"]`). Voie texte (client
+    historique, hors bridge) : même relevé, par la fonction du bridge — une
+    seule reconnaissance des libellés DocIE, jamais recopiée ici.
+    """
+    partiel = (metadata or {}).get("partiel")
+    if isinstance(partiel, list):
+        return partiel
+    try:
+        from docie_bridge_extraction import _load_bridge
+        return _load_bridge().resultat_partiel((metadata or {}).get("validation"), data)
+    except Exception:
+        return None
+
+
 def modele_servi(voie, metadata):
     """Le modèle qui a RÉELLEMENT servi : {id, libelle, identifiant} ou None.
 

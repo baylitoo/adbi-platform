@@ -163,6 +163,11 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
         # Agent réellement appelé (#194) : c'est lui qui désigne le modèle
         # servi sur la voie agent (choix_modele.modele_servi).
         "agent": meta.get("agent") or "",
+        # Résultat partiel relevé par le bridge (#203) : [{champ, raison}] et
+        # plafond de blocs de la voie texte. Lus par process_cv pour un modèle
+        # explicitement choisi (#194).
+        "partiel": meta.get("partiel"),
+        "troncature_possible": meta.get("troncature_possible"),
         # `validation` est conservée telle quelle, y compris None : le bridge
         # renvoie None quand DocIE n'en a PAS joint, et une extraction terminée
         # en porte toujours une (listes vides quand tout va bien). La replier
