@@ -45,7 +45,7 @@ optionnelle (Pappers/INSEE) et la signature (Yousign/Zoho) sont des appels
 externes, tous deux à clé et documentés.
 
 Exception opt-in (`DOCIE_EXTRACTION_ENABLED=true`, désactivée par défaut,
-issues #153 et #170) : deux pièces de la checklist sont alors envoyées au
+issues #153 et #170) : trois pièces de la checklist sont alors envoyées au
 service DocIE configuré via le bridge partagé `document-parsing/bridge/`, par
 deux voies différentes — voir `lib/docie-extraction.js`.
 
@@ -63,8 +63,12 @@ deux voies différentes — voir `lib/docie-extraction.js`.
   scannée (image, ou PDF dont une page est sans texte) n'est jamais envoyée —
   elle retombe sur l'analyse locale, exactement comme avant, avec un
   avertissement nommant la cause.
+- **RIB** — voie texte, même mécanique (`document-parsing/schemas/rib.schema.json`) :
+  titulaire, IBAN, BIC et banque. L'IBAN (clé modulo 97) et le BIC (format)
+  sont contrôlés (`lib/iban-bic.js`) ; une valeur douteuse est conservée et
+  signalée, jamais vidée.
 
-Les cinq autres pièces (RIB, CNI, attestation fiscale, coordonnées,
+Les quatre autres pièces (CNI, attestation fiscale, coordonnées,
 informations spécifiques) restent toujours analysées localement, flag ou pas :
 elles n'ont ni schéma ni mapping à ce jour. Sur échec DocIE (config manquante,
 timeout, erreur), repli automatique sur l'analyse locale.

@@ -380,11 +380,11 @@ app.post("/api/search", async (req, res) => {
 
 // Analyse des pièces (Kbis/URSSAF...) — LOCALE par défaut (pdf-parse +
 // tesseract.js, sans LLM, sans envoi externe). Si DOCIE_EXTRACTION_ENABLED=true
-// ET pièce Kbis (seul type câblé côté bridge, voir lib/docie-extraction.js) :
+// ET pièce Kbis, URSSAF ou RIB (voir VOIES dans lib/docie-extraction.js) :
 // extraction via le bridge DocIE partagé (document-parsing/bridge/), avec
 // envoi externe au service DocIE configuré et repli automatique sur l'analyse
-// locale en cas d'échec. Toutes les autres pièces (URSSAF, RIB, CNI, fiscale,
-// coordonnées) restent 100% locales quel que soit le flag.
+// locale en cas d'échec. Les autres pièces (CNI, fiscale, coordonnées) restent
+// 100% locales quel que soit le flag.
 app.post("/api/document/analyze", async (req, res) => {
   try { res.json(await analyzeDocument(req.body || {})); }
   catch (e) { console.error(e); res.status(400).json({ error: e.message }); }

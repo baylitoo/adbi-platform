@@ -1,12 +1,12 @@
 "use strict";
 // Extraction DocIE (bridge partagé document-parsing/bridge/) pour les pièces
-// Kbis et URSSAF de la checklist Sous-traitance — issues #153 et #170.
+// Kbis, URSSAF et RIB de la checklist Sous-traitance — issues #153 et #170.
 // Derrière DOCIE_EXTRACTION_ENABLED (défaut absent/false) :
 // flag off => comportement inchangé, 100% lib/docanalyze.js local (pdf-parse
 // + tesseract.js, RGPD, aucun envoi externe). Les mappings de champs contrat,
 // la génération PDF/DOCX et la signature Yousign/Zoho ne sont pas touchés ici.
 //
-// DEUX pièces sont couvertes, par DEUX voies DocIE différentes — et ce n'est
+// TROIS pièces sont couvertes, par DEUX voies DocIE différentes — et ce n'est
 // pas un détail d'implémentation, c'est ce qui décide si la pièce est
 // couvrable du tout :
 //
@@ -15,8 +15,8 @@
 //             lisent. L'agent résout son schéma PAR NOM, donc un schéma
 //             enregistré au préalable dans le Studio DocIE.
 //   urssaf -> voie TEXTE (extractText, POST /v1/extract/text)
-//             La DÉFINITION du schéma voyage dans le corps de la requête
-//             (`dynamic_schema`, document-parsing/schemas/urssaf.schema.json).
+//   rib       La DÉFINITION du schéma voyage dans le corps de la requête
+//             (`dynamic_schema`, document-parsing/schemas/<pièce>.schema.json).
 //             Rien n'a à être enregistré côté Studio.
 //
 // L'issue #170 tenait « créer le schéma dans le Studio » pour un préalable aux
@@ -24,22 +24,26 @@
 // n'exige aucune action côté DocIE ni aucun appel distant pour être mis en
 // place ; cv-parser l'emploie en mode `inline` depuis toujours.
 //
-// Les cinq pièces restantes (rib, cni, fiscale, coordonnees, specifique)
+// Les quatre pièces restantes (cni, fiscale, coordonnees, specifique)
 // restent analysées localement, flag ou pas : elles n'ont ni schéma ni
 // mapping. urssaf a été traitée en premier parce que c'est la seule dont une
 // valeur extraite pilote une vraie logique métier — lib/checklist.js la
 // déclare `dateField: true` / « À renouveler tous les 6 mois », et
 // public/app.js::renderChecklistDocResult calcule PÉRIMÉ / bientôt périmé /
-// valable à partir de `issuedDate`.
+// valable à partir de `issuedDate`. rib a suivi (#194) : son IBAN et son BIC
+// sont contrôlés (lib/iban-bic.js), condition posée pour y admettre un petit
+// modèle — un IBAN mal lu d'un caractère ressemble exactement à un IBAN juste.
 //
-// Mapping des champs : lib/kbis-mapping.js et lib/urssaf-mapping.js, portages
-// JS de document-parsing/mappings/{kbis,urssaf}_to_contrats.py.
+// Mapping des champs : lib/kbis-mapping.js, lib/urssaf-mapping.js et
+// lib/rib-mapping.js, portages JS de
+// document-parsing/mappings/{kbis,urssaf,rib}_to_contrats.py.
 
 const path = require("path");
 const { PDFParse } = require("pdf-parse");
 const { analyzeDocumentLocal } = require("./docanalyze");
 const { mapKbisResult } = require("./kbis-mapping");
 const { mapUrssafResult } = require("./urssaf-mapping");
+const { mapRibResult } = require("./rib-mapping");
 
 // Conservé tel quel (exporté historiquement) : la pièce de la voie agent.
 const ELIGIBLE_ITEM_ID = "kbis";
@@ -47,7 +51,7 @@ const DOCIE_KIND = "kbis";
 
 // Quelle voie DocIE pour quelle pièce de la checklist. Une pièce absente de
 // cette table n'est jamais envoyée, flag ou pas.
-const VOIES = { kbis: "agent", urssaf: "texte" };
+const VOIES = { kbis: "agent", urssaf: "texte", rib: "texte" };
 
 // Chemin relatif volontaire (et non un package npm local) : le bridge reste
 // une source partagée dans document-parsing/bridge/ (cf. son README, « ne pas
@@ -60,10 +64,19 @@ const BRIDGE_PATH = path.join(__dirname, "..", "..", "document-parsing", "bridge
 
 // Même raisonnement de chemin que BRIDGE_PATH : document-parsing/schemas/ est
 // une source partagée hors de contrats/, copiée à la même profondeur relative
-// dans l'image Docker (voir Dockerfile, contexte de build "schemas").
+// dans l'image Docker (voir Dockerfile, contexte de build "schemas" : le
+// dossier ENTIER, donc rib.schema.json aussi).
 // Le schéma est chargé PARESSEUSEMENT, pour la même raison que le bridge : le
 // flag désactivé ne doit jamais dépendre de la présence d'un fichier partagé.
-const SCHEMA_URSSAF_PATH = path.join(__dirname, "..", "..", "document-parsing", "schemas", "urssaf.schema.json");
+const SCHEMAS_DIR = path.join(__dirname, "..", "..", "document-parsing", "schemas");
+const SCHEMA_URSSAF_PATH = path.join(SCHEMAS_DIR, "urssaf.schema.json");
+const SCHEMA_RIB_PATH = path.join(SCHEMAS_DIR, "rib.schema.json");
+
+// Pièces de la voie TEXTE : schéma envoyé dans le corps, mapping du résultat.
+const PIECES_TEXTE = {
+  urssaf: { schemaPath: SCHEMA_URSSAF_PATH, mapper: mapUrssafResult },
+  rib: { schemaPath: SCHEMA_RIB_PATH, mapper: mapRibResult },
+};
 
 function isEnabled(env = process.env) {
   return String((env || {}).DOCIE_EXTRACTION_ENABLED || "").trim().toLowerCase() === "true";
@@ -139,16 +152,16 @@ async function extractViaDocie({ dataBase64, mimeType, items, expectedName } = {
 }
 
 // ---------------------------------------------------------------------------
-// Voie TEXTE (urssaf). Le choix de la voie se fait À L'EXÉCUTION sur le
+// Voie TEXTE (urssaf, rib). Le choix de la voie se fait À L'EXÉCUTION sur le
 // document réellement reçu, JAMAIS en dur sur le type de pièce.
 //
-// « Une attestation URSSAF est un PDF avec couche texte » est une attente, pas
-// une mesure : aucune attestation réelle n'était disponible. Câbler « urssaf
-// => voie texte » enverrait donc, le jour où un utilisateur dépose un scan,
-// une chaîne vide ou trois caractères d'en-tête à DocIE — qui répondrait
-// quelque chose, et ce quelque chose alimenterait la validité 6 mois. Le
-// départage est donc structurel : la couche texte existe-t-elle, ici, sur ce
-// fichier-ci.
+// « Une attestation URSSAF (ou un RIB) est un PDF avec couche texte » est une
+// attente, pas une mesure : aucun document réel n'était disponible. Câbler
+// « urssaf => voie texte » enverrait donc, le jour où un utilisateur dépose un
+// scan, une chaîne vide ou trois caractères d'en-tête à DocIE — qui répondrait
+// quelque chose, et ce quelque chose alimenterait la validité 6 mois (ou un
+// IBAN). Le départage est donc structurel : la couche texte existe-t-elle,
+// ici, sur ce fichier-ci.
 //
 // Garde repris de cv-parser/docie_client.py, qui refuse explicitement un PDF
 // dont UNE page est sans texte (« PDF contenant une page sans texte : OCR
@@ -202,25 +215,35 @@ async function coucheTexteUtilisable(buffer, mime) {
   return { ok: true, texte: lecture.texte };
 }
 
+function chargerSchema(kind) {
+  return require(PIECES_TEXTE[kind].schemaPath);
+}
+
 function chargerSchemaUrssaf() {
-  return require(SCHEMA_URSSAF_PATH);
+  return chargerSchema("urssaf");
 }
 
 // Même forme de sortie que analyzeDocumentLocal, enrichie — voir
-// lib/urssaf-mapping.js. Marqueur « (DocIE) » identique à celui du Kbis.
-function mapUrssafDocieResult(docieResponse, { items, expectedName } = {}) {
+// lib/urssaf-mapping.js et lib/rib-mapping.js. Marqueur « (DocIE) » identique
+// à celui du Kbis.
+function mapTexteDocieResult(kind, docieResponse, { items, expectedName } = {}) {
   const validation = docieResponse && docieResponse.metadata && docieResponse.metadata.validation;
-  const { analysis } = mapUrssafResult(docieResponse && docieResponse.result, { expectedName, items, validation });
+  const { analysis } = PIECES_TEXTE[kind].mapper(docieResponse && docieResponse.result, { expectedName, items, validation });
   if (analysis.documentType !== "Document" && analysis.summary) {
     analysis.summary += " (DocIE)";
   }
   return analysis;
 }
 
+function mapUrssafDocieResult(docieResponse, options) {
+  return mapTexteDocieResult("urssaf", docieResponse, options);
+}
+
 // Renvoie l'analyse DocIE, ou null si le document n'a pas de couche texte
 // exploitable — dans ce cas l'appelant retombe sur l'analyse locale en
 // nommant `raisonRepli`. Ne renvoie JAMAIS une extraction sur un texte vide.
-async function extractUrssafViaTexte({ dataBase64, mimeType, items, expectedName } = {}, deps = {}) {
+async function extractViaTexte(kind, { dataBase64, mimeType, items, expectedName } = {}, deps = {}) {
+  if (!Object.hasOwn(PIECES_TEXTE, kind || "")) throw new Error("Pièce sans voie texte : " + kind);
   if (!dataBase64) throw new Error("Aucun fichier reçu.");
   const env = deps.env || process.env;
   const buffer = Buffer.from(dataBase64, "base64");
@@ -228,10 +251,14 @@ async function extractUrssafViaTexte({ dataBase64, mimeType, items, expectedName
   const verdict = await coucheTexteUtilisable(buffer, mime);
   if (!verdict.ok) return { analysis: null, raisonRepli: verdict.raison };
   const { extractText } = deps.extractText ? deps : loadBridge();
-  const options = { kind: "urssaf", dynamicSchema: (deps.dynamicSchema || chargerSchemaUrssaf()), env };
+  const options = { kind, dynamicSchema: (deps.dynamicSchema || chargerSchema(kind)), env };
   if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;
   const response = await extractText(verdict.texte, options);
-  return { analysis: mapUrssafDocieResult(response, { items, expectedName }), raisonRepli: null };
+  return { analysis: mapTexteDocieResult(kind, response, { items, expectedName }), raisonRepli: null };
+}
+
+function extractUrssafViaTexte(body, deps) {
+  return extractViaTexte("urssaf", body, deps);
 }
 
 // Point d'entrée unique appelé par server.js : bascule flag + repli. En cas
@@ -247,7 +274,7 @@ async function analyzeDocument(body = {}, deps = {}) {
   if (!voie) return analyzeLocal(body);
   try {
     if (voie === "texte") {
-      const { analysis, raisonRepli } = await extractUrssafViaTexte(body, deps);
+      const { analysis, raisonRepli } = await extractViaTexte(pieceDemandee(body.items), body, deps);
       if (analysis) return analysis;
       // Pas d'échec DocIE ici : DocIE n'a tout simplement pas été sollicité,
       // faute de couche texte. Avertissement DISTINCT de celui d'un échec
@@ -274,15 +301,19 @@ async function analyzeDocument(body = {}, deps = {}) {
 module.exports = {
   analyzeDocument,
   extractViaDocie,
+  extractViaTexte,
   extractUrssafViaTexte,
   coucheTexteUtilisable,
   mapDocieResult,
+  mapTexteDocieResult,
   mapUrssafDocieResult,
+  chargerSchema,
   chargerSchemaUrssaf,
   isEnabled,
   isEligible,
   voiePour,
   VOIES,
+  PIECES_TEXTE,
   ELIGIBLE_ITEM_ID,
   // Exportés pour réutilisation par d'autres consommateurs du bridge côté
   // contrats (ex. lib/docie-contract-import.js) : même flag DOCIE_EXTRACTION_ENABLED,
