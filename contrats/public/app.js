@@ -535,6 +535,9 @@ function buildChecklist() {
       majNoteCoordonnees(note);
     }
 
+    // RIB (#170, #194) : analyse du document, IBAN et BIC contrôlés côté serveur.
+    if (it.id === "rib") ajouterAnalyseRib(item, it);
+
     host.appendChild(item);
   });
   updateCheckCount();
@@ -705,6 +708,106 @@ function majNoteCoordonnees(el) {
     el.className = "chk-doc-status warn";
     el.textContent = "ℹ️ Partiellement couvert par le Kbis (" + n.reportes.join(", ") + "). Reste à obtenir : " + n.manquants.join(", ") + ".";
   }
+}
+
+// RIB (#170, #194) : bouton d'analyse et ligne de résultat sous la pièce. Même
+// route que le Kbis et l'URSSAF (/api/document/analyze) ; le serveur contrôle
+// l'IBAN (clé modulo 97) et le BIC (format) et rend `controleIbanBic`.
+// Rien n'est reporté dans le contrat et la case n'est jamais cochée.
+function ajouterAnalyseRib(item, it) {
+  const row = document.createElement("div");
+  row.className = "chk-date";
+  const status = document.createElement("div");
+  status.className = "chk-doc-status";
+  const ufile = document.createElement("input");
+  ufile.type = "file";
+  ufile.accept = "image/*,application/pdf";
+  ufile.style.display = "none";
+  const ubtn = document.createElement("button");
+  ubtn.type = "button";
+  ubtn.className = "btn-up";
+  ubtn.textContent = "📎 Analyser le RIB";
+  ubtn.title = "Lit le titulaire, l'IBAN et le BIC, et contrôle l'IBAN";
+  ubtn.addEventListener("click", () => ufile.click());
+  ufile.addEventListener("change", () => { if (ufile.files[0]) analyserRib(it, ufile.files[0], status, ubtn); ufile.value = ""; });
+  row.appendChild(ubtn);
+  row.appendChild(ufile);
+  item.appendChild(row);
+  item.appendChild(status);
+  const saved = state.dateState[it.id];
+  if (saved && typeof saved === "object") renderRibResult(status, saved);
+}
+
+async function analyserRib(it, fileObj, statusEl, btn) {
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = "Analyse…";
+  statusEl.textContent = "🔎 Analyse du RIB…";
+  statusEl.className = "chk-doc-status";
+  try {
+    const dataBase64 = await fileToBase64(fileObj);
+    const r = await fetch("/api/document/analyze", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mimeType: fileObj.type || "application/octet-stream",
+        dataBase64,
+        items: [{ id: it.id, label: it.label }],
+        expectedName: state.values.stNom || "",
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    const res = ribRetenu(d, fileObj.name);
+    state.dateState[it.id] = res;
+    renderRibResult(statusEl, res);
+  } catch (e) {
+    statusEl.textContent = "Erreur : " + e.message;
+    statusEl.className = "chk-doc-status err";
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+
+// Ce qui est gardé de la réponse (enregistré avec le contrat, dans `dates`) :
+// valeurs lues, statuts du contrôle, messages IBAN/BIC du serveur. Une analyse
+// locale ne porte pas `controleIbanBic` : controle vaut alors null.
+function ribRetenu(d, fileName) {
+  const c = d.controleIbanBic;
+  return {
+    fileName, companyName: d.companyName || "", nameMatches: d.nameMatches,
+    titulaire: d.titulaireCompte || "", iban: d.iban || "", bic: d.bic || "", banque: d.nomBanque || "",
+    controle: c ? { iban: c.iban.statut, bic: c.bic.statut } : null,
+    alertes: (d.issues || []).filter((i) => /^(IBAN|BIC) /.test(i)),
+  };
+}
+
+// Une ligne : ⛔ autre titulaire ou IBAN non « valide », ⚠️ BIC douteux ou
+// analyse locale (rien de contrôlé), ✅ IBAN à clé valide et BIC cohérent.
+function renderRibResult(el, res) {
+  if (res.nameMatches === false) {
+    el.className = "chk-doc-status err";
+    el.textContent = "⛔ RIB au nom de « " + (res.companyName || "?") + " » — ce n'est PAS le sous-traitant saisi (« " + (state.values.stNom || "") + " »)";
+    return;
+  }
+  if (!res.controle) {
+    el.className = "chk-doc-status warn";
+    el.textContent = "⚠️ IBAN et BIC non lus ni contrôlés (analyse locale) — vérifier le RIB à la main";
+    return;
+  }
+  const titulaire = res.titulaire ? "Titulaire : " + res.titulaire + (res.nameMatches === true ? " ✓" : "") + " — " : "";
+  const alerte = (champ) => res.alertes.find((a) => a.startsWith(champ + " "));
+  if (res.controle.iban !== "valide") {
+    el.className = "chk-doc-status err";
+    el.textContent = "⛔ " + titulaire + (alerte("IBAN") || "IBAN non contrôlé");
+    return;
+  }
+  const ligne = titulaire + "IBAN " + res.iban + " (clé valide)" + (res.bic ? " — BIC " + res.bic : "") + (res.banque ? " — " + res.banque : "");
+  if (res.controle.bic !== "valide") {
+    el.className = "chk-doc-status warn";
+    el.textContent = "⚠️ " + ligne + " — " + (alerte("BIC") || "BIC non lu sur le document");
+    return;
+  }
+  el.className = "chk-doc-status ok";
+  el.textContent = "✅ " + ligne;
 }
 
 /* ------------------------------------------------------------------ */
