@@ -9,10 +9,12 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const { spawn } = require("node:child_process");
+const path = require("node:path");
 
 const {
-  creerGestionnaire, mapperErreur, FileImportsPleineError,
-  MAX_SIMULTANEES, MAX_EN_ATTENTE, TTL_MS,
+  creerGestionnaire, mapperErreur, FileImportsPleineError, maxSimultaneesDepuisEnv,
+  MAX_SIMULTANEES_DEFAUT, MAX_EN_ATTENTE, TTL_MS,
 } = require("../lib/import-taches");
 const { ImportError } = require("../lib/import-pipeline");
 
@@ -45,9 +47,106 @@ const CODES_BRIDGE = [
 const silencieux = { journal: () => {} };
 
 test("valeurs par defaut annoncees : 2 simultanees, 20 en attente, 30 min", () => {
-  assert.equal(MAX_SIMULTANEES, 2);
+  assert.equal(MAX_SIMULTANEES_DEFAUT, 2);
   assert.equal(MAX_EN_ATTENTE, 20);
   assert.equal(TTL_MS, 30 * 60 * 1000);
+});
+
+// ── Plafond configurable : ADBI_EXTRACTION_MAX_CONCURRENT ─────────────────
+
+const VAR = "ADBI_EXTRACTION_MAX_CONCURRENT";
+
+test("plafond depuis l'env : absente, vide ou blanche -> 2 (LFM2.5-2.6B, n_parallel 2)", () => {
+  assert.equal(maxSimultaneesDepuisEnv({}), 2);
+  assert.equal(maxSimultaneesDepuisEnv({ [VAR]: "" }), 2);
+  assert.equal(maxSimultaneesDepuisEnv({ [VAR]: "   " }), 2);
+});
+
+test("plafond depuis l'env : un entier entre 1 et 16 est repris tel quel", () => {
+  assert.equal(maxSimultaneesDepuisEnv({ [VAR]: "1" }), 1);
+  assert.equal(maxSimultaneesDepuisEnv({ [VAR]: " 3 " }), 3);
+  assert.equal(maxSimultaneesDepuisEnv({ [VAR]: "16" }), 16);
+});
+
+test("plafond depuis l'env : toute autre valeur leve une erreur nommant la variable et la valeur", () => {
+  for (const mauvais of ["0", "-1", "deux", "2.5", "1e1", "0x2", "+3", "17", "20"]) {
+    assert.throws(() => maxSimultaneesDepuisEnv({ [VAR]: mauvais }),
+      (e) => e.message.includes(VAR) && e.message.includes(JSON.stringify(mauvais)), mauvais);
+  }
+});
+
+/** 5 taches sur un gestionnaire plafonne a n : jamais plus de n actives. */
+async function verifierPlafond(n) {
+  const g = creerGestionnaire({ ...silencieux, maxSimultanees: n });
+  const differes = [];
+  let actives = 0, pic = 0;
+  for (let i = 0; i < 5; i++) {
+    const d = differe();
+    differes.push(d);
+    g.creer(async () => {
+      actives++; pic = Math.max(pic, actives);
+      try { return await d.promesse; } finally { actives--; }
+    });
+  }
+  await vider();
+  assert.equal(actives, n);
+  assert.deepEqual(g.statistiques(), { enCours: n, enAttente: 5 - n, conservees: 5 });
+  for (const d of differes) {
+    d.resoudre("ok");
+    await vider();
+    assert.ok(actives <= n, `actives=${actives}`);
+  }
+  await vider();
+  assert.equal(pic, n);
+  assert.equal(g.statistiques().enCours, 0);
+}
+
+test("le plafond lu dans l'env est celui que le gestionnaire applique (1, puis 3)", async () => {
+  await verifierPlafond(maxSimultaneesDepuisEnv({ [VAR]: "1" }));
+  await verifierPlafond(maxSimultaneesDepuisEnv({ [VAR]: "3" }));
+});
+
+/**
+ * Lance server.js avec un environnement donne et rend { code, sortie } : a la
+ * fin du processus, ou des que `attendu` apparait (le processus est alors tue).
+ * La base pointe sur un port ferme de la boucle locale : aucun reseau.
+ */
+function lancerServeur(env, attendu) {
+  return new Promise((ok, ko) => {
+    const enfant = spawn(process.execPath, ["server.js"], {
+      cwd: path.join(__dirname, ".."),
+      env: {
+        ...process.env,
+        DATABASE_URL: "postgresql://x:x@127.0.0.1:1/x",
+        DOCIE_EXTRACTION_ENABLED: "false",
+        PORT: "0",
+        ...env,
+      },
+    });
+    let sortie = "";
+    const minuteur = setTimeout(() => { enfant.kill(); ko(new Error("delai depasse :\n" + sortie)); }, 20000);
+    const lire = (morceau) => {
+      sortie += morceau;
+      if (attendu && sortie.includes(attendu)) enfant.kill();
+    };
+    enfant.stdout.on("data", lire);
+    enfant.stderr.on("data", lire);
+    enfant.on("exit", (code) => { clearTimeout(minuteur); ok({ code, sortie }); });
+  });
+}
+
+test("demarrage : server.js s'arrete (code 1) sur une valeur invalide, avant la base", async () => {
+  const { code, sortie } = await lancerServeur({ [VAR]: "deux" });
+  assert.equal(code, 1);
+  assert.match(sortie, /ADBI_EXTRACTION_MAX_CONCURRENT doit être un entier entre 1 et 16 \(reçu : "deux"\)/);
+  assert.doesNotMatch(sortie, /initialiser la base/);
+});
+
+test("demarrage : server.js lit la valeur de l'env (3) et, absente, annonce le defaut (2)", async () => {
+  const avec = await lancerServeur({ [VAR]: "3" }, "simultanée(s)");
+  assert.match(avec.sortie, /\[taches\] 3 extraction\(s\) simultanée\(s\)/);
+  const sans = await lancerServeur({ [VAR]: "" }, "simultanée(s)");
+  assert.match(sans.sortie, /\[taches\] 2 extraction\(s\) simultanée\(s\)/);
 });
 
 test("5 taches simultanees : jamais plus de 2 extractions a la fois, les autres attendent", async () => {
@@ -206,7 +305,7 @@ test("la purge a aussi lieu a la creation (sans aucune lecture)", async () => {
 test("file bornee : 2 en cours + 20 en attente acceptees, la suivante est refusee sans rien perdre", async () => {
   const g = creerGestionnaire(silencieux);
   const bloque = differe();
-  for (let i = 0; i < MAX_SIMULTANEES + MAX_EN_ATTENTE; i++) g.creer(() => bloque.promesse);
+  for (let i = 0; i < MAX_SIMULTANEES_DEFAUT + MAX_EN_ATTENTE; i++) g.creer(() => bloque.promesse);
   await vider();
   assert.deepEqual(g.statistiques(), { enCours: 2, enAttente: 20, conservees: 22 });
   assert.throws(() => g.creer(async () => "de trop"), FileImportsPleineError);
