@@ -12,15 +12,45 @@ from __future__ import annotations
 
 import re
 from difflib import SequenceMatcher
+from functools import lru_cache
 
 from core.cvstore_pg import list_cvs
 
 try:
-    from skills_normalizer import normalize_one, normalize_skills, compute_skills_flat
+    from periode_mission import sans_accents
+    from skills_normalizer import cle_competence, normalize_one, normalize_skills, compute_skills_flat
 except ImportError:
     def normalize_one(s): return s.strip()
     def normalize_skills(lst): return list(lst)
     def compute_skills_flat(cv): return []
+    def cle_competence(s): return s.strip().lower()
+    def sans_accents(s): return s
+
+
+@lru_cache(maxsize=8192)
+def _cle(libelle: str) -> str:
+    """Clé de rapprochement d'une compétence, côté besoin comme côté CV.
+
+    `skills_flat` porte depuis #198 des noms CANONIQUES (« k8s » stocké
+    « Kubernetes »), dédoublonnés sans accent. Les compétences d'un besoin, elles,
+    arrivent brutes — saisies dans needs.html, envoyées à POST/PATCH
+    /api/needs, ou extraites d'une fiche de poste par core/rapprochement.py —
+    et le matcher ne les passait que par `normalize_one(s).lower()` : table
+    d'alias à la casse près, sans accent ni forme compacte. Mesuré sur la
+    CVthèque synthétique de tests/test_matcher_besoin_canonique.py, un besoin
+    « google-cloud », « c-sharp », « Dot Net », « T SQL », « k8s. » ou
+    « Securite » ne trouvait pas le CV qui porte GCP, C#, .NET, T-SQL,
+    Kubernetes ou Sécurité. (« k8s », « postgres », « Modelisation »,
+    « node js » étaient déjà trouvés : alias exacts ou similarité > 0.82.)
+
+    Composition des DEUX normalisations existantes, pas une troisième :
+    `normalize_one` résout la table locale (« ml » -> Machine Learning, que
+    `canonique` ignore), puis `cle_competence` applique la table partagée, sa
+    forme compacte, et retire accents et casse — la clé de `normalize_skills`.
+    Appliquée à la COMPARAISON : un besoin déjà enregistré garde ses libellés
+    bruts en base et en profite sans migration.
+    """
+    return cle_competence(normalize_one(libelle))
 
 
 # ── Poids ─────────────────────────────────────────────────────────────────────
@@ -108,21 +138,24 @@ def _keyword_overlap(query: str, text: str) -> float:
 
 def _score_skills(need: dict, candidate_skills: list[str]) -> tuple[float, list[str]]:
     """35 pts — Compétences obligatoires."""
-    required = [normalize_one(s).lower() for s in (need.get("required_skills") or [])]
+    # Libellé affiché dans `missing_skills` inchangé ; la comparaison, elle,
+    # se fait sur la clé canonique des deux côtés (voir _cle).
+    required = [(normalize_one(s).lower(), _cle(s)) for s in (need.get("required_skills") or [])]
     if not required:
         return WEIGHTS["skills"], []
 
+    cles_candidat = [_cle(sk) for sk in candidate_skills]
     found, missing = [], []
-    for req in required:
+    for libelle, req in required:
         # Correspondance exacte ou partielle (substring)
         matched = any(
             req == sk or req in sk or sk in req or _sim(req, sk) > 0.82
-            for sk in candidate_skills
+            for sk in cles_candidat
         )
         if matched:
-            found.append(req)
+            found.append(libelle)
         else:
-            missing.append(req)
+            missing.append(libelle)
 
     ratio = len(found) / len(required)
     return round(ratio * WEIGHTS["skills"], 2), missing
@@ -220,13 +253,18 @@ def _score_missions(need: dict, cv: dict) -> float:
             signals.append(_keyword_overlap(val, all_text))
 
     # Bonus si required_skills trouvées dans les descriptions d'expériences
-    req_skills = [normalize_one(s).lower() for s in (need.get("required_skills") or [])]
+    req_skills = [(normalize_one(s).lower(), _cle(s)) for s in (need.get("required_skills") or [])]
     if req_skills:
         exp_text = " ".join(
             (exp.get("env_technique") or "") + " " + (exp.get("description") or "")
             for exp in (cv.get("experience") or [])
         ).lower()
-        skill_in_exp = sum(1 for s in req_skills if s in exp_text) / max(len(req_skills), 1)
+        # Texte libre des missions : l'ancienne forme OU la clé canonique sans
+        # accent (« securite » d'un besoin dans « Sécurité réseau »). Jamais
+        # moins trouvé qu'avant.
+        exp_plie = sans_accents(exp_text)
+        skill_in_exp = sum(1 for s, cle in req_skills
+                           if s in exp_text or cle in exp_plie) / max(len(req_skills), 1)
         signals.append(skill_in_exp)
 
     if not signals:
