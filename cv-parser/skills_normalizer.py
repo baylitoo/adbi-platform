@@ -291,19 +291,91 @@ def normalize_skills(raw_skills: Iterable[str]) -> list[str]:
     return list(seen.values())
 
 
+# ---------------------------------------------------------------------------
+# Barre oblique : séparateur de liste ou partie du nom ? (#177, relevé par #198)
+# ---------------------------------------------------------------------------
+# `skills_to_flat` coupait sur toute barre oblique : « PL/SQL » devenait deux
+# fausses compétences `PL` et `SQL`, « CI/CD » `CI` et `CD`, « I/O » disparaissait
+# (deux morceaux d'un caractère, jetés) et « A/B testing » devenait `B testing`.
+# `skills_flat` nourrit le rapprochement, /api/skills, `top_skills` et la
+# recherche : ces fausses compétences y figuraient toutes, et elles créaient
+# des faux positifs (un besoin « postgresql » trouvait le CV « PL/SQL » par la
+# sous-chaîne `sql`).
+#
+# Mais la barre est AUSSI un vrai séparateur sous la plume des consultants
+# (« Python/Java », « AWS / Azure »). Règle, décidée sur mesure et non sur
+# principe — une barre est examinée avec les deux MOTS qui la touchent (pas les
+# côtés entiers, sinon « Oracle PL/SQL » redevient `Oracle PL` + `SQL`) :
+#
+#   1. entourée d'espace (« AWS / Azure ») -> séparateur. C'est la règle de
+#      one-pager (lib/extract.js::splitList), la seule qu'il applique ;
+#   2. « gauche/droite » est un nom connu d'une des deux tables (PL/SQL, CI/CD,
+#      C/C++, Pub/Sub) -> partie du nom ;
+#   3. les deux mots sont chacun une compétence connue (AWS/GCP, SSIS/SSRS,
+#      ML/DL, SQL/NoSQL) -> séparateur ;
+#   4. les deux mots sont des sigles courts, sans minuscule, 5 caractères au
+#      plus (TCP/IP, UX/UI, MOA/MOE, I/O, A/B, S/4HANA) -> partie du nom ;
+#   5. sinon (Python/Java, Talend/Informatica, R/Python) -> séparateur.
+#
+# Limite assumée : deux sigles inconnus des tables restent ensemble
+# (« HTML/CSS »). Le rapprochement les trouve quand même par sous-chaîne ; le
+# dire vaut mieux qu'une liste de cas particuliers. Aucun fichier partagé
+# n'est modifié : la règle s'appuie sur les tables déjà chargées.
+_NOMS_LOCAUX: set[str] = {_key(v) for v in _ALIASES_LOCAUX.values()}
+
+
+def _nom_connu(libelle: str) -> bool:
+    """Compétence connue de la table locale ou de la table partagée."""
+    cle = _key(libelle)
+    if cle in ALIASES or cle in _NOMS_LOCAUX:
+        return True
+    n = normaliser_libelle(libelle)
+    return n in _INDEX or (len(_compacter(n)) >= 3 and _compacter(n) in _INDEX_COMPACT)
+
+
+def _est_sigle(mot: str) -> bool:
+    return (0 < len(mot) <= 5 and not any(c.islower() for c in mot)
+            and any(c.isalnum() for c in mot))
+
+
+def _barre_separe(gauche: str, droite: str) -> bool:
+    if not gauche.strip() or not droite.strip() or gauche[-1].isspace() or droite[0].isspace():
+        return True
+    mot_g, mot_d = gauche.split()[-1], droite.split()[0]
+    if _nom_connu(f"{mot_g}/{mot_d}"):
+        return False
+    if _nom_connu(mot_g) and _nom_connu(mot_d):
+        return True
+    return not (_est_sigle(mot_g) and _est_sigle(mot_d))
+
+
+def decouper_barres(segment: str) -> list[str]:
+    """Coupe un segment sur ses barres obliques séparatrices seulement."""
+    morceaux = str(segment).split("/")
+    sortie = [morceaux[0]]
+    for droite in morceaux[1:]:
+        if _barre_separe(sortie[-1], droite):
+            sortie.append(droite)
+        else:
+            sortie[-1] = f"{sortie[-1]}/{droite}"
+    return sortie
+
+
 def skills_to_flat(skills_structured: list[dict]) -> list[str]:
     """
     Aplatit la structure [{category, items}] en une liste de strings.
-    Gère aussi les items contenant des virgules (ex: "Python, Pandas").
+    Gère aussi les items contenant des virgules (ex: "Python, Pandas") et les
+    barres obliques séparatrices, sans casser « PL/SQL » (decouper_barres).
     """
     flat: list[str] = []
     for group in (skills_structured or []):
         for item in (group.get("items") or []):
             # Certains items sont encore des listes séparées par virgules
-            for part in re.split(r"[,;/]", str(item)):
-                part = part.strip()
-                if part and len(part) > 1:
-                    flat.append(part)
+            for segment in re.split(r"[,;]", str(item)):
+                for part in decouper_barres(segment):
+                    part = part.strip()
+                    if part and len(part) > 1:
+                        flat.append(part)
     return flat
 
 
