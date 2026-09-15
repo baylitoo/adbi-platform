@@ -1,0 +1,203 @@
+{
+  "_description": "Jeu d'essai partage, TESTS SEULEMENT (aucun code de production ne le lit) : ce que le pont accepte ou refuse dans `ocr_blocks` avant de l'envoyer a POST /v1/extract/text. Regle soeur de blocs_texte_docie.json, qui decrit l'autre cas — celui ou l'on n'envoie PAS de blocs et ou DocIE decoupe `text` lui-meme. Ici l'appelant fournit les blocs : DocIE ne redecoupe plus rien et ce sont NOS blocs qui sont comptes, ancres et rendus dans evidence_ids.",
+  "_ports": [
+    "document-parsing/bridge/docie_bridge.py::valider_blocs_ocr (Python)",
+    "document-parsing/bridge/docie-bridge.js::validerBlocsOcr (JS)"
+  ],
+  "_source_docie": "Lecture du code DocIE sur origin/dev-agents-milestone (pointe c8c010e) par la session DocIE, le 2026-09-16 ; aucun appel distant. Les `preuve` citent le fichier:ligne qu'elle a lu.",
+  "_pourquoi_refuser_ici": "DocIE ne met `extra=forbid` ni sur ExtractTextRequest ni sur OCRBlock (schemas/common.py:16) : une cle inconnue — une faute de frappe `pages` pour `page` — est SILENCIEUSEMENT IGNOREE, et l'appelant croit avoir envoye des numeros de page. Un refus local nomme la cle ; un envoi tel quel ne dit rien. Meme motif pour les plafonds : ils reviendraient en 413 apres l'appel.",
+  "limites": {
+    "blocs_max": 1000,
+    "caracteres_par_bloc_max": 20000,
+    "caracteres_total_max": 1000000,
+    "blocs_prompt_max": 800,
+    "preuve": "api.py::validate_text_request : len(blocks) > settings.max_ocr_blocks (1000) -> 413 ; len(block.text) > max_ocr_block_chars (20000) -> 413 ; sum(len(b.text)) > max_text_chars (1000000) -> 413. Plafond de prompt : llm/prompts.py:134 render_ocr_blocks(blocks, max_blocks=800)."
+  },
+  "sources_valides": ["pdf_text", "pdf_inspector", "tesseract", "paddleocr", "manual", "unknown"],
+  "_preuve_sources": "schemas/common.py:16-24, champ `source: Literal[...] = \"unknown\"` ; une valeur hors de cette liste est un 422 pydantic avant toute extraction.",
+  "cles_bloc": ["id", "text", "page", "bbox", "source", "confidence"],
+  "_preuve_cles": "schemas/common.py:16-24 : id (str, requis), text (str, requis), page (int, defaut 1), bbox (BoundingBox|None), source (Literal, defaut \"unknown\"), confidence (float|None). BoundingBox = x0, y0, x1, y1, tous flottants requis (schemas/common.py:9-13).",
+  "cas": [
+    {
+      "nom": "minimal_accepte",
+      "blocs": [{ "id": "p1b0", "text": "CONTRAT DE SOUS-TRAITANCE" }],
+      "valide": true,
+      "blocs_comptes": 1,
+      "preuve": "id et text suffisent ; `page` vaut 1 par defaut (schemas/common.py:16-24)"
+    },
+    {
+      "nom": "toutes_les_cles",
+      "blocs": [{ "id": "p2b7", "text": "Article 4.2", "page": 2, "source": "pdf_text", "confidence": 0.98, "bbox": { "x0": 72.0, "y0": 120.5, "x1": 300.0, "y1": 134.5 } }],
+      "valide": true,
+      "blocs_comptes": 1,
+      "preuve": "les six cles du modele OCRBlock, aucune de plus"
+    },
+    {
+      "nom": "pagination_reelle",
+      "blocs": [
+        { "id": "p1b0", "text": "Page un", "page": 1 },
+        { "id": "p2b0", "text": "Page deux", "page": 2 }
+      ],
+      "valide": true,
+      "blocs_comptes": 2,
+      "preuve": "des numeros de page reels servent deux fois : llm/prompts.py:136-146 emet une ligne [page N] des que les blocs gardes couvrent plus d'une page, et extract/grounding.py::_Evidence.of coupe sa fenetre de preuve (5 blocs consecutifs au plus) au changement de page"
+    },
+    {
+      "nom": "liste_vide_refusee",
+      "blocs": [],
+      "valide": false,
+      "erreur": "vide",
+      "preuve": "extract/service.py:357 : blocks = ocr_blocks if ocr_blocks is not None else text_to_blocks(...). Une liste vide n'est PAS un repli sur `text` ([] is not None) : DocIE extrait alors de rien, en HTTP 200. C'est le seul cas ou envoyer tel quel produit une reponse vide d'apparence normale."
+    },
+    {
+      "nom": "pas_une_liste",
+      "blocs": { "id": "p1b0", "text": "x" },
+      "valide": false,
+      "erreur": "forme",
+      "preuve": "ocr_blocks: list[OCRBlock] | None (schemas/api.py:10-12)"
+    },
+    {
+      "nom": "bloc_pas_un_objet",
+      "blocs": ["CONTRAT"],
+      "valide": false,
+      "erreur": "forme",
+      "preuve": "un bloc est un objet, jamais une chaine ; DocIE repondrait 422"
+    },
+    {
+      "nom": "id_manquant",
+      "blocs": [{ "text": "CONTRAT" }],
+      "valide": false,
+      "erreur": "id",
+      "preuve": "id est requis (schemas/common.py:16) : 422 pydantic avant extraction"
+    },
+    {
+      "nom": "id_vide",
+      "blocs": [{ "id": "", "text": "CONTRAT" }],
+      "valide": false,
+      "erreur": "id",
+      "preuve": "[J] DocIE accepte la chaine vide comme id ; nous la refusons : cet id revient tel quel dans evidence_ids (extract/grounding.py, _Evidence.of collecte window.id) et une preuve sans nom ne se rattache a rien"
+    },
+    {
+      "nom": "id_non_textuel",
+      "blocs": [{ "id": 7, "text": "CONTRAT" }],
+      "valide": false,
+      "erreur": "id",
+      "preuve": "id: str (schemas/common.py:16)"
+    },
+    {
+      "nom": "ids_dupliques",
+      "blocs": [
+        { "id": "p1b0", "text": "CONTRAT" },
+        { "id": "p1b0", "text": "Article 1" }
+      ],
+      "valide": false,
+      "erreur": "id",
+      "preuve": "[J] DocIE ne dedoublonne pas ; nos ids partent verbatim, donc un evidence_id duplique designerait deux blocs et l'ancrage deviendrait inexploitable cote consommateur"
+    },
+    {
+      "nom": "texte_manquant",
+      "blocs": [{ "id": "p1b0" }],
+      "valide": false,
+      "erreur": "text",
+      "preuve": "text est requis (schemas/common.py:16)"
+    },
+    {
+      "nom": "texte_non_textuel",
+      "blocs": [{ "id": "p1b0", "text": 42 }],
+      "valide": false,
+      "erreur": "text",
+      "preuve": "text: str (schemas/common.py:16)"
+    },
+    {
+      "nom": "texte_blanc",
+      "blocs": [{ "id": "p1b0", "text": "   \t  " }],
+      "valide": false,
+      "erreur": "text",
+      "preuve": "llm/prompts.py:139 : kept = [b for b in blocks[:800] if b.text.strip()]. La tranche des 800 est prise AVANT le filtrage : un bloc blanc consomme une place du prompt, n'y apparait pas et n'ancre rien. Le refuser garde `blocs_texte` egal au nombre de blocs reellement utiles."
+    },
+    {
+      "nom": "bom_seul_nest_pas_blanc",
+      "blocs": [{ "id": "p1b0", "text": "﻿" }],
+      "valide": true,
+      "blocs_comptes": 1,
+      "preuve": "le blanc est celui de str.strip() de Python, pas celui de trim() en JS : \\uFEFF n'est pas un blanc pour str.isspace(), donc DocIE garde ce bloc. Un portage JS qui utiliserait trim() le refuserait — les deux portages divergeraient sur le meme document. Meme piege que le cas `bom_seul` de blocs_texte_docie.json."
+    },
+    {
+      "nom": "cle_inconnue_refusee",
+      "blocs": [{ "id": "p1b0", "text": "CONTRAT", "pages": 2 }],
+      "valide": false,
+      "erreur": "cle",
+      "preuve": "OCRBlock n'a pas extra=forbid (schemas/common.py:16) : `pages` serait silencieusement ignore et l'appelant croirait avoir pagine. Refus local nommant la cle."
+    },
+    {
+      "nom": "page_zero",
+      "blocs": [{ "id": "p1b0", "text": "CONTRAT", "page": 0 }],
+      "valide": false,
+      "erreur": "page",
+      "preuve": "[J] DocIE accepte n'importe quel entier ; une page < 1 ne designe aucune page et casse tout filtrage d'evidence_ids par page"
+    },
+    {
+      "nom": "page_non_entiere",
+      "blocs": [{ "id": "p1b0", "text": "CONTRAT", "page": 1.5 }],
+      "valide": false,
+      "erreur": "page",
+      "preuve": "page: int (schemas/common.py:16) ; 422 pydantic sur un flottant non entier"
+    },
+    {
+      "nom": "source_inconnue",
+      "blocs": [{ "id": "p1b0", "text": "CONTRAT", "source": "docx" }],
+      "valide": false,
+      "erreur": "source",
+      "preuve": "source est un Literal ferme (schemas/common.py:16-24) : une valeur hors liste est un 422. Pour un DOCX, la valeur a employer est \"manual\"."
+    },
+    {
+      "nom": "confidence_hors_bornes",
+      "blocs": [{ "id": "p1b0", "text": "CONTRAT", "confidence": 1.5 }],
+      "valide": false,
+      "erreur": "confidence",
+      "preuve": "[J] confidence: float | None, documentee 0..1 (schemas/common.py:16-24) ; une valeur hors bornes serait melangee aux confiances rendues par DocIE dans le signal de revue"
+    },
+    {
+      "nom": "bbox_incomplete",
+      "blocs": [{ "id": "p1b0", "text": "CONTRAT", "bbox": { "x0": 1.0, "y0": 2.0, "x1": 3.0 } }],
+      "valide": false,
+      "erreur": "bbox",
+      "preuve": "BoundingBox exige x0, y0, x1, y1 (schemas/common.py:9-13) : une bbox incomplete est un 422"
+    }
+  ],
+  "cas_plafonds": [
+    {
+      "nom": "mille_blocs_acceptes",
+      "nombre": 1000,
+      "valide": true,
+      "preuve": "api.py::validate_text_request refuse au-DELA de 1000 (strictement superieur)"
+    },
+    {
+      "nom": "mille_un_blocs_refuses",
+      "nombre": 1001,
+      "valide": false,
+      "erreur": "nombre",
+      "preuve": "len(blocks) > settings.max_ocr_blocks -> 413 'OCR block count exceeds configured limit' ; refuse localement pour ne pas payer l'aller-retour"
+    },
+    {
+      "nom": "bloc_de_20000_caracteres_accepte",
+      "caracteres": 20000,
+      "valide": true,
+      "preuve": "le refus est strictement superieur a max_ocr_block_chars"
+    },
+    {
+      "nom": "bloc_de_20001_caracteres_refuse",
+      "caracteres": 20001,
+      "valide": false,
+      "erreur": "caracteres",
+      "preuve": "len(block.text) > settings.max_ocr_block_chars -> 413 'An OCR block exceeds configured limit'"
+    },
+    {
+      "nom": "astraux_comptes_en_points_de_code",
+      "texte_repete": "🚀",
+      "repetitions": 10001,
+      "valide": true,
+      "preuve": "DocIE compte len(block.text) en Python, donc en POINTS DE CODE : 10001 emoji font 10001 caracteres, bien en dessous de 20000, et le bloc est accepte. En JS, String.prototype.length en compte 20002 (deux unites UTF-16 par emoji) : un portage qui lirait .length refuserait ici un bloc que DocIE accepte. C'est le seul sens ou les deux comptages divergent visiblement — un refus, lui, tombe des deux cotes."
+    }
+  ]
+}
