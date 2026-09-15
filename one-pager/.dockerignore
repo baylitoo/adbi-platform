@@ -1,7 +1,10 @@
-# Ne s'applique qu'a un build dont le contexte est one-pager/ lui-meme.
-# Les builds du depot (docker-compose.yml, docker-compose.local.yml) utilisent
-# la racine du depot comme contexte : c'est alors one-pager/Dockerfile.dockerignore
-# qui s'applique, pas ce fichier. Garder les deux coherents.
+# Avec BuildKit, ce fichier n'est PAS lu pour one-pager/Dockerfile : BuildKit
+# prend one-pager/Dockerfile.dockerignore (a cote du Dockerfile), quel que soit
+# le contexte. Les builds du depot (docker-compose.yml, docker-compose.local.yml)
+# utilisent la racine du depot comme contexte, et c'est la liste blanche de
+# Dockerfile.dockerignore qui les filtre. Ce fichier ne sert plus que de filet
+# pour un builder « legacy » (sans BuildKit) lance avec one-pager/ comme
+# contexte. Garder les deux coherents.
 node_modules
 npm-debug.log
 *.log
