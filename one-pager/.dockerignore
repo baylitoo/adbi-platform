@@ -1,7 +1,20 @@
+# Ne s'applique qu'a un build dont le contexte est one-pager/ lui-meme.
+# Les builds du depot (docker-compose.yml, docker-compose.local.yml) utilisent
+# la racine du depot comme contexte : c'est alors one-pager/Dockerfile.dockerignore
+# qui s'applique, pas ce fichier. Garder les deux coherents.
 node_modules
 npm-debug.log
+*.log
 *.zip
 data
+runtime
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.db
 .git
 .gitignore
 .claude
