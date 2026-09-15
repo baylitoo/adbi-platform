@@ -396,11 +396,14 @@ function extractUrssafViaTexte(body, deps) {
 }
 
 // Erreur présentable d'un modèle choisi (#194) : code nommé et message français
-// constant (table des tâches de pré-remplissage), jamais le texte amont.
+// constant (table des tâches de pré-remplissage), jamais le texte amont. Une
+// ErreurChoixModele garde le sien : constant, ou bâti sur les libellés du
+// catalogue (scan du Kbis qui nomme la lecture d'image, lib/choix-modele.js).
 function erreurModeleChoisi(error) {
   const { code, message } = mapperErreur(error);
   const texte = code === "context" ? "Document trop long pour le modèle d'extraction."
     : code === "interne" ? "Analyse impossible : erreur interne."
+    : error && error.name === "ErreurChoixModele" && typeof error.message === "string" ? error.message
     : message;
   const err = new Error(texte);
   err.code = code;

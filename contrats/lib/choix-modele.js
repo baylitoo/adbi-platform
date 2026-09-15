@@ -52,12 +52,22 @@ const MESSAGES_CHOIX = Object.freeze({
   configuration: "Modèles d'extraction mal configurés côté serveur.",
 });
 
+// `message` : par défaut le message constant du code. Seule exception, le `scan`
+// du Kbis qui nomme la sortie (messageScanVision) : bâti avec les LIBELLÉS du
+// catalogue, jamais un identifiant ni un texte reçu.
 class ErreurChoixModele extends Error {
-  constructor(code) {
-    super(MESSAGES_CHOIX[code]);
+  constructor(code, message = MESSAGES_CHOIX[code]) {
+    super(message);
     this.name = "ErreurChoixModele";
     this.code = code;
   }
+}
+
+// Scan refusé à un modèle texte alors qu'une lecture d'image est configurée
+// (Kbis, #194) : « échouer bruyamment » nomme la voie qui marche, au lieu de
+// renvoyer à une saisie manuelle.
+function messageScanVision(libelles) {
+  return "Document scanné : ce modèle ne lit que le texte. Choisissez " + libelles.join(" ou ") + " (lecture d'image) pour l'analyser.";
 }
 
 /** Voies admises pour une tâche à sélecteur ([] si la tâche n'en a pas). */
@@ -140,12 +150,16 @@ function choisirPourAgent(tache, modele, { pages = null } = {}, { env = process.
   try {
     const catalogue = chargerCatalogue();
     const voie = voieDe(tache, "agent");
+    const document = typeof pages === "number" ? { pages } : null;
     const surAgent = catalogue.modelesConfigures(tache, voie, { env }).some((o) => o.id === modele);
     if (!surAgent && voiesDe(tache).includes("texte")
         && catalogue.modelesConfigures(tache, "texte", { env }).some((o) => o.id === modele)) {
-      throw new ErreurChoixModele("scan");
+      // Lecture d'image configurée ET admise pour ce fichier (8 pages au plus) :
+      // le message la nomme. Aucune : saisie manuelle, message constant.
+      const vision = catalogue.modelesOfferts(tache, voie, { env, document });
+      throw new ErreurChoixModele("scan", vision.length ? messageScanVision(vision.map((o) => o.libelle)) : MESSAGES_CHOIX.scan);
     }
-    return catalogue.choisirModele(tache, voie, { env, modele, document: typeof pages === "number" ? { pages } : null });
+    return catalogue.choisirModele(tache, voie, { env, modele, document });
   } catch (e) {
     throw traduire(e);
   }

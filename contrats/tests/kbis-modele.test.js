@@ -172,8 +172,9 @@ test("modèle choisi : PDF texte -> voie texte avec CE modèle ; scan ou image +
 test("échouer bruyamment : scan + modèle de la voie texte -> `scan` ; > 8 pages en vision -> `limite` ; non configuré -> `modele_non_propose` ; ni DocIE ni local", async () => {
   const env = { ...BASE, ...MODELES_KBIS };
   const cas = [
-    [corps(await pdfScanne(), { modele: "lfm25_2_6b" }), env, "scan"],
-    [corps(PNG, { mimeType: "image/png", modele: "lfm25_2_6b" }), env, "scan"],
+    // Aucune lecture d'image configurée : message constant (saisie manuelle).
+    [corps(await pdfScanne(), { modele: "lfm25_2_6b" }), { ...BASE, DOCIE_MODELE_LFM25_2_6B: "store:lfm2.5-2.6b" }, "scan"],
+    [corps(PNG, { mimeType: "image/png", modele: "lfm25_2_6b" }), { ...BASE, DOCIE_MODELE_LFM25_2_6B: "store:lfm2.5-2.6b" }, "scan"],
     [corps(await pdfScanne(9), { modele: "nuextract3" }), env, "limite"],
     [corps(await pdfScanne(), { modele: "nuextract3" }), { ...BASE, DOCIE_MODELE_NUEXTRACT3: "store:nuextract3" }, "scan"],
     [corps(await pdfTexte(), { modele: "nuextract3" }), { ...BASE, DOCIE_AGENT_KBIS_NUEXTRACT3: "kbis-nuextract3" }, "modele_non_propose"],
@@ -190,6 +191,27 @@ test("échouer bruyamment : scan + modèle de la voie texte -> `scan` ; > 8 page
   const huit = docie();
   await analyzeDocument(corps(await pdfScanne(8), { modele: "nuextract3" }), { env, fetchImpl: huit.fetchImpl });
   assert.equal(huit.appels.length, 1);
+});
+
+const MESSAGE_SCAN_VISION = "Document scanné : ce modèle ne lit que le texte. Choisissez NuExtract3 (lecture d'image) pour l'analyser.";
+
+test("`scan` du Kbis : lecture d'image configurée -> le message nomme NuExtract3 (libellé) ; absente ou fichier hors limite -> saisie manuelle", async () => {
+  const avecVision = { ...BASE, ...MODELES_KBIS };
+  const sansVision = { ...BASE, DOCIE_MODELE_LFM25_2_6B: "store:lfm2.5-2.6b", DOCIE_MODELE_NUEXTRACT3: "store:nuextract3" };
+  const cas = [
+    [corps(await pdfScanne(), { modele: "lfm25_2_6b" }), avecVision, MESSAGE_SCAN_VISION],
+    [corps(PNG, { mimeType: "image/png", modele: "lfm25_2_6b" }), avecVision, MESSAGE_SCAN_VISION],
+    [corps(await pdfScanne(), { modele: "lfm25_2_6b" }), sansVision, choix.MESSAGES_CHOIX.scan],
+    // 9 pages : NuExtract3 le refuserait (limite) -> pas de fausse sortie proposée.
+    [corps(await pdfScanne(9), { modele: "lfm25_2_6b" }), avecVision, choix.MESSAGES_CHOIX.scan],
+  ];
+  for (const [body, env, message] of cas) {
+    const d = docie();
+    const local = localCompte();
+    await assert.rejects(() => analyzeDocument(body, { env, fetchImpl: d.fetchImpl, analyzeLocal: local.analyzeLocal }),
+      (err) => err.code === "scan" && err.message === message);
+    assert.equal(d.appels.length + local.appels.length, 0);
+  }
 });
 
 test("échec DocIE : modèle choisi -> erreur nommée sur les deux voies, aucune analyse locale ; sans choix -> repli local d'avant", async () => {
@@ -469,7 +491,7 @@ test("route /api/document/analyze : PDF texte + LFM2.5 2.6B et scan + NuExtract3
     assert.deepEqual(prop(texte.body).champs.map((c) => c.cle).sort(), ["stAdresse", "stFormeJuridique", "stRepresentant", "stSiren", "stSiret"]);
     const refus = await poster(port, corps(await pdfScanne(), { modele: "lfm25_2_6b" }));
     assert.equal(refus.status, 400);
-    assert.equal(refus.body.error, choix.MESSAGES_CHOIX.scan);
+    assert.equal(refus.body.error, MESSAGE_SCAN_VISION, "la route garde le message qui nomme la lecture d'image");
     assert.equal(d.appels.length, 2);
   } finally {
     await new Promise((resolve) => serveur.close(resolve));
