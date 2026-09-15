@@ -92,6 +92,12 @@ services:
       # « configuration » avant le moindre appel. Même piège que #164.
       DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
       DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-360}
+      # Pré-remplissages DocIE simultanés (#196), à aligner sur le `n_parallel`
+      # du modèle servi pour les contrats (#194). Vide -> défaut du service : 1
+      # (NuExtract3). Variable racine dédiée (CONTRATS_...) : chaque service a
+      # son modèle, donc son plafond. Même piège que #164 : sans cette ligne,
+      # contrats/.env.example documenterait une variable jamais transmise.
+      ADBI_EXTRACTION_MAX_CONCURRENT: ${CONTRATS_EXTRACTION_MAX_CONCURRENT:-}
       INSEE_API_KEY: ${INSEE_API_KEY:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-}
@@ -139,6 +145,10 @@ services:
       # Le bridge refuse HTTP hors loopback par defaut ; derogation explicite
       # pour un reseau prive de confiance seulement (meme var que cv-parser).
       DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
+      # Extractions DocIE simultanees (#196), a aligner sur le `n_parallel` du
+      # modele servi pour les CV (#194). Vide -> defaut du service : 2
+      # (LFM2.5-2.6B). Variable racine dediee (ONEPAGER_...), voir contrats.
+      ADBI_EXTRACTION_MAX_CONCURRENT: ${ONEPAGER_EXTRACTION_MAX_CONCURRENT:-}
     restart: unless-stopped
     deploy:
       resources:
@@ -191,6 +201,11 @@ services:
       # service à la fois sans basculer les autres involontairement.
       DOCIE_EXTRACTION_ENABLED: ${CVPARSER_DOCIE_EXTRACTION_ENABLED:-false}
       DOCIE_AGENT_RESUME: ${DOCIE_AGENT_RESUME:-}
+      # Analyses DocIE simultanées, dépôts et ré-analyses (#196), à aligner sur
+      # le `n_parallel` du modèle servi pour les CV (#194). Vide -> défaut du
+      # service : 2 (LFM2.5-2.6B). Variable racine dédiée (CVPARSER_...), voir
+      # contrats. Remplace ADBI_UPLOAD_MAX_CONCURRENT, jamais transmis jusqu'ici.
+      ADBI_EXTRACTION_MAX_CONCURRENT: ${CVPARSER_EXTRACTION_MAX_CONCURRENT:-}
       # Le bridge refuse HTTP hors loopback par défaut (docie_bridge.py) ;
       # dérogation explicite pour un réseau privé de confiance seulement.
       DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
