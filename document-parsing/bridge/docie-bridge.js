@@ -67,7 +67,7 @@ const MAX_ERROR_BYTES = 64 * 1024;
 // TEXTE, où qu'il soit dans le corps (JSON imbriqué échappé ou texte brut), et
 // tout le reste retombe sur `upstream`.
 const CONTEXT_OVERFLOW = /exceeds the available context size|exceed_context_size_error/i;
-const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf" };
+const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf", rib: "rib" };
 // What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
 // This transport posts the document as an `image_url` data URI to
 // /v1/agents/<agent>/chat/completions, where DocIE OCRs it: liteparse renders

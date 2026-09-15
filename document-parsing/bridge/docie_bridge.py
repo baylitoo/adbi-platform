@@ -96,7 +96,7 @@ CONTEXT_OVERFLOW = re.compile(r"exceeds the available context size|exceed_contex
 # allowlist alone. Neither is added on a reading of someone else's
 # configuration -- that is exactly how `image/webp` got here (#180).
 MIME_TYPES = {"application/pdf", "image/png", "image/jpeg"}
-SCHEMAS = {"resume": "adbi_resume", "contract": "contract", "kbis": "kbis", "urssaf": "urssaf"}
+SCHEMAS = {"resume": "adbi_resume", "contract": "contract", "kbis": "kbis", "urssaf": "urssaf", "rib": "rib"}
 # A grounded field arrives as {value, ...} alongside at least one of these keys.
 # The logprob key is in the set on purpose: DocIE's logprob confidence adds it as
 # a fourth key, and an envelope test that ignores it lets a scalar reach the
