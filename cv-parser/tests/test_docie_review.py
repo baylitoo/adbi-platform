@@ -424,6 +424,7 @@ class MarqueApresTriTests(unittest.TestCase):
         from datetime import datetime
 
         from niveau_langue import niveau_cecrl
+        from skills_normalizer import canonique, cle_competence
         from periode_mission import (analyser_periode, index_mois, mois_courant,
                                      ordre_missions, periode_lisible, titre_de_repli)
 
@@ -437,7 +438,7 @@ class MarqueApresTriTests(unittest.TestCase):
         espace = {"re": _re, "datetime": datetime, "analyser_periode": analyser_periode,
                   "ordre_missions": ordre_missions, "index_mois": index_mois,
                   "mois_courant": mois_courant, "periode_lisible": periode_lisible,
-                  "titre_de_repli": titre_de_repli, "niveau_cecrl": niveau_cecrl,
+                  "titre_de_repli": titre_de_repli, "niveau_cecrl": niveau_cecrl, "canonique": canonique, "cle_competence": cle_competence,
                   "normalize_skills": lambda *a, **k: {},
                   "skills_to_flat": lambda *a, **k: [],
                   "compute_skills_flat": lambda *a, **k: []}

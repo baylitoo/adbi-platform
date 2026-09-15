@@ -48,14 +48,14 @@ const CATEGORIES = {
 
 const TECHNOLOGIES = {
   // --- Langages -----------------------------------------------------------
-  "JavaScript":       { cat: "langages", aliases: ["js", "javascript", "java script", "ecmascript", "es6", "es2015", "vanilla js"], weight: 2 },
-  "TypeScript":       { cat: "langages", aliases: ["ts", "typescript", "type script"], weight: 3 },
+  "JavaScript":       { cat: "langages", aliases: ["javascript", "java script", "es6", "es2015", "vanilla js"], weight: 2 },
+  "TypeScript":       { cat: "langages", aliases: ["typescript", "type script"], weight: 3 },
   "Java":             { cat: "langages", aliases: ["java", "java 8", "java 11", "java 17", "java 21", "j2ee", "jee", "java ee", "jakarta ee", "jdk"], weight: 3 },
-  "Python":           { cat: "langages", aliases: ["python", "python 3", "python3", "py"], weight: 4 },
-  "C#":               { cat: "langages", aliases: ["c#", "csharp", "c sharp"], weight: 3 },
-  "C++":              { cat: "langages", aliases: ["c++", "cpp", "c plus plus"], weight: 3 },
+  "Python":           { cat: "langages", aliases: ["python", "python 3", "python3"], weight: 4 },
+  "C#":               { cat: "langages", aliases: ["c#"], weight: 3 },
+  "C++":              { cat: "langages", aliases: ["c++", "c plus plus"], weight: 3 },
   "C":                { cat: "langages", aliases: ["c", "langage c", "ansi c"], weight: 2 },
-  "Go":               { cat: "langages", aliases: ["go", "golang", "langage go"], weight: 4 },
+  "Go":               { cat: "langages", aliases: ["go", "langage go"], weight: 4 },
   "Rust":             { cat: "langages", aliases: ["rust", "langage rust"], weight: 5 },
   "PHP":              { cat: "langages", aliases: ["php", "php 7", "php 8", "php7", "php8"], weight: 2 },
   "Ruby":             { cat: "langages", aliases: ["ruby"], weight: 3 },
@@ -64,8 +64,8 @@ const TECHNOLOGIES = {
   "Scala":            { cat: "langages", aliases: ["scala"], weight: 4 },
   "R":                { cat: "langages", aliases: ["r", "langage r", "r studio", "rstudio"], weight: 3 },
   "SQL":              { cat: "langages", aliases: ["sql", "langage sql", "requetes sql"], weight: 2 },
-  "PL/SQL":           { cat: "langages", aliases: ["pl/sql", "plsql", "pl sql"], weight: 3 },
-  "T-SQL":            { cat: "langages", aliases: ["t-sql", "tsql", "transact-sql", "transact sql"], weight: 3 },
+  "PL/SQL":           { cat: "langages", aliases: ["pl/sql"], weight: 3 },
+  "T-SQL":            { cat: "langages", aliases: ["t-sql", "transact-sql", "transact sql"], weight: 3 },
   "Shell/Bash":       { cat: "langages", aliases: ["bash", "shell", "shell script", "scripting shell", "ksh", "sh unix", "script bash"], weight: 2 },
   "PowerShell":       { cat: "langages", aliases: ["powershell", "power shell", "ps1"], weight: 3 },
   "VBA":              { cat: "langages", aliases: ["vba", "visual basic for applications", "macro vba", "macros vba"], weight: 2 },
@@ -77,10 +77,10 @@ const TECHNOLOGIES = {
   "SAS":              { cat: "langages", aliases: ["sas", "sas base", "sas eg", "sas enterprise guide"], weight: 3 },
 
   // --- Front-end ----------------------------------------------------------
-  "React":            { cat: "frontend", aliases: ["react", "react.js", "reactjs", "react js", "react 18"], weight: 4 },
+  "React":            { cat: "frontend", aliases: ["react", "react 18"], weight: 4 },
   "Angular":          { cat: "frontend", aliases: ["angular", "angular 2+", "angular 2", "angular 8", "angular 12", "angular 14", "angular 15", "angular 16", "angular 17"], weight: 4 },
   "AngularJS":        { cat: "frontend", aliases: ["angularjs", "angular.js", "angular 1", "angular js"], weight: 2 },
-  "Vue.js":           { cat: "frontend", aliases: ["vue.js", "vuejs", "vue js", "vue 2", "vue 3", "vue3"], weight: 4 },
+  "Vue.js":           { cat: "frontend", aliases: ["vue.js", "vue 2", "vue 3", "vue3"], weight: 4 },
   "Next.js":          { cat: "frontend", aliases: ["next.js", "nextjs", "next js"], weight: 4 },
   "Svelte":           { cat: "frontend", aliases: ["svelte", "sveltekit"], weight: 4 },
   "React Native":     { cat: "frontend", aliases: ["react native", "react-native"], weight: 4 },
@@ -95,20 +95,20 @@ const TECHNOLOGIES = {
   "Redux":            { cat: "frontend", aliases: ["redux", "redux toolkit", "ngrx"], weight: 3 },
 
   // --- Back-end & API -----------------------------------------------------
-  "Node.js":          { cat: "backend", aliases: ["node.js", "nodejs", "node js", "node", "node 18", "node 20"], weight: 4 },
+  "Node.js":          { cat: "backend", aliases: ["node.js", "node 18", "node 20"], weight: 4 },
   "Express":          { cat: "backend", aliases: ["express", "express.js", "expressjs"], weight: 3 },
   "NestJS":           { cat: "backend", aliases: ["nestjs", "nest.js", "nest js"], weight: 4 },
   "Spring Boot":      { cat: "backend", aliases: ["spring boot", "springboot", "spring-boot"], weight: 4 },
-  "Spring":           { cat: "backend", aliases: ["spring", "spring framework", "spring mvc", "spring batch", "spring security", "spring cloud"], weight: 3 },
+  "Spring":           { cat: "backend", aliases: ["spring", "spring mvc", "spring batch", "spring security", "spring cloud"], weight: 3 },
   "Hibernate":        { cat: "backend", aliases: ["hibernate", "jpa", "hibernate orm"], weight: 3 },
-  ".NET":             { cat: "backend", aliases: [".net", "dotnet", "dot net", ".net core", "net core", ".net 6", ".net 8", ".net framework", "asp.net", "asp .net", "aspnet", "asp.net core", "asp.net mvc"], weight: 3 },
+  ".NET":             { cat: "backend", aliases: [".net", "dot net", ".net core", "net core", ".net 6", ".net 8", ".net framework", "asp.net", "asp .net", "aspnet", "asp.net core", "asp.net mvc"], weight: 3 },
   "Django":           { cat: "backend", aliases: ["django", "django rest framework", "drf"], weight: 4 },
   "Flask":            { cat: "backend", aliases: ["flask"], weight: 3 },
   "FastAPI":          { cat: "backend", aliases: ["fastapi", "fast api"], weight: 4 },
   "Laravel":          { cat: "backend", aliases: ["laravel"], weight: 3 },
   "Symfony":          { cat: "backend", aliases: ["symfony", "symfony 6"], weight: 3 },
   "Quarkus":          { cat: "backend", aliases: ["quarkus"], weight: 5 },
-  "REST API":         { cat: "backend", aliases: ["rest api", "api rest", "apis rest", "restful", "rest", "services rest", "web services rest"], weight: 2 },
+  "REST API":         { cat: "backend", aliases: ["rest api", "api rest", "apis rest", "services rest", "web services rest"], weight: 2 },
   "GraphQL":          { cat: "backend", aliases: ["graphql", "graph ql", "apollo graphql"], weight: 4 },
   "gRPC":             { cat: "backend", aliases: ["grpc", "g-rpc"], weight: 4 },
   "SOAP":             { cat: "backend", aliases: ["soap", "web services soap", "wsdl"], weight: 2 },
@@ -126,10 +126,10 @@ const TECHNOLOGIES = {
   "ActiveMQ":         { cat: "backend", aliases: ["activemq", "active mq", "artemis"], weight: 3 },
 
   // --- Data & BI ----------------------------------------------------------
-  "Power BI":         { cat: "data", aliases: ["power bi", "powerbi", "pbi", "power-bi", "ms power bi", "microsoft power bi", "power bi desktop", "power bi service", "power bi report server"], weight: 4 },
+  "Power BI":         { cat: "data", aliases: ["power bi", "power-bi", "ms power bi", "microsoft power bi", "power bi desktop", "power bi service", "power bi report server"], weight: 4 },
   "Tableau":          { cat: "data", aliases: ["tableau", "tableau software", "tableau desktop", "tableau server"], weight: 4 },
   "Qlik":             { cat: "data", aliases: ["qlik", "qliktech"], weight: 3 },
-  "QlikView":         { cat: "data", aliases: ["qlikview", "qlik view"], weight: 3 },
+  "QlikView":         { cat: "data", aliases: ["qlikview"], weight: 3 },
   "Qlik Sense":       { cat: "data", aliases: ["qlik sense", "qliksense"], weight: 4 },
   "Looker":           { cat: "data", aliases: ["looker", "looker studio", "google data studio", "data studio"], weight: 4 },
   "SSRS":             { cat: "data", aliases: ["ssrs", "sql server reporting services", "reporting services"], weight: 2 },
@@ -140,23 +140,23 @@ const TECHNOLOGIES = {
   "Spark":            { cat: "data", aliases: ["spark", "apache spark", "pyspark", "spark streaming", "spark sql"], weight: 5 },
   "Hadoop":           { cat: "data", aliases: ["hadoop", "ecosysteme hadoop", "map reduce", "mapreduce"], weight: 3 },
   "HDFS":             { cat: "data", aliases: ["hdfs"], weight: 3 },
-  "Hive":             { cat: "data", aliases: ["hive", "apache hive", "hiveql"], weight: 3 },
+  "Hive":             { cat: "data", aliases: ["hive", "hiveql"], weight: 3 },
   "Impala":           { cat: "data", aliases: ["impala"], weight: 3 },
   "Airflow":          { cat: "data", aliases: ["airflow", "apache airflow", "dags airflow"], weight: 5 },
   "dbt":              { cat: "data", aliases: ["dbt", "data build tool", "dbt core", "dbt cloud"], weight: 5 },
-  "BigQuery":         { cat: "data", aliases: ["bigquery", "big query", "google bigquery"], weight: 4 },
-  "Redshift":         { cat: "data", aliases: ["redshift", "amazon redshift", "aws redshift"], weight: 4 },
-  "Azure Synapse":    { cat: "data", aliases: ["synapse", "azure synapse", "synapse analytics"], weight: 4 },
+  "BigQuery":         { cat: "data", aliases: ["bigquery", "big query"], weight: 4 },
+  "Redshift":         { cat: "data", aliases: ["redshift", "aws redshift"], weight: 4 },
+  "Azure Synapse":    { cat: "data", aliases: ["azure synapse", "synapse analytics"], weight: 4 },
   "Machine Learning": { cat: "data", aliases: ["machine learning", "apprentissage automatique", "modeles predictifs", "modelisation predictive"], weight: 4 },
   "Deep Learning":    { cat: "data", aliases: ["deep learning", "apprentissage profond", "reseaux de neurones"], weight: 4 },
   "TensorFlow":       { cat: "data", aliases: ["tensorflow", "tensor flow", "keras"], weight: 4 },
   "PyTorch":          { cat: "data", aliases: ["pytorch", "py torch"], weight: 4 },
-  "scikit-learn":     { cat: "data", aliases: ["scikit-learn", "scikit learn", "sklearn"], weight: 4 },
+  "scikit-learn":     { cat: "data", aliases: ["scikit-learn"], weight: 4 },
   "Pandas":           { cat: "data", aliases: ["pandas"], weight: 3 },
   "NumPy":            { cat: "data", aliases: ["numpy"], weight: 3 },
-  "NLP":              { cat: "data", aliases: ["nlp", "traitement du langage naturel", "natural language processing"], weight: 5 },
+  "NLP":              { cat: "data", aliases: ["nlp", "traitement du langage naturel"], weight: 5 },
   "MLOps":            { cat: "data", aliases: ["mlops", "ml ops", "mlflow"], weight: 5 },
-  "LLM":              { cat: "data", aliases: ["llm", "llms", "large language model", "grands modeles de langage"], weight: 5 },
+  "LLM":              { cat: "data", aliases: ["llm", "llms", "grands modeles de langage"], weight: 5 },
   "RAG":              { cat: "data", aliases: ["rag", "retrieval augmented generation", "retrieval-augmented generation"], weight: 5 },
   "IA générative":    { cat: "data", aliases: ["ia generative", "genai", "gen ai", "generative ai", "intelligence artificielle generative"], weight: 5 },
   "LangChain":        { cat: "data", aliases: ["langchain", "lang chain", "llamaindex"], weight: 5 },
@@ -178,18 +178,18 @@ const TECHNOLOGIES = {
   "Fivetran":         { cat: "etl", aliases: ["fivetran"], weight: 5 },
   "Stambia":          { cat: "etl", aliases: ["stambia", "semarchy", "semarchy xdi", "semarchy xdm"], weight: 4 },
   "Oracle Data Integrator": { cat: "etl", aliases: ["odi", "oracle data integrator", "oracle odi"], weight: 4 },
-  "Azure Data Factory": { cat: "etl", aliases: ["azure data factory", "data factory", "adf"], weight: 4 },
-  "Apache NiFi":      { cat: "etl", aliases: ["nifi", "apache nifi"], weight: 4 },
+  "Azure Data Factory": { cat: "etl", aliases: ["azure data factory", "data factory"], weight: 4 },
+  "Apache NiFi":      { cat: "etl", aliases: ["apache nifi"], weight: 4 },
   "Boomi":            { cat: "etl", aliases: ["boomi", "dell boomi"], weight: 4 },
 
   // --- Bases de données ---------------------------------------------------
   "Oracle":           { cat: "bases", aliases: ["oracle", "oracle db", "oracle database", "bdd oracle", "base de donnees oracle", "oracle 11g", "oracle 12c", "oracle 19c", "oracle rac"], weight: 3 },
-  "SQL Server":       { cat: "bases", aliases: ["sql server", "sqlserver", "ms sql", "mssql", "microsoft sql server", "sql server 2019", "ssms"], weight: 3 },
-  "PostgreSQL":       { cat: "bases", aliases: ["postgresql", "postgres", "postgre", "psql", "pgsql", "postgre sql"], weight: 4 },
+  "SQL Server":       { cat: "bases", aliases: ["sql server", "ms sql", "sql server 2019", "ssms"], weight: 3 },
+  "PostgreSQL":       { cat: "bases", aliases: ["postgresql", "postgre", "pgsql", "postgre sql"], weight: 4 },
   "MySQL":            { cat: "bases", aliases: ["mysql", "my sql"], weight: 2 },
   "MariaDB":          { cat: "bases", aliases: ["mariadb", "maria db"], weight: 2 },
-  "MongoDB":          { cat: "bases", aliases: ["mongodb", "mongo", "mongo db", "mongo atlas"], weight: 4 },
-  "Cassandra":        { cat: "bases", aliases: ["cassandra", "apache cassandra", "scylladb"], weight: 4 },
+  "MongoDB":          { cat: "bases", aliases: ["mongodb", "mongo db", "mongo atlas"], weight: 4 },
+  "Cassandra":        { cat: "bases", aliases: ["cassandra", "scylladb"], weight: 4 },
   "Redis":            { cat: "bases", aliases: ["redis"], weight: 4 },
   "Elasticsearch":    { cat: "bases", aliases: ["elasticsearch", "elastic search", "opensearch"], weight: 4 },
   "DB2":              { cat: "bases", aliases: ["db2", "ibm db2", "db2 400"], weight: 2 },
@@ -199,17 +199,17 @@ const TECHNOLOGIES = {
   "Firebase":         { cat: "bases", aliases: ["firebase", "firestore"], weight: 3 },
   "Teradata":         { cat: "bases", aliases: ["teradata"], weight: 3 },
   "SAP HANA":         { cat: "bases", aliases: ["sap hana", "hana", "hana db", "hana studio"], weight: 4 },
-  "Cosmos DB":        { cat: "bases", aliases: ["cosmos db", "cosmosdb", "azure cosmos db"], weight: 4 },
+  "Cosmos DB":        { cat: "bases", aliases: ["cosmos db", "cosmosdb"], weight: 4 },
   "NoSQL":            { cat: "bases", aliases: ["nosql", "no sql", "bases nosql"], weight: 3 },
 
   // --- Cloud & Conteneurisation -------------------------------------------
-  "AWS":              { cat: "cloud", aliases: ["aws", "amazon web services", "cloud aws"], weight: 4 },
-  "Azure":            { cat: "cloud", aliases: ["azure", "microsoft azure", "cloud azure"], weight: 4 },
-  "GCP":              { cat: "cloud", aliases: ["gcp", "google cloud", "google cloud platform"], weight: 4 },
+  "AWS":              { cat: "cloud", aliases: ["aws", "cloud aws"], weight: 4 },
+  "Azure":            { cat: "cloud", aliases: ["azure", "cloud azure"], weight: 4 },
+  "GCP":              { cat: "cloud", aliases: ["gcp"], weight: 4 },
   "OVHcloud":         { cat: "cloud", aliases: ["ovh", "ovhcloud", "ovh cloud"], weight: 2 },
   "Scaleway":         { cat: "cloud", aliases: ["scaleway", "online.net"], weight: 3 },
   "Docker":           { cat: "cloud", aliases: ["docker", "dockerfile", "docker compose", "docker-compose", "conteneurisation", "containerisation"], weight: 4 },
-  "Kubernetes":       { cat: "cloud", aliases: ["kubernetes", "k8s", "kube", "aks", "eks", "gke", "kubectl"], weight: 5 },
+  "Kubernetes":       { cat: "cloud", aliases: ["kubernetes", "kube", "aks", "eks", "gke", "kubectl"], weight: 5 },
   "OpenShift":        { cat: "cloud", aliases: ["openshift", "open shift", "red hat openshift"], weight: 5 },
   "Rancher":          { cat: "cloud", aliases: ["rancher"], weight: 4 },
   "Helm":             { cat: "cloud", aliases: ["helm", "helm charts"], weight: 4 },
@@ -387,6 +387,45 @@ const TECHNOLOGIES = {
   "VMware":           { cat: "os", aliases: ["vmware", "vsphere", "esxi", "vcenter"], weight: 3 },
   "Citrix":           { cat: "os", aliases: ["citrix", "citrix xenapp", "citrix vdi"], weight: 3 },
 };
+
+// ---------------------------------------------------------------------------
+// Synonymes stricts partages avec cv-parser (#177 lignes G et H)
+// ---------------------------------------------------------------------------
+// « k8s », « postgres », « nodejs »... ne sont plus ecrits ci-dessus : ils vivent
+// dans document-parsing/fixtures/competences_synonymes.json, que
+// cv-parser/skills_normalizer.py lit aussi. Avant, deux tables se recouvraient
+// et divergeaient : dans UNE categorie, « Kubernetes » / « k8s » donnaient une
+// competence ici et deux dans la CVtheque.
+//
+// Ce fichier ne porte QUE des synonymes stricts. Les familles regroupees ici
+// pour le tri commercial (keras sous TensorFlow, eks sous Kubernetes) restent
+// dans TECHNOLOGIES et ne sont pas partagees.
+//
+// Charge au chargement du module et sans garde, comme les jeux d'essai de
+// lib/normalize.js : l'image Docker le copie (one-pager/Dockerfile). Fusionne
+// AVANT la construction des index, donc lookup(), detect() et canonical() le
+// voient exactement comme s'il etait ecrit dans TECHNOLOGIES.
+const SYNONYMES = require("../../document-parsing/fixtures/competences_synonymes.json").synonymes;
+
+/**
+ * Ajoute les synonymes partages aux alias de TECHNOLOGIES.
+ * Un nom canonique inconnu de la taxonomie leve : la table partagee et ce
+ * fichier auraient diverge, et l'ignorer ferait revenir la divergence en silence.
+ */
+function fusionnerSynonymes(technologies, synonymes) {
+  for (const nom of Object.keys(synonymes)) {
+    const def = technologies[nom];
+    if (!def) {
+      throw new Error(`competences_synonymes.json : « ${nom} » n'est pas une technologie de taxonomy.js`);
+    }
+    for (const variante of synonymes[nom]) {
+      if (def.aliases.indexOf(variante) === -1) def.aliases.push(variante);
+    }
+  }
+  return technologies;
+}
+
+fusionnerSynonymes(TECHNOLOGIES, SYNONYMES);
 
 // ---------------------------------------------------------------------------
 // Normalisation
@@ -628,4 +667,4 @@ function canonical(term) {
   return term === null || term === undefined ? "" : String(term).replace(/\s+/g, " ").trim();
 }
 
-module.exports = { CATEGORIES, TECHNOLOGIES, lookup, detect, categorize, canonical };
+module.exports = { CATEGORIES, TECHNOLOGIES, lookup, detect, categorize, canonical, fusionnerSynonymes };

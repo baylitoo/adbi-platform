@@ -5,7 +5,7 @@
     "one-pager/lib/docie-extract.js::mapperAdbiResume (JS)"
   ],
   "_regle": "Un item est retire s'il repete, sans tenir compte de la casse, un item du MEME groupe. Jamais a travers les groupes : une meme technologie sous deux categories est une lecture legitime du CV. Un groupe sans categorie prend le libelle « Compétences » (#177 ligne 12). La comparaison des sorties est insensible a la casse.",
-  "_hors_regle": "La CLE de comparaison n'est pas fixee ici, seulement la portee. one-pager canonicalise par sa taxonomie (« k8s » -> « Kubernetes ») et desaccentue (« Modelisation » = « Modélisation ») ; cv-parser ne compare que la casse. Les cas ne contiennent donc que des termes que la taxonomie de one-pager laisse inchanges a la casse pres — le test JS le verifie avant de comparer.",
+  "_hors_regle": "La CLE de comparaison n'est pas fixee ici, seulement la portee : la cle (accent, synonymes comme « k8s » -> « Kubernetes ») est fixee depuis par competences_synonymes.json (#177 lignes G et H). Les cas ne contiennent que des termes que la taxonomie de one-pager laisse inchanges a la casse pres — le test JS le verifie avant de comparer —, pour que ce fichier ne mesure que la portee.",
   "cas": [
     {
       "id": "reponse_reelle",

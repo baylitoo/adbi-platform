@@ -29,7 +29,8 @@ from flask import Flask, request, jsonify, send_file, render_template, abort, re
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 # L'extraction/OCR est effectuée par DocIE, sans runtime ML dans ce process.
-from skills_normalizer import normalize_skills, skills_to_flat, compute_skills_flat
+from skills_normalizer import (canonique, cle_competence, normalize_skills,
+                               skills_to_flat, compute_skills_flat)
 # Les dates de mission : « la mission continue-t-elle ? » et « quelle date ce
 # texte porte-t-il ? ». Les deux jeux d'essai sont partagés avec one-pager
 # (document-parsing/fixtures/mission_en_cours.json et date_mission.json).
@@ -1073,14 +1074,30 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
         # bas. Le dédoublonnage inter-catégories est donc fait là où la liste
         # plate est consommée, pas au stockage.
         #
-        # La clé reste `lower()` : l'accent et les alias (« k8s ») sont la
-        # question de la canonicalisation, distincte de celle de la portée.
+        # Clé de comparaison et nom stocké (#177 lignes G et H).
+        #
+        # La clé était `it.lower()` : dans UNE catégorie, « Modélisation » /
+        # « Modelisation » et « Kubernetes » / « k8s » restaient deux
+        # compétences ici et une seule dans one-pager, qui canonicalise par sa
+        # taxonomie et compare sans accent. La table des synonymes est
+        # désormais partagée et lue par les deux services
+        # (document-parsing/fixtures/competences_synonymes.json) : même nom
+        # canonique, même clé sans accent ni casse, premier rencontré gardé.
+        #
+        # C'est le NOM CANONIQUE qui est stocké, pas seulement la clé : la
+        # table ne contient que des synonymes stricts (« k8s » -> « Kubernetes »,
+        # jamais « Keras » -> « TensorFlow »), le nom canonique n'est donc
+        # jamais moins lisible que la variante, et le dossier exporté affiche
+        # la même graphie que le dossier one-page. Un libellé inconnu de la
+        # table garde son texte. Les fiches déjà en base ne sont pas réécrites :
+        # seuls un dépôt ou /reanalyser repassent ici.
         items: list[str] = []
         seen_local: set[str] = set()
         for it in raw_items:
-            key = it.lower()
-            if key not in seen_local:
-                items.append(it)
+            nom = canonique(it)
+            key = cle_competence(nom)
+            if key and key not in seen_local:
+                items.append(nom)
                 seen_local.add(key)
         # Un groupe SANS catégorie garde ses compétences (#177 ligne 12).
         # `if category and items` les jetait : un CV dont la section
@@ -1245,7 +1262,7 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
     # ── Compétences plates + normalisées (pour la recherche et le filtrage) ──
     raw_flat = skills_to_flat(normalized["skills"])
     normalized["skills_flat"]       = normalize_skills(raw_flat)   # noms canoniques
-    normalized["skills_raw_flat"]   = raw_flat                     # brut avant normalisation
+    normalized["skills_raw_flat"]   = raw_flat                     # aplati avant normalize_skills (items déjà canoniques, #177 G/H)
 
     return normalized
 

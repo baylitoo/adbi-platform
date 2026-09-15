@@ -1,0 +1,255 @@
+{
+  "_description": "Table partagee : « ces deux libelles de competence designent-ils la MEME competence ? ». Lue a l'execution par les deux services, donc une seule source. Avant elle, deux tables vivaient cote a cote : cv-parser/skills_normalizer.py::ALIASES (286 cles) et one-pager/lib/taxonomy.js::TECHNOLOGIES (312 entrees, 1290 cles). Mesure : sur les 286 cles Python, 166 donnaient le meme nom des deux cotes, 32 un nom different, 88 etaient inconnues du JS. cv-parser stockait le libelle du CV tel quel et dedoublonnait par `lower()` ; one-pager canonicalisait et dedoublonnait sans accent. Dans UNE categorie, « Modélisation » / « Modelisation » et « Kubernetes » / « k8s » donnaient donc deux competences dans la CVtheque et une seule dans le dossier one-page — inventaire #177, lignes G et H.",
+  "_ports": [
+    "cv-parser/skills_normalizer.py::canonique, cle_competence (Python) — appeles par app.py::normalize_cv_data",
+    "one-pager/lib/taxonomy.js::fusionnerSynonymes (JS) — fusionne cette table dans TECHNOLOGIES au chargement, avant les index de lookup()"
+  ],
+  "_regle": "Un synonyme STRICT est une autre graphie du meme produit : abreviation (k8s, js, postgres, pbi), nom colle ou espace (nodejs, pl sql), prefixe d'editeur (apache hive, microsoft azure, google bigquery). Les cles se comparent apres la normalisation de taxonomy.js::normalize (sans accents, minuscules, tirets et apostrophes unifies, espaces reduits, ponctuation de bordure retiree), puis, a defaut, sous forme compacte (espaces . - / ' retires, 3 caracteres au moins). Un libelle reconnu prend le nom canonique ; un libelle inconnu garde son texte. Dans un meme groupe, deux items sont un doublon si leurs noms canoniques sont egaux sans accent ni casse ; le premier rencontre est garde. Jamais a travers les groupes (competences_portee.json, #187).",
+  "_stockage": "cv-parser stocke le NOM CANONIQUE dans skills[].items (« k8s » -> « Kubernetes »), comme one-pager dans son cv_master. Sans perte : la table ne contient que des synonymes stricts, le nom canonique est donc au moins aussi lisible que la variante. Seul un depot ou /reanalyser applique la table ; les fiches deja en base ne sont pas reecrites.",
+  "_exclus": {
+    "_pourquoi": "Cles sur lesquelles les deux tables d'avant s'accordaient, mais qui ne sont PAS des synonymes stricts : les fusionner dans une categorie ferait perdre une information que le CV porte. Elles restent dans leur table locale.",
+    "versions": ["python3", "python 3", "es6", "es2015"],
+    "editions_ou_declinaisons": ["power bi desktop", "power bi service", "power bi report server", "azure databricks", "dbt core"],
+    "noms_divergents": "Les 32 cles ou les deux tables d'avant donnaient un nom different (spark : Apache Spark / Spark ; oracle : Oracle DB / Oracle ; eks : AWS EKS / Kubernetes ; keras : Keras / TensorFlow ; bash : Bash/Shell / Shell/Bash ; angularjs : Angular / AngularJS ...) ne sont pas partagees : choisir un nom changerait les noms de skills_flat que la CVtheque a deja stockes, ou l'affichage du dossier one-page. Chaque service garde le sien."
+  },
+  "_preuve_de_la_table": "Chaque cle ci-dessous (nom canonique et variantes) etait resolue vers CE nom, a la casse pres, par skills_normalizer.ALIASES ET par taxonomy.js::lookup avant cette table — mesure sur origin/master fa70e62, script de comparaison des 286 cles Python contre la taxonomie JS. Aucune cle n'est ajoutee ici que l'un des deux services ne reconnaissait deja.",
+  "synonymes": {
+    "Python": ["py"],
+    "JavaScript": ["js", "ecmascript"],
+    "TypeScript": ["ts"],
+    "Node.js": ["node", "nodejs", "node js"],
+    "React": ["reactjs", "react.js", "react js"],
+    "React Native": ["reactnative"],
+    "Angular": [],
+    "Vue.js": ["vuejs", "vue js"],
+    "C#": ["csharp", "c sharp"],
+    ".NET": ["dotnet"],
+    "C++": ["cpp"],
+    "Go": ["golang"],
+    "Rust": [],
+    "SQL": [],
+    "T-SQL": ["tsql"],
+    "PL/SQL": ["plsql", "pl sql"],
+    "NoSQL": [],
+    "PostgreSQL": ["postgres", "psql"],
+    "MySQL": [],
+    "MariaDB": [],
+    "SQL Server": ["mssql", "sqlserver", "microsoft sql server"],
+    "MongoDB": ["mongo"],
+    "Elasticsearch": [],
+    "Redis": [],
+    "Cassandra": ["apache cassandra"],
+    "Neo4j": [],
+    "DynamoDB": [],
+    "AWS": ["amazon web services"],
+    "AWS Lambda": [],
+    "Redshift": ["amazon redshift"],
+    "GCP": ["google cloud", "google cloud platform"],
+    "BigQuery": ["google bigquery"],
+    "Looker": [],
+    "Azure": ["microsoft azure"],
+    "Azure Synapse": ["synapse"],
+    "Azure DevOps": [],
+    "Azure Data Factory": ["adf"],
+    "Databricks": [],
+    "Cosmos DB": ["azure cosmos db"],
+    "Power BI": ["powerbi", "pbi"],
+    "Tableau": [],
+    "QlikView": ["qlik view"],
+    "Grafana": [],
+    "Kibana": [],
+    "SSAS": [],
+    "SSRS": [],
+    "SSIS": [],
+    "Hadoop": [],
+    "Hive": ["apache hive"],
+    "Snowflake": [],
+    "dbt": [],
+    "Talend": [],
+    "Informatica": [],
+    "Apache NiFi": ["nifi"],
+    "Machine Learning": [],
+    "Deep Learning": [],
+    "NLP": ["natural language processing"],
+    "TensorFlow": [],
+    "PyTorch": [],
+    "scikit-learn": ["sklearn", "scikit learn"],
+    "LangChain": [],
+    "LLM": ["large language model"],
+    "RAG": [],
+    "Docker": [],
+    "Kubernetes": ["k8s"],
+    "Jenkins": [],
+    "GitHub Actions": [],
+    "Terraform": [],
+    "Ansible": [],
+    "Helm": [],
+    "Linux": [],
+    "Unix": [],
+    "Prometheus": [],
+    "Datadog": [],
+    "OpenShift": [],
+    "Agile": [],
+    "Scrum": [],
+    "Kanban": [],
+    "SAFe": [],
+    "DevOps": [],
+    "ITIL": [],
+    "Cycle en V": [],
+    "Lean": [],
+    "Git": [],
+    "GitHub": [],
+    "GitLab": [],
+    "SVN": [],
+    "REST API": ["rest", "restful"],
+    "GraphQL": [],
+    "Microservices": [],
+    "SOAP": [],
+    "gRPC": [],
+    "Pandas": [],
+    "NumPy": [],
+    "FastAPI": [],
+    "Flask": [],
+    "Django": [],
+    "Spring": ["spring framework"],
+    "Spring Boot": [],
+    "Scala": [],
+    "Kotlin": [],
+    "Maven": [],
+    "Gradle": [],
+    "PHP": [],
+    "Symfony": [],
+    "Laravel": [],
+    "RabbitMQ": [],
+    "ActiveMQ": []
+  },
+  "cas": [
+    {
+      "id": "reponse_reelle",
+      "skills": [
+        {"category": "Langages", "items": [{"item": "Python"}, {"item": "JavaScript"}, {"item": "SQL"}]},
+        {"category": "Frameworks", "items": [{"item": "Django"}, {"item": "React"}, {"item": "Node.js"}]},
+        {"category": "Outils", "items": [{"item": "Docker"}, {"item": "Git"}, {"item": "Jenkins"}]}
+      ],
+      "attendu": [
+        ["Langages", ["Python", "JavaScript", "SQL"]],
+        ["Frameworks", ["Django", "React", "Node.js"]],
+        ["Outils", ["Docker", "Git", "Jenkins"]]
+      ],
+      "preuve": "valeurs deballees de result.skills dans fixtures/cv_samples/results/simple_docie.json ; mesure : identique des deux cotes avant et apres, temoin que la table ne touche pas un CV deja ecrit sous les noms canoniques"
+    },
+    {
+      "id": "H_alias_meme_categorie",
+      "skills": [{"category": "DevOps", "items": [{"item": "Kubernetes"}, {"item": "k8s"}]}],
+      "attendu": [["DevOps", ["Kubernetes"]]],
+      "preuve": "ligne H de #177 ; mesure avant : cv-parser DevOps = [Kubernetes, k8s], one-pager [Kubernetes]"
+    },
+    {
+      "id": "H_alias_en_tete",
+      "skills": [{"category": "DevOps", "items": [{"item": "k8s"}, {"item": "Kubernetes"}]}],
+      "attendu": [["DevOps", ["Kubernetes"]]],
+      "preuve": "meme paire, ordre inverse : le nom stocke ne depend pas de l'ordre du document ; mesure avant : cv-parser [k8s, Kubernetes], one-pager [Kubernetes]"
+    },
+    {
+      "id": "G_accent_meme_categorie",
+      "skills": [{"category": "Méthodes", "items": [{"item": "Modélisation"}, {"item": "Modelisation"}]}],
+      "attendu": [["Méthodes", ["Modélisation"]]],
+      "preuve": "ligne G de #177 ; mesure avant : cv-parser Méthodes = [Modélisation, Modelisation] et skills_flat = [Modélisation, Modelisation], one-pager [Modélisation]"
+    },
+    {
+      "id": "G_accent_ordre_inverse",
+      "skills": [{"category": "Méthodes", "items": [{"item": "Modelisation"}, {"item": "Modélisation"}]}],
+      "attendu": [["Méthodes", ["Modelisation"]]],
+      "preuve": "terme hors table : aucune forme canonique a imposer, la premiere graphie est gardee des deux cotes (l'accent juste ne se devine pas) ; mesure avant : cv-parser [Modelisation, Modélisation], one-pager [Modelisation]"
+    },
+    {
+      "id": "alias_seuls",
+      "skills": [{"category": "Divers", "items": [{"item": "k8s"}, {"item": "js"}, {"item": "postgres"}, {"item": "py"}]}],
+      "attendu": [["Divers", ["Kubernetes", "JavaScript", "PostgreSQL", "Python"]]],
+      "preuve": "mesure avant : cv-parser stockait [k8s, js, postgres, py] (skills_flat deja canonique), one-pager [Kubernetes, JavaScript, PostgreSQL, Python]"
+    },
+    {
+      "id": "alias_et_nom_meme_categorie",
+      "skills": [
+        {"category": "Langages", "items": [{"item": "JavaScript"}, {"item": "js"}, {"item": "TypeScript"}, {"item": "ts"}]},
+        {"category": "Bases", "items": [{"item": "PostgreSQL"}, {"item": "postgres"}, {"item": "psql"}]}
+      ],
+      "attendu": [
+        ["Langages", ["JavaScript", "TypeScript"]],
+        ["Bases", ["PostgreSQL"]]
+      ],
+      "preuve": "mesure avant : cv-parser Langages = [JavaScript, js, TypeScript, ts], Bases = [PostgreSQL, postgres, psql] ; one-pager [JavaScript, TypeScript] et [PostgreSQL]"
+    },
+    {
+      "id": "casse_seule",
+      "skills": [{"category": "Outils", "items": [{"item": "docker"}, {"item": "GIT"}, {"item": "jenkins"}]}],
+      "attendu": [["Outils", ["Docker", "Git", "Jenkins"]]],
+      "preuve": "mesure avant : cv-parser [docker, GIT, jenkins], one-pager [Docker, Git, Jenkins] — le dossier exporte n'affichait pas la meme graphie"
+    },
+    {
+      "id": "variante_orthographique",
+      "skills": [
+        {"category": "Back", "items": [{"item": "Node JS"}, {"item": "node-js"}, {"item": "NodeJS"}]},
+        {"category": "BI", "items": [{"item": "Power-BI"}, {"item": "power bi"}]}
+      ],
+      "attendu": [
+        ["Back", ["Node.js"]],
+        ["BI", ["Power BI"]]
+      ],
+      "preuve": "forme compacte de taxonomy.js (« node-js » -> « nodejs ») : mesure avant, cv-parser [Node JS, node-js, NodeJS] et [Power-BI, power bi], one-pager [Node.js] et [Power BI]"
+    },
+    {
+      "id": "accent_terme_hors_table",
+      "skills": [{"category": "Santé", "items": [{"item": "Ségur"}, {"item": "Segur"}, {"item": "MSSanté"}, {"item": "mssante"}]}],
+      "attendu": [["Santé", ["Ségur", "MSSanté"]]],
+      "preuve": "termes que seule la taxonomie JS connait : la cle sans accent suffit a les fusionner cote cv-parser sans les partager ; mesure avant : cv-parser [Ségur, Segur, MSSanté, mssante], one-pager [Ségur, MSSanté]"
+    },
+    {
+      "id": "portee_187_alias_deux_categories",
+      "skills": [
+        {"category": "Conteneurs", "items": [{"item": "Kubernetes"}]},
+        {"category": "DevOps", "items": [{"item": "k8s"}]}
+      ],
+      "attendu": [
+        ["Conteneurs", ["Kubernetes"]],
+        ["DevOps", ["Kubernetes"]]
+      ],
+      "preuve": "portee de #187 intacte : jamais de dedoublonnage a travers les categories ; mesure avant : cv-parser [Kubernetes] / [k8s], one-pager [Kubernetes] / [Kubernetes]"
+    },
+    {
+      "id": "portee_187_accent_deux_categories",
+      "skills": [
+        {"category": "Méthodes", "items": [{"item": "Modélisation"}]},
+        {"category": "Fonctionnel", "items": [{"item": "Modelisation"}]}
+      ],
+      "attendu": [
+        ["Méthodes", ["Modélisation"]],
+        ["Fonctionnel", ["Modelisation"]]
+      ],
+      "preuve": "portee de #187 intacte ; mesure avant : identique des deux cotes, [Modélisation] / [Modelisation]"
+    }
+  ],
+  "ecarts_connus": {
+    "_pourquoi": "Hors table, volontairement, et mesures. taxonomy.js range sous un meme nom des FAMILLES (composant, version, produit voisin) pour le tri commercial du dossier one-page ; mapperCompetences dedoublonne sur ce nom, donc one-pager retire de la fiche des competences distinctes. Les porter dans cv-parser ferait perdre ces competences a la CVtheque — la panne meme que #187 a retiree. Ce n'est pas tranche ici : ligne a ouvrir sur #177. Les tests des deux services epinglent ces valeurs, donc corriger un seul cote casse un test.",
+    "cas": [
+      {"id": "famille_ml", "skills": [{"category": "Data", "items": [{"item": "TensorFlow"}, {"item": "Keras"}, {"item": "PyTorch"}]}],
+       "cv_parser": [["Data", ["TensorFlow", "Keras", "PyTorch"]]], "one_pager": [["Data", ["TensorFlow", "PyTorch"]]],
+       "preuve": "taxonomy.js : keras est un alias de TensorFlow"},
+      {"id": "famille_tests", "skills": [{"category": "Tests", "items": [{"item": "JUnit"}, {"item": "Mockito"}, {"item": "TestNG"}]}],
+       "cv_parser": [["Tests", ["JUnit", "Mockito", "TestNG"]]], "one_pager": [["Tests", ["JUnit"]]],
+       "preuve": "taxonomy.js : mockito et testng sont des alias de JUnit"},
+      {"id": "famille_spring", "skills": [{"category": "Back", "items": [{"item": "Spring"}, {"item": "Spring Batch"}, {"item": "Spring Security"}]}],
+       "cv_parser": [["Back", ["Spring", "Spring Batch", "Spring Security"]]], "one_pager": [["Back", ["Spring"]]],
+       "preuve": "taxonomy.js : spring batch et spring security sont des alias de Spring"},
+      {"id": "famille_kubernetes", "skills": [{"category": "Cloud", "items": [{"item": "Kubernetes"}, {"item": "AKS"}, {"item": "EKS"}, {"item": "GKE"}]}],
+       "cv_parser": [["Cloud", ["Kubernetes", "AKS", "EKS", "GKE"]]], "one_pager": [["Cloud", ["Kubernetes"]]],
+       "preuve": "taxonomy.js : aks, eks, gke sont des alias de Kubernetes"},
+      {"id": "version_python", "skills": [{"category": "Langages", "items": [{"item": "Python"}, {"item": "Python 3"}]}],
+       "cv_parser": [["Langages", ["Python", "Python 3"]]], "one_pager": [["Langages", ["Python"]]],
+       "preuve": "version exclue de la table (_exclus.versions)"},
+      {"id": "alias_js_seulement", "skills": [{"category": "Cloud", "items": [{"item": "Kubernetes"}, {"item": "kube"}]}],
+       "cv_parser": [["Cloud", ["Kubernetes", "kube"]]], "one_pager": [["Cloud", ["Kubernetes"]]],
+       "preuve": "synonyme strict que seule la taxonomie JS connait : les cles propres a un seul service ne sont pas importees ici (975 cles JS, 88 Python), seules celles sur lesquelles les deux s'accordaient"}
+    ]
+  }
+}
