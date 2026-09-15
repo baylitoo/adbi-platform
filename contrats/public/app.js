@@ -516,7 +516,10 @@ function buildChecklist() {
       item.appendChild(drow);
       item.appendChild(status);
       const saved = state.dateState[it.id];
-      if (saved && typeof saved === "object") renderChecklistDocResult(status, saved);
+      if (saved && typeof saved === "object") {
+        renderChecklistDocResult(status, saved);
+        renderControleSirenSiret(status, saved);
+      }
       // Kbis : proposition des valeurs lues à reporter dans le contrat (#170).
       if (it.id === "kbis") {
         const prop = document.createElement("div");
@@ -575,6 +578,7 @@ async function analyzeChecklistDoc(it, fileObj, statusEl, btn) {
     if (controle) res.controleSirenSiret = controle;
     state.dateState[it.id] = res;
     renderChecklistDocResult(statusEl, res);
+    renderControleSirenSiret(statusEl, res);
     const prop = statusEl.parentNode && statusEl.parentNode.querySelector("[data-kbis-proposition]");
     if (prop) renderPropositionKbis(prop, res);
     majNoteCoordonnees();
@@ -615,6 +619,22 @@ function renderChecklistDocResult(el, res) {
     el.className = "chk-doc-status ok";
     el.textContent = "✅ " + societe + dlv + ", valable jusqu'au " + frDate(isoOf(limit));
   }
+}
+
+// Verdict de clé SIREN/SIRET (#201) : une ligne compacte AJOUTÉE sous le
+// résultat, après renderChecklistDocResult (qui réécrit textContent et efface
+// donc la ligne précédente). Ni la classe ni le texte du résultat ne changent :
+// le ⛔ « autre société » et la validité 6 mois restent tels quels. Rien si le
+// document est au nom d'une autre société (ses numéros n'importent pas, le ⛔
+// suffit) ni si la réponse ne porte pas le verdict (analyse locale).
+function renderControleSirenSiret(el, res) {
+  if (!res || res.nameMatches === false) return;
+  const ligne = CONTRATS_KBIS_CHAMPS.ligneControle(res.controleSirenSiret);
+  if (!ligne) return;
+  const sous = document.createElement("div");
+  sous.className = ligne.alerte ? "chk-date-status warn" : "cand-sub";
+  sous.textContent = ligne.texte;
+  el.appendChild(sous);
 }
 
 // Proposition des valeurs lues sur le Kbis (issue #170) — logique dans

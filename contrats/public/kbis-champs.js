@@ -188,6 +188,28 @@ var CONTRATS_KBIS_CHAMPS = (function () {
     };
   }
 
+  // Ligne compacte de la checklist (sous le résultat de l'analyse) : le
+  // verdict de clé de chaque numéro lu. null quand il n'y a rien à dire :
+  // drapeau absent (analyse locale, dossier d'avant #201 -> comme avant) ou
+  // les deux numéros absents. `alerte` : au moins un numéro non valide.
+  function ligneControle(controle) {
+    if (!controle || typeof controle !== "object") return null;
+    var parties = [];
+    var alerte = false;
+    CHAMPS_CONTROLES.forEach(function (x) {
+      var e = controle[x[0]] || { statut: null, valeur: "" };
+      if (e.statut === "absent") return;
+      if (e.statut === "valide") {
+        parties.push(x[1] + " " + texte(e.valeur) + " : clé valide");
+        return;
+      }
+      alerte = true;
+      parties.push(x[1] + (nonVide(e.valeur) ? " « " + texte(e.valeur) + " »" : "") + " : " + messageStatut(e.statut));
+    });
+    if (!parties.length) return null;
+    return { texte: (alerte ? "⚠️ " : "🔢 ") + parties.join(" · "), alerte: alerte };
+  }
+
   // Choix initial par champ : true = prendre la valeur du Kbis. Les champs
   // vides sont cochés, les champs différents ne le sont PAS.
   function choixParDefaut(proposition) {
@@ -252,6 +274,7 @@ var CONTRATS_KBIS_CHAMPS = (function () {
     MESSAGE_STATUT_INCONNU: MESSAGE_STATUT_INCONNU,
     messageStatut: messageStatut,
     controleCompact: controleCompact,
+    ligneControle: ligneControle,
     normaliser: normaliser,
     extraire: extraire,
     proposer: proposer,

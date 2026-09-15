@@ -253,6 +253,7 @@ async function analyserDansNavigateur(itemId, reponse) {
     fileToBase64: async () => "JVBERi0=",
     fetch: async () => ({ ok: true, status: 200, json: async () => reponse }),
     renderChecklistDocResult: () => {},
+    renderControleSirenSiret: (el, res) => { propHost.controleRendu = res; },
     renderPropositionKbis: (host, res) => { host.rendu = res; },
     majNoteCoordonnees: () => {},
     JSON,
@@ -531,15 +532,119 @@ test("analyzeChecklistDoc (code réel) : garde le drapeau d'une analyse DocIE, n
   assert.deepEqual(docie.etat.dateState.kbis.controleSirenSiret, {
     siren: { statut: "cle_invalide", valeur: "123456789" }, siret: { statut: "cle_invalide", valeur: "12345678900012" },
   });
+  assert.equal(docie.propHost.controleRendu, docie.etat.dateState.kbis, "la ligne de contrôle est rendue avec l'analyse enregistrée");
   const locale = await analyserDansNavigateur("kbis", analyseLocale());
   assert.equal(JSON.stringify(Object.keys(locale.etat.dateState.kbis)), JSON.stringify(["issuedDate", "companyName", "nameMatches", "fileName", "kbis"]));
+});
+
+// ---------------------------------------------------------------------------
+// Checklist : ligne de verdict SIREN/SIRET sous le résultat de l'analyse.
+// Le VRAI renderChecklistDocResult puis le VRAI renderControleSirenSiret,
+// exécutés sur un faux élément : le texte et la classe du résultat
+// (⛔ autre société, validité 6 mois) doivent rester ceux d'avant.
+// ---------------------------------------------------------------------------
+function rendreChecklist(res, aujourdHui) {
+  const document = fauxDocument();
+  const DateReelle = Date;
+  // Date figée : la validité 6 mois dépend du jour.
+  const DateFigee = class extends DateReelle {
+    constructor(...a) { if (a.length) super(...a); else super(aujourdHui); }
+  };
+  const ctx = {
+    CONTRATS_KBIS_CHAMPS: K, document, Date: DateFigee, Math, isNaN, String,
+    state: { values: { stNom: "ACME Conseil" } },
+    frDate: (iso) => iso.split("-").reverse().join("/"),
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extraireFonction("isoOf") + "\n" + extraireFonction("renderChecklistDocResult") + "\n" + extraireFonction("renderControleSirenSiret"), ctx);
+  const el = document.createElement("div");
+  // Ligne d'une analyse précédente : doit disparaître au nouveau rendu.
+  el.appendChild({ textContent: "ancienne ligne", children: [] });
+  ctx.renderChecklistDocResult(el, res);
+  const principal = { className: el.className, textContent: el.textContent };
+  ctx.renderControleSirenSiret(el, res);
+  return { el, principal, sous: el.children };
+}
+
+test("ligneControle : texte compact par statut ; drapeau absent ou deux numéros absents -> null", () => {
+  const c = (s1, v1, s2, v2) => ({ siren: { statut: s1, valeur: v1 }, siret: { statut: s2, valeur: v2 } });
+  assert.equal(K.ligneControle(null), null);
+  assert.equal(K.ligneControle(undefined), null);
+  assert.equal(K.ligneControle(c("absent", "", "absent", "")), null);
+  assert.deepEqual(K.ligneControle(c("valide", "941091316", "valide", "94109131600013")),
+    { texte: "🔢 SIREN 941091316 : clé valide · SIRET 94109131600013 : clé valide", alerte: false });
+  assert.deepEqual(K.ligneControle(c("cle_invalide", "123456789", "absent", "")),
+    { texte: "⚠️ SIREN « 123456789 » : clé de contrôle invalide — vérifier sur le document", alerte: true });
+  assert.deepEqual(K.ligneControle(c("valide", "941091316", "format_invalide", "9410913160001")),
+    { texte: "⚠️ SIREN 941091316 : clé valide · SIRET « 9410913160001 » : format invalide — vérifier sur le document", alerte: true });
+  assert.equal(K.ligneControle(c("discordant", "941091316", "discordant", "55212022200005")).texte,
+    "⚠️ SIREN « 941091316 » : " + K.MESSAGES_STATUT.discordant + " · SIRET « 55212022200005 » : " + K.MESSAGES_STATUT.discordant);
+  // Statut inconnu ou entrée illisible : alerte, jamais « clé valide ».
+  const inconnu = K.ligneControle(K.controleCompact({ controleSirenSiret: { siren: { statut: "statut_futur", valeur: "941091316" } } }));
+  assert.equal(inconnu.alerte, true);
+  assert.equal(inconnu.texte, "⚠️ SIREN « 941091316 » : " + K.MESSAGE_STATUT_INCONNU + " · SIRET : " + K.MESSAGE_STATUT_INCONNU);
+});
+
+test("checklist (code réel) : chaque statut du jeu d'essai #201 -> ligne sous le résultat, résultat inchangé ; sans drapeau -> rien", () => {
+  const AUJOURDHUI = "2024-05-01T12:00:00";
+  for (const cas of SIREN_SIRET.cas) {
+    const a = analyseAvec(cas.siren, cas.siret);
+    const res = { issuedDate: a.issuedDate, companyName: a.companyName, nameMatches: a.nameMatches, fileName: "k.pdf", controleSirenSiret: K.controleCompact(a) };
+    const { el, principal, sous } = rendreChecklist(res, AUJOURDHUI);
+    const sansDrapeau = rendreChecklist(Object.assign({}, res, { controleSirenSiret: undefined }), AUJOURDHUI);
+    const quoi = JSON.stringify([cas.siren, cas.siret]);
+    // Résultat principal identique avec ou sans drapeau (délivré le 15/03/2024 : valable).
+    assert.deepEqual(principal, sansDrapeau.principal, quoi);
+    assert.equal(el.className, "chk-doc-status ok", quoi);
+    assert.equal(sansDrapeau.sous.length, 0, quoi + " : sans drapeau, aucune ligne");
+    const statuts = [cas.statut_siren, cas.statut_siret];
+    if (statuts.every((s) => s === "absent")) { assert.equal(sous.length, 0, quoi); continue; }
+    assert.equal(sous.length, 1, quoi + " : une seule ligne, l'ancienne a été effacée");
+    const nonValide = statuts.some((s) => s !== "valide" && s !== "absent");
+    assert.equal(sous[0].className, nonValide ? "chk-date-status warn" : "cand-sub", quoi);
+    for (const [champ, libelle] of [["siren", "SIREN"], ["siret", "SIRET"]]) {
+      const s = cas["statut_" + champ];
+      if (s === "absent") assert.ok(!sous[0].textContent.includes(libelle + " "), quoi);
+      else if (s === "valide") assert.ok(sous[0].textContent.includes(libelle + " " + String(cas[champ]) + " : clé valide"), quoi);
+      else assert.ok(sous[0].textContent.includes(libelle + " « " + String(cas[champ]) + " » : " + K.MESSAGES_STATUT[s]), quoi + " " + sous[0].textContent);
+    }
+  }
+});
+
+test("checklist (code réel) : ⛔ autre société et ⛔/⚠️ validité 6 mois intacts ; pas de ligne SIREN pour un document d'une autre société", () => {
+  const invalide = K.controleCompact(analyseKbis("ACME Conseil"));
+  const base = { issuedDate: "2024-03-15", companyName: "ACME CONSEIL", nameMatches: true, fileName: "k.pdf", controleSirenSiret: invalide };
+
+  const autre = rendreChecklist(Object.assign({}, base, { nameMatches: false, companyName: "SUND" }), "2024-05-01T12:00:00");
+  assert.equal(autre.el.className, "chk-doc-status err");
+  assert.equal(autre.el.textContent, "⛔ Document au nom de « SUND » — ce n'est PAS le sous-traitant saisi (« ACME Conseil »)");
+  assert.equal(autre.sous.length, 0);
+
+  const perime = rendreChecklist(base, "2025-01-01T12:00:00");
+  assert.equal(perime.principal.className, "chk-doc-status err");
+  assert.equal(perime.principal.textContent, "⛔ Société : ACME CONSEIL ✓ — PÉRIMÉ (plus de 6 mois) — délivré le 15/03/2024, à renouveler");
+  assert.equal(perime.el.className, "chk-doc-status err", "classe du résultat non modifiée par la ligne SIREN");
+  assert.equal(perime.sous[0].textContent, "⚠️ SIREN « 123456789 » : clé de contrôle invalide — vérifier sur le document · SIRET « 12345678900012 » : clé de contrôle invalide — vérifier sur le document");
+
+  const bientot = rendreChecklist(base, "2024-09-01T12:00:00");
+  assert.equal(bientot.principal.className, "chk-doc-status warn");
+  assert.ok(bientot.principal.textContent.startsWith("⚠️ Société : ACME CONSEIL ✓ — bientôt périmé"));
+  assert.equal(bientot.sous.length, 1);
+
+  const sansDate = rendreChecklist(Object.assign({}, base, { issuedDate: "" }), "2024-05-01T12:00:00");
+  assert.equal(sansDate.principal.textContent, "⚠️ Société : ACME CONSEIL ✓ — date de délivrance non lue sur le document");
+  assert.equal(sansDate.sous.length, 1);
 });
 
 // Faux DOM minimal : assez pour exécuter le vrai renderPropositionKbis.
 function fauxDocument() {
   const creer = (tag) => {
+    let texteNoeud = "";
     const n = {
-      tagName: tag, className: "", textContent: "", children: [], ecouteurs: {}, dataset: {},
+      tagName: tag, className: "", children: [], ecouteurs: {}, dataset: {},
+      // Comme le vrai DOM : affecter textContent retire les enfants.
+      get textContent() { return texteNoeud; },
+      set textContent(v) { texteNoeud = v; n.children = []; },
       appendChild(c) { n.children.push(c); return c; },
       append(...cs) { for (const c of cs) n.children.push(typeof c === "string" ? { textContent: c, children: [] } : c); },
       addEventListener(t, fn) { n.ecouteurs[t] = fn; },
