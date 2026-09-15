@@ -140,7 +140,58 @@ var CONTRATS_IMPORT_CHAMPS = (function () {
   var IDS_A_VIDER = ["impNumero", "impNumAvenant", "impInitial", "impSt", "impClient", "impConsultant", "impTjm", "impDebut", "impFin", "impFichier"]
     .concat(CHAMPS_AUTRES.map(function (c) { return c.id; }));
 
+  // Contrôle de clé SIREN / SIRET (PR #201) : la réponse de
+  // /api/contracts/importer/extraire porte `controleSirenSiret` À CÔTÉ de
+  // `values` ({ siren: {valeur, chiffres, statut}, siret }). Règle des
+  // consommateurs : un numéro n'est tenu pour bon que si son statut vaut
+  // exactement "valide". Le champ reste pré-rempli (l'utilisateur relit avant
+  // d'importer, et corrige un chiffre en le voyant) mais il est signalé.
+  // Même table que public/kbis-champs.js (tests/import-champs.test.js compare).
+  var MESSAGES_STATUT = {
+    format_invalide: "format invalide — vérifier sur le document",
+    cle_invalide: "clé de contrôle invalide — vérifier sur le document",
+    discordant: "SIREN et SIRET discordants (le SIRET ne commence pas par le SIREN) — vérifier sur le document",
+  };
+  var MESSAGE_STATUT_INCONNU = "numéro non vérifié — vérifier sur le document";
+  // [clé du drapeau, clé contrats, libellé].
+  var SIREN_SIRET = [["siren", "stSiren", "SIREN"], ["siret", "stSiret", "SIRET"]];
+
+  function idDe(cle) {
+    return CHAMPS_AUTRES.filter(function (c) { return c.key === cle; })[0].id;
+  }
+  var IDS_SIREN_SIRET = SIREN_SIRET.map(function (x) { return idDe(x[1]); });
+
+  function messageStatut(statut) {
+    return Object.prototype.hasOwnProperty.call(MESSAGES_STATUT, statut) ? MESSAGES_STATUT[statut] : MESSAGE_STATUT_INCONNU;
+  }
+
+  // `controleSirenSiret` de la réponse -> champs à signaler
+  // [{ key, id, libelle, statut, message }]. Drapeau absent (réponse d'avant
+  // #201) -> [] : rien n'est signalé, comme avant. "valide" et "absent" ne
+  // sont pas signalés ; tout autre statut, inconnu ou illisible compris, l'est.
+  function aVerifierSirenSiret(controle) {
+    if (!controle || typeof controle !== "object") return [];
+    var sortie = [];
+    SIREN_SIRET.forEach(function (x) {
+      var e = controle[x[0]];
+      var statut = e && typeof e === "object" && typeof e.statut === "string" ? e.statut : null;
+      if (statut === "valide" || statut === "absent") return;
+      sortie.push({ key: x[1], id: idDe(x[1]), libelle: x[2], statut: statut, message: messageStatut(statut) });
+    });
+    return sortie;
+  }
+
+  // Texte de la ligne d'état : « SIREN : <message> ; SIRET : <message> ».
+  function resumeSirenSiret(aVerifier) {
+    return (aVerifier || []).map(function (a) { return a.libelle + " : " + a.message; }).join(" ; ");
+  }
+
   return {
+    MESSAGES_STATUT: MESSAGES_STATUT,
+    MESSAGE_STATUT_INCONNU: MESSAGE_STATUT_INCONNU,
+    IDS_SIREN_SIRET: IDS_SIREN_SIRET,
+    aVerifierSirenSiret: aVerifierSirenSiret,
+    resumeSirenSiret: resumeSirenSiret,
     CHAMPS_PRINCIPAUX: CHAMPS_PRINCIPAUX,
     CHAMPS_AUTRES: CHAMPS_AUTRES,
     TYPES_AUTRES_CHAMPS: TYPES_AUTRES_CHAMPS,

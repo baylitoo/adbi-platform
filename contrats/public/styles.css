@@ -128,7 +128,7 @@ h3{font-size:14px;margin:0;font-weight:600;color:var(--navy)}
 .field input,.field textarea{border:1.5px solid var(--input-line);border-radius:9px;padding:10px 12px;font:inherit;font-size:13px;color:var(--text);background:var(--input-bg);box-shadow:var(--sh-input);transition:.15s}
 .field input:focus,.field textarea:focus{outline:0;border-color:var(--accent);background:var(--input-bg);box-shadow:var(--ring)}
 .field input[type=date]{cursor:pointer;color:var(--navy);font-weight:500}
-.field input.invalid,.field textarea.invalid{border-color:var(--err-fort);background:var(--err-bg-4);box-shadow:var(--ring-err)}
+.field input.invalid,.field textarea.invalid,.import-grille input.invalid{border-color:var(--err-fort);background:var(--err-bg-4);box-shadow:var(--ring-err)}
 .field textarea{min-height:70px;resize:vertical}
 .field .help{font-size:11px;color:var(--faint)}
 
