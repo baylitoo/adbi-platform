@@ -81,15 +81,22 @@ test("siren/siret : même verdict que le portage Python sur chaque cas (exécuti
     "    out.append({'controle': r, 'messages': m.messages_siren_siret(r)})",
     "sys.stdout.buffer.write(json.dumps(out, ensure_ascii=False).encode('utf-8'))",
   ].join("\n");
-  const python = spawnSync(process.platform === "win32" ? "python" : "python3", [
+  const interpreteur = process.platform === "win32" ? "python" : "python3";
+  // On ne saute QUE si l'interpréteur manque. Sauter sur tout statut non nul
+  // masquait un validateur Python cassé (exception dans ce script) en
+  // « Python indisponible » : suite verte qui ne vérifie rien. Même correction
+  // que l'exécution croisée de urssaf-mapping.test.js.
+  const sonde = spawnSync(interpreteur, ["-c", "pass"], { encoding: "utf-8" });
+  if (sonde.error || sonde.status !== 0) {
+    t.skip("Python indisponible : " + (sonde.error ? sonde.error.message : sonde.stderr));
+    return;
+  }
+  const python = spawnSync(interpreteur, [
     "-c", script,
     path.join(RACINE, "document-parsing", "mappings"),
     path.join(RACINE, "document-parsing", "fixtures", "siren_siret.json"),
   ], { encoding: "utf-8" });
-  if (python.error || python.status !== 0) {
-    t.skip("Python indisponible : " + (python.error ? python.error.message : python.stderr));
-    return;
-  }
+  assert.equal(python.status, 0, "le validateur Python a échoué sur la fixture : " + python.stderr);
   const verdictsPython = JSON.parse(python.stdout);
   assert.equal(verdictsPython.length, SIREN_SIRET.cas.length);
   SIREN_SIRET.cas.forEach((cas, i) => {

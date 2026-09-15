@@ -84,7 +84,17 @@ from kbis_to_contrats import (  # noqa: F401  (re-exports assumes, voir __all__)
     _normalize_number,
 )
 
+# Controle de cle du SIREN / SIRET (#194), IMPORTE du validateur unique, comme
+# kbis_to_contrats.py et contract_to_contrats.py le font deja : pas de
+# troisieme copie de Luhn (test_urssaf_to_contrats.py le verifie par identite
+# d'objet et par lecture de ce fichier).
+from siren_siret import controler_siren_siret, messages_siren_siret
+
 DOCIE_SCHEMA_NAME = "urssaf"
+
+# Nom de champ DocIE sous lequel chaque numero est lu (avertissements). Le
+# schema urssaf nomme le SIRET `siret`, la ou le Kbis dit `siret_siege`.
+CHAMPS_SIREN_SIRET: dict[str, str] = {"siren": "siren", "siret": "siret"}
 
 # Le fichier de schema est la source unique des noms de champs : les tests
 # verifient que chaque cle de MAPPED_FIELDS ci-dessous y figure, pour qu'un
@@ -196,6 +206,15 @@ def map_docie_urssaf_to_analysis(
         else:  # "string"
             enriched[out_key] = "" if raw is None else str(raw)
 
+    # Cle de Luhn du SIREN / SIRET (#194, regle « echouer bruyamment »), meme
+    # integration que kbis_to_contrats.py. Les valeurs lues restent dans
+    # `siren` / `siret` : les vider ferait basculer une attestation lisible
+    # dans la branche « illisible » ci-dessous (#179 B1).
+    controle = controler_siren_siret(_extract_scalar(result, "siren"), _extract_scalar(result, "siret"))
+    problemes = messages_siren_siret(controle)
+    for probleme in problemes:
+        warnings.append(f"{CHAMPS_SIREN_SIRET[probleme['champ']]}: {probleme['message']}")
+
     payroll_amount, payroll_currency = _extract_money_pair(result, "declared_payroll", warnings)
     enriched["masseSalariale"] = payroll_amount
     enriched["masseSalarialeDevise"] = payroll_currency
@@ -241,6 +260,11 @@ def map_docie_urssaf_to_analysis(
             issues.append("DocIE n'a pas validé l'extraction (vérification manuelle recommandée).")
         if name_matches is False:
             issues.append("La société du document ne correspond pas au sous-traitant saisi.")
+        # Dans `issues` et pas seulement dans `warnings` : le chemin de
+        # production (contrats/lib/docie-extraction.js) ne garde que
+        # `analysis` et jette les avertissements. isValid n'est PAS touche :
+        # l'attestation reste lisible, c'est un numero qui est douteux.
+        issues.extend(probleme["message"] for probleme in problemes)
         if not issued_date:
             # Message identique a celui de docanalyze.js : c'est la meme panne
             # vue par l'utilisateur, et elle a ici une consequence precise --
@@ -270,6 +294,12 @@ def map_docie_urssaf_to_analysis(
     # sans avoir lu aucun des 3 signaux identifiants, et ces cles n'existent de
     # toute facon pas cote docanalyze.js.
     analysis.update(enriched)
+    # Verdict LISIBLE PAR MACHINE du controle de cle (voir siren_siret.py),
+    # present dans les deux branches, meme cle et meme forme que le Kbis.
+    # Volontairement HORS de ENRICHED_KEYS : ce n'est pas un champ lu sur
+    # l'attestation. Un consommateur n'utilise `siren` / `siret` que si le
+    # statut correspondant vaut exactement "valide".
+    analysis["controleSirenSiret"] = controle
 
     return UrssafMappingResult(analysis=analysis, warnings=warnings)
 

@@ -26,6 +26,7 @@ import re
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -158,6 +159,37 @@ class TestNormaliseursPartagesPasRecopies(unittest.TestCase):
                 ports = json.load(fh)["_ports"]
             self.assertEqual(4, len(ports), nom)
             self.assertFalse(any("urssaf" in p for p in ports), nom)
+
+    def test_le_validateur_siren_siret_est_importe_pas_recopie(self):
+        # Meme discipline pour le controle de cle de #194 : un seul validateur
+        # par langage (siren_siret.py), importe par les trois mappings Python.
+        import siren_siret
+        import urssaf_to_contrats as u
+
+        # 1) Identite d'objet : le nom vu par ce module EST la fonction du
+        #    validateur, et la meme que celle du Kbis.
+        self.assertIs(u.controler_siren_siret, siren_siret.controler_siren_siret)
+        self.assertIs(u.messages_siren_siret, siren_siret.messages_siren_siret)
+        self.assertIs(u.controler_siren_siret, kbis_to_contrats.controler_siren_siret)
+        # 2) Lecture du source : aucune redefinition du validateur ni de ses
+        #    aides (Luhn, controle d'un champ, motif des separateurs).
+        source = (Path(__file__).parent / "urssaf_to_contrats.py").read_text(encoding="utf-8")
+        self.assertIsNone(
+            re.search(r"^\s*def\s+(controler_siren_siret|messages_siren_siret|_luhn_valide|_controler_un)\b"
+                      r"|^\s*(controler_siren_siret|messages_siren_siret|MOTIF_SEPARATEURS|_SEPARATEURS_RE)\s*=",
+                      source, re.M),
+            "urssaf_to_contrats.py ne doit PAS redefinir le validateur SIREN/SIRET",
+        )
+        self.assertRegex(source, r"(?m)^from siren_siret import ")
+        # 3) Usage : le mapping appelle bien CE nom. Une copie sous un autre nom
+        #    passerait 1) et 2) ; elle ne rendrait pas le temoin ci-dessous.
+        temoin = {"siren": {"valeur": "t", "chiffres": None, "statut": "temoin"},
+                  "siret": {"valeur": "", "chiffres": None, "statut": "absent"}}
+        envelope = _load_fixture("urssaf_extraction_sample.json")
+        with mock.patch.object(u, "controler_siren_siret", return_value=temoin) as espion:
+            analysis = map_docie_urssaf_to_analysis(envelope).analysis
+        espion.assert_called_once_with("941091316", "94109131600013")
+        self.assertIs(temoin, analysis["controleSirenSiret"])
 
 
 class TestCasNominal(unittest.TestCase):
@@ -373,6 +405,118 @@ class TestSchemaEtFixturesRestentEnPhase(unittest.TestCase):
     def test_le_fichier_de_schema_est_bien_a_l_endroit_annonce(self):
         self.assertTrue(SCHEMA_PATH.exists(), SCHEMA_PATH)
         self.assertEqual("urssaf.schema.json", SCHEMA_PATH.name)
+
+
+class TestSirenSiretPartage(unittest.TestCase):
+    """#194 (liste retenue, « echouer bruyamment ») : chaque cas de
+    document-parsing/fixtures/siren_siret.json traverse le mapping URSSAF de
+    bout en bout, avec la meme integration que le Kbis
+    (test_kbis_to_contrats.py::TestSirenSiretPartage). Le verdict doit arriver
+    dans `analysis` (issues + controleSirenSiret), pas seulement dans
+    `warnings` : le chemin de production (contrats/lib/docie-extraction.js)
+    jette les avertissements."""
+
+    # Le schema urssaf nomme le SIRET `siret` (et non `siret_siege`).
+    CHAMPS = {"siren": "siren", "siret": "siret"}
+    CHAMPS_KBIS = {"siren": "siren", "siret": "siret_siege"}
+
+    @classmethod
+    def setUpClass(cls):
+        with open(REPO_ROOT / "document-parsing" / "fixtures" / "siren_siret.json", encoding="utf-8") as fh:
+            cls.fixture = json.load(fh)
+
+    @staticmethod
+    def _enveloppe(cas):
+        return {
+            "schema_name": "urssaf",
+            "result": {
+                "company_name": {"value": "SUND INDUSTRY SYSTEM"},
+                "siren": {"value": cas["siren"]},
+                "siret": {"value": cas["siret"]},
+                "issued_date": {"value": "2026-03-04"},
+            },
+            "validation": {"valid": True, "errors": [], "warnings": []},
+        }
+
+    def test_port_declare_dans_la_fixture(self):
+        self.assertIn("document-parsing/mappings/urssaf_to_contrats.py (Python)", self.fixture["_ports"])
+
+    def test_chaque_cas_traverse_le_mapping(self):
+        for cas in self.fixture["cas"]:
+            with self.subTest(siren=cas["siren"], siret=cas["siret"], preuve=cas["preuve"]):
+                mapping = map_docie_urssaf_to_analysis(self._enveloppe(cas))
+                a = mapping.analysis
+                # Valeur lue CONSERVEE, jamais videe.
+                self.assertEqual("" if cas["siren"] is None else str(cas["siren"]), a["siren"])
+                self.assertEqual("" if cas["siret"] is None else str(cas["siret"]), a["siret"])
+                self.assertEqual(cas["statut_siren"], a["controleSirenSiret"]["siren"]["statut"])
+                self.assertEqual(cas["statut_siret"], a["controleSirenSiret"]["siret"]["statut"])
+                self.assertEqual(cas["chiffres_siren"], a["controleSirenSiret"]["siren"]["chiffres"])
+                self.assertEqual(cas["chiffres_siret"], a["controleSirenSiret"]["siret"]["chiffres"])
+                # Aucune autre issue dans cette enveloppe : les issues sont
+                # EXACTEMENT les messages du controle.
+                self.assertEqual([m["message"] for m in cas["messages"]], a["issues"])
+                attendus = [f"{self.CHAMPS[m['champ']]}: {m['message']}" for m in cas["messages"]]
+                obtenus = [w for w in mapping.warnings if w.startswith(("siren: ", "siret: "))]
+                self.assertEqual(attendus, obtenus)
+                # Un numero douteux ne rend l'attestation ni illisible ni invalide.
+                self.assertTrue(a["isValid"])
+                self.assertEqual(DOCUMENT_TYPE_LABEL, a["documentType"])
+
+    def test_meme_verdict_et_memes_textes_que_le_kbis(self):
+        # Le texte des issues et des avertissements est celui du Kbis, au
+        # caractere pres : seul le nom de champ DocIE du SIRET differe dans le
+        # prefixe d'avertissement (`siret` ici, `siret_siege` la-bas).
+        for cas in self.fixture["cas"]:
+            with self.subTest(siren=cas["siren"], siret=cas["siret"]):
+                urssaf = map_docie_urssaf_to_analysis(self._enveloppe(cas))
+                enveloppe_kbis = {
+                    "schema_name": "kbis",
+                    "result": {
+                        "company_name": {"value": "SUND INDUSTRY SYSTEM"},
+                        "siren": {"value": cas["siren"]},
+                        "siret_siege": {"value": cas["siret"]},
+                        "issued_date": {"value": "2026-03-04"},
+                    },
+                    "validation": {"valid": True, "errors": [], "warnings": []},
+                }
+                kbis = kbis_to_contrats.map_docie_kbis_to_analysis(enveloppe_kbis)
+                self.assertEqual(kbis.analysis["controleSirenSiret"], urssaf.analysis["controleSirenSiret"])
+                self.assertEqual(kbis.analysis["issues"], urssaf.analysis["issues"])
+                messages_kbis = [w.split(": ", 1)[1] for w in kbis.warnings
+                                 if w.startswith(tuple(p + ": " for p in self.CHAMPS_KBIS.values()))]
+                messages_urssaf = [w.split(": ", 1)[1] for w in urssaf.warnings
+                                   if w.startswith(tuple(p + ": " for p in self.CHAMPS.values()))]
+                self.assertEqual(messages_kbis, messages_urssaf)
+
+    def test_verdict_hors_des_cles_enrichies_et_present_si_illisible(self):
+        self.assertNotIn("controleSirenSiret", ENRICHED_KEYS)
+        a = map_docie_urssaf_to_analysis(_load_fixture("urssaf_extraction_sample_unreadable.json")).analysis
+        self.assertEqual("absent", a["controleSirenSiret"]["siren"]["statut"])
+        self.assertEqual("absent", a["controleSirenSiret"]["siret"]["statut"])
+
+    def test_fixtures_urssaf_nominale_et_limites(self):
+        # Mesure : les fixtures urssaf portent 941091316 / 94109131600013, cles
+        # justes -> aucune issue ajoutee au cas nominal.
+        nominal = map_docie_urssaf_to_analysis(_load_fixture("urssaf_extraction_sample.json")).analysis
+        self.assertEqual("valide", nominal["controleSirenSiret"]["siren"]["statut"])
+        self.assertEqual("valide", nominal["controleSirenSiret"]["siret"]["statut"])
+        self.assertEqual([], nominal["issues"])
+        limites = map_docie_urssaf_to_analysis(_load_fixture("urssaf_extraction_sample_edge_cases.json")).analysis
+        self.assertEqual("valide", limites["controleSirenSiret"]["siren"]["statut"])
+        self.assertEqual("absent", limites["controleSirenSiret"]["siret"]["statut"])
+
+    def test_siren_a_cle_fausse_signale_sans_etre_vide_meme_seul_identifiant(self):
+        # Nom et SIRET absents, SIREN a cle fausse : le vider ferait basculer
+        # l'attestation dans la branche « illisible » (#179 B1).
+        enveloppe = {"schema_name": "urssaf",
+                     "result": {"siren": {"value": "123456789"}, "issued_date": {"value": "2026-03-04"}}}
+        a = map_docie_urssaf_to_analysis(enveloppe).analysis
+        self.assertEqual("123456789", a["siren"])
+        self.assertEqual("cle_invalide", a["controleSirenSiret"]["siren"]["statut"])
+        self.assertEqual(DOCUMENT_TYPE_LABEL, a["documentType"])
+        self.assertTrue(a["isValid"])
+        self.assertTrue(any("clé de contrôle invalide" in i for i in a["issues"]))
 
 
 if __name__ == "__main__":

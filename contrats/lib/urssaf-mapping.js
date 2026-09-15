@@ -50,8 +50,16 @@ const { checkName } = require("./docanalyze");
 const {
   normalizeDate, normalizeNumber, extractMoneyPair, MOTIF_NOMBRE, ANNEE_MIN, ANNEE_MAX,
 } = require("./kbis-mapping");
+// Contrôle de clé du SIREN / SIRET (#194), IMPORTÉ du validateur unique, comme
+// kbis-mapping.js et docie-contract-import.js : pas de troisième copie de Luhn
+// (tests/urssaf-mapping.test.js le vérifie par espion et par lecture du source).
+const { controlerSirenSiret, messagesSirenSiret } = require("./siren-siret");
 
 const DOCIE_SCHEMA_NAME = "urssaf";
+
+// Nom de champ DocIE sous lequel chaque numéro est lu (avertissements). Le
+// schéma urssaf nomme le SIRET `siret`, là où le Kbis dit `siret_siege`.
+const CHAMPS_SIREN_SIRET = { siren: "siren", siret: "siret" };
 
 // Libellé EXACT de docanalyze.js::detectType() pour cette pièce (deux
 // branches y mènent, toutes deux avec cette même chaîne) : l'origine de
@@ -98,6 +106,14 @@ function mapUrssafResult(docieResult, { expectedName, items, validation } = {}) 
     else enriched[contratsKey] = (raw === null || raw === undefined) ? "" : String(raw);
   }
 
+  // Clé de Luhn du SIREN / SIRET (#194, règle « échouer bruyamment »), même
+  // intégration que kbis-mapping.js. Les valeurs lues restent dans `siren` /
+  // `siret` : les vider ferait basculer une attestation lisible dans la
+  // branche « illisible » ci-dessous (#179 B1).
+  const controleSirenSiret = controlerSirenSiret(docieResult.siren, docieResult.siret);
+  const problemes = messagesSirenSiret(controleSirenSiret);
+  for (const probleme of problemes) warnings.push(CHAMPS_SIREN_SIRET[probleme.champ] + ": " + probleme.message);
+
   const [masseSalariale, masseSalarialeDevise] = extractMoneyPair(docieResult, "declared_payroll", warnings);
 
   const rawCompanyName = docieResult.company_name;
@@ -137,6 +153,10 @@ function mapUrssafResult(docieResult, { expectedName, items, validation } = {}) 
     documentType = DOCUMENT_TYPE_LABEL;
     if (docieSaysInvalid) issues.push("DocIE n'a pas validé l'extraction (vérification manuelle recommandée).");
     if (nameMatches === false) issues.push("La société du document ne correspond pas au sous-traitant saisi.");
+    // Dans `issues` et pas seulement dans `warnings` : lib/docie-extraction.js
+    // ne garde que `analysis` et jette les avertissements. isValid n'est PAS
+    // touché : l'attestation reste lisible, c'est un numéro qui est douteux.
+    for (const probleme of problemes) issues.push(probleme.message);
     // Message identique à celui de docanalyze.js : même panne vue par
     // l'utilisateur, avec ici une conséquence précise — sans date de
     // délivrance, la validité 6 mois ne se calcule pas.
@@ -159,6 +179,12 @@ function mapUrssafResult(docieResult, { expectedName, items, validation } = {}) 
   Object.assign(analysis, enriched);
   analysis.masseSalariale = masseSalariale;
   analysis.masseSalarialeDevise = masseSalarialeDevise;
+  // Verdict LISIBLE PAR MACHINE du contrôle de clé (voir lib/siren-siret.js),
+  // présent dans les deux branches, même clé et même forme que le Kbis.
+  // Volontairement HORS de ENRICHED_KEYS : ce n'est pas un champ lu sur
+  // l'attestation. Un consommateur n'utilise `siren` / `siret` que si le statut
+  // correspondant vaut exactement "valide".
+  analysis.controleSirenSiret = controleSirenSiret;
 
   return { analysis, warnings };
 }
