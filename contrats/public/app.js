@@ -512,15 +512,22 @@ function buildChecklist() {
       ubtn.addEventListener("click", () => ufile.click());
       ufile.addEventListener("change", () => { if (ufile.files[0]) analyzeChecklistDoc(it, ufile.files[0], status, ubtn); ufile.value = ""; });
       drow.appendChild(ubtn);
-      // Sélecteur de modèle (#194), URSSAF seulement parmi les pièces datées
+      // Sélecteur de modèle (#194), URSSAF et Kbis parmi les pièces datées
       // (le RIB a le sien, ajouterAnalyseRib) : rempli depuis /api/modeles,
-      // masqué tant qu'il n'y a pas au moins deux modèles.
-      if (it.id === "urssaf") {
+      // masqué tant qu'il n'y a pas au moins deux modèles. Kbis « choisi par type
+      // d'entrée » : offres de la voie texte (PDF) avant le dépôt, puis de la
+      // voie du fichier choisi (preparerSelecteurKbis).
+      if (it.id === "urssaf" || it.id === "kbis") {
         const selModele = document.createElement("select");
         selModele.className = "tpl-select hidden";
         selModele.title = "Modèle d'extraction";
         selModele.dataset.modeleSelecteur = "1";
-        remplirSelecteurModeles(selModele, "urssaf");
+        if (it.id === "kbis") {
+          selModele.dataset.voie = "texte";
+          remplirSelecteurModeles(selModele, "kbis", "texte");
+        } else {
+          remplirSelecteurModeles(selModele, "urssaf");
+        }
         drow.appendChild(selModele);
       }
       // Modèle qui a réellement lu le document (« lu par … »), discret.
@@ -578,10 +585,13 @@ async function analyzeChecklistDoc(it, fileObj, statusEl, btn) {
   statusEl.className = "chk-doc-status";
   const ligneItem = statusEl.parentNode;
   const selModele = ligneItem && ligneItem.querySelector("[data-modele-selecteur]");
-  const modele = selModele && selModele.options.length ? selModele.value : "";
   const servi = ligneItem && ligneItem.querySelector("[data-modele-servi]");
   if (servi) servi.textContent = "";
   try {
+    // Kbis (#194) : offres de la voie du fichier choisi, défaut présélectionné
+    // quand la voie change ; le serveur tranche la voie réelle sur le fichier.
+    if (it.id === "kbis" && selModele) await preparerSelecteurKbis(selModele, fileObj);
+    const modele = selModele && selModele.options.length ? selModele.value : "";
     const dataBase64 = await fileToBase64(fileObj);
     const r = await fetch("/api/document/analyze", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -2917,20 +2927,45 @@ async function validerSigneExterne() {
 // (défaut d'abord, aucun identifiant réel). Échec de lecture = aucun modèle :
 // pas de sélecteur, aucun `modele` envoyé, comportement d'avant.
 const OFFRES_MODELES = {};
-function offresModeles(tache) {
-  if (!OFFRES_MODELES[tache]) {
-    OFFRES_MODELES[tache] = getJSON("/api/modeles?tache=" + encodeURIComponent(tache))
+function offresModeles(tache, voie) {
+  const cle = voie ? tache + "|" + voie : tache;
+  if (!OFFRES_MODELES[cle]) {
+    OFFRES_MODELES[cle] = getJSON("/api/modeles?tache=" + encodeURIComponent(tache) + (voie ? "&voie=" + encodeURIComponent(voie) : ""))
       .then((d) => (d && Array.isArray(d.modeles) ? d.modeles : []), () => []);
   }
-  return OFFRES_MODELES[tache];
+  return OFFRES_MODELES[cle];
+}
+
+// Kbis « choisi par type d'entrée » (#194) : voie supposée d'après le fichier
+// choisi — PDF -> voie texte (LFM2.5 2.6B par défaut), image -> vision
+// (NuExtract3). Le serveur décide la voie réelle sur le fichier (un PDF scanné
+// part en vision) : cette supposition ne sert qu'à proposer les bons modèles.
+function voieKbisDuFichier(fileObj) {
+  const type = String((fileObj && fileObj.type) || "").toLowerCase();
+  const nom = String((fileObj && fileObj.name) || "").toLowerCase();
+  return type === "application/pdf" || (!type.startsWith("image/") && nom.endsWith(".pdf")) ? "texte" : "agent";
+}
+
+// Au dépôt d'un fichier : si sa voie diffère de celle affichée, le sélecteur
+// est rempli avec les offres de cette voie, défaut présélectionné. Même voie :
+// le choix déjà fait par l'utilisateur est gardé (offres déjà chargées).
+async function preparerSelecteurKbis(sel, fileObj) {
+  const voie = voieKbisDuFichier(fileObj);
+  if (sel.dataset.voie === voie) {
+    await offresModeles("kbis", voie);
+    return;
+  }
+  sel.dataset.voie = voie;
+  await remplirSelecteurModeles(sel, "kbis", voie);
 }
 
 // Remplit un <select> de modèles : défaut présélectionné, masqué s'il n'y a
 // qu'un modèle (ou aucun). Le plafond de lignes n'est affiché que s'il
 // distingue les modèles proposés (contrat : LFM2.5 2.6B, pas NuExtract3).
-async function remplirSelecteurModeles(sel, tache) {
+// `voie` : Kbis seulement (offres de la voie texte ou agent).
+async function remplirSelecteurModeles(sel, tache, voie) {
   if (!sel) return;
-  const modeles = await offresModeles(tache);
+  const modeles = await offresModeles(tache, voie);
   const plafondDistinctif = modeles.some((m) => !m.lignesMax) && modeles.some((m) => m.lignesMax);
   sel.innerHTML = "";
   modeles.forEach((m) => {

@@ -1,0 +1,71 @@
+{
+  "document_type": "kbis",
+  "fields": [
+    {
+      "name": "company_name",
+      "type": "string",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "siren",
+      "type": "string",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "siret_siege",
+      "type": "string",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "legal_form",
+      "type": "string",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "share_capital",
+      "type": "money",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "registration_date",
+      "type": "date",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "issued_date",
+      "type": "date",
+      "description": "Date d'edition/delivrance du Kbis",
+      "fields": []
+    },
+    {
+      "name": "rcs_number",
+      "type": "string",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "registered_address",
+      "type": "string",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "activity_code",
+      "type": "string",
+      "description": null,
+      "fields": []
+    },
+    {
+      "name": "legal_representative",
+      "type": "string",
+      "description": null,
+      "fields": []
+    }
+  ]
+}

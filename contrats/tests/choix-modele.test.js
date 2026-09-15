@@ -121,8 +121,9 @@ test("GET /api/modeles : rien de configuré ou flag coupé -> liste vide ; confi
     assert.ok(!JSON.stringify(r).includes("store:"));
     assert.deepEqual((await (await avec.modeles("urssaf")).json()).modeles.map((m) => m.id), ["lfm25_2_6b", "lfm25_350m"]);
     assert.deepEqual(await (await coupe.modeles("contract")).json(), { tache: "contract", modeles: [] });
-    const kbis = await avec.modeles("kbis");
-    assert.equal(kbis.status, 400);
+    // Le Kbis a désormais un sélecteur (#194) : tâche sans sélecteur = fiscale.
+    const fiscale = await avec.modeles("fiscale");
+    assert.equal(fiscale.status, 400);
   } finally {
     await vide.fermer(); await avec.fermer(); await coupe.fermer();
   }
