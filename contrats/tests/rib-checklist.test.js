@@ -42,6 +42,8 @@ function contexte(reponse) {
     state: { values: { stNom: "Sund Industry System" }, dateState: {}, checkState: {} },
     fileToBase64: async () => "JVBERi0=",
     fetch: async (url, options) => { ctx.envoye = { url, corps: JSON.parse(options.body) }; return { ok: true, status: 200, json: async () => reponse }; },
+    // Résultat partiel (#203) : hors sujet ici, bouchon neutre.
+    renderResultatPartiel: () => {},
     JSON,
   };
   vm.createContext(ctx);

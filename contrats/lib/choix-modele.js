@@ -1,6 +1,6 @@
 "use strict";
 // Choix du modèle par action (#194), côté contrats : pré-remplissage de
-// contrat et attestation URSSAF, toutes deux sur la voie TEXTE.
+// contrat, attestation URSSAF et RIB, tous trois sur la voie TEXTE.
 //
 // Le catalogue partagé (document-parsing/models/catalogue.js) dit quels modèles
 // proposer ; ce module applique la règle du service :
@@ -31,8 +31,8 @@ function chargerCatalogue() {
 }
 
 // Tâches de ce service qui ont un sélecteur, et leur voie DocIE (#194 : le
-// contrat en voie texte uniquement, l'URSSAF aussi).
-const TACHES = Object.freeze({ contract: "texte", urssaf: "texte" });
+// contrat en voie texte uniquement, l'URSSAF et le RIB aussi).
+const TACHES = Object.freeze({ contract: "texte", urssaf: "texte", rib: "texte" });
 
 // Messages constants : rien du texte amont ni de la valeur reçue n'en sort.
 // Repris par lib/taches-extraction.js::MESSAGES_SERVICE pour les tâches.
@@ -117,6 +117,20 @@ function modeleServiPublic(tache, metadata, { env = process.env } = {}) {
   return servi ? { id: servi.id, libelle: servi.libelle } : null;
 }
 
+/**
+ * RIB (#194) : l'alternative du catalogue (LFM2.5 350M) n'est admise que
+ * « derrière le contrôle IBAN modulo 97 et le format BIC » (prérequis de la
+ * tâche `rib`). Vrai si le modèle DEMANDÉ ou le modèle SERVI est cette
+ * alternative : le servi seul ne suffit pas (DocIE peut rapporter un nom que le
+ * catalogue ne reconnaît pas, id null), le demandé seul non plus (DocIE peut en
+ * servir un autre). Clé sur le rôle du catalogue, jamais sur un nom en dur.
+ */
+function exigeControleIbanBic(tache, choisi, servi, { env = process.env } = {}) {
+  if (tache !== "rib") return false;
+  const alternatives = offresPubliques(tache, { env }).filter((o) => o.role === "alternative").map((o) => o.id);
+  return [choisi && choisi.id, servi && servi.id].some((id) => typeof id === "string" && alternatives.includes(id));
+}
+
 module.exports = {
   TACHES,
   MESSAGES_CHOIX,
@@ -126,5 +140,6 @@ module.exports = {
   verifierDemande,
   choisirPourTexte,
   modeleServiPublic,
+  exigeControleIbanBic,
   CHEMIN_CATALOGUE,
 };

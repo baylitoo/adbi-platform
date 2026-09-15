@@ -133,11 +133,12 @@ function monterPreremplissage(app, {
   });
 
   /**
-   * GET /api/modeles?tache=contract|urssaf -> { tache, modeles: [{ id, libelle,
+   * GET /api/modeles?tache=contract|urssaf|rib -> { tache, modeles: [{ id, libelle,
    * description, role, lignesMax }] } (#194), defaut d'abord.
    *
    * Monte ici plutot que dans server.js pour garder server.js intact. Sert les
-   * deux selecteurs de ce service : pre-remplissage de contrat et analyse URSSAF.
+   * trois selecteurs de ce service : pre-remplissage de contrat, analyses URSSAF
+   * et RIB.
    * Aucun identifiant reel (`store:<nom>`) dans la reponse. Flag DocIE coupe ou
    * rien de configure -> liste vide : le navigateur n'affiche aucun selecteur et
    * n'envoie aucun `modele`, soit exactement le comportement d'avant.

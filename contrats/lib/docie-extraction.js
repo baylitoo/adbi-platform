@@ -116,6 +116,31 @@ function sniffMime(mimeType, buffer) {
   return m;
 }
 
+// Résultat partiel (#203, #194) : faits de l'extraction relevés par le bridge,
+// rendus lisibles au navigateur sur TOUTES les voies DocIE, choix de modèle ou
+// non. `metadata.partiel = [{champ, raison}]` -> `partiel` ; `metadata.
+// troncature_possible === true` -> `troncaturePossible: true`. Clés ajoutées
+// seulement s'il y a quelque chose à dire : sans signal (ou métadonnées
+// absentes : analyse locale, réponse d'avant #203), la sortie est inchangée.
+// Raison gardée même inconnue : un libellé ajouté côté bridge doit s'afficher,
+// pas disparaître. `cles` (contrat) : champ DocIE de premier niveau -> clé
+// contrats, pour marquer le bon champ du modal.
+function signauxPartielsPublics(metadata, { cles = null } = {}) {
+  const m = metadata && typeof metadata === "object" ? metadata : {};
+  const sortie = {};
+  const partiel = (Array.isArray(m.partiel) ? m.partiel : [])
+    .filter((p) => p && typeof p === "object" && typeof p.champ === "string" && p.champ && typeof p.raison === "string" && p.raison)
+    .map((p) => {
+      const entree = { champ: p.champ, raison: p.raison };
+      const racine = p.champ.split(/[.[]/)[0];
+      if (cles && Object.hasOwn(cles, racine)) entree.cle = cles[racine];
+      return entree;
+    });
+  if (partiel.length) sortie.partiel = partiel;
+  if (m.troncature_possible === true) sortie.troncaturePossible = true;
+  return sortie;
+}
+
 // Même forme de sortie que analyzeDocumentLocal (lib/docanalyze.js) : les
 // consommateurs (route Express, front) ne voient aucune différence de forme
 // selon l'origine locale ou DocIE — avec, en plus, les champs structurés
@@ -135,7 +160,9 @@ function mapDocieResult(docieResponse, { items, expectedName } = {}) {
   if (analysis.documentType !== "Document" && analysis.summary) {
     analysis.summary += " (DocIE)";
   }
-  return analysis;
+  // Voie agent : `partiel` lu par le bridge ; `troncature_possible` y vaut null
+  // (non mesurable), donc jamais de ligne de troncature pour le Kbis.
+  return Object.assign(analysis, signauxPartielsPublics(docieResponse && docieResponse.metadata));
 }
 
 // deps injectables (extractDocument, fetchImpl, env) : tests unitaires sans
@@ -234,7 +261,9 @@ function mapTexteDocieResult(kind, docieResponse, { items, expectedName } = {}) 
   if (analysis.documentType !== "Document" && analysis.summary) {
     analysis.summary += " (DocIE)";
   }
-  return analysis;
+  // Voie texte : `partiel` et `troncature_possible` (blocs comptés par
+  // extractText sur le texte envoyé), choix de modèle ou non.
+  return Object.assign(analysis, signauxPartielsPublics(docieResponse && docieResponse.metadata));
 }
 
 function mapUrssafDocieResult(docieResponse, options) {
@@ -262,7 +291,14 @@ async function extractViaTexte(kind, { dataBase64, mimeType, items, expectedName
   if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;
   const response = await extractText(verdict.texte, options);
   const analysis = mapTexteDocieResult(kind, response, { items, expectedName });
-  if (choisi) analysis.modele = choixModele.modeleServiPublic(kind, response.metadata, { env });
+  if (choisi) {
+    analysis.modele = choixModele.modeleServiPublic(kind, response.metadata, { env });
+    // RIB lu par l'alternative du catalogue (LFM2.5 350M) : admise seulement
+    // derrière le contrôle IBAN/BIC. Le drapeau dit au navigateur qu'un IBAN ou
+    // un BIC non « valide » fait de cette lecture un échec (⛔), pas une alerte.
+    // Absent sinon : la réponse du modèle par défaut reste celle de #209.
+    if (choixModele.exigeControleIbanBic(kind, choisi, analysis.modele, { env })) analysis.controleIbanBicExige = true;
+  }
   return { analysis, raisonRepli: null };
 }
 
@@ -336,6 +372,7 @@ module.exports = {
   mapDocieResult,
   mapTexteDocieResult,
   mapUrssafDocieResult,
+  signauxPartielsPublics,
   chargerSchema,
   chargerSchemaUrssaf,
   isEnabled,
