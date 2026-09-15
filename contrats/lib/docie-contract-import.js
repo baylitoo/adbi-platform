@@ -40,7 +40,16 @@
 // Python sans tenir compte de unwrap() produirait 19 champs vides,
 // silencieusement (piège vérifié avant d'écrire ce fichier).
 const path = require("path");
-const { isEnabled, loadBridge, sniffMime } = require("./docie-extraction");
+const { isEnabled, loadBridge, sniffMime, coucheTexteUtilisable } = require("./docie-extraction");
+const choixModele = require("./choix-modele");
+
+// Définition du schéma "contract" pour la voie TEXTE (#194). Sur
+// /v1/extract/text, `schema_name` seul ne résout que le petit registre intégré
+// de DocIE (document-parsing/scripts/register_and_test.py) : la définition doit
+// voyager dans la requête, comme pour l'URSSAF. Mêmes 19 champs que ceux
+// enregistrés côté Studio pour l'agent. Chargée paresseusement, seulement quand
+// un modèle est choisi.
+const SCHEMA_CONTRAT_PATH = path.join(__dirname, "..", "..", "document-parsing", "schemas", "contract.schema.json");
 // Contrôle de clé du SIREN / SIRET (#194), écrit une seule fois pour les deux
 // mappings JS (portage de document-parsing/mappings/siren_siret.py).
 const { controlerSirenSiret, messagesSirenSiret } = require("./siren-siret");
@@ -423,6 +432,10 @@ async function extractContractValues(body = {}, deps = {}) {
   }
   const buffer = Buffer.from(body.dataBase64, "base64");
   const mime = sniffMime(body.mimeType, buffer);
+  // Modèle choisi (#194) : voie texte avec CE modèle, sinon échec nommé. Sans
+  // `modele`, la suite est le chemin d'avant, inchangé (agent DOCIE_AGENT_CONTRACT).
+  const modele = choixModele.demandeModele(body);
+  if (modele !== null) return extraireParModele(buffer, mime, modele, env, deps);
   const { extractDocument } = deps.extractDocument ? deps : loadBridge();
   const options = { kind: DOCIE_KIND, env };
   if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;
@@ -432,8 +445,43 @@ async function extractContractValues(body = {}, deps = {}) {
   return Object.assign({ requestId: metadata.request_id || null }, mapped);
 }
 
+// Contrat lu par un modèle choisi dans le catalogue (#194).
+//
+// Voie TEXTE uniquement : NuExtract3 en vision échoue en 400 à la 9e page, et
+// un contrat en fait souvent plus. La couche texte est lue localement avec le
+// même garde que l'URSSAF (lib/docie-extraction.js::coucheTexteUtilisable) :
+// une page sans texte signale un scan, et un texte amputé donnerait une
+// extraction confiante et fausse (clauses de fin, dates de signature). Contrat
+// scanné -> échec `scan` : aucune voie propre, saisie manuelle — jamais l'agent
+// en repli, qui serait un autre modèle que celui annoncé.
+//
+// Ordre : modèle configuré (sans lire le PDF), couche texte, puis règle des 800
+// lignes non vides sur le texte réellement envoyé. `modele` du résultat : le
+// modèle que DocIE dit avoir servi (metadata.model), pas celui demandé.
+async function extraireParModele(buffer, mime, modele, env, deps) {
+  choixModele.verifierDemande(DOCIE_KIND, modele, { env });
+  const lecture = await (deps.coucheTexteUtilisable || coucheTexteUtilisable)(buffer, mime);
+  if (!lecture.ok) throw new choixModele.ErreurChoixModele("scan");
+  const choisi = choixModele.choisirPourTexte(DOCIE_KIND, modele, lecture.texte, { env });
+  const { extractText } = deps.extractText ? deps : loadBridge();
+  const options = {
+    kind: DOCIE_KIND,
+    dynamicSchema: deps.dynamicSchema || require(SCHEMA_CONTRAT_PATH),
+    modelProfile: choisi.identifiant,
+    env,
+  };
+  if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;
+  const response = await extractText(lecture.texte, options);
+  const metadata = response.metadata || {};
+  const mapped = mapContractResult(response.result, { validation: metadata.validation });
+  return Object.assign({ requestId: metadata.request_id || null }, mapped, {
+    modele: choixModele.modeleServiPublic(DOCIE_KIND, metadata, { env }),
+  });
+}
+
 module.exports = {
   extractContractValues,
+  SCHEMA_CONTRAT_PATH,
   mapContractResult,
   MAPPED_FIELDS,
   CONSTANT_FIELDS_NOT_FROM_DOCIE,

@@ -1,0 +1,22 @@
+{
+  "_commentaire": "Règle DocIE du découpage en blocs (#190) : sum(1 for l in t.splitlines() if l.strip()). `blancs` = exactement les caractères de str.isspace(), `separateurs` = exactement ceux qui coupent str.splitlines() (hors \\r\\n, compté comme un seul) — test_catalogue.py le vérifie contre CPython, et recalcule chaque `lignes` ; catalogue.test.js applique les mêmes ensembles au portage JS.",
+  "blancs": "\t\n\u000b\f\r\u001c\u001d\u001e\u001f \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000",
+  "separateurs": "\n\u000b\f\r\u001c\u001d\u001e\u0085\u2028\u2029",
+  "cas": [
+    { "nom": "texte vide", "texte": "", "lignes": 0 },
+    { "nom": "une ligne", "texte": "Contrat", "lignes": 1 },
+    { "nom": "saut final ignoré", "texte": "a\n", "lignes": 1 },
+    { "nom": "\\r\\n compte comme un seul séparateur", "texte": "a\r\nb", "lignes": 2 },
+    { "nom": "\\n\\r = deux séparateurs, ligne vide entre les deux", "texte": "a\n\rb", "lignes": 2 },
+    { "nom": "BOM seul : un bloc pour Python (trim() l'efface)", "texte": "\ufeff", "lignes": 1 },
+    { "nom": "NBSP seul : vide", "texte": "\u00a0", "lignes": 0 },
+    { "nom": "espace sans chasse seul : un bloc", "texte": "\u200b", "lignes": 1 },
+    { "nom": "tabulation seule : vide", "texte": "\t", "lignes": 0 },
+    { "nom": "\\x1f seul : vide", "texte": "\u001f", "lignes": 0 },
+    { "nom": "\\x1f n'est pas un séparateur", "texte": "a\u001fb", "lignes": 1 },
+    { "nom": "espace idéographique seul : vide", "texte": "\u3000", "lignes": 0 },
+    { "nom": "lignes blanches mêlées", "texte": "a\n \n\t\n\u00a0\nb\n\n", "lignes": 2 },
+    { "nom": "paragraphe sans saut : un seul bloc", "texte": "Article 1 — Objet. Le présent contrat a pour objet la réalisation de prestations d'assistance technique.", "lignes": 1 },
+    { "nom": "séparateurs rares", "texte": "a\u000bb\fc\u001cd\u001de\u001ef\u0085g\u2028h\u2029i", "lignes": 9 }
+  ]
+}

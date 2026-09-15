@@ -62,7 +62,8 @@ deux voies différentes — voir `lib/docie-extraction.js`.
   de la voie se fait **à l'exécution sur le document reçu** : une attestation
   scannée (image, ou PDF dont une page est sans texte) n'est jamais envoyée —
   elle retombe sur l'analyse locale, exactement comme avant, avec un
-  avertissement nommant la cause.
+  avertissement nommant la cause. Sauf si un modèle est choisi (#194, voir
+  ci-dessous) : elle est alors refusée, sans analyse locale.
 - **RIB** — voie texte, même mécanique (`document-parsing/schemas/rib.schema.json`) :
   titulaire, IBAN, BIC et banque. L'IBAN (clé modulo 97) et le BIC (format)
   sont contrôlés (`lib/iban-bic.js`) ; une valeur douteuse est conservée et
@@ -71,12 +72,16 @@ deux voies différentes — voir `lib/docie-extraction.js`.
 Les quatre autres pièces (CNI, attestation fiscale, coordonnées,
 informations spécifiques) restent toujours analysées localement, flag ou pas :
 elles n'ont ni schéma ni mapping à ce jour. Sur échec DocIE (config manquante,
-timeout, erreur), repli automatique sur l'analyse locale.
+timeout, erreur), repli automatique sur l'analyse locale — sauf pour un modèle
+choisi (#194) : l'erreur nommée s'affiche, sans repli.
 
 Même flag, autre usage : le pré-remplissage de l'import de contrat depuis un
 PDF (`POST /api/contracts/importer/extraire`, bouton « Pré-remplir depuis le
 PDF » de la modale d'import) utilise le même bridge avec `DOCIE_AGENT_CONTRACT`
-— voir `lib/docie-contract-import.js`. Pas de repli local ici (aucune analyse
+— voir `lib/docie-contract-import.js`. Si des modèles du catalogue sont
+configurés (`DOCIE_MODELE_*`, #194, `lib/choix-modele.js`), un sélecteur les
+propose et le contrat passe par la voie texte avec le modèle choisi ; un contrat
+scanné est alors refusé. Pas de repli local ici (aucune analyse
 locale équivalente à 19 champs structurés) : flag off ou agent non configuré
 = fonctionnalité simplement absente, saisie manuelle comme avant.
 

@@ -16,6 +16,7 @@
 
 const { isEnabled, loadBridge, sniffMime } = require("./docie-extraction");
 const { FileTachesPleineError, MESSAGES_SERVICE, TTL_MS } = require("./taches-extraction");
+const choixModele = require("./choix-modele");
 
 // Miroir de MIME_TYPES dans document-parsing/bridge/docie-bridge.js (non
 // exporte par le bridge) : ce qu'extractDocument accepte. sniffMime reconnait
@@ -83,11 +84,24 @@ function monterPreremplissage(app, {
       });
     }
 
+    // Modele choisi (#194) : refuse avant le 202 s'il n'est pas configure. La
+    // regle des 800 lignes, elle, se verifie dans la tache, sur le texte lu.
+    let modele;
     try {
-      // Seuls ces deux champs entrent dans la tache : ni req, ni req.body (dont
+      modele = choixModele.demandeModele(req.body);
+      if (modele !== null) choixModele.verifierDemande("contract", modele, { env });
+    } catch (e) {
+      if (e && e.name === "ErreurChoixModele") return res.status(400).json({ error: e.message, code: e.code });
+      journal("[contracts/importer/extraire] catalogue", e);
+      return res.status(500).json({ error: "Pré-remplissage impossible : erreur interne.", code: "interne" });
+    }
+
+    try {
+      // Seuls ces champs entrent dans la tache : ni req, ni req.body (dont
       // rawBody, copie brute du JSON recu). Le gestionnaire lache ce travail des
       // son demarrage.
       const corps = { mimeType, dataBase64 };
+      if (modele !== null) corps.modele = modele;
       const tache = gestionnaire.creer(() => extractContractValues(corps));
       res.status(202).json({ tache });
     } catch (e) {
@@ -116,6 +130,31 @@ function monterPreremplissage(app, {
       });
     }
     res.json(vue);
+  });
+
+  /**
+   * GET /api/modeles?tache=contract|urssaf -> { tache, modeles: [{ id, libelle,
+   * description, role, lignesMax }] } (#194), defaut d'abord.
+   *
+   * Monte ici plutot que dans server.js pour garder server.js intact. Sert les
+   * deux selecteurs de ce service : pre-remplissage de contrat et analyse URSSAF.
+   * Aucun identifiant reel (`store:<nom>`) dans la reponse. Flag DocIE coupe ou
+   * rien de configure -> liste vide : le navigateur n'affiche aucun selecteur et
+   * n'envoie aucun `modele`, soit exactement le comportement d'avant.
+   */
+  app.get("/api/modeles", (req, res) => {
+    const tache = String((req.query && req.query.tache) || "");
+    if (!Object.hasOwn(choixModele.TACHES, tache)) {
+      return res.status(400).json({ error: "Tâche sans sélecteur de modèle.", code: "tache" });
+    }
+    if (!isEnabled(env)) return res.json({ tache, modeles: [] });
+    try {
+      res.json({ tache, modeles: choixModele.offresPubliques(tache, { env }) });
+    } catch (e) {
+      journal("[modeles]", e);
+      const code = e && e.name === "ErreurChoixModele" ? e.code : "interne";
+      res.status(500).json({ error: choixModele.MESSAGES_CHOIX.configuration, code });
+    }
   });
 }
 

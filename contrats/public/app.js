@@ -512,6 +512,23 @@ function buildChecklist() {
       ubtn.addEventListener("click", () => ufile.click());
       ufile.addEventListener("change", () => { if (ufile.files[0]) analyzeChecklistDoc(it, ufile.files[0], status, ubtn); ufile.value = ""; });
       drow.appendChild(ubtn);
+      // Sélecteur de modèle (#194), URSSAF seulement : rempli depuis
+      // /api/modeles, masqué tant qu'il n'y a pas au moins deux modèles.
+      if (it.id === "urssaf") {
+        const selModele = document.createElement("select");
+        selModele.className = "tpl-select hidden";
+        selModele.title = "Modèle d'extraction";
+        selModele.dataset.modeleSelecteur = "1";
+        remplirSelecteurModeles(selModele, "urssaf");
+        drow.appendChild(selModele);
+      }
+      // Modèle qui a réellement lu le document (« lu par … »), discret.
+      const servi = document.createElement("span");
+      servi.className = "muted";
+      servi.dataset.modeleServi = "1";
+      const dejaLu = state.dateState[it.id];
+      if (dejaLu && dejaLu.modele && dejaLu.modele.libelle) servi.textContent = "lu par " + dejaLu.modele.libelle;
+      drow.appendChild(servi);
       drow.appendChild(ufile);
       item.appendChild(drow);
       item.appendChild(status);
@@ -557,6 +574,11 @@ async function analyzeChecklistDoc(it, fileObj, statusEl, btn) {
   btn.disabled = true; btn.textContent = "Analyse…";
   statusEl.textContent = "🔎 Analyse du document…";
   statusEl.className = "chk-doc-status";
+  const ligneItem = statusEl.parentNode;
+  const selModele = ligneItem && ligneItem.querySelector("[data-modele-selecteur]");
+  const modele = selModele && selModele.options.length ? selModele.value : "";
+  const servi = ligneItem && ligneItem.querySelector("[data-modele-servi]");
+  if (servi) servi.textContent = "";
   try {
     const dataBase64 = await fileToBase64(fileObj);
     const r = await fetch("/api/document/analyze", {
@@ -566,11 +588,14 @@ async function analyzeChecklistDoc(it, fileObj, statusEl, btn) {
         dataBase64,
         items: [{ id: it.id, label: it.label }],
         expectedName: state.values.stNom || "",
+        // Choix explicite (#194) : un échec s'affiche, sans analyse locale en repli.
+        ...(modele ? { modele } : {}),
       }),
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
     const res = { issuedDate: d.issuedDate || "", companyName: d.companyName || "", nameMatches: d.nameMatches, fileName: fileObj.name };
+    if (d.modele) res.modele = d.modele;
     // Kbis : on garde aussi les champs officiels lus par DocIE (SIREN, SIRET,
     // forme juridique, adresse, représentant…), pour les PROPOSER au contrat —
     // liste blanche de public/kbis-champs.js. Analyse locale : {} (rien à proposer).
@@ -585,6 +610,7 @@ async function analyzeChecklistDoc(it, fileObj, statusEl, btn) {
     const prop = statusEl.parentNode && statusEl.parentNode.querySelector("[data-kbis-proposition]");
     if (prop) renderPropositionKbis(prop, res);
     majNoteCoordonnees();
+    if (servi && res.modele && res.modele.libelle) servi.textContent = "lu par " + res.modele.libelle;
   } catch (e) {
     statusEl.textContent = "Erreur : " + e.message;
     statusEl.className = "chk-doc-status err";
@@ -2805,6 +2831,37 @@ async function validerSigneExterne() {
   }
 }
 
+// Modèles proposés par action (#194), lus une fois par page sur /api/modeles
+// (défaut d'abord, aucun identifiant réel). Échec de lecture = aucun modèle :
+// pas de sélecteur, aucun `modele` envoyé, comportement d'avant.
+const OFFRES_MODELES = {};
+function offresModeles(tache) {
+  if (!OFFRES_MODELES[tache]) {
+    OFFRES_MODELES[tache] = getJSON("/api/modeles?tache=" + encodeURIComponent(tache))
+      .then((d) => (d && Array.isArray(d.modeles) ? d.modeles : []), () => []);
+  }
+  return OFFRES_MODELES[tache];
+}
+
+// Remplit un <select> de modèles : défaut présélectionné, masqué s'il n'y a
+// qu'un modèle (ou aucun). Le plafond de lignes n'est affiché que s'il
+// distingue les modèles proposés (contrat : LFM2.5 2.6B, pas NuExtract3).
+async function remplirSelecteurModeles(sel, tache) {
+  if (!sel) return;
+  const modeles = await offresModeles(tache);
+  const plafondDistinctif = modeles.some((m) => !m.lignesMax) && modeles.some((m) => m.lignesMax);
+  sel.innerHTML = "";
+  modeles.forEach((m) => {
+    const o = document.createElement("option");
+    o.value = m.id;
+    o.textContent = m.libelle + " — " + m.description +
+      (plafondDistinctif && m.lignesMax ? " (" + m.lignesMax + " lignes au plus)" : "");
+    sel.appendChild(o);
+  });
+  if (modeles.length) sel.value = modeles[0].id;
+  sel.classList.toggle("hidden", modeles.length < 2);
+}
+
 // Modal « Importer un contrat existant » : le PDF + les infos clés rejoignent
 // l'historique comme n'importe quel contrat créé dans l'application.
 function ouvrirImportModal() {
@@ -2814,6 +2871,7 @@ function ouvrirImportModal() {
   $("#importModal").classList.remove("hidden");
   attacherDatalistContrats(); // alimente la liste des n° pour le rattachement d'avenant
   basculerChampsImport();
+  remplirSelecteurModeles($("#impModele"), "contract");
 }
 
 // Section « Autres informations extraites — à relire » : les 12 champs DocIE
@@ -2931,7 +2989,9 @@ async function preremplirImportDepuisPdf() {
     const dataBase64 = await fileToBase64(f);
     const r = await fetch("/api/contracts/importer/extraire", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mimeType: f.type || "application/pdf", dataBase64 }),
+      // `modele` (#194) dès qu'un modèle est proposé : voie texte avec CE modèle.
+      body: JSON.stringify(Object.assign({ mimeType: f.type || "application/pdf", dataBase64 },
+        $("#impModele") && $("#impModele").options.length ? { modele: $("#impModele").value } : {})),
     });
     const depart = await r.json();
     if (!r.ok) throw new Error(depart.error || ("HTTP " + r.status));
@@ -2987,6 +3047,8 @@ async function preremplirImportDepuisPdf() {
       st.className = "status ok";
       st.textContent = "✓ Champs pré-remplis depuis le PDF — à relire avant import" + notes;
     }
+    // Modèle qui a réellement servi (#194), d'après DocIE — absent sans choix de modèle.
+    if (d.modele && d.modele.libelle) st.textContent += " — lu par " + d.modele.libelle;
   } catch (e) {
     afficherAvertissementsImport([]);
     st.textContent = "Pré-remplissage indisponible : " + e.message;

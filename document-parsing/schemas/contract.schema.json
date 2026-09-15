@@ -1,0 +1,24 @@
+{
+  "document_type": "contract",
+  "fields": [
+    { "name": "numero_contrat", "type": "string", "description": null, "fields": [] },
+    { "name": "date_redaction", "type": "date", "description": null, "fields": [] },
+    { "name": "lieu_redaction", "type": "string", "description": null, "fields": [] },
+    { "name": "st_nom", "type": "string", "description": null, "fields": [] },
+    { "name": "st_adresse", "type": "string", "description": null, "fields": [] },
+    { "name": "st_siren", "type": "string", "description": null, "fields": [] },
+    { "name": "st_siret", "type": "string", "description": null, "fields": [] },
+    { "name": "st_representant", "type": "string", "description": null, "fields": [] },
+    { "name": "st_forme_juridique", "type": "string", "description": null, "fields": [] },
+    { "name": "st_qualite", "type": "string", "description": null, "fields": [] },
+    { "name": "consultant_nom", "type": "string", "description": null, "fields": [] },
+    { "name": "consultant_fonction", "type": "string", "description": null, "fields": [] },
+    { "name": "client_final", "type": "string", "description": null, "fields": [] },
+    { "name": "nature_travaux", "type": "string", "description": null, "fields": [] },
+    { "name": "lieu_execution", "type": "string", "description": null, "fields": [] },
+    { "name": "date_debut", "type": "date", "description": null, "fields": [] },
+    { "name": "date_fin", "type": "date", "description": null, "fields": [] },
+    { "name": "tjm", "type": "money", "description": "TJM en euros HT / jour", "fields": [] },
+    { "name": "delai_paiement", "type": "number", "description": "Delai de paiement en jours", "fields": [] }
+  ]
+}

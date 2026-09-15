@@ -135,6 +135,9 @@ const MESSAGES_BRIDGE = {
 const MESSAGES_SERVICE = {
   disabled: "Extraction DocIE désactivée (DOCIE_EXTRACTION_ENABLED=false) — saisie manuelle requise.",
   input: "Aucun fichier reçu.",
+  // Choix de modèle (#194, lib/choix-modele.js) : modele_non_propose, limite,
+  // scan, configuration — messages constants de ce module.
+  ...require("./choix-modele").MESSAGES_CHOIX,
 };
 
 const MESSAGE_INTERNE = "Pré-remplissage impossible : erreur interne.";

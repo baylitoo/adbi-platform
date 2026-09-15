@@ -50,6 +50,17 @@ COPY --from=schemas --chown=node:node . /document-parsing/schemas
 #    PDF) et des jeux d'essai lus uniquement par les tests.
 COPY --from=fixtures --chown=node:node date_mission.json /document-parsing/fixtures/date_mission.json
 
+# 6) Catalogue des modeles par action (#194) : lib/choix-modele.js lit
+#    document-parsing/models/catalogue.json (et son chargeur catalogue.js) a
+#    l'execution, par le meme chemin relatif depuis /app/lib, pour proposer les
+#    modeles du pre-remplissage de contrat et de l'URSSAF. Le contexte de build
+#    additionnel "modeles" pointe vers document-parsing/models/ (voir les trois
+#    docker-compose). Sans cette copie, le service demarre, mais tout appel qui
+#    consulte le catalogue echoue : c'est le piege du fichier absent de l'image
+#    deja rencontre avec les schemas (#170) et la table des mois (#179).
+#    Les deux fichiers seulement : tests/ n'a rien a faire dans l'image.
+COPY --from=modeles --chown=node:node catalogue.json catalogue.js /document-parsing/models/
+
 # Les fichiers (referentiel, cle API, contrats generes) vivent dans
 # /app/data, monte comme volume pour persister hors du conteneur.
 # L'historique/signatures/corbeille/templates-perso vivent en PostgreSQL
