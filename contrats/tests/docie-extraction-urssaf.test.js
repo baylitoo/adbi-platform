@@ -314,6 +314,34 @@ test("extractUrssafViaTexte : ne renvoie jamais d'analyse sans avoir eu du texte
   await assert.rejects(extractUrssafViaTexte({}, { env: ENV, extractText }), /Aucun fichier reçu/);
 });
 
+test("clé SIREN/SIRET (#194) : le verdict traverse analyzeDocument jusqu'à la réponse, sans rien vider", async () => {
+  // Chemin de production réel : PDF texte, vrai bridge (fetchImpl simulé),
+  // mapUrssafDocieResult. docie-extraction.js ne garde que `analysis` : le
+  // verdict et le message doivent donc y être, pas seulement dans `warnings`.
+  const { messagesSirenSiret, controlerSirenSiret } = require("../lib/siren-siret");
+  const body = { dataBase64: (await pdfTexte()).toString("base64"), mimeType: "application/pdf",
+    items: ITEMS, expectedName: "Sund Industry System" };
+
+  const juste = await analyzeDocument(body, { env: ENV, analyzeLocal: localQuiEchoue(),
+    fetchImpl: async () => new Response(JSON.stringify(reponseDocie("2026-03-04")), { status: 200 }) });
+  assert.equal(juste.controleSirenSiret.siren.statut, "valide");
+  assert.equal(juste.controleSirenSiret.siret.statut, "valide");
+  assert.deepEqual(juste.issues, []);
+
+  const reponse = reponseDocie("2026-03-04");
+  reponse.result.siren.value = "123456789"; // somme de Luhn 47 : clé fausse
+  const faux = await analyzeDocument(body, { env: ENV, analyzeLocal: localQuiEchoue(),
+    fetchImpl: async () => new Response(JSON.stringify(reponse), { status: 200 }) });
+  assert.equal(faux.summary, "Attestation de vigilance URSSAF — délivré le 2026-03-04 (DocIE)");
+  assert.equal(faux.siren, "123456789");
+  assert.equal(faux.isValid, true);
+  assert.equal(faux.controleSirenSiret.siren.statut, "cle_invalide");
+  assert.equal(faux.controleSirenSiret.siret.statut, "valide");
+  assert.deepEqual(faux.issues, messagesSirenSiret(controlerSirenSiret("123456789", "94109131600013")).map((m) => m.message));
+  assert.deepEqual(faux.issues,
+    ["SIREN « 123456789 » : clé de contrôle invalide, chiffre probablement mal lu — valeur conservée, à vérifier sur le document"]);
+});
+
 test("le schéma embarqué est bien celui du dépôt, chargé depuis document-parsing/schemas", () => {
   assert.deepEqual(chargerSchemaUrssaf(), SCHEMA);
   assert.equal(SCHEMA.document_type, "urssaf");

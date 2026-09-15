@@ -15,7 +15,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 
 const { importerCv } = require("./lib/import-pipeline");
-const { creerGestionnaire } = require("./lib/import-taches");
+const { creerGestionnaire, maxSimultaneesDepuisEnv } = require("./lib/import-taches");
 const { monterImport } = require("./lib/import-routes");
 const { build, GABARIT, cheminBadge } = require("./lib/onepager");
 const { buildPptx, buildLivret } = require("./lib/render-pptx");
@@ -29,6 +29,17 @@ if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL manquante — voir .env.example (PostgreSQL est requis depuis la PR B de l'issue #16).");
   process.exit(1);
 }
+// Plafond d'extractions DocIE simultanees (issue #196), a aligner sur le
+// `n_parallel` du modele servi : lu et valide ICI, avant la base, pour qu'une
+// valeur invalide arrete le demarrage au lieu de passer pour le defaut.
+let MAX_EXTRACTIONS_SIMULTANEES;
+try {
+  MAX_EXTRACTIONS_SIMULTANEES = maxSimultaneesDepuisEnv();
+} catch (e) {
+  console.error(e.message + " Voir .env.example.");
+  process.exit(1);
+}
+console.log(`[taches] ${MAX_EXTRACTIONS_SIMULTANEES} extraction(s) simultanée(s) (ADBI_EXTRACTION_MAX_CONCURRENT)`);
 // Local par defaut (poste de dev) ; le Dockerfile passe ADBI_HOTE=0.0.0.0 —
 // sans ca, "127.0.0.1" a l'interieur du conteneur n'est PAS atteignable via
 // le port publie ("-p 4200:4200" arrive sur l'interface externe, pas la
@@ -92,10 +103,11 @@ app.get("/api/sante", async (req, res) => {
  * l'utilisateur valide d'abord, etape 2).
  *
  * Tache asynchrone depuis l'issue #196 : un grand CV prend plusieurs minutes
- * cote DocIE, trop pour une requete HTTP. Contrat, concurrence (2) et duree de
- * conservation (30 min) : lib/import-taches.js ; routes : lib/import-routes.js.
+ * cote DocIE, trop pour une requete HTTP. Contrat, concurrence
+ * (ADBI_EXTRACTION_MAX_CONCURRENT, defaut 2, lue en tete de ce fichier) et duree
+ * de conservation (30 min) : lib/import-taches.js ; routes : lib/import-routes.js.
  */
-monterImport(app, { importerCv, db, gestionnaire: creerGestionnaire() });
+monterImport(app, { importerCv, db, gestionnaire: creerGestionnaire({ maxSimultanees: MAX_EXTRACTIONS_SIMULTANEES }) });
 
 // --------------------------------------------------------------- CRUD -----
 

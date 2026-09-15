@@ -25,10 +25,12 @@
  *   id inconnu ou expire -> 404
  *
  * En memoire et borne :
- *   - MAX_SIMULTANEES (2) extractions a la fois : le nombre du contrat (#196,
- *     les 2 slots de LFM2.5-2.6B dans #194). Au-dela, les requetes attendraient
- *     DANS llama-server et cette attente consommerait le `timeout_seconds` de
- *     DocIE ;
+ *   - ADBI_EXTRACTION_MAX_CONCURRENT extractions a la fois (defaut
+ *     MAX_SIMULTANEES_DEFAUT = 1, voir maxSimultaneesDepuisEnv) : a aligner sur
+ *     le `n_parallel` du modele servi. Au-dela, les requetes attendraient DANS
+ *     llama-server et cette attente consommerait le `timeout_seconds` de DocIE
+ *     (deux contrats de ~5 min sur un seul slot : le second pouvait echouer en
+ *     502 alors qu'il avait ete admis) ;
  *   - MAX_EN_ATTENTE (20) taches en file, dans l'ordre d'arrivee : chacune tient
  *     son document en memoire (jusqu'a ~19 Mo, limite du bridge), la file ne
  *     peut donc pas croitre sans limite ; au-dela, `creer` refuse
@@ -49,9 +51,47 @@
 
 const crypto = require("node:crypto");
 
-const MAX_SIMULTANEES = 2;
+// Plafond d'extractions simultanees, lu au demarrage (server.js). Meme nom de
+// variable dans les trois services (one-pager, contrats, cv-parser, #196) ; le
+// docker-compose.yml racine la remplit depuis CONTRATS_EXTRACTION_MAX_CONCURRENT.
+const VARIABLE_MAX_SIMULTANEES = "ADBI_EXTRACTION_MAX_CONCURRENT";
+// Defaut 1 : le modele par defaut des contrats est NuExtract3, servi avec
+// `n_parallel` 1 (liste retenue de #194). A monter a 2 seulement si ce service
+// est branche sur LFM2.5-2.6B (`n_parallel` 2).
+const MAX_SIMULTANEES_DEFAUT = 1;
+// Borne haute : bien au-dela de tout `n_parallel` de #194 (1 ou 2) ; attrape une
+// faute de frappe ou la confusion avec la taille de file (20).
+const MAX_SIMULTANEES_BORNE = 16;
+// File et conservation restent en dur : elles bornent la memoire (un document
+// par tache en attente) et le confort de l'utilisateur, pas les slots du modele.
 const MAX_EN_ATTENTE = 20;
 const TTL_MS = 30 * 60 * 1000;
+
+/**
+ * Plafond d'extractions simultanees depuis l'environnement (meme regle que
+ * one-pager/lib/import-taches.js et cv-parser/taches_upload.py).
+ *
+ * Absente, vide ou blanche -> MAX_SIMULTANEES_DEFAUT (compose transmet une
+ * chaine vide quand la variable racine n'est pas renseignee). Presente mais
+ * autre chose qu'un entier decimal entre 1 et MAX_SIMULTANEES_BORNE -> Error :
+ * server.js arrete alors le demarrage, une faute de frappe ne doit pas passer
+ * pour « 1 ».
+ *
+ * @param {Record<string, string|undefined>} [env]
+ * @returns {number}
+ */
+function maxSimultaneesDepuisEnv(env = process.env) {
+  const brut = String(env[VARIABLE_MAX_SIMULTANEES] ?? "").trim();
+  if (!brut) return MAX_SIMULTANEES_DEFAUT;
+  // Pas Number() : il accepte "2.5", "1e1", "0x2"…
+  const valeur = /^\d+$/.test(brut) ? Number(brut) : NaN;
+  if (!(valeur >= 1 && valeur <= MAX_SIMULTANEES_BORNE)) {
+    throw new Error(
+      `${VARIABLE_MAX_SIMULTANEES} doit être un entier entre 1 et ${MAX_SIMULTANEES_BORNE} (reçu : ${JSON.stringify(brut)}).`
+    );
+  }
+  return valeur;
+}
 
 class FileTachesPleineError extends Error {
   constructor(max) {
@@ -140,7 +180,7 @@ function mapperErreur(e) {
  * @param {(e: Error) => void} [options.journal] erreur brute, cote serveur seulement
  */
 function creerGestionnaire({
-  maxSimultanees = MAX_SIMULTANEES,
+  maxSimultanees = MAX_SIMULTANEES_DEFAUT,
   maxEnAttente = MAX_EN_ATTENTE,
   ttlMs = TTL_MS,
   maintenant = Date.now,
@@ -227,6 +267,6 @@ function creerGestionnaire({
 
 module.exports = {
   creerGestionnaire, mapperErreur, FileTachesPleineError,
-  MESSAGES_BRIDGE, MESSAGES_SERVICE, MESSAGE_INTERNE,
-  MAX_SIMULTANEES, MAX_EN_ATTENTE, TTL_MS,
+  MESSAGES_BRIDGE, MESSAGES_SERVICE, MESSAGE_INTERNE, maxSimultaneesDepuisEnv,
+  VARIABLE_MAX_SIMULTANEES, MAX_SIMULTANEES_DEFAUT, MAX_SIMULTANEES_BORNE, MAX_EN_ATTENTE, TTL_MS,
 };

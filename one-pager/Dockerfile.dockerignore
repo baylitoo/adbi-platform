@@ -1,0 +1,57 @@
+# Fichier d'exclusion PROPRE a one-pager/Dockerfile.
+#
+# L'image est construite avec la RACINE DU DEPOT comme contexte (issue #152,
+# voir docker-compose.yml et docker-compose.local.yml). Dans ce cas Docker ne
+# lit PAS one-pager/.dockerignore (il ne s'applique qu'a un contexte
+# one-pager/) et il n'existe pas de .dockerignore racine : sans ce fichier,
+# tout le poste de travail partait dans le contexte, et
+# `COPY one-pager/ ./` embarquait dans une couche de l'image les bases de CV
+# locales (one-pager/data/*.sqlite — donnees personnelles, qu'un
+# `RUN mkdir -p /app/data` ulterieur ne retire pas de la couche) et le
+# node_modules de l'hote (binaires Windows) par-dessus celui que `npm ci`
+# venait d'installer pour Linux.
+#
+# BuildKit cherche `<Dockerfile>.dockerignore` a cote du Dockerfile et le
+# prefere au .dockerignore de la racine du contexte. Les motifs sont relatifs
+# a la RACINE DU CONTEXTE (le depot), pas a one-pager/.
+#
+# Liste BLANCHE : tout est exclu, puis seul ce que le Dockerfile copie est
+# reintegre. Un nouveau dossier de donnees ailleurs dans le depot ne peut donc
+# pas fuiter. Si le Dockerfile gagne un COPY, ajouter ici le chemin
+# correspondant — sinon le build echoue net sur « not found ».
+
+*
+
+# --- COPY one-pager/package.json one-pager/package-lock.json ./
+# --- COPY one-pager/ ./
+!one-pager
+
+# --- COPY document-parsing/bridge/docie-bridge.js ...
+!document-parsing/bridge/docie-bridge.js
+# --- COPY document-parsing/schemas/adbi_resume.schema.json ...
+!document-parsing/schemas/adbi_resume.schema.json
+# --- COPY document-parsing/fixtures/{mission_en_cours,date_mission,competences_synonymes}.json ...
+!document-parsing/fixtures/mission_en_cours.json
+!document-parsing/fixtures/date_mission.json
+!document-parsing/fixtures/competences_synonymes.json
+
+# --- Dans one-pager/ : jamais dans l'image (a garder coherent avec
+#     one-pager/.dockerignore et one-pager/.gitignore).
+# Dependances de l'hote : `npm ci` les installe pour Linux dans l'image.
+one-pager/node_modules
+# Bases de CV locales (donnees personnelles) et sources importees.
+one-pager/data
+one-pager/runtime
+# Secrets locaux (la configuration arrive par l'environnement du conteneur).
+one-pager/.env
+one-pager/.env.*
+!one-pager/.env.example
+one-pager/.git
+one-pager/.gitignore
+one-pager/.claude
+one-pager/*.zip
+**/*.sqlite
+**/*.sqlite-*
+**/*.sqlite3
+**/*.db
+**/*.log

@@ -59,6 +59,12 @@ services:
       # « configuration » avant le moindre appel. Même piège que #164.
       DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
       DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-360}
+      # Pré-remplissages DocIE simultanés (#196), à aligner sur le `n_parallel`
+      # du modèle servi pour les contrats (#194). Vide -> défaut du service : 1
+      # (NuExtract3). Lancé isolément, ce fichier lit le nom du conteneur
+      # tel quel (voir .env.example) ; le docker-compose.yml racine, lui, lit
+      # CONTRATS_EXTRACTION_MAX_CONCURRENT.
+      ADBI_EXTRACTION_MAX_CONCURRENT: ${ADBI_EXTRACTION_MAX_CONCURRENT:-}
     restart: unless-stopped
     # Issue #138 : même plafond que le service `contrats` du docker-compose.yml
     # RACINE — sans lui, un pic mémoire ici n'est pas contenu au conteneur et

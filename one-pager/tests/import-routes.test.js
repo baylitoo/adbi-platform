@@ -222,6 +222,9 @@ test("importerCv reel, DocIE en echec (fetch simule) : le repli local et ses ave
 
 test("server.js monte bien ces routes (et plus de gestionnaire synchrone)", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-  assert.match(source, /monterImport\(app, \{ importerCv, db, gestionnaire: creerGestionnaire\(\) \}\)/);
+  // Le gestionnaire prend le plafond lu dans ADBI_EXTRACTION_MAX_CONCURRENT
+  // (#196), jamais le defaut du module en silence.
+  assert.match(source, /MAX_EXTRACTIONS_SIMULTANEES = maxSimultaneesDepuisEnv\(\);/);
+  assert.match(source, /monterImport\(app, \{ importerCv, db, gestionnaire: creerGestionnaire\(\{ maxSimultanees: MAX_EXTRACTIONS_SIMULTANEES \}\) \}\)/);
   assert.doesNotMatch(source, /app\.post\("\/api\/import"/);
 });

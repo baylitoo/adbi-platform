@@ -12,6 +12,7 @@
 const fs = require("fs");
 const path = require("path");
 const { DELAI_HTTP_MS, delaiSignal, messageDelai } = require("./httpDelai");
+const { controlerSirenSiret, VALIDE } = require("./siren-siret");
 
 const SECRETS_PATH = path.join(__dirname, "..", "data", "secrets.json");
 
@@ -98,6 +99,28 @@ function normalizeSiren(q) {
   if (digits.length === 14) return digits.slice(0, 9);   // SIRET -> SIREN
   if (digits.length === 9) return digits;
   throw new Error("Saisir un SIREN (9 chiffres) ou un SIRET (14 chiffres).");
+}
+
+// Clé de Luhn du SIREN recherché (#201, lib/siren-siret.js — pas de second
+// Luhn ici), contrôlée AVANT tout appel à gouv.fr, Pappers ou l'INSEE, avant
+// même le cache et le plafond : un chiffre mal saisi ou mal lu ne doit ni
+// ouvrir la fiche d'une autre société, ni consommer un appel payant.
+//
+// Seuls les 9 chiffres EFFECTIVEMENT envoyés sont contrôlés. Pour un SIRET,
+// getCompany ne recherche que le SIREN qu'il contient (le NIC est jeté par
+// normalizeSiren) : la clé du SIRET entier ne change rien à la recherche, et
+// l'exiger rendrait la recherche inutilisable pour La Poste, dont les SIRET ne
+// suivent pas Luhn (lacune connue de #201, règle INSEE non sourcée, non
+// implémentée). Le SIREN de La Poste (356000000) passe Luhn : sa recherche,
+// par SIREN comme par SIRET, reste possible.
+function verifierCleSiren(siren, saisie) {
+  if (controlerSirenSiret(siren, null).siren.statut === VALIDE) return;
+  const texte = String(saisie).trim();
+  const err = new Error(String(saisie).replace(/\D/g, "").length === 14
+    ? "SIRET « " + texte + " » : le SIREN qu'il contient (" + siren + ") a une clé de contrôle invalide — un chiffre est probablement mal saisi ou mal lu. Recherche non lancée."
+    : "SIREN « " + texte + " » : clé de contrôle invalide — un chiffre est probablement mal saisi ou mal lu. Recherche non lancée.");
+  err.status = 400;
+  throw err;
 }
 
 // ---------------------------------------------------------------------
@@ -365,6 +388,7 @@ async function searchCompanies(query, limit) {
 
 async function getCompany(q) {
   const siren = normalizeSiren(q); // valide le format (9 ou 14 chiffres)
+  verifierCleSiren(siren, q);      // puis la clé, avant tout appel sortant
   const status = settingsStatus();
   if (status.source === "insee" && key("inseeApiKey", "INSEE_API_KEY")) {
     const apiKey = key("inseeApiKey", "INSEE_API_KEY");

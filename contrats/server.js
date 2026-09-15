@@ -22,7 +22,7 @@ const { analyzeDocument } = require("./lib/docie-extraction");
 const { extractContractValues } = require("./lib/docie-contract-import");
 // Ce pré-remplissage est une tâche asynchrone (issue #196) : gestionnaire en
 // mémoire (lib/taches-extraction.js) et routes (lib/import-extraction-routes.js).
-const { creerGestionnaire } = require("./lib/taches-extraction");
+const { creerGestionnaire, maxSimultaneesDepuisEnv } = require("./lib/taches-extraction");
 const { monterPreremplissage } = require("./lib/import-extraction-routes");
 const signatures = require("./lib/signatures");
 const templatesPerso = require("./lib/templates-perso");
@@ -42,6 +42,17 @@ if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL manquante — voir .env.example (PostgreSQL est requis depuis la PR B de l'issue #14).");
   process.exit(1);
 }
+// Plafond d'extractions DocIE simultanées (issue #196), à aligner sur le
+// `n_parallel` du modèle servi : lu et validé ICI, avant la base, pour qu'une
+// valeur invalide arrête le démarrage au lieu de passer pour le défaut.
+let MAX_EXTRACTIONS_SIMULTANEES;
+try {
+  MAX_EXTRACTIONS_SIMULTANEES = maxSimultaneesDepuisEnv();
+} catch (e) {
+  console.error(e.message + " Voir .env.example.");
+  process.exit(1);
+}
+console.log(`[taches] ${MAX_EXTRACTIONS_SIMULTANEES} extraction(s) simultanée(s) (ADBI_EXTRACTION_MAX_CONCURRENT)`);
 // Lieu de stockage : un dossier par contrat généré (data/contrats-generes/<base>/),
 // alimenté à chaque export et par le flux de signature.
 const GENERES_DIR = path.join(__dirname, "data", "contrats-generes");
@@ -1117,10 +1128,11 @@ app.delete("/api/contracts/:id/signe", async (req, res) => {
 //
 // Tâche asynchrone depuis l'issue #196 (un contrat long prend plusieurs
 // minutes côté DocIE) : POST /api/contracts/importer/extraire -> 202 { tache },
-// puis GET /api/taches/:id jusqu'au résultat. Contrat, concurrence (2), file
+// puis GET /api/taches/:id jusqu'au résultat. Contrat, concurrence
+// (ADBI_EXTRACTION_MAX_CONCURRENT, défaut 1, lue en tête de ce fichier), file
 // (20) et conservation (30 min) : lib/taches-extraction.js ; routes et
 // validation synchrone : lib/import-extraction-routes.js.
-monterPreremplissage(app, { extractContractValues, gestionnaire: creerGestionnaire() });
+monterPreremplissage(app, { extractContractValues, gestionnaire: creerGestionnaire({ maxSimultanees: MAX_EXTRACTIONS_SIMULTANEES }) });
 
 app.post("/api/contracts/importer", async (req, res) => {
   try {

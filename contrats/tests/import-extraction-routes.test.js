@@ -292,15 +292,15 @@ test("GET d'un id inconnu ou expire -> 404 avec un message clair", async () => {
   }
 });
 
-test("file pleine : 2 en cours + 20 en attente acceptees, la suivante -> 503 avec un message", async () => {
+test("file pleine (plafond par defaut, 1) : 1 en cours + 20 en attente acceptees, la suivante -> 503 avec un message", async () => {
   const bloque = differe();
   const srv = await demarrer({ extractContractValues: () => bloque.promesse });
   try {
-    for (let i = 0; i < 22; i++) assert.equal((await srv.post(CORPS)).status, 202);
+    for (let i = 0; i < 21; i++) assert.equal((await srv.post(CORPS)).status, 202);
     const r = await srv.post(CORPS);
     assert.equal(r.status, 503);
     assert.match((await r.json()).error, /Trop de pré-remplissages en attente \(20 maximum\)/);
-    assert.deepEqual(srv.gestionnaire.statistiques(), { enCours: 2, enAttente: 20, conservees: 22 });
+    assert.deepEqual(srv.gestionnaire.statistiques(), { enCours: 1, enAttente: 20, conservees: 21 });
     bloque.resoudre({ ok: true });
   } finally {
     await srv.fermer();
@@ -309,7 +309,10 @@ test("file pleine : 2 en cours + 20 en attente acceptees, la suivante -> 503 ave
 
 test("server.js monte bien ces routes, et plus aucune route d'extraction synchrone", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-  assert.match(source, /monterPreremplissage\(app, \{ extractContractValues, gestionnaire: creerGestionnaire\(\) \}\);/);
+  // Le gestionnaire prend le plafond lu dans ADBI_EXTRACTION_MAX_CONCURRENT
+  // (#196), jamais le defaut du module en silence.
+  assert.match(source, /MAX_EXTRACTIONS_SIMULTANEES = maxSimultaneesDepuisEnv\(\);/);
+  assert.match(source, /monterPreremplissage\(app, \{ extractContractValues, gestionnaire: creerGestionnaire\(\{ maxSimultanees: MAX_EXTRACTIONS_SIMULTANEES \}\) \}\);/);
   assert.doesNotMatch(source, /app\.post\("\/api\/contracts\/importer\/extraire"/);
   assert.doesNotMatch(source, /app\.get\("\/api\/taches/);
 });

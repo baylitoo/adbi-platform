@@ -516,7 +516,10 @@ function buildChecklist() {
       item.appendChild(drow);
       item.appendChild(status);
       const saved = state.dateState[it.id];
-      if (saved && typeof saved === "object") renderChecklistDocResult(status, saved);
+      if (saved && typeof saved === "object") {
+        renderChecklistDocResult(status, saved);
+        renderControleSirenSiret(status, saved);
+      }
       // Kbis : proposition des valeurs lues à reporter dans le contrat (#170).
       if (it.id === "kbis") {
         const prop = document.createElement("div");
@@ -572,8 +575,13 @@ async function analyzeChecklistDoc(it, fileObj, statusEl, btn) {
     // forme juridique, adresse, représentant…), pour les PROPOSER au contrat —
     // liste blanche de public/kbis-champs.js. Analyse locale : {} (rien à proposer).
     if (it.id === "kbis") res.kbis = CONTRATS_KBIS_CHAMPS.extraire(d);
+    // Verdict de clé SIREN/SIRET (#201), gardé seulement s'il est dans la
+    // réponse : une analyse locale garde exactement la forme d'avant.
+    const controle = CONTRATS_KBIS_CHAMPS.controleCompact(d);
+    if (controle) res.controleSirenSiret = controle;
     state.dateState[it.id] = res;
     renderChecklistDocResult(statusEl, res);
+    renderControleSirenSiret(statusEl, res);
     const prop = statusEl.parentNode && statusEl.parentNode.querySelector("[data-kbis-proposition]");
     if (prop) renderPropositionKbis(prop, res);
     majNoteCoordonnees();
@@ -616,6 +624,22 @@ function renderChecklistDocResult(el, res) {
   }
 }
 
+// Verdict de clé SIREN/SIRET (#201) : une ligne compacte AJOUTÉE sous le
+// résultat, après renderChecklistDocResult (qui réécrit textContent et efface
+// donc la ligne précédente). Ni la classe ni le texte du résultat ne changent :
+// le ⛔ « autre société » et la validité 6 mois restent tels quels. Rien si le
+// document est au nom d'une autre société (ses numéros n'importent pas, le ⛔
+// suffit) ni si la réponse ne porte pas le verdict (analyse locale).
+function renderControleSirenSiret(el, res) {
+  if (!res || res.nameMatches === false) return;
+  const ligne = CONTRATS_KBIS_CHAMPS.ligneControle(res.controleSirenSiret);
+  if (!ligne) return;
+  const sous = document.createElement("div");
+  sous.className = ligne.alerte ? "chk-date-status warn" : "cand-sub";
+  sous.textContent = ligne.texte;
+  el.appendChild(sous);
+}
+
 // Proposition des valeurs lues sur le Kbis (issue #170) — logique dans
 // public/kbis-champs.js. Rien n'est écrit sans clic ; un champ déjà rempli
 // avec une autre valeur est gardé tant que l'utilisateur ne choisit pas le Kbis.
@@ -623,7 +647,7 @@ function renderChecklistDocResult(el, res) {
 function renderPropositionKbis(host, res, annonce) {
   const K = CONTRATS_KBIS_CHAMPS;
   host.innerHTML = "";
-  const prop = res ? K.proposer(res.kbis, res.nameMatches, state.values) : null;
+  const prop = res ? K.proposer(res.kbis, res.nameMatches, state.values, res.controleSirenSiret) : null;
   host.classList.toggle("hidden", !prop);
   if (!prop) return;
   const noeud = (tag, cls, texte) => {
@@ -668,6 +692,15 @@ function renderPropositionKbis(host, res, annonce) {
       lab.appendChild(ligne);
       host.appendChild(lab);
     });
+  });
+
+  // SIREN/SIRET dont la clé n'est pas « valide » (#201) : jamais proposés au
+  // report, la valeur lue est montrée avec la raison pour qu'un humain la corrige.
+  prop.aVerifier.forEach((a) => {
+    const titre = noeud("div", "cand-nom", libelle(a.cle) + " ");
+    titre.appendChild(noeud("em", "cand-ei", "à vérifier — non reporté"));
+    host.appendChild(titre);
+    host.appendChild(noeud("div", "cand-sub", "Lu : « " + a.kbis + " » — " + a.message));
   });
 
   if (prop.infos.length) {
@@ -2799,6 +2832,11 @@ function construireAutresChampsImport() {
     else input.type = c.type || "text";
     const ph = CONTRATS_IMPORT_CHAMPS.placeholder(c);
     if (ph) input.placeholder = ph;
+    // SIREN/SIRET signalé par le contrôle de clé (#201) : la marque tombe dès
+    // que l'utilisateur modifie le champ — il l'a relu et corrigé.
+    if (CONTRATS_IMPORT_CHAMPS.IDS_SIREN_SIRET.indexOf(c.id) !== -1) {
+      input.addEventListener("input", () => marquerChampImport(input, null));
+    }
     label.appendChild(input);
     grille.appendChild(label);
   });
@@ -2845,6 +2883,7 @@ async function validerImport() {
       const el = document.getElementById(id);
       if (el) el.value = "";
     });
+    marquerChampsImportAVerifier([]);
     afficherAvertissementsImport([]);
     $("#impPreremplirStatus").textContent = "";
     $("#impAutres").open = false;
@@ -2886,6 +2925,8 @@ async function preremplirImportDepuisPdf() {
   btn.disabled = true; btn.textContent = "Extraction…";
   st.textContent = "🔎 Extraction DocIE en cours…";
   st.className = "status";
+  // Marques d'un pré-remplissage précédent : elles ne valent plus.
+  marquerChampsImportAVerifier([]);
   try {
     const dataBase64 = await fileToBase64(f);
     const r = await fetch("/api/contracts/importer/extraire", {
@@ -2923,16 +2964,25 @@ async function preremplirImportDepuisPdf() {
       if (el) el.value = valeur;
     });
     const warnings = d.warnings || [];
+    // SIREN/SIRET dont la clé n'est pas « valide » (#201, `controleSirenSiret`
+    // à côté de `values`) : le champ reste rempli pour relecture, mais il est
+    // marqué et la ligne d'état nomme le problème. Drapeau absent : [] (avant).
+    const aVerifier = CONTRATS_IMPORT_CHAMPS.aVerifierSirenSiret(d.controleSirenSiret);
+    marquerChampsImportAVerifier(aVerifier);
     // Section dépliée dès qu'elle contient quelque chose à relire.
-    if (CONTRATS_IMPORT_CHAMPS.nbAutresPreremplis(v) || warnings.length) $("#impAutres").open = true;
+    if (CONTRATS_IMPORT_CHAMPS.nbAutresPreremplis(v) || warnings.length || aVerifier.length) $("#impAutres").open = true;
     // TOUS les avertissements, en liste sous la ligne d'état (auparavant
     // tronqués aux 3 premiers dans la ligne d'état : avec 19 champs, un 4e
     // avertissement portant sur un champ de la section restait invisible).
     afficherAvertissementsImport(warnings);
     const notes = warnings.length ? " (" + warnings.length + " avertissement" + (warnings.length > 1 ? "s" : "") + " ci-dessous)" : "";
+    const sirenSiret = aVerifier.length ? " — " + CONTRATS_IMPORT_CHAMPS.resumeSirenSiret(aVerifier) + " (champ signalé)" : "";
     if (d.errors && d.errors.length) {
       st.className = "status warn";
-      st.textContent = "⚠️ Champs pré-remplis à vérifier — " + d.errors.join(" ") + notes;
+      st.textContent = "⚠️ Champs pré-remplis à vérifier — " + d.errors.join(" ") + sirenSiret + notes;
+    } else if (aVerifier.length) {
+      st.className = "status warn";
+      st.textContent = "⚠️ Champs pré-remplis à vérifier" + sirenSiret + notes;
     } else {
       st.className = "status ok";
       st.textContent = "✓ Champs pré-remplis depuis le PDF — à relire avant import" + notes;
@@ -2944,6 +2994,31 @@ async function preremplirImportDepuisPdf() {
   } finally {
     btn.disabled = false; btn.textContent = old;
   }
+}
+
+// Marque d'un champ SIREN/SIRET du modal d'import à vérifier (#201). Choix :
+// la classe « invalid » EXISTANTE (bordure et fond d'erreur de
+// validateRequired, mêmes jetons de thème clair/sombre) plutôt qu'un nouveau
+// style — son sélecteur est seulement étendu à .import-grille dans
+// styles.css —, plus aria-invalid et une info-bulle portant la raison, pour
+// que la marque ne repose pas sur la couleur seule. `alerte` null : démarque.
+function marquerChampImport(el, alerte) {
+  el.classList.toggle("invalid", !!alerte);
+  if (alerte) {
+    el.setAttribute("aria-invalid", "true");
+    el.title = alerte.libelle + " : " + alerte.message;
+  } else {
+    el.removeAttribute("aria-invalid");
+    el.removeAttribute("title");
+  }
+}
+
+// Applique la liste complète : SIREN/SIRET listés marqués, les autres démarqués.
+function marquerChampsImportAVerifier(aVerifier) {
+  CONTRATS_IMPORT_CHAMPS.IDS_SIREN_SIRET.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) marquerChampImport(el, (aVerifier || []).find((a) => a.id === id) || null);
+  });
 }
 
 // Liste des avertissements DocIE sous la ligne d'état du pré-remplissage

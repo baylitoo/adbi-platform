@@ -2,6 +2,9 @@
 # Build (DEPUIS LA RACINE DU DEPOT — requis depuis l'issue #152 pour embarquer
 # le client bridge DocIE partage, voir document-parsing/bridge/README.md) :
 #   docker build -f one-pager/Dockerfile -t adbi-onepager .
+# Contexte filtre par one-pager/Dockerfile.dockerignore (liste blanche, lue par
+# BuildKit a la place d'un .dockerignore racine) : tout nouveau COPY doit y
+# etre reintegre, sinon le build echoue sur « not found ».
 # Run   : docker run -p 4200:4200 -v "$(pwd)/data:/app/data" adbi-onepager
 FROM node:22-bookworm-slim
 

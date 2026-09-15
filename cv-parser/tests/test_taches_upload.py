@@ -6,10 +6,12 @@ test utilise de vrais threads (événements, jamais de sleep) pour vérifier le
 plafond sous concurrence réelle.
 """
 import ast
+import os
 import sys
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 RACINE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RACINE))
@@ -65,13 +67,34 @@ class Plafond(unittest.TestCase):
         self.assertEqual(g.max_simultanees, 2)
 
     def test_plafond_depuis_env(self):
+        self.assertEqual(tu.VARIABLE_MAX_SIMULTANEES, "ADBI_EXTRACTION_MAX_CONCURRENT")
         self.assertEqual(tu.max_simultanees_depuis_env({}), 2)
-        self.assertEqual(tu.max_simultanees_depuis_env({"ADBI_UPLOAD_MAX_CONCURRENT": ""}), 2)
-        self.assertEqual(tu.max_simultanees_depuis_env({"ADBI_UPLOAD_MAX_CONCURRENT": " 1 "}), 1)
-        self.assertEqual(tu.max_simultanees_depuis_env({"ADBI_UPLOAD_MAX_CONCURRENT": "4"}), 4)
-        for mauvais in ("0", "-1", "deux", "2.5"):
-            with self.assertRaises(ValueError, msg=mauvais):
-                tu.max_simultanees_depuis_env({"ADBI_UPLOAD_MAX_CONCURRENT": mauvais})
+        self.assertEqual(tu.max_simultanees_depuis_env({"ADBI_EXTRACTION_MAX_CONCURRENT": ""}), 2)
+        self.assertEqual(tu.max_simultanees_depuis_env({"ADBI_EXTRACTION_MAX_CONCURRENT": "   "}), 2)
+        self.assertEqual(tu.max_simultanees_depuis_env({"ADBI_EXTRACTION_MAX_CONCURRENT": " 1 "}), 1)
+        self.assertEqual(tu.max_simultanees_depuis_env({"ADBI_EXTRACTION_MAX_CONCURRENT": "4"}), 4)
+        self.assertEqual(tu.max_simultanees_depuis_env({"ADBI_EXTRACTION_MAX_CONCURRENT": "16"}), 16)
+
+    def test_plafond_depuis_env_valeurs_invalides(self):
+        for mauvais in ("0", "-1", "deux", "2.5", "1e1", "0x2", "+3", "1_0", "17", "20", "٣"):
+            with self.assertRaises(ValueError, msg=mauvais) as ctx:
+                tu.max_simultanees_depuis_env({"ADBI_EXTRACTION_MAX_CONCURRENT": mauvais})
+            self.assertIn("ADBI_EXTRACTION_MAX_CONCURRENT doit être un entier entre 1 et 16", str(ctx.exception))
+            self.assertIn(repr(mauvais), str(ctx.exception))
+
+    def test_ancien_nom_toujours_lu(self):
+        # ADBI_UPLOAD_MAX_CONCURRENT (PR #202) : un .env existant garde son réglage.
+        self.assertEqual(tu.max_simultanees_depuis_env({"ADBI_UPLOAD_MAX_CONCURRENT": "1"}), 1)
+        self.assertEqual(tu.max_simultanees_depuis_env({"ADBI_UPLOAD_MAX_CONCURRENT": " 3 "}), 3)
+        # Le nouveau nom l'emporte dès qu'il est renseigné ; vide, il laisse l'alias.
+        self.assertEqual(tu.max_simultanees_depuis_env(
+            {"ADBI_EXTRACTION_MAX_CONCURRENT": "1", "ADBI_UPLOAD_MAX_CONCURRENT": "3"}), 1)
+        self.assertEqual(tu.max_simultanees_depuis_env(
+            {"ADBI_EXTRACTION_MAX_CONCURRENT": "", "ADBI_UPLOAD_MAX_CONCURRENT": "3"}), 3)
+        # L'alias est validé de la même façon, et l'erreur nomme la variable lue.
+        with self.assertRaises(ValueError) as ctx:
+            tu.max_simultanees_depuis_env({"ADBI_UPLOAD_MAX_CONCURRENT": "0"})
+        self.assertIn("ADBI_UPLOAD_MAX_CONCURRENT doit être un entier entre 1 et 16", str(ctx.exception))
 
     def _plafond(self, n):
         g, lanceur = gestionnaire(max_simultanees=n)
@@ -92,8 +115,29 @@ class Plafond(unittest.TestCase):
         self._plafond(2)
 
     def test_plafond_surcharge_par_env(self):
+        self._plafond(tu.max_simultanees_depuis_env({"ADBI_EXTRACTION_MAX_CONCURRENT": "1"}))
+        self._plafond(tu.max_simultanees_depuis_env({"ADBI_EXTRACTION_MAX_CONCURRENT": "3"}))
         self._plafond(tu.max_simultanees_depuis_env({"ADBI_UPLOAD_MAX_CONCURRENT": "1"}))
-        self._plafond(tu.max_simultanees_depuis_env({"ADBI_UPLOAD_MAX_CONCURRENT": "3"}))
+
+    def test_demarrage_d_app_py_lit_l_env_et_echoue_sur_valeur_invalide(self):
+        # La ligne d'app.py qui monte le gestionnaire, exécutée telle quelle (elle
+        # tourne à l'import du module, donc au démarrage de gunicorn).
+        source = (RACINE / "app.py").read_text(encoding="utf-8")
+        ligne = next(l for l in source.splitlines() if l.startswith("TACHES_UPLOAD = "))
+
+        def demarrer(**env):
+            espace = {"GestionnaireTaches": tu.GestionnaireTaches,
+                      "max_simultanees_depuis_env": tu.max_simultanees_depuis_env}
+            complet = {"ADBI_EXTRACTION_MAX_CONCURRENT": "", "ADBI_UPLOAD_MAX_CONCURRENT": "", **env}
+            with mock.patch.dict(os.environ, complet):
+                exec(ligne, espace)
+            return espace["TACHES_UPLOAD"].max_simultanees
+
+        self.assertEqual(demarrer(), 2)
+        self.assertEqual(demarrer(ADBI_EXTRACTION_MAX_CONCURRENT="3"), 3)
+        self.assertEqual(demarrer(ADBI_UPLOAD_MAX_CONCURRENT="1"), 1)
+        with self.assertRaises(ValueError):
+            demarrer(ADBI_EXTRACTION_MAX_CONCURRENT="deux")
 
     def test_vrais_threads_jamais_plus_que_le_plafond(self):
         g = tu.GestionnaireTaches(max_simultanees=2, journal=lambda e: None)

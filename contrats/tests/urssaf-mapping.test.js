@@ -12,6 +12,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("path");
 const fs = require("fs");
+const { spawnSync } = require("child_process");
 
 const {
   DOCANALYZE_BASE_KEYS, ENRICHED_KEYS, MAPPED_FIELDS, DOCUMENT_TYPE_LABEL,
@@ -192,4 +193,207 @@ test("sans date de délivrance : champ vide, problème nommé, validité 6 mois 
   assert.equal(analysis.issuedDate, "");
   assert.ok(analysis.issues.includes("Date de délivrance non trouvée dans le document."));
   assert.equal(analysis.summary, DOCUMENT_TYPE_LABEL);
+});
+
+// ---------------------------------------------------------------------------
+// #194 (liste retenue, « échouer bruyamment ») : contrôle de clé SIREN/SIRET,
+// même intégration que kbis-mapping.js (#201). Le verdict doit arriver dans
+// `analysis` (issues + controleSirenSiret) : lib/docie-extraction.js jette
+// `warnings`.
+// ---------------------------------------------------------------------------
+const SIREN_SIRET = require(path.join(RACINE, "document-parsing", "fixtures", "siren_siret.json"));
+// Le schéma urssaf nomme le SIRET `siret` (le Kbis dit `siret_siege`).
+const CHAMPS_URSSAF = { siren: "siren", siret: "siret" };
+const CHAMPS_KBIS = { siren: "siren", siret: "siret_siege" };
+
+function libelleCas(cas) {
+  return JSON.stringify([cas.siren, cas.siret]) + " (" + cas.preuve + ")";
+}
+// Enveloppe DocIE brute (forme Python), déballée par le VRAI pont comme le
+// reste de ce fichier : le consommateur JS ne reçoit jamais autre chose.
+// Mesuré : docie-bridge.js::envelope() ne déballe un champ que s'il porte un
+// marqueur DocIE (evidence_ids / confidence) ; un `{ value }` nu arriverait
+// tel quel au mapping, en objet. Les champs portent donc ces marqueurs, comme
+// une vraie réponse.
+function champ(value) {
+  return { value, evidence_ids: [], confidence: 0.9 };
+}
+function enveloppeCas(cas) {
+  return {
+    schema_name: "urssaf",
+    result: {
+      company_name: champ("SUND INDUSTRY SYSTEM"),
+      siren: champ(cas.siren),
+      siret: champ(cas.siret),
+      issued_date: champ("2026-03-04"),
+    },
+    validation: { valid: true, errors: [], warnings: [] },
+  };
+}
+function mapperCas(cas, mapper = mapUrssafResult) {
+  const { result, metadata } = parseTextResponse(enveloppeCas(cas), "urssaf");
+  return mapper(result, { validation: metadata.validation });
+}
+function avertissementsSirenSiret(warnings, champs) {
+  const prefixes = Object.values(champs).map((c) => c + ": ");
+  return warnings.filter((w) => prefixes.some((p) => w.startsWith(p)));
+}
+
+test("siren/siret : le validateur est IMPORTÉ de lib/siren-siret.js, jamais recopié (#194)", () => {
+  const source = fs.readFileSync(path.join(RACINE, "contrats", "lib", "urssaf-mapping.js"), "utf8");
+  assert.ok(/require\("\.\/siren-siret"\)/.test(source), "urssaf-mapping.js doit requérir ./siren-siret");
+  // Ni le validateur ni ses aides (Luhn, contrôle d'un champ, motif) redéfinis,
+  // sous forme de fonction OU de constante.
+  assert.ok(!/function\s+(controlerSirenSiret|messagesSirenSiret|luhnValide|controlerUn)\b|(const|let|var)\s+(controlerSirenSiret|messagesSirenSiret|luhnValide|controlerUn|MOTIF_SEPARATEURS|SEPARATEURS_RE)\s*=/.test(source),
+    "urssaf-mapping.js ne doit PAS redéfinir le validateur SIREN/SIRET");
+  // Usage réel : une copie sous un AUTRE nom passerait la lecture du source.
+  // On remplace les exports du validateur par un témoin, on recharge le
+  // mapping, et il doit rendre ce témoin — il appelle donc bien le module.
+  const cheminValidateur = require.resolve("../lib/siren-siret");
+  const cheminMapping = require.resolve("../lib/urssaf-mapping");
+  const validateur = require(cheminValidateur);
+  const originaux = { c: validateur.controlerSirenSiret, m: validateur.messagesSirenSiret };
+  const temoin = { siren: { valeur: "t", chiffres: null, statut: "temoin" }, siret: { valeur: "", chiffres: null, statut: "absent" } };
+  const appels = [];
+  delete require.cache[cheminMapping];
+  try {
+    validateur.controlerSirenSiret = (...args) => { appels.push(args); return temoin; };
+    validateur.messagesSirenSiret = (c) => (c === temoin ? [{ champ: "siren", message: "MESSAGE TÉMOIN" }] : []);
+    const { mapUrssafResult: mapperEspionne } = require(cheminMapping);
+    const { analysis, warnings } = mapperEspionne(deballe("urssaf_extraction_sample.json"), {});
+    assert.deepEqual(appels, [["941091316", "94109131600013"]]);
+    assert.equal(analysis.controleSirenSiret, temoin);
+    assert.ok(analysis.issues.includes("MESSAGE TÉMOIN"), analysis.issues.join(" | "));
+    assert.ok(warnings.includes("siren: MESSAGE TÉMOIN"), warnings.join(" | "));
+  } finally {
+    validateur.controlerSirenSiret = originaux.c;
+    validateur.messagesSirenSiret = originaux.m;
+    delete require.cache[cheminMapping];
+  }
+});
+
+test("siren/siret : chaque cas du jeu d'essai traverse mapUrssafResult (#194)", () => {
+  assert.ok(SIREN_SIRET._ports.includes("contrats/lib/urssaf-mapping.js (JS)"));
+  for (const cas of SIREN_SIRET.cas) {
+    const libelle = libelleCas(cas);
+    const { analysis, warnings } = mapperCas(cas);
+    // Valeur lue CONSERVÉE, jamais vidée.
+    assert.equal(analysis.siren, cas.siren === null ? "" : String(cas.siren), libelle);
+    assert.equal(analysis.siret, cas.siret === null ? "" : String(cas.siret), libelle);
+    assert.equal(analysis.controleSirenSiret.siren.statut, cas.statut_siren, libelle);
+    assert.equal(analysis.controleSirenSiret.siret.statut, cas.statut_siret, libelle);
+    assert.equal(analysis.controleSirenSiret.siren.chiffres, cas.chiffres_siren, libelle);
+    assert.equal(analysis.controleSirenSiret.siret.chiffres, cas.chiffres_siret, libelle);
+    assert.deepEqual(analysis.issues, cas.messages.map((m) => m.message), libelle);
+    assert.deepEqual(
+      avertissementsSirenSiret(warnings, CHAMPS_URSSAF),
+      cas.messages.map((m) => CHAMPS_URSSAF[m.champ] + ": " + m.message),
+      libelle
+    );
+    assert.equal(analysis.isValid, true, libelle);
+    assert.equal(analysis.documentType, DOCUMENT_TYPE_LABEL, libelle);
+  }
+});
+
+test("siren/siret : même verdict et mêmes textes que le Kbis, cas par cas (#194)", () => {
+  // Seul le nom de champ DocIE du SIRET diffère dans le préfixe
+  // d'avertissement (`siret` ici, `siret_siege` côté Kbis) ; le message, lui,
+  // est identique au caractère près.
+  const { mapKbisResult } = require("../lib/kbis-mapping");
+  for (const cas of SIREN_SIRET.cas) {
+    const libelle = libelleCas(cas);
+    const urssaf = mapperCas(cas);
+    // Mêmes valeurs déballées, données au Kbis sous ses propres noms de champ.
+    const deballeCas = parseTextResponse(enveloppeCas(cas), "urssaf").result;
+    const kbis = mapKbisResult(
+      { company_name: "SUND INDUSTRY SYSTEM", siren: deballeCas.siren, siret_siege: deballeCas.siret, issued_date: "2026-03-04" },
+      { validation: { valid: true, errors: [], warnings: [] } }
+    );
+    assert.deepEqual(urssaf.analysis.controleSirenSiret, kbis.analysis.controleSirenSiret, libelle);
+    assert.deepEqual(urssaf.analysis.issues, kbis.analysis.issues, libelle);
+    const messages = (warnings, champs) => avertissementsSirenSiret(warnings, champs).map((w) => w.slice(w.indexOf(": ") + 2));
+    assert.deepEqual(messages(urssaf.warnings, CHAMPS_URSSAF), messages(kbis.warnings, CHAMPS_KBIS), libelle);
+  }
+});
+
+test("siren/siret : verdict hors ENRICHED_KEYS, présent aussi dans la branche illisible (#194)", () => {
+  assert.ok(!ENRICHED_KEYS.includes("controleSirenSiret"));
+  const nom = "urssaf_extraction_sample_unreadable.json";
+  const { analysis } = mapUrssafResult(deballe(nom), { validation: validationDe(nom) });
+  assert.equal(analysis.documentType, "Document");
+  assert.equal(analysis.controleSirenSiret.siren.statut, "absent");
+  assert.equal(analysis.controleSirenSiret.siret.statut, "absent");
+});
+
+test("siren/siret : fixtures urssaf nominale et limites, clés justes -> aucune issue ajoutée (#194)", () => {
+  const nominal = mapUrssafResult(deballe("urssaf_extraction_sample.json"), {}).analysis;
+  assert.equal(nominal.controleSirenSiret.siren.statut, "valide");
+  assert.equal(nominal.controleSirenSiret.siret.statut, "valide");
+  assert.deepEqual(nominal.issues, []);
+  const limites = mapUrssafResult(deballe("urssaf_extraction_sample_edge_cases.json"), {}).analysis;
+  assert.equal(limites.controleSirenSiret.siren.statut, "valide");
+  assert.equal(limites.controleSirenSiret.siret.statut, "absent");
+});
+
+test("siren/siret : SIREN à clé fausse seul identifiant lu -> signalé, jamais vidé (#179 B1, #194)", () => {
+  const { analysis } = mapUrssafResult({ siren: "123456789", issued_date: "2026-03-04" }, {});
+  assert.equal(analysis.siren, "123456789");
+  assert.equal(analysis.controleSirenSiret.siren.statut, "cle_invalide");
+  assert.equal(analysis.documentType, DOCUMENT_TYPE_LABEL);
+  assert.equal(analysis.isValid, true);
+  assert.ok(analysis.issues.some((i) => i.includes("clé de contrôle invalide")));
+});
+
+test("siren/siret : même sortie que le portage Python sur chaque cas (exécution croisée des mappings)", (t) => {
+  // Garde-fou inter-langages établi par #201 (siren-siret.test.js) pour le
+  // validateur, étendu ici au mapping URSSAF : les deux portages sont exécutés
+  // ICI sur la même fixture. Python la lit lui-même, pour garder ses types
+  // (941091316.0 reste un flottant côté Python).
+  //
+  // Les champs `siren` / `siret` mappés ne sont PAS comparés : pour
+  // 941091316.0, Python rend "941091316.0" (str) et JS "941091316" (String).
+  // Écart préexistant #179 A14, relevé dans #201 et commun au Kbis ; il ne
+  // touche ni le verdict ni les messages, qui passent par le validateur.
+  const script = [
+    "import json, sys",
+    "sys.path.insert(0, sys.argv[1])",
+    "import urssaf_to_contrats as u",
+    "f = json.load(open(sys.argv[2], encoding='utf-8'))",
+    "out = []",
+    "for c in f['cas']:",
+    "    env = {'schema_name': 'urssaf', 'result': {'company_name': {'value': 'SUND INDUSTRY SYSTEM'},",
+    "           'siren': {'value': c['siren']}, 'siret': {'value': c['siret']}, 'issued_date': {'value': '2026-03-04'}},",
+    "           'validation': {'valid': True, 'errors': [], 'warnings': []}}",
+    "    m = u.map_docie_urssaf_to_analysis(env)",
+    "    a = m.analysis",
+    "    out.append({'controleSirenSiret': a['controleSirenSiret'], 'issues': a['issues'], 'isValid': a['isValid'],",
+    "                'documentType': a['documentType'],",
+    "                'avertissements': [w for w in m.warnings if w.startswith(('siren: ', 'siret: '))]})",
+    "sys.stdout.buffer.write(json.dumps(out, ensure_ascii=False).encode('utf-8'))",
+  ].join("\n");
+  const interpreteur = process.platform === "win32" ? "python" : "python3";
+  // On ne saute QUE si l'interpréteur manque. Mesuré par mutation : sauter sur
+  // tout statut non nul masquait un mapping Python cassé (drapeau retiré ->
+  // KeyError dans ce script) en « Python indisponible », test sauté au lieu
+  // d'échouer.
+  const sonde = spawnSync(interpreteur, ["-c", "pass"], { encoding: "utf-8" });
+  if (sonde.error || sonde.status !== 0) {
+    t.skip("Python indisponible : " + (sonde.error ? sonde.error.message : sonde.stderr));
+    return;
+  }
+  const python = spawnSync(interpreteur, [
+    "-c", script,
+    path.join(RACINE, "document-parsing", "mappings"),
+    path.join(RACINE, "document-parsing", "fixtures", "siren_siret.json"),
+  ], { encoding: "utf-8" });
+  assert.equal(python.status, 0, "le mapping Python a échoué sur la fixture : " + python.stderr);
+  const sortiesPython = JSON.parse(python.stdout);
+  assert.equal(sortiesPython.length, SIREN_SIRET.cas.length);
+  SIREN_SIRET.cas.forEach((cas, i) => {
+    const { analysis, warnings } = mapperCas(cas);
+    assert.deepEqual({
+      controleSirenSiret: analysis.controleSirenSiret, issues: analysis.issues, isValid: analysis.isValid,
+      documentType: analysis.documentType, avertissements: avertissementsSirenSiret(warnings, CHAMPS_URSSAF),
+    }, sortiesPython[i], libelleCas(cas));
+  });
 });
