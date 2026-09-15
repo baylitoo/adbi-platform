@@ -560,14 +560,14 @@ def parse_response(body, expected_schema, agent):
     # No synthetic confidence/validation success when the agent omits metadata.
     confidence = reported_field_confidence(meta)
     unwrapped = unwrap(result)
-    # `blocs_texte` / `troncature_possible` : None sur cette voie, « non
+    # `blocs_texte` / `troncature_possible` / `blocs_fournis` : None sur cette voie, « non
     # mesurable » et non « non tronqué » -- c'est l'OCR distant qui fait les blocs.
     metadata = {"request_id": body.get("id"), "agent": agent, "model": body.get("model"),
                 "validation": validation, "usage": body.get("usage"),
                 "field_confidence": field_confidences(result) if confidence is None else confidence,
                 "prompt_profile": prompt_profile(meta),
                 "partiel": resultat_partiel(validation, unwrapped),
-                "blocs_texte": None, "troncature_possible": None,
+                "blocs_texte": None, "troncature_possible": None, "blocs_fournis": None,
                 "schema_reported": any(item is not None for item in reported)}
     for name in ("queue_wait_ms", "latency_ms", "generation_ms"):
         value = meta.get(name, extracted.get(name, body.get(name)))

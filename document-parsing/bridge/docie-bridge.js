@@ -481,12 +481,13 @@ function parseResponse(body, expectedSchema, agent) {
   if (validation != null && !object(validation)) fail("response", "Invalid DocIE validation metadata.");
   const confidence = reportedFieldConfidence(meta);
   const unwrapped = unwrap(result);
-  // `blocs_texte` / `troncature_possible` : null sur cette voie, « non
+  // `blocs_texte` / `troncature_possible` / `blocs_fournis` : null sur cette voie, « non
   // mesurable » et non « non tronqué » — c'est l'OCR distant qui fait les blocs.
   const metadata = { request_id: body.id ?? null, agent, model: body.model ?? null,
     validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
     prompt_profile: promptProfile(meta), partiel: resultatPartiel(validation, unwrapped),
-    blocs_texte: null, troncature_possible: null, schema_reported: reported.some(item => item != null) };
+    blocs_texte: null, troncature_possible: null, blocs_fournis: null,
+    schema_reported: reported.some(item => item != null) };
   for (const name of ["queue_wait_ms", "latency_ms", "generation_ms"]) {
     const value = Object.hasOwn(meta, name) ? meta[name] : (Object.hasOwn(extracted, name) ? extracted[name] : body[name]);
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) metadata[name] = value;

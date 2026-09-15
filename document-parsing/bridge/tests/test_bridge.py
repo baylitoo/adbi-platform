@@ -435,10 +435,11 @@ class OcrBlocksTests(unittest.TestCase):
         self.assertEqual(sent[-1][1]["ocr_blocks"], blocs)
         # Appel direct du parseur : ni texte ni blocs, donc « inconnu ».
         self.assertIsNone(parse_text_response(TEXT_CASES[1]["body"], "adbi_resume")["metadata"]["blocs_fournis"])
-        # Voie agent : l'OCR distant fait les blocs.
+        # Voie agent : l'OCR distant fait les blocs, et `ocr_blocks` n'existe
+        # même pas dans ce corps — None comme ses deux voisins, jamais absent.
         agent_session, _ = fake_session(lambda url, payload: CASES[2]["body"])
         agent = extract_document(b"pdf", "application/pdf", env=env, session=agent_session)["metadata"]
-        self.assertNotIn("blocs_fournis", agent)
+        self.assertIsNone(agent["blocs_fournis"])
 
     def test_text_and_blocks_are_bounded_together(self):
         env = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "test-secret"}

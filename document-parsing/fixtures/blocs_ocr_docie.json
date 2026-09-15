@@ -40,7 +40,7 @@
       ],
       "valide": true,
       "blocs_comptes": 2,
-      "preuve": "des numeros de page reels servent deux fois : llm/prompts.py:136-146 emet une ligne [page N] des que les blocs gardes couvrent plus d'une page, et extract/grounding.py::_Evidence.of coupe sa fenetre de preuve (5 blocs consecutifs au plus) au changement de page"
+      "preuve": "des numeros de page reels servent deux fois : llm/prompts.py:136-146 emet une ligne [page N] des que les blocs gardes couvrent plus d'une page, et extract/grounding.py::_Evidence.of coupe sa fenetre de preuve (5 blocs consecutifs au plus) au changement de page. Ils ne servent a rien d'autre : `parallel_extraction` ne decoupe NI sur les pages NI sur les blocs — extract/service.py:261-301 (_split_schema_into_groups) ne prend que le schema aplati, et extract/service.py:897-919 passe a chaque groupe la liste de blocs ENTIERE (blocks=blocks, jamais une tranche) ; l'ancrage tourne une seule fois apres fusion (~service.py:968). Une page ne peut donc pas influencer la repartition du travail."
     },
     {
       "nom": "liste_vide_refusee",

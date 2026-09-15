@@ -370,10 +370,11 @@ test("ocr blocks: extractText sends them verbatim, keeps the text, and counts bl
   assert.deepEqual(sent.at(-1).ocr_blocks, blocs);
   // Appel direct du parseur : ni texte ni blocs, donc « inconnu » et non « aucun ».
   assert.equal(parseTextResponse(textCases[1].body, "adbi_resume").metadata.blocs_fournis, null);
-  // Voie agent : l'OCR distant fait les blocs.
+  // Voie agent : l'OCR distant fait les blocs, et `ocr_blocks` n'existe même pas
+  // dans ce corps — null comme ses deux voisins, jamais une clé absente.
   const agent = await extractDocument(Buffer.from("pdf"), "application/pdf",
     { env: { ...env, DOCIE_AGENT_RESUME: "adbi_agent_1" }, fetchImpl: async () => new Response(JSON.stringify(cases[2].body)) });
-  assert.equal(agent.metadata.blocs_fournis, undefined);
+  assert.equal(agent.metadata.blocs_fournis, null);
 });
 
 test("ocr blocks: text and blocks are bounded together, not one at a time", async () => {
