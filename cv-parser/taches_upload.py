@@ -14,6 +14,9 @@ la route répond 202 aussitôt. Contrat (le même que one-pager #199 et contrats
 
     POST /api/upload                        -> 202 { tache: "<jeton>" }
                                             -> 503 { error }   file pleine
+    POST /api/cv/<id>/reanalyser            -> 202 { tache }, même file
+                                            -> 409 { error }   fiche déjà en
+                                               cours de ré-analyse
     GET  /api/upload/progression/<jeton>    -> 200 {
         pct, etape, detail,                  // libellés existants (widget)
         etat: "en_cours" | "terminee" | "echec",
@@ -48,8 +51,10 @@ Un redémarrage du process perd les tâches (threads démons) : le fichier déj�
 Échouer bruyamment (#194) : aucune relance, aucun repli ICI. Une exception qui
 sort du travail devient un code nommé et un message français constant ; le
 texte amont n'est jamais recopié (il part au journal serveur). Le repli
-existant de la route (fiche vide éditable + parse_warning quand process_cv
-échoue) est dans le travail lui-même et n'est pas modifié par ce module.
+existant du dépôt (fiche vide éditable + parse_warning quand process_cv
+échoue) est dans le travail lui-même et n'est pas modifié par ce module : un
+dépôt dont DocIE échoue se termine donc `terminee`. La ré-analyse n'a jamais eu
+ce repli (elle répondait 500) : son échec DocIE est un `echec` au code nommé.
 """
 import math
 import os
@@ -78,6 +83,21 @@ class FileTachesPleine(RuntimeError):
     def __init__(self, maximum):
         super().__init__(
             f"Trop de CV en attente d'analyse ({maximum} maximum) : réessayez dans un instant.")
+
+
+class TacheDejaEnCours(RuntimeError):
+    def __init__(self):
+        super().__init__("Une analyse de cette fiche est déjà en cours : attendez sa fin avant de la relancer.")
+
+
+class ErreurTache(RuntimeError):
+    """Erreur métier levée par un travail, au message écrit par nous (« CV
+    introuvable ») : rendue telle quelle avec son code (`input` par défaut,
+    comme l'erreur métier du contrat de #196)."""
+
+    def __init__(self, message, code="input"):
+        super().__init__(message)
+        self.code = code
 
 
 def max_simultanees_depuis_env(env=None) -> int:
@@ -150,8 +170,11 @@ def mapper_erreur(e) -> dict:
     - DocIEError du client historique (docie_client, sans code) : ses messages
       sont écrits par nous, en français -> code `extraction`, son message
       (`loading` reconnu à part) ;
+    - ErreurTache (erreur métier écrite par nous) -> son code, son message ;
     - tout le reste -> `interne`, message constant.
     """
+    if isinstance(e, ErreurTache):
+        return {"code": e.code, "message": str(e)}
     cause = getattr(e, "__cause__", None)
     code = getattr(cause, "code", None)
     if type(cause).__name__ == "DocIEBridgeError" and isinstance(code, str):
@@ -256,22 +279,28 @@ class GestionnaireTaches:
         self._demarrer(a_lancer)
 
     # -- public --
-    def creer(self, travail, proprietaire, jeton=None) -> str:
+    def creer(self, travail, proprietaire, jeton=None, cle=None) -> str:
         """Met `travail(jeton)` en file et rend le jeton sans l'attendre.
 
         `jeton` proposé par le client : repris s'il est bien formé et libre,
-        sinon remplacé par un identifiant du serveur. Lève FileTachesPleine.
+        sinon remplacé par un identifiant du serveur. `cle` (facultative) : une
+        seule tâche inachevée (en attente ou en cours) par clé, quel qu'en soit
+        l'auteur — la ré-analyse d'une fiche déjà en cours de ré-analyse lève
+        TacheDejaEnCours. Lève FileTachesPleine.
         """
         if not isinstance(proprietaire, str) or not proprietaire:
             raise ValueError("proprietaire requis")
         with self._verrou:
             self._purger()
+            if cle is not None and any(t["cle"] == cle and t["etat"] == "en_cours"
+                                       for t in self._taches.values()):
+                raise TacheDejaEnCours()
             if len(self._file) >= self.max_en_attente:
                 raise FileTachesPleine(self.max_en_attente)
             if not (isinstance(jeton, str) and _JETON_RE.match(jeton)) or jeton in self._taches:
                 jeton = str(uuid.uuid4())
             tache = {
-                "id": jeton, "proprietaire": proprietaire, "travail": travail,
+                "id": jeton, "proprietaire": proprietaire, "travail": travail, "cle": cle,
                 "etat": "en_cours", "pct": 0, "etape": "Démarrage", "detail": "",
                 "resultat": None, "erreur": None, "debut": self._maintenant(), "fin": None,
             }

@@ -27,7 +27,8 @@ import taches_upload as tu  # noqa: E402
 from docie_client import DocIEError  # noqa: E402
 
 NOMS = {"upload_cv", "progression_analyse", "noter_progression", "_analyser_depot",
-        "_enregistrer_depot", "fiche_depuis_le_cache", "CHAMPS_PROPRES_AU_DEPOT"}
+        "_enregistrer_depot", "fiche_depuis_le_cache", "CHAMPS_PROPRES_AU_DEPOT",
+        "reanalyser_cv", "_reanalyser_fiche", "fichier_upload", "_verrou_cv"}
 SOURCE_APP = (RACINE / "app.py").read_text(encoding="utf-8")
 
 
@@ -106,6 +107,11 @@ class Montage(unittest.TestCase):
             "_enrich_cv_background": lambda i: self.enrichis.append(i),
             "TACHES_UPLOAD": gestionnaire, "FileTachesPleine": tu.FileTachesPleine,
             "PROGRESSION_ANALYSES": {}, "_progression_verrou": threading.Lock(),
+            # Ré-analyse : le vrai _verrou_cv (extrait d'app.py) sur un registre neuf.
+            "TacheDejaEnCours": tu.TacheDejaEnCours, "ErreurTache": tu.ErreurTache,
+            "GestionnaireTaches": tu.GestionnaireTaches,
+            "max_simultanees_depuis_env": tu.max_simultanees_depuis_env,
+            "_verrous_cv": {}, "_verrous_cv_meta": threading.Lock(),
         }
         exec(compile(SOURCE_ROUTES, str(RACINE / "app.py"), "exec"), espace)
         self.espace, self.gestionnaire = espace, gestionnaire
@@ -337,6 +343,175 @@ class Validation(Montage):
         r = self.suivre("jeton-reanalyse-1")
         self.assertEqual(r.status_code, 200)
         self.assertEqual((r.get_json()["pct"], r.get_json()["etape"]), (40, "Analyse du CV"))
+
+
+def erreur_bridge(code):
+    """DocIEError telle que docie_bridge_extraction la lève (cause chaînée)."""
+    class DocIEBridgeError(RuntimeError):
+        def __init__(self):
+            super().__init__("DocIE request failed (HTTP 500) key=SECRET")
+            self.code, self.eta_seconds = code, None
+    try:
+        try:
+            raise DocIEBridgeError()
+        except DocIEBridgeError as exc:
+            raise DocIEError(f"DocIE (bridge) : {exc} [{code}]") from exc
+    except DocIEError as e:
+        return e
+
+
+class Reanalyse(Montage):
+    FICHE = {"id": "cv-7", "filename": "alice.pdf", "ext": ".pdf", "uploaded_at": "2026-01-01T09:00:00",
+             "empreinte": "e" * 64, "name": "Alice (saisi)", "title": "Titre saisi à la main",
+             "skills": [{"category": "Saisie", "items": ["COBOL"]}], "stored_at": "2026-01-02T09:00:00"}
+
+    def preparer(self, **options):
+        self.monter(**options)
+        self.enregistrees["cv-7"] = dict(self.FICHE)
+        (Path(self.dossier.name) / "cv-7.pdf").write_bytes(b"%PDF alice")
+
+    def reanalyser(self, file_id="cv-7", utilisateur="u1"):
+        return self.client.post(f"/api/cv/{file_id}/reanalyser", headers={"X-Test-User": utilisateur})
+
+    def verrou_tenu(self):
+        return self.espace["_verrou_cv"]("cv-7").locked()
+
+    def test_202_verrou_tenu_dans_le_thread_puis_ancienne_reponse(self):
+        demarre, liberer, vu = threading.Event(), threading.Event(), {}
+
+        def process_cv(chemin, jeton=None):
+            vu["chemin"], vu["verrou"] = Path(chemin), self.verrou_tenu()
+            demarre.set()
+            self.assertTrue(liberer.wait(10))
+            return Base.fiche()
+
+        self.preparer(process_cv=process_cv)
+        reponse = {}
+        fil = threading.Thread(target=lambda: reponse.update(r=self.reanalyser()))
+        t0 = time.perf_counter()
+        fil.start()
+        fil.join(5)
+        try:
+            self.assertFalse(fil.is_alive(), "la route attend l'extraction")
+            self.assertLess(time.perf_counter() - t0, 2)
+            self.assertEqual(reponse["r"].status_code, 202)
+            tache = reponse["r"].get_json()["tache"]
+            self.assertTrue(demarre.wait(5))
+            self.assertTrue(vu["verrou"], "process_cv tourne sous le verrou de la fiche")
+            self.assertTrue(self.verrou_tenu(), "verrou tenu par le thread de tâche pendant l'extraction")
+            self.assertEqual(self.suivre(tache).get_json()["etat"], "en_cours")
+        finally:
+            liberer.set()
+        fini = self.attendre_fin(tache)
+        self.assertFalse(self.verrou_tenu(), "verrou rendu à la fin")
+        self.assertEqual(vu["chemin"].name, "cv-7.pdf")
+        enregistree = self.enregistrees["cv-7"]
+        self.assertEqual(fini["resultat"], {
+            "ok": True, "extraction": "docie", "service": "DocIE / défaut",
+            "bilan_adbi": {"exploitable": True}, "avertissement": ""})
+        # Sémantique d'avant, inchangée : identité conservée, tout le reste
+        # remplacé par la nouvelle extraction (une saisie manuelle n'est pas gardée).
+        for cle in ("id", "filename", "ext", "uploaded_at", "empreinte"):
+            self.assertEqual(enregistree[cle], self.FICHE[cle], cle)
+        self.assertEqual((enregistree["name"], enregistree["title"]), ("Alice Dupont", "Data Engineer"))
+        self.assertNotIn("skills", enregistree)
+        self.assertNotIn("_timing", enregistree)
+        self.assertNotEqual(enregistree["stored_at"], self.FICHE["stored_at"])
+        self.assertTrue(enregistree["llm_enriched"])
+
+    def test_nom_de_repli_repris_de_la_fiche(self):
+        lanceur = Lanceur()
+        self.preparer(lanceur=lanceur, process_cv=lambda c, jeton=None: Base.fiche(name=""))
+        self.reanalyser()
+        lanceur.jouer()
+        self.assertEqual(self.enregistrees["cv-7"]["name"], "Alice (saisi)")
+
+    def test_la_route_ne_prend_pas_le_verrou(self):
+        lanceur = Lanceur()
+        self.preparer(lanceur=lanceur)
+        verrou = self.espace["_verrou_cv"]("cv-7")
+        verrou.acquire()                    # un PATCH (ou « Enrichir ») en cours sur la fiche
+        reponse = {}
+        fil = threading.Thread(target=lambda: reponse.update(r=self.reanalyser()))
+        try:
+            fil.start()
+            fil.join(3)
+            self.assertFalse(fil.is_alive(), "la route attend le verrou de la fiche")
+            self.assertEqual(reponse["r"].status_code, 202)
+        finally:
+            verrou.release()
+            fil.join(5)
+
+    def test_meme_plafond_que_le_depot(self):
+        lanceur = Lanceur()
+        self.preparer(lanceur=lanceur, max_simultanees=1)
+        depot = self.poster().get_json()["tache"]
+        tache = self.reanalyser().get_json()["tache"]
+        vue = self.suivre(tache).get_json()
+        self.assertEqual((vue["etat"], vue["position"]), ("en_cours", 1), "attend derrière le dépôt")
+        self.assertEqual(self.gestionnaire.statistiques(), {"en_cours": 1, "en_attente": 1, "conservees": 2})
+        lanceur.jouer()
+        self.assertEqual(self.suivre(depot).get_json()["etat"], "terminee")
+        self.assertNotIn("position", self.suivre(tache).get_json())
+        lanceur.jouer()
+        self.assertEqual(self.suivre(tache).get_json()["etat"], "terminee")
+
+    def test_seul_l_auteur_suit_sa_reanalyse(self):
+        lanceur = Lanceur()
+        self.preparer(lanceur=lanceur)
+        tache = self.reanalyser(utilisateur="u1").get_json()["tache"]
+        lanceur.jouer()
+        self.assertEqual(self.suivre(tache, "u1").status_code, 200)
+        autre, inconnu = self.suivre(tache, "u2"), self.suivre("jamais-vu-00000000", "u2")
+        self.assertEqual(autre.status_code, 404)
+        self.assertEqual(autre.get_data(), inconnu.get_data())
+
+    def test_seconde_reanalyse_de_la_meme_fiche_refusee(self):
+        lanceur = Lanceur()
+        self.preparer(lanceur=lanceur)
+        self.assertEqual(self.reanalyser(utilisateur="u1").status_code, 202)
+        refus = self.reanalyser(utilisateur="u2")
+        self.assertEqual(refus.status_code, 409)
+        self.assertIn("déjà en cours", refus.get_json()["error"])
+        self.assertEqual(self.gestionnaire.statistiques()["conservees"], 1)
+        lanceur.jouer()
+        self.assertEqual(self.reanalyser(utilisateur="u2").status_code, 202)
+
+    def test_echec_nomme_fiche_intacte_verrou_rendu(self):
+        def process_cv(chemin, jeton=None):
+            raise erreur_bridge("context")
+
+        lanceur = Lanceur()
+        self.preparer(lanceur=lanceur, process_cv=process_cv)
+        tache = self.reanalyser().get_json()["tache"]
+        lanceur.jouer()
+        r = self.suivre(tache)
+        vue = r.get_json()
+        # Pas de repli pour la ré-analyse (avant : 500) : échec nommé, sans texte amont.
+        self.assertEqual((vue["etat"], vue["erreur"]),
+                         ("echec", {"code": "context", "message": tu.MESSAGES_BRIDGE["context"]}))
+        self.assertNotIn("SECRET", r.get_data(as_text=True))
+        self.assertEqual(self.enregistrees["cv-7"], self.FICHE)
+        self.assertFalse(self.verrou_tenu())
+
+    def test_404_synchrones_sans_tache(self):
+        self.preparer(lanceur=Lanceur())
+        r = self.reanalyser("inconnu")
+        self.assertEqual((r.status_code, r.get_json()), (404, {"error": "CV introuvable"}))
+        (Path(self.dossier.name) / "cv-7.pdf").unlink()
+        r = self.reanalyser()
+        self.assertEqual(r.status_code, 404)
+        self.assertIn("Fichier d'origine absent", r.get_json()["error"])
+        self.assertEqual(self.gestionnaire.statistiques()["conservees"], 0)
+
+    def test_fiche_supprimee_avant_le_demarrage(self):
+        lanceur = Lanceur()
+        self.preparer(lanceur=lanceur)
+        tache = self.reanalyser().get_json()["tache"]
+        del self.enregistrees["cv-7"]
+        lanceur.jouer()
+        self.assertEqual(self.suivre(tache).get_json()["erreur"], {"code": "input", "message": "CV introuvable"})
+        self.assertEqual(self.appels, [])
 
 
 class Branchement(unittest.TestCase):

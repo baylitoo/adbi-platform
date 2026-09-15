@@ -1450,6 +1450,7 @@ checkApiStatus();
 </script>
 <script src="/static/conv_widget.js"></script>
 <script src="/static/etat-ia.js"></script>
+<script src="/static/suivi-analyse.js"></script>
 <script>
 async function relancerAnalyse(btn) {
   btn.disabled = true;
@@ -1459,6 +1460,11 @@ async function relancerAnalyse(btn) {
     const r = await fetch('/api/cv/{{ cv.id }}/reanalyser', { method: 'POST', credentials: 'include' });
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || 'Erreur ' + r.status);
+    // 202 : la ré-analyse est une tâche serveur (issue #196), suivie comme un
+    // dépôt ; l'attente d'un créneau DocIE libre s'affiche sur le bouton.
+    await attendreAnalyse(d.tache, t => {
+      btn.innerHTML = t.position ? `En attente (position ${t.position})…` : 'Analyse en cours…';
+    });
     location.reload();
   } catch (e) {
     btn.innerHTML = texte;

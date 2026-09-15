@@ -295,6 +295,47 @@ class Expiration(unittest.TestCase):
         self.assertEqual(g.statistiques()["conservees"], 1)
 
 
+class Cle(unittest.TestCase):
+    """Une seule tâche inachevée par clé (ré-analyse d'une même fiche)."""
+
+    def test_refus_tant_que_la_premiere_n_est_pas_finie(self):
+        g, lanceur = gestionnaire(max_simultanees=1)
+        g.creer(lambda j: "autre", "u1")                       # occupe le créneau
+        premiere = g.creer(lambda j: "r1", "u1", cle="fiche:42")
+        # En attente : déjà inachevée -> refus, pour tout auteur.
+        for auteur in ("u1", "u2"):
+            with self.assertRaises(tu.TacheDejaEnCours):
+                g.creer(lambda j: "r2", auteur, cle="fiche:42")
+        g.creer(lambda j: "ailleurs", "u1", cle="fiche:43")    # autre fiche : accepté
+        g.creer(lambda j: "sans cle", "u1")
+        lanceur.jouer()
+        with self.assertRaises(tu.TacheDejaEnCours):           # en cours : toujours refusé
+            g.creer(lambda j: "r2", "u1", cle="fiche:42")
+        lanceur.jouer()
+        self.assertEqual(g.obtenir(premiere, "u1")["resultat"], "r1")
+        g.creer(lambda j: "r2", "u1", cle="fiche:42")          # finie : de nouveau accepté
+        # fiche:43 a pris le créneau ; restent « sans cle » et la nouvelle.
+        self.assertEqual(g.statistiques()["en_attente"], 2)
+
+    def test_echec_libere_la_cle(self):
+        g, lanceur = gestionnaire()
+
+        def boum(_j):
+            raise RuntimeError("x")
+        g.creer(boum, "u1", cle="fiche:1")
+        lanceur.jouer()
+        g.creer(lambda j: None, "u1", cle="fiche:1")
+
+    def test_refus_ne_consomme_rien(self):
+        g, _ = gestionnaire()
+        g.creer(lambda j: None, "u1", cle="fiche:1")
+        avant = g.statistiques()
+        with self.assertRaises(tu.TacheDejaEnCours):
+            g.creer(lambda j: None, "u1", cle="fiche:1", jeton="jeton-refuse-0001")
+        self.assertEqual(g.statistiques(), avant)
+        self.assertIsNone(g.obtenir("jeton-refuse-0001", "u1"))
+
+
 class FilePleine(unittest.TestCase):
     def test_file_bornee(self):
         g, lanceur = gestionnaire()
@@ -351,6 +392,11 @@ class Erreurs(unittest.TestCase):
             "code": "loading", "message": "Modèle en cours de chargement, réessayez dans ~42 s.",
             "eta_seconds": 42})
         self.assertEqual(tu.mapper_erreur(sans), {"code": "loading", "message": tu.MESSAGES_BRIDGE["loading"]})
+
+    def test_erreur_metier_rendue_telle_quelle(self):
+        self.assertEqual(tu.mapper_erreur(tu.ErreurTache("CV introuvable")),
+                         {"code": "input", "message": "CV introuvable"})
+        self.assertEqual(tu.mapper_erreur(tu.ErreurTache("x", code="introuvable"))["code"], "introuvable")
 
     def test_client_historique_et_reste(self):
         msg = "DocIE injoignable ou délai réseau dépassé. Vérifiez la connexion."
