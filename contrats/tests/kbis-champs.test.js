@@ -1,0 +1,402 @@
+"use strict";
+// Tests de public/kbis-champs.js — proposition des valeurs lues sur un Kbis
+// (issue #170, ligne « coordonnees »). Aucun appel réseau : DocIE est mocké à
+// la frontière du bridge (fetch), comme tests/docie-extraction.test.js.
+// Aucune base : server.js n'est jamais require() (il exige DATABASE_URL) ; la
+// route est relue dans sa source et montée sur une app Express de test.
+//
+// Le défaut corrigé : DocIE lit SIREN, SIRET, forme juridique, adresse du
+// siège et représentant légal sur le Kbis, /api/document/analyze les renvoie,
+// mais app.js::analyzeChecklistDoc n'en gardait que date + société + contrôle
+// du nom. L'utilisateur ressaisissait (ou redemandait à Pappers/INSEE) ce que
+// le document officiel venait de donner.
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("fs");
+const http = require("http");
+const path = require("path");
+const vm = require("vm");
+const express = require("express");
+
+const K = require("../public/kbis-champs");
+const { sousTraitance } = require("../lib/fields");
+const { ENRICHED_KEYS, DOCANALYZE_BASE_KEYS, mapKbisResult } = require("../lib/kbis-mapping");
+const { analyzeDocument } = require("../lib/docie-extraction");
+
+const INDEX_HTML = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
+const APP_JS = fs.readFileSync(path.join(__dirname, "..", "public", "app.js"), "utf8");
+const SERVER_JS = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+
+// Résultat DocIE « kbis » déjà déballé par le bridge (forme lue par
+// lib/kbis-mapping.js) — mêmes valeurs que tests/docie-extraction.test.js.
+const RESULTAT_KBIS = {
+  document_type: "kbis",
+  company_name: "ACME CONSEIL",
+  siren: "123456789",
+  siret_siege: "12345678900012",
+  legal_form: "SAS",
+  share_capital: { amount: "1000", currency: "EUR" },
+  registration_date: "2015-06-01",
+  issued_date: "2024-03-15",
+  rcs_number: "123 456 789 RCS Paris",
+  registered_address: "1 rue de la Paix, 75002 Paris",
+  activity_code: "6202A",
+  legal_representative: "Monsieur Jean DUPONT",
+};
+
+function analyseKbis(expectedName) {
+  return mapKbisResult(RESULTAT_KBIS, { expectedName, items: [{ id: "kbis" }] }).analysis;
+}
+
+// Forme exacte d'une analyse LOCALE (docanalyze.js) : les 8 clés, rien d'autre.
+function analyseLocale() {
+  return {
+    documentType: "Extrait Kbis", matchedId: "kbis", isValid: true, issuedDate: "2024-03-15",
+    companyName: "ACME CONSEIL", nameMatches: true, issues: [], summary: "Extrait Kbis — délivré le 2024-03-15",
+  };
+}
+
+const parCle = (prop) => Object.fromEntries(prop.champs.map((c) => [c.cle, c]));
+
+test("garde-fou anti-dérive : sources = clés enrichies réelles de kbis-mapping.js, cibles = champs Sous-Traitant de fields.js", () => {
+  const cles = new Map(sousTraitance.map((f) => [f.key, f]));
+  for (const [source, cible] of K.CORRESPONDANCES) {
+    assert.ok(ENRICHED_KEYS.includes(source), source + " n'est pas une clé enrichie de kbis-mapping.js");
+    assert.ok(cles.has(cible), cible + " n'existe pas dans fields.js::sousTraitance");
+    assert.equal(cles.get(cible).group, "Sous-Traitant", cible);
+  }
+  for (const [source] of K.INFOS) assert.ok(ENRICHED_KEYS.includes(source), source);
+  // Choix explicites : le nom décide que le document est le bon (pas de
+  // report), la qualité n'est pas isolée par le schéma kbis.
+  const cibles = K.CORRESPONDANCES.map(([, c]) => c);
+  const sources = K.CORRESPONDANCES.map(([s]) => s);
+  assert.ok(!cibles.includes("stNom"));
+  assert.ok(!sources.includes("companyName"));
+  assert.ok(!cibles.includes("stQualite"));
+  assert.equal(new Set(cibles).size, cibles.length, "cible en double");
+  // Chaque clé enrichie est soit reportée, soit montrée pour information :
+  // aucune n'est de nouveau jetée sans un mot.
+  const couvertes = [...sources, ...K.INFOS.map(([s]) => s), "capitalSocialDevise"].sort();
+  assert.deepEqual(couvertes, [...ENRICHED_KEYS].sort());
+});
+
+test("extraire : liste blanche des clés utiles, non vides ; analyse locale -> {} ; entrées absurdes -> {}", () => {
+  const kbis = K.extraire(analyseKbis("ACME Conseil"));
+  assert.deepEqual(kbis, {
+    siren: "123456789", siret: "12345678900012", formeJuridique: "SAS",
+    adresseSiege: "1 rue de la Paix, 75002 Paris", representantLegal: "Monsieur Jean DUPONT",
+    capitalSocial: "1000", capitalSocialDevise: "EUR", rcsNumber: "123 456 789 RCS Paris",
+    codeActivite: "6202A", dateImmatriculation: "2015-06-01",
+  });
+  for (const base of DOCANALYZE_BASE_KEYS) assert.ok(!(base in kbis), base + " ne doit pas être recopiée");
+  assert.deepEqual(K.extraire(analyseLocale()), {});
+  assert.deepEqual(K.extraire(undefined), {});
+  assert.deepEqual(K.extraire(null), {});
+  assert.deepEqual(K.extraire("texte"), {});
+  // Champ enrichi présent mais vide (DocIE n'a rien lu) : pas proposé.
+  assert.deepEqual(K.extraire(Object.assign(analyseLocale(), { siren: "", siret: "  ", formeJuridique: null })), {});
+});
+
+test("clés enrichies -> 5 champs proposés, valeurs du document intactes, infos sans champ montrées à part", () => {
+  const prop = K.proposer(K.extraire(analyseKbis("ACME Conseil")), true, {});
+  assert.equal(prop.nomVerifie, true);
+  assert.deepEqual(prop.champs.map((c) => [c.cle, c.kbis, c.etat]), [
+    ["stSiren", "123456789", "vide"],
+    ["stSiret", "12345678900012", "vide"],
+    ["stFormeJuridique", "SAS", "vide"],
+    ["stAdresse", "1 rue de la Paix, 75002 Paris", "vide"],
+    ["stRepresentant", "Monsieur Jean DUPONT", "vide"],
+  ]);
+  assert.deepEqual(prop.infos.map((i) => [i.libelle, i.valeur]), [
+    ["Capital social", "1000 EUR"],
+    ["RCS", "123 456 789 RCS Paris"],
+    ["Code activité", "6202A"],
+    ["Immatriculé le", "2015-06-01"],
+  ]);
+});
+
+test("vide / identique / différent : normalisation pour COMPARER seulement (espaces SIREN/SIRET, casse), jamais pour afficher", () => {
+  const kbis = K.extraire(analyseKbis("ACME Conseil"));
+  const valeurs = {
+    stSiren: "123 456 789",                     // mêmes chiffres, espacés -> identique
+    stSiret: "",                                 // vide
+    stFormeJuridique: "sas",                     // casse -> identique
+    stAdresse: "5 avenue Foch, 75116 Paris",     // autre adresse -> différent
+    stRepresentant: "Jean DUPONT (Président)",   // forme Pappers -> différent, l'utilisateur tranche
+  };
+  const c = parCle(K.proposer(kbis, true, valeurs));
+  assert.equal(c.stSiren.etat, "identique");
+  assert.equal(c.stSiren.actuel, "123 456 789", "valeur saisie non réécrite");
+  assert.equal(c.stSiren.kbis, "123456789");
+  assert.equal(c.stSiret.etat, "vide");
+  assert.equal(c.stFormeJuridique.etat, "identique");
+  assert.equal(c.stFormeJuridique.actuel, "sas");
+  assert.equal(c.stAdresse.etat, "different");
+  assert.equal(c.stRepresentant.etat, "different");
+  assert.equal(c.stRepresentant.actuel, "Jean DUPONT (Président)");
+  // Un chiffre de différence reste une différence.
+  assert.equal(parCle(K.proposer(kbis, true, { stSiren: "123 456 780" })).stSiren.etat, "different");
+  // Espaces seuls tolérés pour le texte, pas davantage (pas d'accents retirés, pas de ponctuation).
+  assert.equal(parCle(K.proposer(kbis, true, { stAdresse: "  1 rue de la Paix,   75002 PARIS " })).stAdresse.etat, "identique");
+  assert.equal(parCle(K.proposer(kbis, true, { stAdresse: "1 rue de la Paix 75002 Paris" })).stAdresse.etat, "different");
+});
+
+test("report : les champs vides sont remplis, un champ différent n'est JAMAIS écrasé sans choix explicite", () => {
+  const kbis = K.extraire(analyseKbis("ACME Conseil"));
+  const valeurs = { stSiren: "123 456 789", stAdresse: "5 avenue Foch, 75116 Paris", stRepresentant: "Jean DUPONT (Président)" };
+  const prop = K.proposer(kbis, true, valeurs);
+  const choix = K.choixParDefaut(prop);
+  assert.deepEqual(choix, { stSiret: true, stFormeJuridique: true, stAdresse: false, stRepresentant: false });
+
+  const defaut = K.aReporter(prop, choix, valeurs);
+  assert.deepEqual(defaut.paires, [["stSiret", "12345678900012"], ["stFormeJuridique", "SAS"]]);
+  assert.deepEqual(defaut.modifies, []);
+
+  // L'utilisateur choisit le Kbis pour l'adresse, garde son représentant.
+  const choisi = K.aReporter(prop, Object.assign({}, choix, { stAdresse: true }), valeurs);
+  assert.deepEqual(choisi.paires.map(([k]) => k), ["stSiret", "stFormeJuridique", "stAdresse"]);
+  assert.deepEqual(choisi.paires[2], ["stAdresse", "1 rue de la Paix, 75002 Paris"]);
+
+  // Un « identique » n'est jamais réécrit (la saisie espacée reste telle quelle).
+  const forceIdentique = K.aReporter(prop, { stSiren: true }, valeurs);
+  assert.deepEqual(forceIdentique.paires, []);
+});
+
+test("report : un champ modifié entre l'affichage et le clic n'est pas écrasé, il est signalé", () => {
+  const kbis = K.extraire(analyseKbis("ACME Conseil"));
+  const prop = K.proposer(kbis, true, {});
+  const choix = K.choixParDefaut(prop);
+  // Entre-temps : saisie manuelle du SIRET, recherche société qui remplit l'adresse.
+  const auClic = { stSiret: "99999999900011", stAdresse: "5 avenue Foch, 75116 Paris" };
+  const r = K.aReporter(prop, choix, auClic);
+  assert.deepEqual(r.modifies, ["stSiret", "stAdresse"]);
+  assert.deepEqual(r.paires.map(([k]) => k), ["stSiren", "stFormeJuridique", "stRepresentant"]);
+});
+
+test("nameMatches === false : aucune proposition, quelles que soient les valeurs lues", () => {
+  const autre = analyseKbis("SUND INDUSTRY SYSTEM");
+  assert.equal(autre.nameMatches, false, "précondition : mapKbisResult signale bien une autre société");
+  assert.equal(K.proposer(K.extraire(autre), autre.nameMatches, {}), null);
+  assert.equal(K.proposer(K.extraire(autre), false, { stSiren: "" }), null);
+});
+
+test("nameMatches === null (raison sociale non saisie) : proposée, mais marquée non vérifiée ; stNom jamais proposé", () => {
+  const sansNom = analyseKbis("");
+  assert.equal(sansNom.nameMatches, null);
+  const prop = K.proposer(K.extraire(sansNom), sansNom.nameMatches, {});
+  assert.equal(prop.nomVerifie, false);
+  assert.ok(!prop.champs.some((c) => c.cle === "stNom"));
+});
+
+test("analyse locale sans clé enrichie : pas de proposition, aucune exception", () => {
+  const local = analyseLocale();
+  assert.equal(K.proposer(K.extraire(local), local.nameMatches, { stNom: "ACME" }), null);
+  assert.equal(K.proposer(undefined, true, {}), null);
+  assert.equal(K.proposer({}, null, undefined), null);
+  assert.deepEqual(K.choixParDefaut(null), {});
+  assert.deepEqual(K.aReporter(null, null, null), { paires: [], modifies: [] });
+  // Uniquement des infos (capital, RCS) et aucun champ reportable : rien à proposer.
+  assert.equal(K.proposer({ capitalSocial: "1000", rcsNumber: "RCS Paris" }, true, {}), null);
+});
+
+test("coordonnees : annotation partielle honnête, jamais « complet » tant qu'un champ Sous-Traitant manque", () => {
+  assert.equal(K.noteCoordonnees(sousTraitance, {}, []), null);
+  assert.equal(K.noteCoordonnees(sousTraitance, {}, undefined), null);
+
+  const apresKbis = {
+    stNom: "ACME CONSEIL", stSiren: "123456789", stSiret: "12345678900012", stFormeJuridique: "SAS",
+    stAdresse: "1 rue de la Paix, 75002 Paris", stRepresentant: "Monsieur Jean DUPONT",
+  };
+  const n = K.noteCoordonnees(sousTraitance, apresKbis, ["stAdresse", "stRepresentant", "stSiren"]);
+  assert.deepEqual(n.reportes, ["Adresse", "Représentée par", "SIREN"]);
+  assert.deepEqual(n.manquants, ["Qualité du représentant", "Email (envoi en signature)"]);
+  assert.equal(n.complet, false);
+
+  const toutRempli = Object.assign({}, apresKbis, { stQualite: "Président", stEmail: "contact@acme.fr" });
+  assert.equal(K.noteCoordonnees(sousTraitance, toutRempli, ["stAdresse"]).complet, true);
+});
+
+test("index.html charge kbis-champs.js avant app.js ; app.js garde les valeurs et passe par le chemin de remplissage partagé", () => {
+  const iImport = INDEX_HTML.indexOf('<script src="/import-champs.js">');
+  const iKbis = INDEX_HTML.indexOf('<script src="/kbis-champs.js">');
+  const iApp = INDEX_HTML.indexOf('<script src="/app.js">');
+  assert.ok(iImport !== -1 && iKbis !== -1 && iApp !== -1);
+  assert.ok(iKbis < iApp);
+  // Une seule routine d'écriture dans le formulaire : la recherche société et
+  // le report Kbis passent tous deux par appliquerValeursChamps.
+  const selectCompany = extraireFonction("selectCompany");
+  const proposition = extraireFonction("renderPropositionKbis");
+  assert.ok(selectCompany.includes("appliquerValeursChamps("));
+  assert.ok(!selectCompany.includes("setFieldValue("));
+  assert.ok(proposition.includes("appliquerValeursChamps("));
+  assert.ok(!proposition.includes("setFieldValue("));
+  // La case « coordonnees » n'est jamais cochée par ce code.
+  assert.ok(!/checkState\.coordonnees|checkState\[["']coordonnees/.test(APP_JS));
+});
+
+// Extraction d'une fonction TELLE QUELLE du vrai public/app.js (même méthode
+// que tests/import-champs.test.js) : on teste le consommateur réel.
+function extraireFonction(nom) {
+  const debut = APP_JS.search(new RegExp("(async )?function " + nom + "\\("));
+  assert.ok(debut !== -1, nom + " introuvable dans app.js");
+  const reste = APP_JS.slice(debut);
+  const m = /\r?\n\}\r?\n/.exec(reste);
+  assert.ok(m, "fin de " + nom + " introuvable dans app.js");
+  return reste.slice(0, m.index + m[0].length);
+}
+
+async function analyserDansNavigateur(itemId, reponse) {
+  const propHost = { rendu: null };
+  const ctx = {
+    CONTRATS_KBIS_CHAMPS: K,
+    state: { values: { stNom: "ACME Conseil" }, dateState: {} },
+    fileToBase64: async () => "JVBERi0=",
+    fetch: async () => ({ ok: true, status: 200, json: async () => reponse }),
+    renderChecklistDocResult: () => {},
+    renderPropositionKbis: (host, res) => { host.rendu = res; },
+    majNoteCoordonnees: () => {},
+    JSON,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extraireFonction("analyzeChecklistDoc"), ctx);
+  const statusEl = { parentNode: { querySelector: (sel) => (sel === "[data-kbis-proposition]" ? propHost : null) } };
+  await ctx.analyzeChecklistDoc({ id: itemId, label: itemId }, { name: "doc.pdf", type: "application/pdf" }, statusEl, { textContent: "" });
+  return { etat: ctx.state, propHost };
+}
+
+test("analyzeChecklistDoc (code réel d'app.js) : la réponse Kbis n'est plus jetée ; URSSAF et analyse locale n'emportent rien", async () => {
+  const { etat, propHost } = await analyserDansNavigateur("kbis", analyseKbis("ACME Conseil"));
+  const res = etat.dateState.kbis;
+  assert.equal(res.issuedDate, "2024-03-15");
+  assert.equal(res.nameMatches, true);
+  assert.equal(res.kbis.siren, "123456789");
+  assert.equal(res.kbis.representantLegal, "Monsieur Jean DUPONT");
+  assert.equal(propHost.rendu, res, "la proposition est rendue avec l'analyse enregistrée");
+
+  const locale = await analyserDansNavigateur("kbis", analyseLocale());
+  assert.deepEqual(locale.etat.dateState.kbis.kbis, {});
+
+  // Une attestation URSSAF avec un « siren » : aucune proposition de champs contrat.
+  const urssaf = await analyserDansNavigateur("urssaf", Object.assign(analyseLocale(), { siren: "123456789" }));
+  assert.ok(!("kbis" in urssaf.etat.dateState.urssaf));
+});
+
+test("appliquerValeursChamps (code réel) : écrit les paires, n'efface jamais avec une valeur vide", () => {
+  const ecrits = [];
+  const ctx = {
+    state: { values: { stSiren: "déjà", stAdresse: "garde" } },
+    document: { getElementById: () => null },
+    renderPreview: () => ecrits.push("apercu"),
+    updateWizardProgress: () => ecrits.push("progression"),
+    majNoteCoordonnees: () => ecrits.push("note"),
+    String,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extraireFonction("setFieldValue") + "\n" + extraireFonction("appliquerValeursChamps"), ctx);
+  ctx.appliquerValeursChamps([["stSiret", "12345678900012"], ["stAdresse", ""], ["stSiren", "123456789"]]);
+  assert.equal(ctx.state.values.stSiret, "12345678900012");
+  assert.equal(ctx.state.values.stAdresse, "garde");
+  assert.equal(ctx.state.values.stSiren, "123456789");
+  assert.deepEqual(ecrits, ["apercu", "progression", "note"]);
+});
+
+// ---------------------------------------------------------------------------
+// Bout en bout au niveau de la route : le VRAI gestionnaire de
+// POST /api/document/analyze (relu dans server.js), le vrai
+// lib/docie-extraction.js, le vrai bridge partagé ; seul fetch est mocké, à la
+// frontière HTTP du bridge vers DocIE.
+// ---------------------------------------------------------------------------
+function routeAnalyse() {
+  const debut = SERVER_JS.indexOf('app.post("/api/document/analyze"');
+  assert.ok(debut !== -1, "route /api/document/analyze introuvable dans server.js");
+  const reste = SERVER_JS.slice(debut);
+  const m = /\r?\n\}\);\r?\n/.exec(reste);
+  assert.ok(m, "fin de la route introuvable");
+  return reste.slice(0, m.index + m[0].length);
+}
+
+function poster(port, chemin, corps) {
+  return new Promise((resolve, reject) => {
+    const donnees = Buffer.from(JSON.stringify(corps));
+    const req = http.request({
+      host: "127.0.0.1", port, path: chemin, method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": donnees.length },
+    }, (res) => {
+      const morceaux = [];
+      res.on("data", (c) => morceaux.push(c));
+      res.on("end", () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(morceaux).toString("utf8")) }));
+    });
+    req.on("error", reject);
+    req.end(donnees);
+  });
+}
+
+test("route /api/document/analyze (DocIE mocké au bridge) : les clés enrichies du Kbis arrivent au client, et deviennent une proposition", async () => {
+  const ENV = {
+    DOCIE_EXTRACTION_ENABLED: "true",
+    DOCIE_BASE_URL: "https://docie.example.test",
+    DOCIE_API_KEY: "test-secret",
+    DOCIE_AGENT_KBIS: "kbis-agent-test",
+  };
+  const envAvant = {};
+  for (const k of Object.keys(ENV)) { envAvant[k] = process.env[k]; process.env[k] = ENV[k]; }
+  const fetchAvant = globalThis.fetch;
+  const appelsDocie = [];
+  // Enveloppe brute de l'agent DocIE (champs {value, confidence, evidence_ids}).
+  const champ = (value) => ({ value, confidence: 0.95, evidence_ids: ["e1"] });
+  globalThis.fetch = async (url, options) => {
+    if (!String(url).startsWith(ENV.DOCIE_BASE_URL)) throw new Error("appel réseau inattendu : " + url);
+    appelsDocie.push(String(url));
+    const content = JSON.stringify({
+      document_type: "kbis",
+      company_name: champ("ACME CONSEIL"),
+      siren: champ("123456789"),
+      siret_siege: champ("12345678900012"),
+      legal_form: champ("SAS"),
+      share_capital: { amount: "1000", currency: "EUR", confidence: 0.9, evidence_ids: [] },
+      registration_date: champ("2015-06-01"),
+      issued_date: champ("2024-03-15"),
+      rcs_number: champ("123 456 789 RCS Paris"),
+      registered_address: champ("1 rue de la Paix, 75002 Paris"),
+      activity_code: champ("6202A"),
+      legal_representative: champ("Monsieur Jean DUPONT"),
+    });
+    return new Response(JSON.stringify({
+      id: "chatcmpl-test", model: ENV.DOCIE_AGENT_KBIS,
+      choices: [{ finish_reason: "stop", message: { content } }],
+    }), { status: 200 });
+  };
+
+  const app = express();
+  app.use(express.json({ limit: "30mb" }));
+  // eslint-disable-next-line no-new-func
+  new Function("app", "analyzeDocument", "console", routeAnalyse())(app, analyzeDocument, console);
+  const serveur = await new Promise((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
+  try {
+    const { status, body } = await poster(serveur.address().port, "/api/document/analyze", {
+      dataBase64: Buffer.from("%PDF-1.4 fake").toString("base64"),
+      mimeType: "application/pdf",
+      items: [{ id: "kbis", label: "Kbis" }],
+      expectedName: "ACME Conseil",
+    });
+    assert.equal(status, 200);
+    assert.deepEqual(appelsDocie, ["https://docie.example.test/v1/agents/kbis-agent-test/chat/completions"]);
+    // Le serveur ne filtre rien : les 10 clés enrichies sont dans la réponse HTTP.
+    for (const k of ENRICHED_KEYS) assert.ok(Object.hasOwn(body, k), k + " absente de la réponse HTTP");
+    assert.equal(body.siren, "123456789");
+    assert.equal(body.adresseSiege, "1 rue de la Paix, 75002 Paris");
+    assert.equal(body.nameMatches, true);
+
+    // Côté navigateur : même traitement que analyzeChecklistDoc puis la proposition.
+    const prop = K.proposer(K.extraire(body), body.nameMatches, { stNom: "ACME Conseil", stRepresentant: "Jean DUPONT (Président)" });
+    assert.deepEqual(prop.champs.map((c) => [c.cle, c.etat]), [
+      ["stSiren", "vide"], ["stSiret", "vide"], ["stFormeJuridique", "vide"], ["stAdresse", "vide"], ["stRepresentant", "different"],
+    ]);
+  } finally {
+    await new Promise((resolve) => serveur.close(resolve));
+    globalThis.fetch = fetchAvant;
+    for (const k of Object.keys(ENV)) {
+      if (envAvant[k] === undefined) delete process.env[k]; else process.env[k] = envAvant[k];
+    }
+  }
+});
