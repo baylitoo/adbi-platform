@@ -20,7 +20,7 @@ DOCIE_MAX_TOKENS=8192
 ```
 
 La base est la racine API, sans `/v1`. L'agent se sélectionne par type de document,
-jamais via une URL fournie par le navigateur. HTTP n'est autorisé par défaut que
+ou par appel (option `agent`, #194), jamais via une URL fournie par le navigateur. HTTP n'est autorisé par défaut que
 sur loopback ; `DOCIE_ALLOW_HTTP=true` est une dérogation explicite pour un réseau
 privé de confiance. Elle ne chiffre pas les échanges. TLS n'est jamais désactivé.
 

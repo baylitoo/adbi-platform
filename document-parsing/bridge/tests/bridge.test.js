@@ -274,3 +274,98 @@ test("text loopback HTTP contract: /v1/extract/text, x-api-key, no data-URI wrap
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+// ------------------------------------------------ choix par appel (#194) -----
+// Mock à la frontière HTTP : on lit l'URL et le corps réellement envoyés.
+
+test("text path: per-call modelProfile overrides DOCIE_MODEL_PROFILE for that call only; metadata reports the response", async () => {
+  const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret", DOCIE_MODEL_PROFILE: "store:env-default" };
+  const snapshot = structuredClone(env);
+  const sent = [];
+  let status = 200;
+  const answer = { ...structuredClone(textCases[1].body), model_profile: "store:served-by-docie" };
+  const fetchImpl = async (url, options) => {
+    sent.push({ url, payload: JSON.parse(options.body) });
+    return status === 200 ? new Response(JSON.stringify(answer))
+      : new Response(JSON.stringify({ detail: { status: "loading", deployment: "nuextract3", eta_seconds: 42, message: "test-secret" } }), { status });
+  };
+  // Surcharge : la requête change, `metadata.model` reste ce que DocIE rapporte.
+  const chosen = await extractText("CV", { modelProfile: "store:lfm2.5-2.6b", env, fetchImpl });
+  assert.equal(sent[0].url, "https://docie.example/v1/extract/text");
+  assert.deepEqual(sent[0].payload, { text: "CV", schema_name: "adbi_resume", model_profile: "store:lfm2.5-2.6b" });
+  assert.equal(chosen.metadata.model, "store:served-by-docie");
+  // Même objet env, sans surcharge : la valeur d'environnement revient.
+  await extractText("CV", { env, fetchImpl });
+  assert.deepEqual(sent[1].payload, { text: "CV", schema_name: "adbi_resume", model_profile: "store:env-default" });
+  // Ni surcharge ni variable : aucun `model_profile`, comme avant.
+  await extractText("CV", { env: { DOCIE_BASE_URL: env.DOCIE_BASE_URL, DOCIE_API_KEY: env.DOCIE_API_KEY }, fetchImpl });
+  assert.deepEqual(sent[2].payload, { text: "CV", schema_name: "adbi_resume" });
+  // Trim comme DOCIE_MODEL_PROFILE ; `store:<nom>` sans autre transformation.
+  await extractText("CV", { modelProfile: "  store:NuExtract3_v1.2  ", env, fetchImpl });
+  assert.equal(sent[3].payload.model_profile, "store:NuExtract3_v1.2");
+  // Le `store:` choisi par appel mène au code `loading` déjà en place.
+  status = 202;
+  await assert.rejects(extractText("CV", { modelProfile: "store:nuextract3", env, fetchImpl }),
+    error => error.code === "loading" && error.eta_seconds === 42 && !error.message.includes("test-secret"));
+  assert.equal(sent[4].payload.model_profile, "store:nuextract3");
+  assert.equal(sent.length, 5);
+  assert.deepEqual(env, snapshot);
+});
+
+test("agent path: per-call agent overrides DOCIE_AGENT_<KIND> for that call only; metadata.agent is the agent called", async () => {
+  const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret", DOCIE_AGENT_RESUME: "adbi_agent_1" };
+  const snapshot = structuredClone(env);
+  const sent = [];
+  // Le faux DocIE répond au nom de l'agent présent dans l'URL.
+  const fetchImpl = async (url, options) => {
+    sent.push({ url, payload: JSON.parse(options.body) });
+    const body = structuredClone(cases[0].body);
+    body.docie_agent.agent = url.split("/")[5];
+    return new Response(JSON.stringify(body));
+  };
+  const chosen = await extractDocument(Buffer.from("pdf"), "application/pdf", { agent: "adbi_resume_nuextract3", env, fetchImpl });
+  assert.equal(sent[0].url, "https://docie.example/v1/agents/adbi_resume_nuextract3/chat/completions");
+  // Corps inchangé à part l'agent : aucun champ `model` ajouté (DocIE l'écrase).
+  assert.deepEqual(sent[0].payload, filePayload(Buffer.from("pdf"), "application/pdf", "adbi_resume_nuextract3", 8192));
+  assert.equal(chosen.metadata.agent, "adbi_resume_nuextract3");
+  // Même objet env, sans surcharge : l'agent d'environnement revient.
+  const fallback = await extractDocument(Buffer.from("pdf"), "application/pdf", { env, fetchImpl });
+  assert.equal(sent[1].url, "https://docie.example/v1/agents/adbi_agent_1/chat/completions");
+  assert.equal(fallback.metadata.agent, "adbi_agent_1");
+  assert.deepEqual(env, snapshot);
+  // Avec un agent par appel, DOCIE_AGENT_RESUME n'est pas exigé ; sans, il l'est toujours.
+  const noAgentEnv = { DOCIE_BASE_URL: env.DOCIE_BASE_URL, DOCIE_API_KEY: env.DOCIE_API_KEY };
+  assert.equal((await extractDocument(Buffer.from("pdf"), "application/pdf", { agent: " spark ", env: noAgentEnv, fetchImpl })).metadata.agent, "spark");
+  assert.equal(sent[2].url, "https://docie.example/v1/agents/spark/chat/completions");
+  await assert.rejects(extractDocument(Buffer.from("pdf"), "application/pdf", { env: noAgentEnv, fetchImpl }), error => error.code === "configuration");
+  // Une réponse d'un autre agent que celui appelé reste refusée.
+  const other = async () => new Response(JSON.stringify(cases[0].body)); // docie_agent.agent = adbi_agent_1
+  await assert.rejects(extractDocument(Buffer.from("pdf"), "application/pdf", { agent: "adbi_resume_nuextract3", env, fetchImpl: other }),
+    error => error.code === "schema");
+  assert.equal(sent.length, 3);
+});
+
+test("per-call modelProfile and agent: format checked before network with code input, no allowlist", async () => {
+  const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret", DOCIE_AGENT_RESUME: "adbi_agent_1",
+    DOCIE_MODEL_PROFILE: "store:env-default" };
+  let calls = 0;
+  const refuse = () => { calls++; throw Error("Unexpected network"); };
+  for (const modelProfile of ["", "   ", "store:a\nb", "store:a\u0000b", "a\tb", "a\u007fb", "x".repeat(129), "é".repeat(65), 42, {}]) {
+    await assert.rejects(extractText("CV", { modelProfile, env, fetchImpl: refuse }),
+      error => error instanceof DocIEBridgeError && error.code === "input", JSON.stringify(modelProfile));
+  }
+  for (const agent of ["", "   ", "../x", "a/b", "store:x", "a b", "a".repeat(129), 7]) {
+    await assert.rejects(extractDocument(Buffer.from("pdf"), "application/pdf", { agent, env, fetchImpl: refuse }),
+      error => error instanceof DocIEBridgeError && error.code === "input", JSON.stringify(agent));
+  }
+  assert.equal(calls, 0);
+  // Forme seule : tout nom bien formé part, au plafond compris — la liste est au catalogue.
+  const sent = [];
+  const textOk = async (url, options) => { sent.push(JSON.parse(options.body)); return new Response(JSON.stringify(textCases[1].body)); };
+  for (const modelProfile of ["x".repeat(128), "é".repeat(64), "store:absent-de-tout-catalogue", "models.yaml-profile"]) {
+    await extractText("CV", { modelProfile, env, fetchImpl: textOk });
+    assert.equal(sent.at(-1).model_profile, modelProfile);
+  }
+  const fileOk = async () => new Response(JSON.stringify(cases[2].body));
+  await extractDocument(Buffer.from("pdf"), "application/pdf", { agent: "a".repeat(128), env, fetchImpl: fileOk });
+});

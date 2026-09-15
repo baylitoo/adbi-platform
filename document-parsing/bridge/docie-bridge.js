@@ -135,11 +135,54 @@ function connection(env) {
   return { base, key, timeout };
 }
 
-function configuration(kind, env) {
+// Nom d'agent DocIE : une seule règle, pour DOCIE_AGENT_<KIND> comme pour
+// l'option `agent` par appel (#194). Il entre tel quel dans le chemin d'URL.
+const AGENT_NAME = /^[A-Za-z0-9_-]{1,128}$/;
+
+// Choix par appel (#194) : identifiant de modèle (`modelProfile`, voie texte) ou
+// agent (`agent`, voie agent) choisi par l'utilisateur pour CETTE action.
+//
+// Le bridge est un transport : il valide la FORME, jamais la politique. Aucune
+// liste de modèles autorisés ici — ce qu'un utilisateur peut choisir est
+// l'affaire du catalogue (#194 étape 2, côté consommateurs). Ne pas ajouter de
+// liste au transport.
+//
+// Échec en `input`, comme `dynamicSchema`, sa voisine par appel : c'est la
+// valeur de l'appelant qui est refusée. `configuration` reste aux variables
+// d'environnement (cv-parser l'affiche comme « mal configuré côté serveur »).
+//
+// `modelProfile` : pas la règle AGENT_NAME, qui refuserait `store:lfm2.5-2.6b`
+// (`:` et `.`), la seule forme qui déclenche le chargement à la demande. Règle
+// de la clé d'accès (non vide après trim, sans retour ligne), étendue à tout
+// caractère de contrôle, et plafond de 128 d'AGENT_NAME, compté en octets UTF-8
+// pour que les deux portages bornent la même chose. Envoyé après trim, comme
+// DOCIE_MODEL_PROFILE ; `store:<nom>` passe sans autre transformation.
+function perCallAgent(value) {
+  const agent = typeof value === "string" ? value.trim() : "";
+  if (!AGENT_NAME.test(agent)) fail("input", "Invalid per-call DocIE agent name.");
+  return agent;
+}
+function perCallModelProfile(value) {
+  const profile = typeof value === "string" ? value.trim() : "";
+  if (!profile || /[\u0000-\u001f\u007f]/.test(profile) || Buffer.byteLength(profile, "utf8") > 128) {
+    fail("input", "Invalid per-call DocIE model profile.");
+  }
+  return profile;
+}
+
+// `agentOverride` : agent choisi pour cet appel ; DOCIE_AGENT_<KIND> n'est alors
+// pas lu du tout (même raisonnement que connection() : ne pas exiger un réglage
+// que l'appel n'utilise pas). L'URL, `model` et l'agent attendu dans la réponse
+// viennent tous de la même variable.
+function configuration(kind, env, agentOverride = null) {
   if (!Object.hasOwn(SCHEMAS, kind)) fail("configuration", "Unsupported document kind.");
   const { base, key, timeout } = connection(env);
-  const agent = (env["DOCIE_AGENT_" + kind.toUpperCase()] || "").trim();
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(agent)) fail("configuration", "Configure the document kind's DocIE agent name.");
+  let agent;
+  if (agentOverride != null) agent = perCallAgent(agentOverride);
+  else {
+    agent = (env["DOCIE_AGENT_" + kind.toUpperCase()] || "").trim();
+    if (!AGENT_NAME.test(agent)) fail("configuration", "Configure the document kind's DocIE agent name.");
+  }
   const tokens = Number(env.DOCIE_MAX_TOKENS ?? "8192");
   if (!Number.isInteger(tokens) || tokens < 1 || tokens > 65536) fail("configuration", "Invalid DocIE timeout or token budget.");
   return { endpoint: base + "/v1/agents/" + agent + "/chat/completions", key, agent, timeout, tokens };
@@ -394,8 +437,15 @@ function filePayload(content, mimeType, agent, tokens) {
 // the `image_url` wrapper feeds DocIE's OCR backends, which read PDF and images
 // only. A source that already carries machine-readable text goes to
 // extractText() instead — a different endpoint, not a MIME type to add above.
-async function extractDocument(content, mimeType, { kind = "resume", env = process.env, fetchImpl = fetch } = {}) {
-  const { endpoint, key, agent, timeout, tokens } = configuration(kind, env);
+//
+// `agent` (#194) : agent DocIE choisi pour CET appel, prioritaire sur
+// DOCIE_AGENT_<KIND> pour cet appel seulement. Sur cette voie le modèle est figé
+// par la spec de l'agent (le runtime DocIE écrase `model`) : choisir un modèle,
+// c'est choisir un agent. Aucun champ `model` supplémentaire n'est donc envoyé.
+// `metadata.agent` nomme l'agent réellement appelé. Pas de liste d'agents
+// autorisés ici : voir perCallAgent().
+async function extractDocument(content, mimeType, { kind = "resume", agent: agentOverride = null, env = process.env, fetchImpl = fetch } = {}) {
+  const { endpoint, key, agent, timeout, tokens } = configuration(kind, env, agentOverride);
   if (!Buffer.isBuffer(content) || !content.length || content.length > MAX_DOCUMENT_BYTES) {
     fail("input", "Document must contain between 1 byte and " + MAX_DOCUMENT_BYTES + " bytes (DocIE's 26 MiB request body, base64 included).");
   }
@@ -435,8 +485,15 @@ async function extractDocument(content, mimeType, { kind = "resume", env = proce
  * plain text there is nothing better to offer; cv-parser's DOCX path has sent
  * text without it since it was written. It becomes an optional argument passed
  * straight through the day a caller can prove better segmentation.
+ *
+ * `modelProfile` (#194) : modèle choisi pour CET appel (`store:<nom>` de
+ * préférence, seule forme qui déclenche le chargement à la demande → code
+ * `loading`), prioritaire sur DOCIE_MODEL_PROFILE pour cet appel seulement.
+ * Absent : comportement inchangé. `metadata.model` reste celui que la RÉPONSE
+ * rapporte (`model_profile`), pas celui demandé. Pas de liste de modèles
+ * autorisés ici : voir perCallModelProfile().
  */
-async function extractText(text, { kind = "resume", dynamicSchema = null, env = process.env, fetchImpl = fetch } = {}) {
+async function extractText(text, { kind = "resume", dynamicSchema = null, modelProfile = null, env = process.env, fetchImpl = fetch } = {}) {
   if (!Object.hasOwn(SCHEMAS, kind)) fail("configuration", "Unsupported document kind.");
   const { base, key, timeout } = connection(env);
   const schema = SCHEMAS[kind];
@@ -449,7 +506,7 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, env = 
     payload.schema_mode = "dynamic";
     payload.dynamic_schema = dynamicSchema;
   }
-  const profile = (env.DOCIE_MODEL_PROFILE || "").trim();
+  const profile = modelProfile != null ? perCallModelProfile(modelProfile) : (env.DOCIE_MODEL_PROFILE || "").trim();
   if (profile) payload.model_profile = profile;
   // `x-api-key`, not `Authorization: Bearer`: that is the header every recorded
   // success on this endpoint used (cv-parser/docie_client.py, the response saved
