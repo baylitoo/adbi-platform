@@ -387,10 +387,19 @@ test("route /api/document/analyze (DocIE mocké au bridge) : les clés enrichies
     assert.equal(body.adresseSiege, "1 rue de la Paix, 75002 Paris");
     assert.equal(body.nameMatches, true);
 
-    // Côté navigateur : même traitement que analyzeChecklistDoc puis la proposition.
+    // Réponse sans le drapeau (dossier enregistré avant #201) : comme avant.
     const prop = K.proposer(K.extraire(body), body.nameMatches, { stNom: "ACME Conseil", stRepresentant: "Jean DUPONT (Président)" });
     assert.deepEqual(prop.champs.map((c) => [c.cle, c.etat]), [
       ["stSiren", "vide"], ["stSiret", "vide"], ["stFormeJuridique", "vide"], ["stAdresse", "vide"], ["stRepresentant", "different"],
+    ]);
+    // Avec le drapeau que la route transmet réellement : 123456789 et
+    // 12345678900012 échouent Luhn, ils ne sont plus proposés au report.
+    assert.equal(body.controleSirenSiret.siren.statut, "cle_invalide");
+    assert.equal(body.controleSirenSiret.siret.statut, "cle_invalide");
+    const avecControle = K.proposer(K.extraire(body), body.nameMatches, { stNom: "ACME Conseil" }, K.controleCompact(body));
+    assert.deepEqual(avecControle.champs.map((c) => c.cle), ["stFormeJuridique", "stAdresse", "stRepresentant"]);
+    assert.deepEqual(avecControle.aVerifier.map((a) => [a.cle, a.kbis, a.statut]), [
+      ["stSiren", "123456789", "cle_invalide"], ["stSiret", "12345678900012", "cle_invalide"],
     ]);
   } finally {
     await new Promise((resolve) => serveur.close(resolve));
@@ -399,4 +408,193 @@ test("route /api/document/analyze (DocIE mocké au bridge) : les clés enrichies
       if (envAvant[k] === undefined) delete process.env[k]; else process.env[k] = envAvant[k];
     }
   }
+});
+
+// ---------------------------------------------------------------------------
+// Contrôle de clé SIREN / SIRET (PR #201) côté proposition Kbis -> contrat.
+// Règle : un numéro n'est proposé au report que si son statut vaut "valide".
+// Le jeu d'essai partagé de #201 est parcouru EN ENTIER, à travers le vrai
+// lib/kbis-mapping.js (le drapeau n'est jamais fabriqué à la main ici).
+// ---------------------------------------------------------------------------
+const { STATUTS } = require("../lib/siren-siret");
+const SIREN_SIRET = require(path.join(__dirname, "..", "..", "document-parsing", "fixtures", "siren_siret.json"));
+
+function analyseAvec(siren, siret) {
+  const r = Object.assign({}, RESULTAT_KBIS, { siren, siret_siege: siret });
+  return mapKbisResult(r, { expectedName: "ACME Conseil", items: [{ id: "kbis" }] }).analysis;
+}
+
+test("messages : un message fixe par statut non valide de #201, statut inconnu -> message générique (échec fermé)", () => {
+  assert.deepEqual(Object.keys(K.MESSAGES_STATUT).sort(), ["cle_invalide", "discordant", "format_invalide"]);
+  for (const s of Object.keys(K.MESSAGES_STATUT)) assert.ok(STATUTS.includes(s), s + " n'est pas un statut de lib/siren-siret.js");
+  for (const m of Object.values(K.MESSAGES_STATUT)) assert.match(m, / — vérifier sur le document$/);
+  assert.equal(K.messageStatut("cle_invalide"), "clé de contrôle invalide — vérifier sur le document");
+  assert.equal(K.messageStatut("statut_futur"), K.MESSAGE_STATUT_INCONNU);
+  assert.equal(K.messageStatut("constructor"), K.MESSAGE_STATUT_INCONNU, "pas de fuite du prototype");
+  assert.equal(K.messageStatut(null), K.MESSAGE_STATUT_INCONNU);
+});
+
+test("jeu d'essai #201 entier via kbis-mapping.js : SIREN/SIRET proposé SSI statut valide ; sinon valeur lue + raison ; absent -> rien", () => {
+  const vus = { siren: new Set(), siret: new Set() };
+  for (const cas of SIREN_SIRET.cas) {
+    const a = analyseAvec(cas.siren, cas.siret);
+    const controle = K.controleCompact(a);
+    const prop = K.proposer(K.extraire(a), a.nameMatches, {}, controle);
+    const sansDrapeau = K.proposer(K.extraire(a), a.nameMatches, {});
+    for (const champ of ["siren", "siret"]) {
+      const statut = cas["statut_" + champ];
+      const brut = cas[champ];
+      vus[champ].add(statut);
+      const quoi = champ + " " + JSON.stringify(brut) + " (" + statut + ")";
+      assert.equal(controle[champ].statut, statut, quoi);
+      assert.equal(prop.champs.some((c) => c.source === champ), statut === "valide", quoi + " : proposé ?");
+      const av = prop.aVerifier.filter((x) => x.source === champ);
+      if (statut === "valide" || statut === "absent") {
+        assert.equal(av.length, 0, quoi + " : rien à vérifier");
+      } else {
+        assert.equal(av.length, 1, quoi);
+        assert.equal(av[0].statut, statut);
+        assert.equal(av[0].kbis, String(brut), quoi + " : valeur lue montrée telle quelle");
+        assert.equal(av[0].message, K.MESSAGES_STATUT[statut]);
+        assert.equal(av[0].libelle, champ.toUpperCase());
+      }
+      // Choix par défaut et report : un numéro non valide n'y apparaît jamais,
+      // même coché de force.
+      if (statut !== "valide") {
+        const cle = champ === "siren" ? "stSiren" : "stSiret";
+        assert.ok(!(cle in K.choixParDefaut(prop)), quoi);
+        assert.ok(!K.aReporter(prop, { [cle]: true }, {}).paires.some(([k]) => k === cle), quoi + " : jamais reporté");
+      }
+      // Drapeau absent : exactement la règle d'avant (proposé dès que non vide).
+      const nonVide = brut !== null && String(brut).trim() !== "";
+      assert.equal(sansDrapeau.champs.some((c) => c.source === champ), nonVide, quoi + " sans drapeau");
+      assert.deepEqual(sansDrapeau.aVerifier, []);
+    }
+  }
+  for (const champ of ["siren", "siret"]) assert.deepEqual([...vus[champ]].sort(), [...STATUTS].sort(), champ + " : les 5 statuts couverts");
+});
+
+test("drapeau absent ou illisible dans la réponse : comportement d'avant #201, aucune exception", () => {
+  const a = analyseKbis("ACME Conseil");
+  const avant = K.proposer(K.extraire(a), true, {});
+  for (const d of [analyseLocale(), undefined, null, "texte", Object.assign({}, a, { controleSirenSiret: undefined }),
+    Object.assign({}, a, { controleSirenSiret: null }), Object.assign({}, a, { controleSirenSiret: "valide" })]) {
+    const controle = K.controleCompact(d);
+    assert.equal(controle, null, JSON.stringify(d && d.controleSirenSiret));
+    assert.deepEqual(K.proposer(K.extraire(a), true, {}, controle), avant);
+  }
+  assert.deepEqual(avant.champs.map((c) => c.cle), ["stSiren", "stSiret", "stFormeJuridique", "stAdresse", "stRepresentant"]);
+  assert.deepEqual(avant.aVerifier, []);
+  // Analyse locale : toujours rien à proposer.
+  const local = analyseLocale();
+  assert.equal(K.proposer(K.extraire(local), local.nameMatches, {}, K.controleCompact(local)), null);
+});
+
+test("drapeau présent mais entrée manquante, statut non textuel ou inconnu : non proposé (échec fermé), message générique", () => {
+  const kbis = { siren: "941091316", siret: "94109131600013", formeJuridique: "SAS" };
+  const vide = K.controleCompact({ controleSirenSiret: {} });
+  assert.deepEqual(vide, { siren: { statut: null, valeur: "" }, siret: { statut: null, valeur: "" } });
+  const p1 = K.proposer(kbis, true, {}, vide);
+  assert.deepEqual(p1.champs.map((c) => c.cle), ["stFormeJuridique"]);
+  assert.deepEqual(p1.aVerifier.map((a) => [a.cle, a.kbis, a.message]), [
+    ["stSiren", "941091316", K.MESSAGE_STATUT_INCONNU], ["stSiret", "94109131600013", K.MESSAGE_STATUT_INCONNU],
+  ]);
+  const futur = K.controleCompact({ controleSirenSiret: {
+    siren: { valeur: "941091316", chiffres: "941091316", statut: "statut_futur" },
+    siret: { valeur: "94109131600013", chiffres: "94109131600013", statut: 1 },
+  } });
+  const p2 = K.proposer(kbis, true, {}, futur);
+  assert.deepEqual(p2.champs.map((c) => c.cle), ["stFormeJuridique"]);
+  assert.deepEqual(p2.aVerifier.map((a) => a.statut), ["statut_futur", null]);
+});
+
+test("numéro non valide identique à la saisie : pas « déjà dans le contrat », il reste à vérifier", () => {
+  const a = analyseKbis("ACME Conseil");
+  const prop = K.proposer(K.extraire(a), true, { stSiren: "123 456 789" }, K.controleCompact(a));
+  assert.ok(!prop.champs.some((c) => c.cle === "stSiren"));
+  assert.equal(prop.aVerifier.find((x) => x.cle === "stSiren").kbis, "123456789");
+});
+
+test("seul un numéro à vérifier (aucun champ reportable) : proposition affichée quand même ; nameMatches false -> null", () => {
+  const controle = { siren: { statut: "cle_invalide", valeur: "123456789" }, siret: { statut: "absent", valeur: "" } };
+  const prop = K.proposer({ siren: "123456789" }, true, {}, controle);
+  assert.deepEqual(prop.champs, []);
+  assert.deepEqual(prop.aVerifier.map((x) => x.cle), ["stSiren"]);
+  assert.equal(K.proposer({ siren: "123456789" }, false, {}, controle), null);
+  // Absent partout : rien.
+  const absent = { siren: { statut: "absent", valeur: "" }, siret: { statut: "absent", valeur: "" } };
+  assert.equal(K.proposer({ capitalSocial: "1000" }, true, {}, absent), null);
+});
+
+test("analyzeChecklistDoc (code réel) : garde le drapeau d'une analyse DocIE, n'ajoute rien à une analyse locale", async () => {
+  const docie = await analyserDansNavigateur("kbis", analyseKbis("ACME Conseil"));
+  assert.deepEqual(docie.etat.dateState.kbis.controleSirenSiret, {
+    siren: { statut: "cle_invalide", valeur: "123456789" }, siret: { statut: "cle_invalide", valeur: "12345678900012" },
+  });
+  const locale = await analyserDansNavigateur("kbis", analyseLocale());
+  assert.equal(JSON.stringify(Object.keys(locale.etat.dateState.kbis)), JSON.stringify(["issuedDate", "companyName", "nameMatches", "fileName", "kbis"]));
+});
+
+// Faux DOM minimal : assez pour exécuter le vrai renderPropositionKbis.
+function fauxDocument() {
+  const creer = (tag) => {
+    const n = {
+      tagName: tag, className: "", textContent: "", children: [], ecouteurs: {}, dataset: {},
+      appendChild(c) { n.children.push(c); return c; },
+      append(...cs) { for (const c of cs) n.children.push(typeof c === "string" ? { textContent: c, children: [] } : c); },
+      addEventListener(t, fn) { n.ecouteurs[t] = fn; },
+      classList: { toggle(cls, on) { if (cls === "hidden") n.masque = !!on; } },
+    };
+    Object.defineProperty(n, "innerHTML", { set() { n.children = []; }, get() { return ""; } });
+    return n;
+  };
+  return { createElement: creer };
+}
+const texteDe = (n) => (n.textContent || "") + (n.children || []).map(texteDe).join("");
+const noeudsDe = (n, pred) => [...(pred(n) ? [n] : []), ...(n.children || []).flatMap((c) => noeudsDe(c, pred))];
+
+function rendreProposition(res) {
+  const reportes = [];
+  const document = fauxDocument();
+  const ctx = {
+    CONTRATS_KBIS_CHAMPS: K, document,
+    state: { values: { stNom: "ACME Conseil" }, fields: sousTraitance },
+    appliquerValeursChamps: (paires) => reportes.push(...paires),
+    majNoteCoordonnees: () => {},
+    Set,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extraireFonction("renderPropositionKbis"), ctx);
+  const host = document.createElement("div");
+  ctx.renderPropositionKbis(host, res);
+  return { host, reportes };
+}
+
+test("renderPropositionKbis (code réel) : SIREN/SIRET non valides montrés « à vérifier » sans case, jamais reportés ; sans drapeau, comme avant", () => {
+  const a = analyseKbis("ACME Conseil");
+  const res = { kbis: K.extraire(a), nameMatches: true, controleSirenSiret: K.controleCompact(a) };
+  const { host, reportes } = rendreProposition(res);
+  assert.equal(host.masque, false);
+  const texte = texteDe(host);
+  assert.ok(texte.includes("SIREN à vérifier — non reporté"), texte);
+  assert.ok(texte.includes("Lu : « 123456789 » — clé de contrôle invalide — vérifier sur le document"), texte);
+  assert.ok(texte.includes("Lu : « 12345678900012 » — clé de contrôle invalide — vérifier sur le document"), texte);
+  const cases = noeudsDe(host, (n) => n.type === "checkbox");
+  assert.equal(cases.length, 3, "forme juridique, adresse, représentant — pas SIREN ni SIRET");
+  noeudsDe(host, (n) => n.tagName === "button")[0].ecouteurs.click();
+  assert.deepEqual(reportes.map(([k]) => k), ["stFormeJuridique", "stAdresse", "stRepresentant"]);
+
+  // Dossier enregistré avant #201 (pas de controleSirenSiret) : 5 cases, SIREN reporté.
+  const ancien = rendreProposition({ kbis: K.extraire(a), nameMatches: true });
+  assert.equal(noeudsDe(ancien.host, (n) => n.type === "checkbox").length, 5);
+  assert.ok(!texteDe(ancien.host).includes("à vérifier"));
+  noeudsDe(ancien.host, (n) => n.tagName === "button")[0].ecouteurs.click();
+  assert.deepEqual(ancien.reportes.map(([k]) => k), ["stSiren", "stSiret", "stFormeJuridique", "stAdresse", "stRepresentant"]);
+
+  // Numéros valides (941091316 / 94109131600013) : proposés et reportés.
+  const valide = analyseAvec("941091316", "94109131600013");
+  const ok = rendreProposition({ kbis: K.extraire(valide), nameMatches: true, controleSirenSiret: K.controleCompact(valide) });
+  assert.equal(noeudsDe(ok.host, (n) => n.type === "checkbox").length, 5);
+  noeudsDe(ok.host, (n) => n.tagName === "button")[0].ecouteurs.click();
+  assert.deepEqual(ok.reportes.slice(0, 2), [["stSiren", "941091316"], ["stSiret", "94109131600013"]]);
 });

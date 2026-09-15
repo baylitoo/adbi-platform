@@ -569,6 +569,10 @@ async function analyzeChecklistDoc(it, fileObj, statusEl, btn) {
     // forme juridique, adresse, représentant…), pour les PROPOSER au contrat —
     // liste blanche de public/kbis-champs.js. Analyse locale : {} (rien à proposer).
     if (it.id === "kbis") res.kbis = CONTRATS_KBIS_CHAMPS.extraire(d);
+    // Verdict de clé SIREN/SIRET (#201), gardé seulement s'il est dans la
+    // réponse : une analyse locale garde exactement la forme d'avant.
+    const controle = CONTRATS_KBIS_CHAMPS.controleCompact(d);
+    if (controle) res.controleSirenSiret = controle;
     state.dateState[it.id] = res;
     renderChecklistDocResult(statusEl, res);
     const prop = statusEl.parentNode && statusEl.parentNode.querySelector("[data-kbis-proposition]");
@@ -620,7 +624,7 @@ function renderChecklistDocResult(el, res) {
 function renderPropositionKbis(host, res, annonce) {
   const K = CONTRATS_KBIS_CHAMPS;
   host.innerHTML = "";
-  const prop = res ? K.proposer(res.kbis, res.nameMatches, state.values) : null;
+  const prop = res ? K.proposer(res.kbis, res.nameMatches, state.values, res.controleSirenSiret) : null;
   host.classList.toggle("hidden", !prop);
   if (!prop) return;
   const noeud = (tag, cls, texte) => {
@@ -665,6 +669,15 @@ function renderPropositionKbis(host, res, annonce) {
       lab.appendChild(ligne);
       host.appendChild(lab);
     });
+  });
+
+  // SIREN/SIRET dont la clé n'est pas « valide » (#201) : jamais proposés au
+  // report, la valeur lue est montrée avec la raison pour qu'un humain la corrige.
+  prop.aVerifier.forEach((a) => {
+    const titre = noeud("div", "cand-nom", libelle(a.cle) + " ");
+    titre.appendChild(noeud("em", "cand-ei", "à vérifier — non reporté"));
+    host.appendChild(titre);
+    host.appendChild(noeud("div", "cand-sub", "Lu : « " + a.kbis + " » — " + a.message));
   });
 
   if (prop.infos.length) {

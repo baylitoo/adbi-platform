@@ -50,8 +50,48 @@ var CONTRATS_KBIS_CHAMPS = (function () {
     ["dateImmatriculation", "Immatriculé le"],
   ];
 
+  // Contrôle de clé SIREN / SIRET (PR #201, lib/siren-siret.js) : la réponse
+  // porte `controleSirenSiret = { siren: {valeur, chiffres, statut}, siret }`.
+  // Règle des consommateurs : un numéro n'est utilisé QUE si son statut vaut
+  // exactement "valide" — jamais « s'il n'y a pas de problème », pour qu'un
+  // statut ajouté plus tard ne passe pas pour une valeur propre.
+  // Un message FIXE par statut, montré à côté de la valeur lue : un humain
+  // corrige un chiffre en le voyant. Même table dans public/import-champs.js
+  // (tests/import-champs.test.js compare les deux et les statuts de #201).
+  var MESSAGES_STATUT = {
+    format_invalide: "format invalide — vérifier sur le document",
+    cle_invalide: "clé de contrôle invalide — vérifier sur le document",
+    discordant: "SIREN et SIRET discordants (le SIRET ne commence pas par le SIREN) — vérifier sur le document",
+  };
+  // Statut inconnu, ou entrée illisible dans un drapeau présent : échec FERMÉ.
+  var MESSAGE_STATUT_INCONNU = "numéro non vérifié — vérifier sur le document";
+  var CHAMPS_CONTROLES = [["siren", "SIREN"], ["siret", "SIRET"]];
+
   function texte(v) {
     return v === null || v === undefined ? "" : String(v);
+  }
+
+  function messageStatut(statut) {
+    return Object.prototype.hasOwnProperty.call(MESSAGES_STATUT, statut) ? MESSAGES_STATUT[statut] : MESSAGE_STATUT_INCONNU;
+  }
+
+  // Réponse de /api/document/analyze -> { siren: {statut, valeur}, siret }
+  // (liste blanche, conservée dans state.dateState), ou null si la réponse ne
+  // porte pas le drapeau : analyse locale sans DocIE, réponse antérieure à
+  // #201, dossier enregistré avant — tout se passe alors comme avant.
+  // Drapeau présent mais entrée absente ou statut non textuel : statut null,
+  // traité comme non valide (jamais comme une valeur propre).
+  function controleCompact(d) {
+    var c = d && typeof d === "object" ? d.controleSirenSiret : null;
+    if (!c || typeof c !== "object") return null;
+    var sortie = {};
+    CHAMPS_CONTROLES.forEach(function (x) {
+      var e = c[x[0]];
+      sortie[x[0]] = e && typeof e === "object" && typeof e.statut === "string"
+        ? { statut: e.statut, valeur: texte(e.valeur) }
+        : { statut: null, valeur: "" };
+    });
+    return sortie;
   }
 
   function nonVide(v) {
@@ -93,12 +133,34 @@ var CONTRATS_KBIS_CHAMPS = (function () {
   // `valeurs` : state.values au moment de l'affichage. Chaque champ sort avec
   // son état : "vide" (le report le remplira), "identique" (rien à faire),
   // "different" (l'utilisateur choisit ; par défaut la saisie est gardée).
-  function proposer(kbis, nameMatches, valeurs) {
+  //
+  // `controle` : controleCompact() de la même réponse. Absent (null/undefined)
+  // -> comportement d'avant #201. Présent -> un SIREN/SIRET dont le statut
+  // n'est pas "valide" n'est PAS proposé au report (ni coché, ni « identique »
+  // à une saisie qui porterait le même numéro faux) : il sort dans `aVerifier`
+  // avec sa valeur lue et le message de son statut. "absent" : rien du tout.
+  function proposer(kbis, nameMatches, valeurs, controle) {
     if (nameMatches === false || !kbis || typeof kbis !== "object") return null;
     var v = valeurs || {};
     var champs = [];
+    var aVerifier = [];
+    var libelles = {};
+    CHAMPS_CONTROLES.forEach(function (x) { libelles[x[0]] = x[1]; });
     CORRESPONDANCES.forEach(function (c) {
       var lu = kbis[c[0]];
+      if (controle && typeof controle === "object" && libelles[c[0]]) {
+        var e = controle[c[0]] || { statut: null, valeur: "" };
+        if (e.statut === "absent") return;
+        if (e.statut !== "valide") {
+          var valeurLue = nonVide(lu) ? texte(lu) : texte(e.valeur);
+          if (!nonVide(valeurLue)) return;
+          aVerifier.push({
+            source: c[0], cle: c[1], libelle: libelles[c[0]], kbis: valeurLue,
+            statut: e.statut, message: messageStatut(e.statut),
+          });
+          return;
+        }
+      }
       if (!nonVide(lu)) return;
       var actuel = texte(v[c[1]]);
       var etat;
@@ -107,7 +169,9 @@ var CONTRATS_KBIS_CHAMPS = (function () {
       else etat = "different";
       champs.push({ source: c[0], cle: c[1], kbis: texte(lu), actuel: actuel, etat: etat });
     });
-    if (!champs.length) return null;
+    // Rien à reporter mais un numéro à vérifier : la proposition s'affiche
+    // quand même, pour montrer la valeur lue et la raison.
+    if (!champs.length && !aVerifier.length) return null;
     var infos = [];
     INFOS.forEach(function (c) {
       if (!nonVide(kbis[c[0]])) return;
@@ -117,6 +181,7 @@ var CONTRATS_KBIS_CHAMPS = (function () {
     });
     return {
       champs: champs,
+      aVerifier: aVerifier,
       infos: infos,
       // null : raison sociale non saisie, le contrôle du nom n'a pas pu tourner.
       nomVerifie: nameMatches === true,
@@ -183,6 +248,10 @@ var CONTRATS_KBIS_CHAMPS = (function () {
   return {
     CORRESPONDANCES: CORRESPONDANCES,
     INFOS: INFOS,
+    MESSAGES_STATUT: MESSAGES_STATUT,
+    MESSAGE_STATUT_INCONNU: MESSAGE_STATUT_INCONNU,
+    messageStatut: messageStatut,
+    controleCompact: controleCompact,
     normaliser: normaliser,
     extraire: extraire,
     proposer: proposer,
