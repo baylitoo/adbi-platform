@@ -1,0 +1,70 @@
+{
+  "request_id": "req-fixture-rib-edge-0001",
+  "schema_name": "rib",
+  "model_profile": "lfm2.5-2.6b",
+  "document_hash": "sha256:req-fixture-rib-edge-0001",
+  "result": {
+    "document_type": "rib",
+    "extraction_notes": [
+      "low confidence on iban"
+    ],
+    "account_holder": {
+      "value": "SUND INDUSTRY SYSTEM",
+      "evidence_ids": [],
+      "confidence": 0.7
+    },
+    "iban": {
+      "value": "FR14 2004 1010 0505 0001 3M02 607",
+      "evidence_ids": [],
+      "confidence": 0.6
+    },
+    "bic": {
+      "value": "BNPAFRPPX",
+      "evidence_ids": [],
+      "confidence": 0.5
+    },
+    "bank_name": null
+  },
+  "validation": {
+    "valid": false,
+    "errors": [
+      "bank_name manquant"
+    ],
+    "warnings": [
+      "confiance faible"
+    ]
+  },
+  "usage": null,
+  "latency_ms": 4321,
+  "dynamic_schema": {
+    "document_type": "rib",
+    "fields": [
+      {
+        "name": "account_holder",
+        "type": "string",
+        "description": "Titulaire du compte tel qu'imprime sur le RIB (denomination de la societe)",
+        "fields": []
+      },
+      {
+        "name": "iban",
+        "type": "string",
+        "description": "IBAN complet tel qu'imprime, espaces de groupement compris",
+        "fields": []
+      },
+      {
+        "name": "bic",
+        "type": "string",
+        "description": "Code BIC (SWIFT) de la banque, 8 ou 11 caracteres",
+        "fields": []
+      },
+      {
+        "name": "bank_name",
+        "type": "string",
+        "description": "Nom de la banque ou de l'agence de domiciliation",
+        "fields": []
+      }
+    ]
+  },
+  "routing": null,
+  "response_format_style": "json_schema"
+}

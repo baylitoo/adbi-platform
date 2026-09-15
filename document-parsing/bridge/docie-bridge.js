@@ -88,7 +88,7 @@ const CONTEXT_OVERFLOW = /exceeds the available context size|exceed_context_size
 const DOCIE_BLOCS_TEXTE_MAX = 800;
 const SEPARATEURS_LIGNE_PYTHON = /\r\n|[\n\v\f\r\x1c\x1d\x1e\x85\u2028\u2029]/;
 const LIGNE_BLANCHE_PYTHON = /^[\t\n\v\f\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
-const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf" };
+const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf", rib: "rib" };
 // What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
 // This transport posts the document as an `image_url` data URI to
 // /v1/agents/<agent>/chat/completions, where DocIE OCRs it: liteparse renders

@@ -32,17 +32,20 @@ test("isEnabled / isEligible / voiePour: flag parsing et portée par pièce", ()
   assert.equal(isEligible([{ id: "urssaf" }]), true);
   assert.equal(voiePour([{ id: "kbis" }]), "agent");
   assert.equal(voiePour([{ id: "urssaf" }]), "texte");
-  // Les cinq autres pièces n'ont ni schéma ni mapping : jamais envoyées.
-  for (const id of ["rib", "cni", "fiscale", "coordonnees", "specifique"]) {
+  // rib aussi (#170, #194), voie TEXTE : même mécanique que urssaf.
+  assert.equal(isEligible([{ id: "rib" }]), true);
+  assert.equal(voiePour([{ id: "rib" }]), "texte");
+  // Les quatre autres pièces n'ont ni schéma ni mapping : jamais envoyées.
+  for (const id of ["cni", "fiscale", "coordonnees", "specifique"]) {
     assert.equal(isEligible([{ id }]), false, id);
     assert.equal(voiePour([{ id }]), null, id);
   }
   assert.equal(isEligible([]), false);
   assert.equal(isEligible(undefined), false);
   assert.equal(voiePour(undefined), null);
-  assert.deepEqual(Object.keys(VOIES).sort(), ["kbis", "urssaf"]);
+  assert.deepEqual(Object.keys(VOIES).sort(), ["kbis", "rib", "urssaf"]);
   // Seul items[0] compte — port exact de docanalyze.js::detectType.
-  assert.equal(voiePour([{ id: "rib" }, { id: "urssaf" }]), null);
+  assert.equal(voiePour([{ id: "cni" }, { id: "urssaf" }]), null);
 });
 
 test("flag off: local analysis used unchanged, bridge never invoked", async () => {
@@ -55,13 +58,14 @@ test("flag off: local analysis used unchanged, bridge never invoked", async () =
   assert.equal(result.summary, "local");
 });
 
-test("flag on but item non éligible (ex: rib): reste local (ni schéma ni mapping)", async () => {
+test("flag on but item non éligible (ex: fiscale): reste local (ni schéma ni mapping)", async () => {
   let localCalls = 0;
   const analyzeLocal = async (body) => { localCalls++; return fakeLocal("local")(body); };
   const extractDocument = async () => { throw new Error("le bridge ne doit pas être appelé (pièce non couverte)"); };
+  const extractText = async () => { throw new Error("le bridge ne doit pas être appelé (pièce non couverte)"); };
   const env = { DOCIE_EXTRACTION_ENABLED: "true" };
-  const body = { dataBase64: "AA==", mimeType: "application/pdf", items: [{ id: "rib" }] };
-  const result = await analyzeDocument(body, { env, analyzeLocal, extractDocument });
+  const body = { dataBase64: "AA==", mimeType: "application/pdf", items: [{ id: "fiscale" }] };
+  const result = await analyzeDocument(body, { env, analyzeLocal, extractDocument, extractText });
   assert.equal(localCalls, 1);
   assert.equal(result.summary, "local");
   assert.deepEqual(result.issues, []);

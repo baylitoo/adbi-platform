@@ -1,0 +1,29 @@
+{
+  "document_type": "rib",
+  "fields": [
+    {
+      "name": "account_holder",
+      "type": "string",
+      "description": "Titulaire du compte tel qu'imprime sur le RIB (denomination de la societe)",
+      "fields": []
+    },
+    {
+      "name": "iban",
+      "type": "string",
+      "description": "IBAN complet tel qu'imprime, espaces de groupement compris",
+      "fields": []
+    },
+    {
+      "name": "bic",
+      "type": "string",
+      "description": "Code BIC (SWIFT) de la banque, 8 ou 11 caracteres",
+      "fields": []
+    },
+    {
+      "name": "bank_name",
+      "type": "string",
+      "description": "Nom de la banque ou de l'agence de domiciliation",
+      "fields": []
+    }
+  ]
+}
