@@ -241,6 +241,24 @@ function libelleModeleServi(m) {
   return (modele && modele.servi && modele.servi.libelle) || "";
 }
 
+// Resultat partiel (#203) : libelles identiques, mot pour mot, a ceux de
+// cv-parser/docie_review.py::LIBELLES_PARTIEL (un test y epingle la parite).
+const LIBELLES_PARTIEL = {
+  boucle: "la sortie du modèle se répétait, la liste a été coupée et la suite abandonnée",
+  valeur_abandonnee: "valeur illisible (ni nombre ni montant), abandonnée",
+  forme_invalide: "valeur écrite sous une forme que ce champ ne peut pas contenir, rien n'a été gardé",
+  feuille_abandonnee: "valeur invalide abandonnée",
+  liste_plafonnee_possible: "liste d'exactement 100 éléments, peut-être plafonnée",
+};
+
+/** Avertissement de quality.warnings rendu en francais ; une raison inconnue reste telle quelle. */
+function libelleAvertissement(w) {
+  if (w === "docie_troncature_possible") return "CV peut-être tronqué : plus de 800 lignes";
+  const partiel = /^docie_resultat_partiel:(.+):([^:]*)$/.exec(w);
+  if (partiel) return `Résultat partiel — ${partiel[1]} : ${LIBELLES_PARTIEL[partiel[2]] || partiel[2]}`;
+  return w.replace(/_/g, " ");
+}
+
 function dessinerFile() {
   const total = etat.file.length;
   const finis = etat.file.filter((i) => i.etat === "ok" || i.etat === "echec").length;
@@ -335,7 +353,7 @@ function remplirValidation() {
     <div class="kpi"><b>${m.identity.seniority_years}</b><span>ans d'expérience</span></div>
     ${libelleModeleServi(m) ? `<div class="kpi"><b>${echapper(libelleModeleServi(m))}</b><span>lu par</span></div>` : ""}
     ${q.needs_review.map((r) => `<span class="puce-avert">à vérifier : ${echapper(r)}</span>`).join("")}
-    ${q.warnings.map((w) => `<span class="puce-avert">${echapper(w.replace(/_/g, " "))}</span>`).join("")}
+    ${q.warnings.map((w) => `<span class="puce-avert">${echapper(libelleAvertissement(w))}</span>`).join("")}
   `;
 
   const doute = (chemin) => (q.needs_review.includes(chemin) ? " doute" : "");

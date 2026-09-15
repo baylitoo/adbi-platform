@@ -260,6 +260,24 @@ def map_resume(response, expected_schema="resume"):
 _ILLISIBLE = object()
 
 
+def blocs_texte_envoyes(texte):
+    """`blocs_texte` / `troncature_possible` du texte EXACTEMENT envoyé (#190).
+
+    Cette voie appelle /v1/extract/text sans passer par le bridge : elle subit
+    le même plafond silencieux de 800 blocs, mais rien ne le mesurait. Comptage
+    et seuil sont ceux du bridge (`compter_blocs_texte`,
+    `DOCIE_BLOCS_TEXTE_MAX`), importés et non recopiés. Bridge introuvable :
+    None pour les deux, « non mesurable », jamais une exception.
+    """
+    try:
+        from docie_bridge_extraction import _load_bridge
+        bridge = _load_bridge()
+        blocs = bridge.compter_blocs_texte(texte)
+        return {"blocs_texte": blocs, "troncature_possible": blocs > bridge.DOCIE_BLOCS_TEXTE_MAX}
+    except Exception:
+        return {"blocs_texte": None, "troncature_possible": None}
+
+
 def modele_en_chargement(corps):
     """Corps de chargement de DocIE sur /v1/extract/text (#194) :
     `{"detail": {"status": "loading", "eta_seconds": …, "message": …}}`."""
@@ -371,7 +389,8 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
             return data, {"event_id": output.get("request_id", ""),
                           "model_profile": output.get("model_profile", ""),
                           "validation": output.get("validation") or {},
-                          "schema_reported": schema_rapporte(output)}
+                          "schema_reported": schema_rapporte(output),
+                          **blocs_texte_envoyes(text)}
         trigger = call("POST", "/v1/studio/extract", json=payload)
         ids = trigger.get("event_ids") if isinstance(trigger, dict) else None
         if not isinstance(ids, list) or not ids or not isinstance(ids[0], str) or not ids[0]:

@@ -211,7 +211,7 @@ test("refus nommes : modele non configure, DocIE inactif, format sans voie DocIE
   assert.equal(appels.length, 0);
 });
 
-test("resultat partiel (#203) : signale par champ pour un modele choisi ; sans choix, avertissements inchanges", async () => {
+test("resultat partiel (#203) : signale par champ pour un modele choisi, et aussi sans choix (tests/resultat-partiel.test.js)", async () => {
   const boucle = "skills: model output repeated itself (Python, Python); list truncated at the loop start, " +
     "remaining items dropped; confidence capped to 0.5 as a review flag";
   const choisi = await importerCv(texte(20), "cv.txt",
@@ -219,7 +219,7 @@ test("resultat partiel (#203) : signale par champ pour un modele choisi ; sans c
   assert.ok(choisi.quality.warnings.includes("docie_resultat_partiel:skills:boucle"), choisi.quality.warnings.join(" | "));
 
   const sans = await importerCv(texte(20), "cv.txt", { env: DEUX_TEXTE, fetchImpl: docie({ avertissements: [boucle] }).fetchImpl });
-  assert.ok(!sans.quality.warnings.some((w) => w.startsWith("docie_resultat_partiel")));
+  assert.equal(sans.quality.warnings.filter((w) => w === "docie_resultat_partiel:skills:boucle").length, 1);
   assert.equal(sans.source.modele.demande, null);
   assert.equal(sans.source.modele.servi.libelle, "NuExtract3", "modele servi enregistre, choix ou non");
 });

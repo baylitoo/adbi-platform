@@ -548,9 +548,11 @@
     {# ── Ce dont DocIE doute (issue #172) ──────────────────────────────────
        `docie_review` est posé à l'extraction (app.py::process_cv via
        docie_review.py) : `needs_review` = chemins de la fiche dont DocIE
-       plafonne la confiance (valeur partielle/tronquée), `warnings` = ce que
-       DocIE a signalé, REPRIS VERBATIM — sa prose n'a aucun format stable, on
-       n'en déduit jamais un nom de champ. Sans ce bandeau, une extraction
+       plafonne la confiance (valeur partielle/tronquée) ou que le bridge
+       nomme dans un résultat partiel (#203), `warnings` = ce que DocIE a
+       signalé, REPRIS VERBATIM, plus une ligne française par résultat partiel
+       et le « CV peut-être tronqué » — le nom de champ n'est lu dans la prose
+       DocIE que par le bridge, jamais ici. Sans ce bandeau, une extraction
        tronquée s'affiche exactement comme une extraction complète. #}
     {% set revue = cv.docie_review or {} %}
     {% set a_verifier = revue.needs_review or [] %}
