@@ -11,11 +11,12 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { spawn } = require("node:child_process");
 
 const {
   creerGestionnaire, mapperErreur, FileTachesPleineError,
-  MESSAGES_BRIDGE, MESSAGES_SERVICE, MESSAGE_INTERNE,
-  MAX_SIMULTANEES, MAX_EN_ATTENTE, TTL_MS,
+  MESSAGES_BRIDGE, MESSAGES_SERVICE, MESSAGE_INTERNE, maxSimultaneesDepuisEnv,
+  MAX_SIMULTANEES_DEFAUT, MAX_EN_ATTENTE, TTL_MS,
 } = require("../lib/taches-extraction");
 const { extractContractValues } = require("../lib/docie-contract-import");
 
@@ -45,15 +46,119 @@ function codesDuBridge() {
 }
 
 const silencieux = { journal: () => {} };
+// Les tests d'ordonnancement ci-dessous raisonnent sur deux creneaux, plafond
+// explicite : le defaut du module (1, NuExtract3) est teste a part.
+const deuxCreneaux = { ...silencieux, maxSimultanees: 2 };
 
-test("valeurs par defaut annoncees : 2 simultanees, 20 en attente, 30 min", () => {
-  assert.equal(MAX_SIMULTANEES, 2);
+test("valeurs par defaut annoncees : 1 simultanee (NuExtract3, n_parallel 1), 20 en attente, 30 min", () => {
+  assert.equal(MAX_SIMULTANEES_DEFAUT, 1);
   assert.equal(MAX_EN_ATTENTE, 20);
   assert.equal(TTL_MS, 30 * 60 * 1000);
 });
 
+// ── Plafond configurable : ADBI_EXTRACTION_MAX_CONCURRENT ─────────────────
+
+const VAR = "ADBI_EXTRACTION_MAX_CONCURRENT";
+
+test("plafond depuis l'env : absente, vide ou blanche -> 1 (NuExtract3, n_parallel 1)", () => {
+  assert.equal(maxSimultaneesDepuisEnv({}), 1);
+  assert.equal(maxSimultaneesDepuisEnv({ [VAR]: "" }), 1);
+  assert.equal(maxSimultaneesDepuisEnv({ [VAR]: "   " }), 1);
+});
+
+test("plafond depuis l'env : un entier entre 1 et 16 est repris tel quel", () => {
+  assert.equal(maxSimultaneesDepuisEnv({ [VAR]: "2" }), 2);
+  assert.equal(maxSimultaneesDepuisEnv({ [VAR]: " 3 " }), 3);
+  assert.equal(maxSimultaneesDepuisEnv({ [VAR]: "16" }), 16);
+});
+
+test("plafond depuis l'env : toute autre valeur leve une erreur nommant la variable et la valeur", () => {
+  for (const mauvais of ["0", "-1", "deux", "2.5", "1e1", "0x2", "+3", "17", "20"]) {
+    assert.throws(() => maxSimultaneesDepuisEnv({ [VAR]: mauvais }),
+      (e) => e.message.includes(VAR) && e.message.includes(JSON.stringify(mauvais)), mauvais);
+  }
+});
+
+/** 5 taches sur un gestionnaire plafonne a n : jamais plus de n actives. */
+async function verifierPlafond(options, n) {
+  const g = creerGestionnaire({ ...silencieux, ...options });
+  const differes = [];
+  let actives = 0, pic = 0;
+  for (let i = 0; i < 5; i++) {
+    const d = differe();
+    differes.push(d);
+    g.creer(async () => {
+      actives++; pic = Math.max(pic, actives);
+      try { return await d.promesse; } finally { actives--; }
+    });
+  }
+  await vider();
+  assert.equal(actives, n);
+  assert.deepEqual(g.statistiques(), { enCours: n, enAttente: 5 - n, conservees: 5 });
+  for (const d of differes) {
+    d.resoudre("ok");
+    await vider();
+    assert.ok(actives <= n, `actives=${actives}`);
+  }
+  await vider();
+  assert.equal(pic, n);
+  assert.equal(g.statistiques().enCours, 0);
+}
+
+test("sans plafond explicite, le gestionnaire n'extrait qu'un contrat a la fois", async () => {
+  await verifierPlafond({}, 1);
+});
+
+test("le plafond lu dans l'env est celui que le gestionnaire applique (2, puis 3)", async () => {
+  await verifierPlafond({ maxSimultanees: maxSimultaneesDepuisEnv({ [VAR]: "2" }) }, 2);
+  await verifierPlafond({ maxSimultanees: maxSimultaneesDepuisEnv({ [VAR]: "3" }) }, 3);
+});
+
+/**
+ * Lance server.js avec un environnement donne et rend { code, sortie } : a la
+ * fin du processus, ou des que `attendu` apparait (le processus est alors tue).
+ * La base pointe sur un port ferme de la boucle locale : aucun reseau.
+ */
+function lancerServeur(env, attendu) {
+  return new Promise((ok, ko) => {
+    const enfant = spawn(process.execPath, ["server.js"], {
+      cwd: path.join(__dirname, ".."),
+      env: {
+        ...process.env,
+        DATABASE_URL: "postgresql://x:x@127.0.0.1:1/x",
+        DOCIE_EXTRACTION_ENABLED: "false",
+        PORT: "0",
+        ...env,
+      },
+    });
+    let sortie = "";
+    const minuteur = setTimeout(() => { enfant.kill(); ko(new Error("delai depasse :\n" + sortie)); }, 20000);
+    const lire = (morceau) => {
+      sortie += morceau;
+      if (attendu && sortie.includes(attendu)) enfant.kill();
+    };
+    enfant.stdout.on("data", lire);
+    enfant.stderr.on("data", lire);
+    enfant.on("exit", (code) => { clearTimeout(minuteur); ok({ code, sortie }); });
+  });
+}
+
+test("demarrage : server.js s'arrete (code 1) sur une valeur invalide, avant la base", async () => {
+  const { code, sortie } = await lancerServeur({ [VAR]: "0" });
+  assert.equal(code, 1);
+  assert.match(sortie, /ADBI_EXTRACTION_MAX_CONCURRENT doit être un entier entre 1 et 16 \(reçu : "0"\)/);
+  assert.doesNotMatch(sortie, /Erreur init DB/);
+});
+
+test("demarrage : server.js lit la valeur de l'env (2) et, absente, annonce le defaut (1)", async () => {
+  const avec = await lancerServeur({ [VAR]: "2" }, "simultanée(s)");
+  assert.match(avec.sortie, /\[taches\] 2 extraction\(s\) simultanée\(s\)/);
+  const sans = await lancerServeur({ [VAR]: "" }, "simultanée(s)");
+  assert.match(sans.sortie, /\[taches\] 1 extraction\(s\) simultanée\(s\)/);
+});
+
 test("5 taches simultanees : jamais plus de 2 extractions a la fois, les autres attendent avec leur position", async () => {
-  const g = creerGestionnaire(silencieux);
+  const g = creerGestionnaire(deuxCreneaux);
   const differes = [];
   let actives = 0, pic = 0;
   const ids = [];
@@ -90,7 +195,7 @@ test("5 taches simultanees : jamais plus de 2 extractions a la fois, les autres 
 });
 
 test("ordre d'arrivee : les taches en attente demarrent dans l'ordre de creation", async () => {
-  const g = creerGestionnaire(silencieux);
+  const g = creerGestionnaire(deuxCreneaux);
   const demarrees = [];
   const differes = [];
   for (let i = 0; i < 5; i++) {
@@ -114,7 +219,7 @@ test("ordre d'arrivee : les taches en attente demarrent dans l'ordre de creation
 });
 
 test("un echec libere son creneau comme un succes : la file ne se bloque pas, aucune relance", async () => {
-  const g = creerGestionnaire(silencieux);
+  const g = creerGestionnaire(deuxCreneaux);
   const a = differe(), b = differe();
   let appelsA = 0;
   const ida = g.creer(() => { appelsA++; return a.promesse; });
@@ -171,7 +276,7 @@ test("identifiants : UUID v4 aleatoires, distincts ; id inconnu ou non textuel -
 
 test("expiration : une tache finie est oubliee 30 min apres sa fin (a la milliseconde), une tache en cours jamais", async () => {
   let t = 1_000_000;
-  const g = creerGestionnaire({ ...silencieux, maintenant: () => t });
+  const g = creerGestionnaire({ ...deuxCreneaux, maintenant: () => t });
   const longue = differe();
   const idLongue = g.creer(() => longue.promesse);
   const idCourte = g.creer(async () => "fini");
@@ -219,14 +324,14 @@ test("la purge a aussi lieu a la creation (sans aucune lecture)", async () => {
   await vider();
 });
 
-test("file bornee : 2 en cours + 20 en attente acceptees, la suivante est refusee sans rien perdre", async () => {
+test("file bornee (plafond par defaut) : 1 en cours + 20 en attente acceptees, la suivante est refusee sans rien perdre", async () => {
   const g = creerGestionnaire(silencieux);
   const bloque = differe();
-  for (let i = 0; i < MAX_SIMULTANEES + MAX_EN_ATTENTE; i++) g.creer(() => bloque.promesse);
+  for (let i = 0; i < MAX_SIMULTANEES_DEFAUT + MAX_EN_ATTENTE; i++) g.creer(() => bloque.promesse);
   await vider();
-  assert.deepEqual(g.statistiques(), { enCours: 2, enAttente: 20, conservees: 22 });
+  assert.deepEqual(g.statistiques(), { enCours: 1, enAttente: 20, conservees: 21 });
   assert.throws(() => g.creer(async () => "de trop"), FileTachesPleineError);
-  assert.deepEqual(g.statistiques(), { enCours: 2, enAttente: 20, conservees: 22 });
+  assert.deepEqual(g.statistiques(), { enCours: 1, enAttente: 20, conservees: 21 });
   bloque.resoudre();
   await vider(); await vider();
   assert.equal(g.statistiques().enAttente, 0);
