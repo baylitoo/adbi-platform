@@ -150,7 +150,9 @@ bouclait : `<= 0.5` est donc un critère sûr de « partiel, à faire relire ».
 `confidence` est collectée (`model_confidence` est une autre échelle). Le seuil
 et la traduction vers les chemins de chaque application restent aux consommateurs.
 `validation.warnings` / `validation.errors` sont des chaînes libres, sans format
-stable : à afficher verbatim, jamais à analyser pour en déduire un nom de champ.
+stable, conservées verbatim ; seul le bridge en lit les libellés DocIE connus de
+résultat partiel, vers `metadata.partiel` (#194), que les consommateurs lisent à
+la place des chaînes.
 
 Les réponses aplaties de l'agent et les enveloppes `result` sont acceptées.
 Le modèle retourné peut être le modèle de calcul, pas le nom d'agent. Les noms

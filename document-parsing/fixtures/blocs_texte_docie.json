@@ -1,0 +1,34 @@
+{
+  "_description": "Jeu d'essai partage, TESTS SEULEMENT (aucun code de production ne le lit) : combien de blocs DocIE fait d'un texte envoye a POST /v1/extract/text sans ocr_blocks (#190). Au-dela de 800, tout profil a prompt generique tronque en silence. Un compteur qui compte TROP PEU donne un faux « non tronque » : c'est le sens dangereux, et les deux pieges JS (separateurs de splitlines(), blancs de strip() differents de trim()) vont tous deux dans ce sens-la. Le test Python recalcule `blocs` avec splitlines()+strip() de CPython a chaque execution : le fichier ne peut pas deriver de la regle reelle.",
+  "_ports": [
+    "document-parsing/bridge/docie_bridge.py::compter_blocs_texte (Python)",
+    "document-parsing/bridge/docie-bridge.js::compterBlocsTexte (JS)"
+  ],
+  "_regle": "DocIE ocr/base.py text_to_blocks : sum(1 for ligne in texte.splitlines() if ligne.strip())",
+  "cas": [
+    { "nom": "vide", "texte": "", "blocs": 0, "preuve": "aucune ligne" },
+    { "nom": "une_ligne_longue", "texte": "Un paragraphe entier sans saut de ligne reste un seul bloc, quelle que soit sa longueur, car DocIE ne decoupe pas par fenetre de caracteres.", "blocs": 1, "preuve": "pas de fenetre de caracteres : une ligne = un bloc" },
+    { "nom": "lf", "texte": "a\nb", "blocs": 2, "preuve": "\\n" },
+    { "nom": "cr", "texte": "a\rb", "blocs": 2, "preuve": "\\r seul" },
+    { "nom": "crlf", "texte": "a\r\nb", "blocs": 2, "preuve": "\\r\\n est un seul separateur" },
+    { "nom": "lfcr", "texte": "a\n\rb", "blocs": 2, "preuve": "\\n puis \\r : deux separateurs, la ligne vide entre les deux n'est pas un bloc" },
+    { "nom": "vt", "texte": "a\u000bb", "blocs": 2, "preuve": "\\v (tabulation verticale) : splitlines() coupe, split(/\\r\\n|\\r|\\n/) non (sous-compte)" },
+    { "nom": "ff", "texte": "a\fb", "blocs": 2, "preuve": "\\f (saut de page, frequent dans un texte extrait de PDF) : splitlines() coupe" },
+    { "nom": "fs", "texte": "a\u001cb", "blocs": 2, "preuve": "\\x1c (separateur de fichier) : splitlines() coupe" },
+    { "nom": "gs", "texte": "a\u001db", "blocs": 2, "preuve": "\\x1d (separateur de groupe) : splitlines() coupe" },
+    { "nom": "rs", "texte": "a\u001eb", "blocs": 2, "preuve": "\\x1e (separateur d'enregistrement) : splitlines() coupe" },
+    { "nom": "nel", "texte": "a\u0085b", "blocs": 2, "preuve": "\\x85 (NEL) : splitlines() coupe" },
+    { "nom": "ls", "texte": "a\u2028b", "blocs": 2, "preuve": "\\u2028 (separateur de ligne) : splitlines() coupe" },
+    { "nom": "ps", "texte": "a\u2029b", "blocs": 2, "preuve": "\\u2029 (separateur de paragraphe) : splitlines() coupe" },
+    { "nom": "us_pas_un_separateur", "texte": "a\u001fb", "blocs": 1, "preuve": "\\x1f est un blanc pour str.isspace() mais PAS un separateur de splitlines() : un compteur qui couperait dessus surcompte" },
+    { "nom": "bom_seul", "texte": "a\n\ufeff\nb", "blocs": 3, "preuve": "\\uFEFF n'est pas un blanc pour str.isspace() : la ligne est un bloc pour DocIE, mais trim() l'efface (sous-compte)" },
+    { "nom": "nbsp_seul", "texte": "a\n\u00a0\nb", "blocs": 2, "preuve": "NBSP est un blanc pour str.isspace() : ligne vide apres strip()" },
+    { "nom": "zwsp_seul", "texte": "a\n\u200b\nb", "blocs": 3, "preuve": "\\u200b (espace de largeur nulle) n'est un blanc ni pour Python ni pour JS : un bloc" },
+    { "nom": "tab_seul", "texte": "a\n\t\nb", "blocs": 2, "preuve": "tabulation seule : ligne vide apres strip()" },
+    { "nom": "us_seul", "texte": "a\n\u001f\nb", "blocs": 2, "preuve": "\\x1f seul : strip() l'efface, trim() non (surcompte)" },
+    { "nom": "espaces_seuls", "texte": "a\n   \nb", "blocs": 2, "preuve": "espaces seuls : ligne vide apres strip()" },
+    { "nom": "espace_ideographique_seul", "texte": "a\n\u3000\nb", "blocs": 2, "preuve": "\\u3000 est un blanc pour str.isspace()" },
+    { "nom": "lignes_vides_et_fin", "texte": "\n\na\n\n\nb\n", "blocs": 2, "preuve": "lignes vides de tete, du milieu et de fin ignorees" },
+    { "nom": "melange", "texte": "x\u2028\ufeff\u2029\u00a0\r\ny", "blocs": 3, "preuve": "x, BOM seul et y sont des blocs ; NBSP seul non" }
+  ]
+}
