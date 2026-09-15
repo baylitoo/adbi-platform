@@ -88,6 +88,9 @@ services:
         # Table de mois partagée (#179 A10), même piège : `COPY --from=fixtures`
         # sans condition. Voir contrats/Dockerfile, étape 5.
         fixtures: ./document-parsing/fixtures
+        # Catalogue des modèles par action (#194), même piège :
+        # `COPY --from=modeles` sans condition. Voir contrats/Dockerfile, étape 6.
+        modeles: ./document-parsing/models
     container_name: adbi-contrats
     ports:
       - "4100:4100"
@@ -117,6 +120,10 @@ services:
       # (#164 : DOCIE_ALLOW_HTTP manquait côté one-pager) : une variable listée
       # dans contrats/.env.example sans sa ligne ici n'atteint jamais le conteneur.
       DOCIE_AGENT_CONTRACT: ${DOCIE_AGENT_CONTRACT:-}
+      # Identifiants réels des modèles du catalogue (#194), voir docker-compose.yml.
+      DOCIE_MODELE_NUEXTRACT3: ${DOCIE_MODELE_NUEXTRACT3:-}
+      DOCIE_MODELE_LFM25_2_6B: ${DOCIE_MODELE_LFM25_2_6B:-}
+      DOCIE_MODELE_LFM25_350M: ${DOCIE_MODELE_LFM25_350M:-}
       # Le bridge refuse toute DOCIE_BASE_URL en http:// hors localhost sans
       # DOCIE_ALLOW_HTTP=true (document-parsing/bridge/docie-bridge.js). Absente
       # d'ici, elle n'atteignait jamais le conteneur : sur un DocIE en http
