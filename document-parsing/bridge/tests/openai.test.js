@@ -47,8 +47,12 @@ function verifierCorrespondance(champs, noeud, chemin) {
 }
 
 test("conversion : chaque schéma de document-parsing/schemas (CV compris) donne un JSON Schema strict fidèle", () => {
-  assert.deepEqual(SCHEMAS.map(([f]) => f),
-    ["adbi_resume.schema.json", "contract.schema.json", "rib.schema.json", "urssaf.schema.json"]);
+  // Les schémas connus doivent être présents ; la liste n'est PAS figée : un
+  // schéma ajouté ailleurs (kbis #214, fiscale #215) doit être converti par la
+  // boucle ci-dessous, pas faire échouer ce test.
+  for (const attendu of ["adbi_resume.schema.json", "contract.schema.json", "rib.schema.json", "urssaf.schema.json"]) {
+    assert.ok(SCHEMAS.some(([f]) => f === attendu), "schéma attendu absent : " + attendu);
+  }
   for (const [fichier, dynamique] of SCHEMAS) {
     const { name, schema } = oa.schemaOpenAI(dynamique);
     assert.equal(name, "adbi_" + dynamique.document_type, fichier);

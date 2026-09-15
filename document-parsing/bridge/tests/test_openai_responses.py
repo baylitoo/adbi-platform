@@ -37,7 +37,10 @@ class ConversionSchema(unittest.TestCase):
             self.assertEqual(noeud["type"], "string", chemin)
 
     def test_chaque_schema_du_depot_cv_compris(self):
-        self.assertEqual(list(SCHEMAS), ["adbi_resume.schema.json", "contract.schema.json", "rib.schema.json", "urssaf.schema.json"])
+        # Liste NON figée : un schéma ajouté ailleurs (kbis #214, fiscale #215)
+        # doit être converti par la boucle, pas faire échouer ce test.
+        for attendu in ("adbi_resume.schema.json", "contract.schema.json", "rib.schema.json", "urssaf.schema.json"):
+            self.assertIn(attendu, SCHEMAS)
         for fichier, dynamique in SCHEMAS.items():
             with self.subTest(fichier=fichier):
                 converti = oa.schema_openai(dynamique)
