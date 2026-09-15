@@ -1676,7 +1676,8 @@ def _enrich_cv_background(cv_id: str) -> None:
             # Garde-fou, et RIEN DE PLUS aujourd'hui : ce fil ne peut pas
             # rencontrer de marque à périmer. `docie_review` n'est posé que par
             # process_cv, qui pose dans le même geste `llm_parsed = True` ; or
-            # upload_cv ne lance ce fil que `if not llm_parsed`. Fiche marquée
+            # le dépôt (_enregistrer_depot) ne lance ce fil que `if not
+            # llm_parsed`. Fiche marquée
             # et enrichissement de fond s'excluent donc par construction, et
             # l'appel ci-dessous ressort immédiatement (revue absente).
             #
@@ -1877,13 +1878,30 @@ def invite_page(token):
 
 # ── Progression d'analyse en temps réel ──────────────────────────────────────
 # La barre du widget n'est plus simulée : le pipeline note ici où il en est,
-# et le navigateur vient lire pendant que son POST /api/upload est en vol.
+# et le navigateur vient lire pendant que l'analyse de son dépôt tourne.
+#
+# Depuis l'issue #196, un dépôt est une TÂCHE (taches_upload.py) : POST
+# /api/upload répond 202 aussitôt et l'extraction tourne hors des threads
+# gunicorn, bornée à ADBI_UPLOAD_MAX_CONCURRENT. Le jeton de progression EST
+# l'identifiant de la tâche : ses libellés, son état et son résultat vivent dans
+# la tâche, lisibles par son seul auteur. La ré-analyse d'une fiche
+# (reanalyser_cv) passe par la même file, donc le même plafond.
+# PROGRESSION_ANALYSES ne sert plus qu'au jeton du client quand le dépôt est
+# repris du cache (réponse immédiate, sans tâche).
+from taches_upload import (ErreurTache, FileTachesPleine, GestionnaireTaches, TacheDejaEnCours,
+                           max_simultanees_depuis_env)
+
+TACHES_UPLOAD = GestionnaireTaches(max_simultanees=max_simultanees_depuis_env())
 PROGRESSION_ANALYSES: dict = {}
 _progression_verrou = threading.Lock()
 
 
 def noter_progression(jeton, pct, etape, detail=""):
     if not jeton:
+        return
+    # Tâche de dépôt : libellé rangé DANS la tâche (fusion — l'état et le
+    # propriétaire restent), jamais dans PROGRESSION_ANALYSES.
+    if TACHES_UPLOAD.noter(jeton, pct, etape, detail):
         return
     import time as _t
     with _progression_verrou:
@@ -1900,9 +1918,26 @@ def noter_progression(jeton, pct, etape, detail=""):
 @app.route("/api/upload/progression/<jeton>")
 @require_auth
 def progression_analyse(jeton):
+    """Progression d'un dépôt, puis son issue (contrat : taches_upload.py).
+
+    Une tâche de l'utilisateur courant : libellés du widget (pct, etape,
+    detail) + etat, position, resultat, erreur, debut, fin. Inconnue, expirée
+    ou démarrée par un autre utilisateur : 404, la même réponse dans les trois
+    cas (l'existence n'est pas confirmée). Le widget ignore déjà les réponses
+    non OK (static/conv_widget.js::_startSuiviReel), y compris celles reçues
+    pendant l'envoi du fichier, avant que la tâche n'existe.
+    """
+    utilisateur = get_current_user() or {}
+    vue = TACHES_UPLOAD.obtenir(jeton, utilisateur.get("sub"))
+    if vue is not None:
+        return jsonify(vue)
     with _progression_verrou:
         etat = PROGRESSION_ANALYSES.get(jeton)
-    return jsonify(etat or {"pct": 0, "etape": "Démarrage", "detail": ""})
+    if etat is not None:
+        return jsonify(etat)
+    return jsonify({"error": (
+        f"Analyse inconnue ou expirée (conservée {TACHES_UPLOAD.ttl_s // 60} min après sa fin, "
+        "perdue au redémarrage du service) : déposez le CV à nouveau.")}), 404
 
 
 # Champs qui appartiennent au DÉPÔT et non à l'analyse : le nouveau fichier a
@@ -1980,18 +2015,53 @@ def upload_cv():
     except Exception:
         source_cache = None
 
-    parse_warning = None
+    # Tout ce que le travail lira est capturé ICI : `request`, `file` et
+    # `get_current_user()` (qui lit `g`) n'existent plus hors de la requête.
+    depot = {
+        "file_id": file_id, "file_path": file_path, "filename": file.filename,
+        "ext": ext, "empreinte": empreinte, "utilisateur": dict(get_current_user() or {}),
+    }
+
     if source_cache is not None:
+        # Reste synchrone (200, même corps qu'avant, issue #196) : la reprise
+        # n'appelle pas DocIE et ne coûte qu'une écriture en base. Elle ne
+        # prend donc aucun créneau d'extraction et n'est jamais refusée pour
+        # file pleine — un re-dépôt n'attend pas derrière vingt grands CV.
         cv_data = fiche_depuis_le_cache(source_cache)
         noter_progression(jeton, 100, "Déjà analysé", "fiche reprise du document identique")
         print(f"[PERF] cache d'empreinte : fiche reprise de {source_cache.get('id', '?')} — 0 s")
-    else:
-      try:
-        cv_data = process_cv(file_path, jeton=jeton)
-      except Exception as exc:
+        return jsonify(_enregistrer_depot(depot, cv_data, None, jeton))
+
+    # Extraction : tâche asynchrone (issue #196, taches_upload.py). Un grand CV
+    # prend plusieurs minutes côté DocIE ; la requête ne l'attend plus et ne
+    # garde plus un thread gunicorn. Le navigateur suit la tâche sur
+    # /api/upload/progression/<tache> (le jeton qu'il a proposé, s'il est libre).
+    try:
+        tache = TACHES_UPLOAD.creer(lambda jeton_tache: _analyser_depot(depot, jeton_tache),
+                                    proprietaire=depot["utilisateur"].get("sub"), jeton=jeton)
+    except FileTachesPleine as exc:
+        # Aucune fiche ne sera créée : le fichier écrit plus haut serait orphelin.
+        file_path.unlink(missing_ok=True)
+        return jsonify({"error": str(exc)}), 503
+    return jsonify({"tache": tache}), 202
+
+
+def _analyser_depot(depot, jeton):
+    """Travail d'une tâche de dépôt : process_cv, puis enregistrement de la fiche.
+
+    Tourne dans un thread de taches_upload, hors requête. Le repli existant est
+    gardé tel quel : un échec de process_cv — DocIE compris — enregistre une
+    fiche vide éditable avec parse_warning, et la tâche se termine `terminee`
+    (réponse identique à l'ancienne route). Seul ce qui échoue hors de ce repli
+    fait passer la tâche en `echec`.
+    """
+    parse_warning = None
+    try:
+        cv_data = process_cv(depot["file_path"], jeton=jeton)
+    except Exception as exc:
         traceback.print_exc()
         parse_warning = str(exc)
-        print(f"[ERREUR] process_cv échoué pour {file.filename} : {exc}")
+        print(f"[ERREUR] process_cv échoué pour {depot['filename']} : {exc}")
         # Fallback minimal — le fichier est stocké, l'utilisateur peut éditer manuellement
         cv_data = {
             # Une extraction échouée ne doit pas inventer une identité.
@@ -2008,6 +2078,14 @@ def upload_cv():
             "interests": [],
             "html_content": "",
         }
+    return _enregistrer_depot(depot, cv_data, parse_warning, jeton)
+
+
+def _enregistrer_depot(depot, cv_data, parse_warning, jeton):
+    """Enregistre la fiche d'un dépôt (cache ou analyse) et rend le corps que
+    POST /api/upload renvoyait en synchrone — le `resultat` de la tâche."""
+    file_id, filename, ext, empreinte = (
+        depot["file_id"], depot["filename"], depot["ext"], depot["empreinte"])
 
     # Le nom d'origine n'est connu qu'ici : process_cv ne voit que le fichier
     # stocké, nommé par identifiant. Un dossier anonymisé ne portant pas
@@ -2016,7 +2094,7 @@ def upload_cv():
     # sinon ce serait la même invention de fausse donnée que dans process_cv()
     # (voir son commentaire), pour une fiche dont l'extraction a échoué.
     if not cv_data.get("name") and not parse_warning and not cv_data.get("parse_warning"):
-        depuis_fichier = nom_depuis_fichier(file.filename)
+        depuis_fichier = nom_depuis_fichier(filename)
         if depuis_fichier:
             cv_data["name"] = depuis_fichier
             cv_data["name_source"] = "nom du fichier"
@@ -2026,7 +2104,7 @@ def upload_cv():
     llm_parsed = cv_data.pop("llm_parsed", False)
     cv_data.update({
         "id": file_id,
-        "filename": file.filename,
+        "filename": filename,
         "ext": ext,
         "uploaded_at": now,
         "stored_at": now,
@@ -2079,9 +2157,10 @@ def upload_cv():
     response_data = dict(cv_data)
     response_data["parse_summary"] = parse_summary
 
-    # Trace activité
+    # Trace activité — utilisateur capturé dans la requête : ce code tourne
+    # aussi dans un thread de tâche, où `g` n'existe pas.
     try:
-        u = get_current_user()
+        u = depot["utilisateur"]
         if u:
             _log("cv_upload", u["sub"], u.get("email",""),
                  {"cv_id": file_id, "name": cv_data.get("name","")})
@@ -2089,7 +2168,7 @@ def upload_cv():
         pass
 
     noter_progression(jeton, 100, "Terminé")
-    return jsonify(response_data)
+    return response_data
 
 
 @app.route("/api/cv/<file_id>/reanalyser", methods=["POST"])
@@ -2100,23 +2179,64 @@ def reanalyser_cv(file_id):
     Utile quand les services IA étaient saturés au dépôt : la fiche issue des
     bibliothèques peut être complétée plus tard, en un clic, sans re-déposer
     le document. La progression passe par le même jeton que le dépôt.
+
+    Tâche asynchrone depuis l'issue #196, dans la MÊME file que le dépôt
+    (TACHES_UPLOAD) : même plafond ADBI_UPLOAD_MAX_CONCURRENT, même attente,
+    même durée de conservation — dépôts et ré-analyses se partagent les slots
+    DocIE au lieu d'avoir chacun les leurs. 202 { tache } ; suivi sur
+    /api/upload/progression/<tache>, par son seul auteur.
+
+    Contrôles synchrones (404 fiche ou fichier absents) SANS le verrou de la
+    fiche : ce ne sont que des lectures, refaites sous verrou par le travail.
+    Pris ici, le verrou resterait tenu pendant l'attente en file et bloquerait
+    plusieurs minutes toute modification de la fiche. Une seconde ré-analyse de
+    la même fiche tant que la première n'est pas finie (quel qu'en soit
+    l'auteur, la fiche est commune) : 409.
+    """
+    fiche = cvstore_pg.get_cv(file_id)
+    if not fiche:
+        return jsonify({"error": "CV introuvable"}), 404
+    ext = fiche.get("ext") or Path(fiche.get("filename", "")).suffix or ".pdf"
+    if not fichier_upload(file_id, ext):
+        return jsonify({"error": "Fichier d'origine absent du poste : re-déposez le document."}), 404
+
+    jeton = (request.form.get("jeton") or "").strip()[:64]
+    utilisateur = get_current_user() or {}
+    try:
+        tache = TACHES_UPLOAD.creer(lambda jeton_tache: _reanalyser_fiche(file_id, jeton_tache),
+                                    proprietaire=utilisateur.get("sub"), jeton=jeton,
+                                    cle=f"fiche:{file_id}")
+    except TacheDejaEnCours as exc:
+        return jsonify({"error": str(exc)}), 409
+    except FileTachesPleine as exc:
+        return jsonify({"error": str(exc)}), 503
+    return jsonify({"tache": tache}), 202
+
+
+def _reanalyser_fiche(file_id, jeton):
+    """Travail d'une ré-analyse : le corps de l'ancienne route, dans un thread de tâche.
+
+    Le verrou de la fiche (issue #53) est pris ET rendu dans ce même thread,
+    autour de lecture -> process_cv -> écriture, comme avant : un PATCH
+    concurrent attend la fin de la ré-analyse au lieu d'être écrasé par elle.
+    Fiche et fichier sont relus sous verrou (supprimés entre le 202 et le
+    démarrage : échec `input`, message d'avant).
+
+    Pas de repli, comme avant : un échec de process_cv fait échouer la tâche et
+    la fiche n'est pas touchée. L'ancienne 500 recopiait `str(exc)` ; l'erreur
+    devient maintenant un code nommé (taches_upload.mapper_erreur).
     """
     with _verrou_cv(file_id):
         fiche = cvstore_pg.get_cv(file_id)
         if not fiche:
-            return jsonify({"error": "CV introuvable"}), 404
+            raise ErreurTache("CV introuvable")
 
         ext = fiche.get("ext") or Path(fiche.get("filename", "")).suffix or ".pdf"
         file_path = fichier_upload(file_id, ext)
         if not file_path:
-            return jsonify({"error": "Fichier d'origine absent du poste : re-déposez le document."}), 404
+            raise ErreurTache("Fichier d'origine absent du poste : re-déposez le document.")
 
-        jeton = (request.form.get("jeton") or "").strip()[:64]
-        try:
-            cv_data = process_cv(file_path, jeton=jeton)
-        except Exception as exc:
-            traceback.print_exc()
-            return jsonify({"error": f"Ré-analyse impossible : {exc}"}), 500
+        cv_data = process_cv(file_path, jeton=jeton)
 
         llm_parsed = cv_data.pop("llm_parsed", False)
         # L'identité de la fiche ne change pas : id, fichier, dates, empreinte.
@@ -2132,13 +2252,15 @@ def reanalyser_cv(file_id):
 
         cvstore_pg.save_cv(file_id, cv_data)
     noter_progression(jeton, 100, "Terminé")
-    return jsonify({
+    # Le corps que la route renvoyait en synchrone, rendu comme `resultat` de
+    # la tâche : un dict, pas jsonify — ce thread n'a pas de contexte Flask.
+    return {
         "ok": True,
         "extraction": cv_data.get("extraction", ""),
         "service": cv_data.get("llm_service", ""),
         "bilan_adbi": cv_data.get("bilan_adbi"),
         "avertissement": cv_data.get("parse_warning", ""),
-    })
+    }
 
 
 @app.route("/api/file/<file_id>")
