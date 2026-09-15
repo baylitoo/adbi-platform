@@ -104,6 +104,8 @@ async function preremplir(selecteur, resultat) {
     fileToBase64: async () => "JVBERi0=",
     construireAutresChampsImport: () => {},
     afficherAvertissementsImport: () => {},
+    // Marques SIREN/SIRET (#204) : hors sujet ici, bouchon neutre.
+    marquerChampsImportAVerifier: () => {},
     CONTRATS_IMPORT_CHAMPS: CHAMPS,
     encodeURIComponent, Promise, Error, JSON, Object,
   };
@@ -152,7 +154,9 @@ async function analyser({ selecteur, reponse }) {
     fileToBase64: async () => "JVBERi0=",
     renderChecklistDocResult: (el) => { el.textContent = "rendu"; },
     renderPropositionKbis: () => {}, majNoteCoordonnees: () => {},
-    CONTRATS_KBIS_CHAMPS: { extraire: () => ({}) },
+    // Verdict SIREN/SIRET (#204) : hors sujet ici, bouchons neutres.
+    renderControleSirenSiret: () => {},
+    CONTRATS_KBIS_CHAMPS: { extraire: () => ({}), controleCompact: () => null },
     JSON, Error,
   };
   vm.createContext(ctx);
