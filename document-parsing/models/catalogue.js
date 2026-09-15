@@ -112,7 +112,7 @@ function tacheDuCatalogue(catalogue, tache) {
  * `experimental` : vrai seulement si l'entrée de la tâche le déclare (le même
  * modèle peut être éprouvé sur une tâche et expérimental sur une autre).
  */
-function modelesConfigures(tache, voie, { env = process.env, catalogue = chargerCatalogue() } = {}) {
+function modelesConfigures(tache, voie, { env = process.env, catalogue = chargerCatalogue(), externes = false } = {}) {
   const t = tacheDuCatalogue(catalogue, tache);
   const v = Object.hasOwn(t.voies, String(voie)) ? t.voies[voie] : null;
   if (!v) return [];
@@ -122,8 +122,9 @@ function modelesConfigures(tache, voie, { env = process.env, catalogue = charger
     if (!entree) continue;
     const modele = catalogue.modeles[entree.modele];
     // Un modèle d'extraction n'est jamais proposé pour une tâche chat, et
-    // inversement (décision du 2026-09-14).
-    if (!modele || !modele.etiquettes.includes(t.usage)) continue;
+    // inversement (décision du 2026-09-14). Un modèle externe (`fournisseur`)
+    // n'est jamais un défaut ni l'alternative DocIE, même mal placé.
+    if (!modele || !modele.etiquettes.includes(t.usage) || modele.fournisseur) continue;
     const variable = nomVariable(voie, tache, entree.modele, { catalogue });
     const brut = String((env || {})[variable] ?? "").trim();
     if (!brut) continue;
@@ -145,7 +146,46 @@ function modelesConfigures(tache, voie, { env = process.env, catalogue = charger
       experimental: entree.experimental === true,
     });
   }
+  // Modèles HORS ADBI (#194), toujours après le défaut et l'alternative DocIE,
+  // seulement si le consommateur les demande (`externes`) : un consommateur qui
+  // ne sait pas les appeler enverrait leur identifiant à DocIE.
+  if (externes && Array.isArray(v.externes)) {
+    for (const entree of v.externes) {
+      const offre = offreExterne(catalogue, t, entree, voie, env || {});
+      if (offre) offres.push(offre);
+    }
+  }
   return offres;
+}
+
+/**
+ * Offre d'un modèle externe, ou null. Offerte si et seulement si la variable du
+ * fournisseur (OPENAI_API_KEY) est non vide. `identifiant` = le mode de
+ * transport, jamais la clé ; `variable` = le NOM de la variable seulement.
+ */
+function offreExterne(catalogue, t, entree, voie, env) {
+  const modele = entree && Object.hasOwn(catalogue.modeles, String(entree.modele)) ? catalogue.modeles[entree.modele] : null;
+  if (!modele || !modele.etiquettes.includes(t.usage) || !modele.fournisseur) return null;
+  const fournisseurs = catalogue.fournisseurs || {};
+  const fournisseur = Object.hasOwn(fournisseurs, modele.fournisseur) ? fournisseurs[modele.fournisseur] : null;
+  if (!fournisseur || !fournisseur.voies.includes(voie)) return null;
+  if (!String(env[fournisseur.variable] ?? "").trim()) return null;
+  return {
+    id: entree.modele,
+    libelle: modele.libelle,
+    description: modele.description,
+    etiquettes: [...modele.etiquettes],
+    role: "externe",
+    voie,
+    variable: fournisseur.variable,
+    identifiant: modele.mode,
+    limites: { ...((modele.limites || {})[voie] || {}) },
+    condition: entree.condition || null,
+    prerequis: entree.prerequis || null,
+    experimental: entree.experimental === true,
+    fournisseur: modele.fournisseur,
+    mode: modele.mode,
+  };
 }
 
 /**
@@ -175,8 +215,8 @@ function refusParLimite(modeleId, voie, document, { catalogue = chargerCatalogue
 }
 
 /** Modèles proposés pour (tache, voie) et, s'il est connu, ce document. Défaut d'abord. */
-function modelesOfferts(tache, voie, { env = process.env, document = null, catalogue = chargerCatalogue() } = {}) {
-  return modelesConfigures(tache, voie, { env, catalogue })
+function modelesOfferts(tache, voie, { env = process.env, document = null, catalogue = chargerCatalogue(), externes = false } = {}) {
+  return modelesConfigures(tache, voie, { env, catalogue, externes })
     .filter((o) => !refusParLimite(o.id, voie, document, { catalogue }));
 }
 
@@ -185,13 +225,16 @@ function modelesOfferts(tache, voie, { env = process.env, document = null, catal
  * Jamais de substitution : non configuré ou inconnu -> `modele_non_propose` ;
  * limite dépassée -> `limite` (message nommant la limite).
  */
-function choisirModele(tache, voie, { env = process.env, document = null, modele, catalogue = chargerCatalogue() } = {}) {
+function choisirModele(tache, voie, { env = process.env, document = null, modele, catalogue = chargerCatalogue(), externes = false } = {}) {
   const t = tacheDuCatalogue(catalogue, tache);
-  const offre = modelesConfigures(tache, voie, { env, catalogue }).find((o) => o.id === modele);
+  const offre = modelesConfigures(tache, voie, { env, catalogue, externes }).find((o) => o.id === modele);
   if (!offre) {
     // L'identifiant demandé vient du navigateur : recopié seulement s'il est
     // un identifiant du catalogue.
-    const nom = Object.hasOwn(catalogue.modeles, String(modele)) ? catalogue.modeles[modele].libelle : "demandé";
+    // Un modèle externe refusé n'est pas nommé : sans clé, le message reste
+    // celui d'avant (#194, sortie inchangée sans OPENAI_API_KEY).
+    const nom = Object.hasOwn(catalogue.modeles, String(modele)) && !catalogue.modeles[modele].fournisseur
+      ? catalogue.modeles[modele].libelle : "demandé";
     throw new CatalogueError("modele_non_propose", `Modèle ${nom} non proposé pour : ${t.libelle}.`);
   }
   const refus = refusParLimite(offre.id, voie, document, { catalogue });
@@ -210,6 +253,16 @@ function choisirModele(tache, voie, { env = process.env, document = null, modele
 function modeleServi(tache, voie, { env = process.env, metadata = {}, catalogue = chargerCatalogue() } = {}) {
   const brut = voie === "agent" ? (metadata || {}).agent : (metadata || {}).model;
   if (typeof brut !== "string" || !brut.trim()) return null;
+  if ((metadata || {}).fournisseur != null) {
+    // Modèle externe : rapproché par fournisseur + mode, jamais par le nom servi
+    // (gpt-5-nano-2025-08-07 ne ressemble à aucun identifiant du catalogue).
+    for (const o of modelesConfigures(tache, voie, { env, catalogue, externes: true })) {
+      if (o.role === "externe" && o.fournisseur === metadata.fournisseur && o.mode === metadata.mode) {
+        return { id: o.id, libelle: o.libelle, identifiant: brut };
+      }
+    }
+    return { id: null, libelle: brut, identifiant: brut };
+  }
   const nu = (s) => s.trim().replace(/^store:/, "");
   for (const o of modelesConfigures(tache, voie, { env, catalogue })) {
     if (nu(o.identifiant) === nu(brut)) return { id: o.id, libelle: o.libelle, identifiant: brut };

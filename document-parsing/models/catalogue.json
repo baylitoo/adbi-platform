@@ -6,6 +6,7 @@
     "Aucun identifiant configuré pour une tâche et une voie : le consommateur garde son comportement d'avant le catalogue (DOCIE_MODEL_PROFILE, DOCIE_AGENT_<TYPE>).",
     "`limites` d'un modèle : évaluées par les chargeurs (catalogue.js, catalogue.py) sur le document réel, pour toutes les tâches. `prerequis` : condition de déploiement ou de contrôle côté ADBI, lue par un humain, jamais évaluée ici.",
     "`experimental: true` sur une entrée de tâche : le modèle y est proposé mais signalé « expérimental » dans les sélecteurs (aucune lecture réelle réussie sur ce type de document) ; exposé par les deux chargeurs, jamais évalué ici.",
+    "`externes` d'une voie : modèles HORS ADBI (champ `fournisseur` du modèle, variable et voies sous `fournisseurs`), toujours en plus du défaut et de l'alternative DocIE, jamais à leur place ni par défaut. Offerts si et seulement si la variable du fournisseur est non vide (OPENAI_API_KEY) ET le consommateur les demande (option `externes` des chargeurs). L'identifiant d'une offre externe est son `mode` de transport (document-parsing/bridge/openai-responses.js), jamais la clé.",
     "Lu à l'exécution par contrats, cv-parser et one-pager (images Docker : COPY du catalogue et du chargeur, voir leurs Dockerfile)."
   ],
   "version": 1,
@@ -13,6 +14,9 @@
     "texte": "DOCIE_MODELE_{MODELE}",
     "agent": "DOCIE_AGENT_{TACHE}_{MODELE}",
     "chat": "ADBI_LLM_MODELE_{MODELE}"
+  },
+  "fournisseurs": {
+    "openai": { "variable": "OPENAI_API_KEY", "voies": ["texte"] }
   },
   "modeles": {
     "lfm25_2_6b": {
@@ -32,6 +36,20 @@
       "description": "Très rapide — documents simples",
       "etiquettes": ["extraction"],
       "limites": { "texte": { "lignes_non_vides_max": 800 } }
+    },
+    "openai_rapide": {
+      "libelle": "OpenAI rapide — externe (hors ADBI)",
+      "description": "Service externe OpenAI, sans raisonnement, le plus rapide — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
+      "etiquettes": ["extraction"],
+      "fournisseur": "openai",
+      "mode": "rapide"
+    },
+    "openai_raisonnement": {
+      "libelle": "OpenAI raisonnement — externe (hors ADBI)",
+      "description": "Service externe OpenAI, raisonnement faible, plus lent — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
+      "etiquettes": ["extraction"],
+      "fournisseur": "openai",
+      "mode": "raisonnement"
     }
   },
   "taches": {
@@ -55,7 +73,11 @@
       "voies": {
         "texte": {
           "defaut": { "modele": "nuextract3", "condition": "Voie texte uniquement : un PDF envoyé en vision échoue en 400 à la 9e page." },
-          "alternative": { "modele": "lfm25_2_6b", "condition": "Seulement si le document fait au plus 800 lignes non vides." }
+          "alternative": { "modele": "lfm25_2_6b", "condition": "Seulement si le document fait au plus 800 lignes non vides." },
+          "externes": [
+            { "modele": "openai_rapide", "experimental": true },
+            { "modele": "openai_raisonnement", "experimental": true }
+          ]
         }
       },
       "sans_couche_texte": "Contrat scanné : aucune voie propre, échec explicite, saisie manuelle."
@@ -66,7 +88,11 @@
       "voies": {
         "texte": {
           "defaut": { "modele": "lfm25_2_6b", "condition": "PDF avec couche texte." },
-          "alternative": { "modele": "nuextract3" }
+          "alternative": { "modele": "nuextract3" },
+          "externes": [
+            { "modele": "openai_rapide", "experimental": true },
+            { "modele": "openai_raisonnement", "experimental": true }
+          ]
         },
         "agent": {
           "defaut": { "modele": "nuextract3", "condition": "Photo ou scan, en vision." },
@@ -81,7 +107,11 @@
       "voies": {
         "texte": {
           "defaut": { "modele": "lfm25_2_6b" },
-          "alternative": { "modele": "lfm25_350m", "prerequis": "Uniquement derrière nos contrôles de plausibilité de date." }
+          "alternative": { "modele": "lfm25_350m", "prerequis": "Uniquement derrière nos contrôles de plausibilité de date." },
+          "externes": [
+            { "modele": "openai_rapide", "experimental": true },
+            { "modele": "openai_raisonnement", "experimental": true }
+          ]
         }
       }
     },
@@ -91,7 +121,11 @@
       "voies": {
         "texte": {
           "defaut": { "modele": "lfm25_2_6b" },
-          "alternative": { "modele": "lfm25_350m", "prerequis": "Uniquement derrière nos contrôles de plausibilité de date." }
+          "alternative": { "modele": "lfm25_350m", "prerequis": "Uniquement derrière nos contrôles de plausibilité de date." },
+          "externes": [
+            { "modele": "openai_rapide", "experimental": true },
+            { "modele": "openai_raisonnement", "experimental": true }
+          ]
         }
       }
     },
@@ -101,7 +135,11 @@
       "voies": {
         "texte": {
           "defaut": { "modele": "lfm25_2_6b" },
-          "alternative": { "modele": "lfm25_350m", "prerequis": "Uniquement derrière le contrôle IBAN modulo 97 et le format BIC." }
+          "alternative": { "modele": "lfm25_350m", "prerequis": "Uniquement derrière le contrôle IBAN modulo 97 et le format BIC." },
+          "externes": [
+            { "modele": "openai_rapide", "experimental": true },
+            { "modele": "openai_raisonnement", "experimental": true }
+          ]
         }
       }
     },

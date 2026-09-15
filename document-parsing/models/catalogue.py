@@ -72,11 +72,46 @@ def _tache(catalogue: dict, tache: str) -> dict:
     return catalogue["taches"][tache]
 
 
+def _offre_externe(catalogue: dict, t: dict, entree: dict, voie: str, env: Mapping[str, str]) -> dict | None:
+    """Offre d'un modèle HORS ADBI (``externes`` d'une voie), ou None.
+
+    Offerte si et seulement si la variable du fournisseur (OPENAI_API_KEY) est
+    non vide. ``identifiant`` = le mode de transport, jamais la clé ; ``variable``
+    = le NOM de la variable seulement.
+    """
+    modele = catalogue["modeles"].get(entree.get("modele")) if isinstance(entree, dict) else None
+    if not modele or t["usage"] not in modele["etiquettes"] or not modele.get("fournisseur"):
+        return None
+    fournisseur = (catalogue.get("fournisseurs") or {}).get(modele["fournisseur"])
+    if not fournisseur or voie not in fournisseur["voies"]:
+        return None
+    if not str(env.get(fournisseur["variable"]) or "").strip():
+        return None
+    return {
+        "id": entree["modele"],
+        "libelle": modele["libelle"],
+        "description": modele["description"],
+        "etiquettes": list(modele["etiquettes"]),
+        "role": "externe",
+        "voie": voie,
+        "variable": fournisseur["variable"],
+        "identifiant": modele["mode"],
+        "limites": dict((modele.get("limites") or {}).get(voie) or {}),
+        "condition": entree.get("condition"),
+        "prerequis": entree.get("prerequis"),
+        "experimental": entree.get("experimental") is True,
+        "fournisseur": modele["fournisseur"],
+        "mode": modele["mode"],
+    }
+
+
 def modeles_configures(tache: str, voie: str, env: Mapping[str, str] | None = None,
-                       catalogue: dict | None = None) -> list[dict]:
+                       catalogue: dict | None = None, externes: bool = False) -> list[dict]:
     """Modèles configurés pour (tache, voie), défaut d'abord, sans regarder le document.
 
     ``experimental`` : vrai seulement si l'entrée de la tâche le déclare.
+    ``externes`` : le consommateur sait appeler un modèle hors ADBI ; sans cette
+    option, aucune offre externe, même avec la clé (sortie inchangée).
     """
     catalogue = catalogue or charger_catalogue()
     env = os.environ if env is None else env
@@ -90,7 +125,8 @@ def modeles_configures(tache: str, voie: str, env: Mapping[str, str] | None = No
         if not entree:
             continue
         modele = catalogue["modeles"].get(entree["modele"])
-        if not modele or t["usage"] not in modele["etiquettes"]:
+        # Un modèle externe n'est jamais un défaut ni l'alternative DocIE.
+        if not modele or t["usage"] not in modele["etiquettes"] or modele.get("fournisseur"):
             continue
         variable = nom_variable(voie, tache, entree["modele"], catalogue)
         brut = str(env.get(variable) or "").strip()
@@ -112,6 +148,12 @@ def modeles_configures(tache: str, voie: str, env: Mapping[str, str] | None = No
             "prerequis": entree.get("prerequis"),
             "experimental": entree.get("experimental") is True,
         })
+    # Modèles HORS ADBI, après le défaut et l'alternative DocIE, seulement sur demande.
+    if externes and isinstance(v.get("externes"), list):
+        for entree in v["externes"]:
+            offre = _offre_externe(catalogue, t, entree, voie, env)
+            if offre:
+                offres.append(offre)
     return offres
 
 
@@ -138,21 +180,25 @@ def refus_par_limite(modele_id: str, voie: str, document: Mapping[str, int] | No
 
 
 def modeles_offerts(tache: str, voie: str, env: Mapping[str, str] | None = None,
-                    document: Mapping[str, int] | None = None, catalogue: dict | None = None) -> list[dict]:
+                    document: Mapping[str, int] | None = None, catalogue: dict | None = None,
+                    externes: bool = False) -> list[dict]:
     """Modèles proposés pour (tache, voie) et, s'il est connu, ce document. Défaut d'abord."""
     catalogue = catalogue or charger_catalogue()
-    return [o for o in modeles_configures(tache, voie, env, catalogue)
+    return [o for o in modeles_configures(tache, voie, env, catalogue, externes)
             if refus_par_limite(o["id"], voie, document, catalogue) is None]
 
 
 def choisir_modele(tache: str, voie: str, modele: str, env: Mapping[str, str] | None = None,
-                   document: Mapping[str, int] | None = None, catalogue: dict | None = None) -> dict:
+                   document: Mapping[str, int] | None = None, catalogue: dict | None = None,
+                   externes: bool = False) -> dict:
     """Le modèle demandé, vérifié sur le document réel. Jamais de substitution."""
     catalogue = catalogue or charger_catalogue()
     t = _tache(catalogue, tache)
-    offre = next((o for o in modeles_configures(tache, voie, env, catalogue) if o["id"] == modele), None)
+    offre = next((o for o in modeles_configures(tache, voie, env, catalogue, externes) if o["id"] == modele), None)
     if offre is None:
-        nom = catalogue["modeles"][modele]["libelle"] if modele in catalogue["modeles"] else "demandé"
+        # Un modèle externe refusé n'est pas nommé : message d'avant, sans clé.
+        connu = catalogue["modeles"].get(modele) if isinstance(modele, str) else None
+        nom = connu["libelle"] if connu and not connu.get("fournisseur") else "demandé"
         raise CatalogueError("modele_non_propose", f"Modèle {nom} non proposé pour : {t['libelle']}.")
     refus = refus_par_limite(offre["id"], voie, document, catalogue)
     if refus:
@@ -170,6 +216,14 @@ def modele_servi(tache: str, voie: str, metadata: Mapping[str, Any] | None,
     brut = (metadata or {}).get("agent" if voie == "agent" else "model")
     if not isinstance(brut, str) or not brut.strip():
         return None
+    fournisseur = (metadata or {}).get("fournisseur")
+    if fournisseur is not None:
+        # Modèle externe : rapproché par fournisseur + mode, jamais par le nom
+        # servi (gpt-5-nano-2025-08-07 ne ressemble à aucun identifiant).
+        for o in modeles_configures(tache, voie, env, catalogue, externes=True):
+            if o["role"] == "externe" and o["fournisseur"] == fournisseur and o["mode"] == (metadata or {}).get("mode"):
+                return {"id": o["id"], "libelle": o["libelle"], "identifiant": brut}
+        return {"id": None, "libelle": brut, "identifiant": brut}
 
     def nu(s: str) -> str:
         s = s.strip()
