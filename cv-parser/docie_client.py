@@ -278,8 +278,12 @@ def message_chargement(corps):
     return "DocIE : modèle en cours de chargement, réessayez dans quelques instants."
 
 
-def extract_resume(file_path, progress=None, *, session=None):
-    base = os.environ.get("DOCIE_BASE_URL", "").strip().rstrip("/")
+def extract_resume(file_path, progress=None, *, session=None, choix=None):
+    """`choix` (#194, choix_modele.Choix) : modèle explicitement choisi. Vérifié
+    sur le texte réel (lignes non vides) juste avant l'appel, son identifiant
+    remplace DOCIE_MODEL_PROFILE pour CETTE requête ; refus = exception nommée,
+    jamais un autre modèle. Absent : comportement d'avant."""
+    base =os.environ.get("DOCIE_BASE_URL", "").strip().rstrip("/")
     parsed = urlsplit(base)
     if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise DocIEError("Configurez DOCIE_BASE_URL avec l'URL racine du service DocIE.")
@@ -318,6 +322,11 @@ def extract_resume(file_path, progress=None, *, session=None):
     for env, field in (("DOCIE_MODEL_PROFILE", "model_profile"), ("DOCIE_OCR_BACKEND", "ocr_backend")):
         if os.environ.get(env, "").strip() and (field != "ocr_backend" or mode == "studio"):
             payload[field] = os.environ[env].strip()
+    if choix is not None:
+        # Le catalogue n'a pas de voie studio : un choix n'y est jamais proposé.
+        if mode != "inline":
+            raise DocIEError("Choix du modèle impossible en mode studio : voie texte (inline) uniquement.")
+        payload["model_profile"] = choix.pour_texte(text)
     headers = {}
     key = os.environ.get("DOCIE_API_KEY", "").strip()
     if key:

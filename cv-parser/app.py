@@ -1564,7 +1564,7 @@ def fichier_upload(identifiant: str, ext: str):
     return p if p.parent == UPLOAD_DIR.resolve() and p.is_file() else None
 
 
-def process_cv(file_path, jeton=None) -> dict:
+def process_cv(file_path, jeton=None, modele=None) -> dict:
     """Document → DocIE (extraction/OCR) → format CV ADBI.
 
     Issue #151 : DOCIE_EXTRACTION_ENABLED bascule l'étape d'extraction vers
@@ -1578,19 +1578,32 @@ def process_cv(file_path, jeton=None) -> dict:
     existant vers une fiche vide éditable avec parse_warning — pas de repli
     ajouté ici, pour ne jamais rejouer un travail DocIE potentiellement
     facturé.
+
+    `modele` (#194) : identifiant du catalogue explicitement choisi. Vérifié
+    pour la voie de ce fichier AVANT tout travail, puis sur le document réel
+    juste avant l'envoi (choix_modele.Choix) ; un refus lève ErreurTache au
+    code nommé. Le modèle qui a réellement servi est enregistré sur la fiche
+    (`modele_extraction`), choix ou non.
     """
     import time
+    import choix_modele
     from docie_bridge_extraction import docie_extraction_enabled
     from docie_bridge_extraction import extract_resume as extract_resume_bridge
     from docie_client import extract_resume as extract_resume_legacy
     from docie_review import revue_docie
 
     started = time.perf_counter()
+    options = {}
+    if modele:
+        choix = choix_modele.Choix(modele)
+        choix.verifier(Path(file_path).suffix)
+        options["choix"] = choix
     bridge_active = docie_extraction_enabled()
     extract_resume = extract_resume_bridge if bridge_active else extract_resume_legacy
     raw_data, metadata = extract_resume(
         file_path,
         progress=lambda detail: noter_progression(jeton, 55, "Analyse du CV", detail),
+        **options,
     )
     noter_progression(jeton, 93, "Finalisation de la fiche")
     cv_data = normalize_cv_data(raw_data)
@@ -1607,6 +1620,16 @@ def process_cv(file_path, jeton=None) -> dict:
         "docie_validation": metadata["validation"],
         "_timing": {"total_s": round(time.perf_counter() - started, 3)},
     })
+    # Modèle réellement servi, lu dans la RÉPONSE (#194) : `model_profile` sur
+    # la voie texte, agent appelé sur la voie agent — jamais le libellé du
+    # modèle demandé à sa place. `demande` : le choix explicite, ou None.
+    voie = "agent" if mode == "docie-bridge" else "texte"
+    cv_data["modele_extraction"] = {
+        "voie": voie,
+        "demande": modele or None,
+        "servi": choix_modele.modele_servi(voie, {"model": metadata.get("model_profile") or "",
+                                                  "agent": metadata.get("agent") or ""}),
+    }
     cv_data["bilan_adbi"] = bilan_adbi(cv_data)
     # Ce que DocIE dit de sa propre extraction, traduit en signal de relecture
     # par champ (docie_review.py, issue #172) : jusqu'ici seul un avertissement
@@ -1618,6 +1641,24 @@ def process_cv(file_path, jeton=None) -> dict:
     cv_data["docie_review"] = revue
     if revue["needs_review"] or revue["warnings"]:
         cv_data["parse_warning"] = "DocIE signale des champs à vérifier. Relisez la fiche extraite."
+    # Modèle explicitement choisi (#194) : un résultat partiel (#203) n'est
+    # jamais présenté comme complet. Il est enregistré avec le modèle servi et
+    # dit dans l'avertissement, champ par champ ; non vérifiable, il est dit aussi.
+    if modele:
+        partiel = choix_modele.resultat_partiel(metadata, raw_data)
+        cv_data["modele_extraction"]["partiel"] = partiel
+        cv_data["modele_extraction"]["troncature_possible"] = metadata.get("troncature_possible")
+        if partiel is None:
+            alerte = "Résultat partiel non vérifiable pour le modèle choisi : relisez la fiche."
+        elif partiel:
+            champs = ", ".join(dict.fromkeys(p.get("champ", "?") for p in partiel))
+            alerte = f"Résultat partiel du modèle choisi ({champs}) : relisez ces champs."
+        elif metadata.get("troncature_possible") is True:
+            alerte = "Document au-delà de 800 lignes non vides : le modèle a pu en ignorer la fin."
+        else:
+            alerte = ""
+        if alerte:
+            cv_data["parse_warning"] = " ".join(filter(None, (cv_data.get("parse_warning"), alerte)))
     return cv_data
 
 # load_db()/save_db() ont été retirées (issue #15, PR B) : la CVthèque vit
@@ -1843,7 +1884,27 @@ def dashboard():
 @app.route("/app")
 @require_auth
 def index():
-    return render_template("index.html")
+    return render_template("index.html", **selecteur_modeles())
+
+
+def selecteur_modeles(ext=None) -> dict:
+    """Contexte du sélecteur de modèle (#194) : `modeles` (défaut d'abord),
+    `modeles_par_format` (dépôt : modèles proposés pour la voie du PDF et du
+    DOCX) et `modeles_erreur`. Le sélecteur est présent dès qu'un modèle est
+    proposé, visible à partir de deux ; le navigateur envoie `modele` pour un
+    fichier dès qu'un modèle est proposé pour son format (même règle que
+    contrats, #210). Catalogue illisible ou identifiant mal formé : pas de
+    sélecteur, mais la faute est dite à l'écran — la page reste utilisable sans
+    choix."""
+    try:
+        import choix_modele
+        return {"modeles": choix_modele.modeles_proposes(ext),
+                "modeles_par_format": {} if ext else choix_modele.offres_par_format(),
+                "modeles_erreur": ""}
+    except Exception as exc:
+        print(f"[ERREUR] catalogue des modèles : {exc!r}")
+        return {"modeles": [], "modeles_par_format": {},
+                "modeles_erreur": "Choix du modèle indisponible : catalogue des modèles illisible ou mal configuré."}
 
 
 @app.route("/needs")
@@ -1992,6 +2053,9 @@ def upload_cv():
     file.save(file_path)
 
     jeton = (request.form.get("jeton") or "").strip()[:64]
+    # Modèle explicitement choisi (#194, choix_modele.py) : champ présent et non
+    # vide. Absent (sélecteur masqué, autre client) : comportement d'avant.
+    modele = (request.form.get("modele") or "").strip() or None
 
     # ── Cache par empreinte : un fichier DÉJÀ analysé ne repasse pas par le
     # pipeline (doublons de candidats, re-dépôts) — sa fiche est reprise
@@ -2016,12 +2080,19 @@ def upload_cv():
                 break
     except Exception:
         source_cache = None
+    # Un modèle choisi n'est jamais remplacé par un autre (#194) : la fiche en
+    # cache n'est reprise que si CE modèle l'a servie ; sinon, nouvelle analyse.
+    if modele and source_cache is not None:
+        servi = ((source_cache.get("modele_extraction") or {}).get("servi") or {}).get("id")
+        if servi != modele:
+            source_cache = None
 
     # Tout ce que le travail lira est capturé ICI : `request`, `file` et
     # `get_current_user()` (qui lit `g`) n'existent plus hors de la requête.
     depot = {
         "file_id": file_id, "file_path": file_path, "filename": file.filename,
         "ext": ext, "empreinte": empreinte, "utilisateur": dict(get_current_user() or {}),
+        "modele": modele,
     }
 
     if source_cache is not None:
@@ -2056,7 +2127,20 @@ def _analyser_depot(depot, jeton):
     fiche vide éditable avec parse_warning, et la tâche se termine `terminee`
     (réponse identique à l'ancienne route). Seul ce qui échoue hors de ce repli
     fait passer la tâche en `echec`.
+
+    Modèle explicitement choisi (#194) : PAS de repli. Un modèle choisi ne
+    retombe ni sur un autre modèle ni sur une fiche vide : l'échec (refus du
+    catalogue, erreur DocIE nommée) sort tel quel et la tâche finit `echec`.
+    Aucune fiche n'étant créée, le fichier déposé est retiré.
     """
+    if depot.get("modele"):
+        try:
+            cv_data = process_cv(depot["file_path"], jeton=jeton, modele=depot["modele"])
+        except BaseException:
+            depot["file_path"].unlink(missing_ok=True)
+            raise
+        return _enregistrer_depot(depot, cv_data, None, jeton)
+
     parse_warning = None
     try:
         cv_data = process_cv(depot["file_path"], jeton=jeton)
@@ -2155,6 +2239,8 @@ def _enregistrer_depot(depot, cv_data, parse_warning, jeton):
         "llm_parsed":  llm_parsed,
         "adbi":        bilan,
         "avertissement": cv_data.get("parse_warning", ""),
+        # Modèle qui a réellement servi (#194), affiché discrètement dans la synthèse.
+        "modele":      (((cv_data.get("modele_extraction") or {}).get("servi")) or {}).get("libelle", ""),
     }
     response_data = dict(cv_data)
     response_data["parse_summary"] = parse_summary
@@ -2203,9 +2289,11 @@ def reanalyser_cv(file_id):
         return jsonify({"error": "Fichier d'origine absent du poste : re-déposez le document."}), 404
 
     jeton = (request.form.get("jeton") or "").strip()[:64]
+    # Modèle explicitement choisi (#194) : même règle que le dépôt.
+    modele = (request.form.get("modele") or "").strip() or None
     utilisateur = get_current_user() or {}
     try:
-        tache = TACHES_UPLOAD.creer(lambda jeton_tache: _reanalyser_fiche(file_id, jeton_tache),
+        tache = TACHES_UPLOAD.creer(lambda jeton_tache: _reanalyser_fiche(file_id, jeton_tache, modele),
                                     proprietaire=utilisateur.get("sub"), jeton=jeton,
                                     cle=f"fiche:{file_id}")
     except TacheDejaEnCours as exc:
@@ -2215,7 +2303,7 @@ def reanalyser_cv(file_id):
     return jsonify({"tache": tache}), 202
 
 
-def _reanalyser_fiche(file_id, jeton):
+def _reanalyser_fiche(file_id, jeton, modele=None):
     """Travail d'une ré-analyse : le corps de l'ancienne route, dans un thread de tâche.
 
     Le verrou de la fiche (issue #53) est pris ET rendu dans ce même thread,
@@ -2238,7 +2326,10 @@ def _reanalyser_fiche(file_id, jeton):
         if not file_path:
             raise ErreurTache("Fichier d'origine absent du poste : re-déposez le document.")
 
-        cv_data = process_cv(file_path, jeton=jeton)
+        if modele:
+            cv_data = process_cv(file_path, jeton=jeton, modele=modele)
+        else:
+            cv_data = process_cv(file_path, jeton=jeton)
 
         llm_parsed = cv_data.pop("llm_parsed", False)
         # L'identité de la fiche ne change pas : id, fichier, dates, empreinte.
@@ -2545,7 +2636,8 @@ def cv_detail(cv_id):
             lang = other.get("language", "en")
             flag = {"en": "🇬🇧", "fr": "🇫🇷"}.get(lang, "🌐")
             linked_cvs.append({"id": cid, "language": lang, "label": f"{flag} {lang.upper()}"})
-    return render_template("cv_detail.html", cv=cv, linked_cvs=linked_cvs)
+    ext = cv.get("ext") or Path(cv.get("filename", "")).suffix or ".pdf"
+    return render_template("cv_detail.html", cv=cv, linked_cvs=linked_cvs, **selecteur_modeles(ext))
 
 
 # Champs que l'écran d'édition (cv_detail.html::collectData) envoie réellement.

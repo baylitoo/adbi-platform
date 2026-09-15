@@ -99,20 +99,38 @@ def _load_bridge():
     return docie_bridge
 
 
-def extract_resume(file_path, progress=None, *, session=None):
+def _compter_pages(content, mime_type):
+    """Pages du document envoyé en vision (#194, limite du catalogue) ; None si illisible."""
+    if mime_type != "application/pdf":
+        return 1
+    try:
+        from io import BytesIO
+        from pypdf import PdfReader
+        return len(PdfReader(BytesIO(content)).pages)
+    except Exception:
+        return None
+
+
+def extract_resume(file_path, progress=None, *, session=None, choix=None):
     """Même contrat que docie_client.extract_resume : renvoie (data, metadata).
 
     `metadata` porte en plus `transport` ("docie-bridge" ou "docie" si un
     .docx a été délégué au client historique), pour que l'appelant puisse
     étiqueter correctement la fiche même quand la bascule ne change rien au
     fichier traité.
+
+    `choix` (#194, choix_modele.Choix) : modèle explicitement choisi. Voie
+    agent : vérifié sur le nombre de pages réel, son agent est passé au bridge
+    pour CET appel (DOCIE_AGENT_RESUME n'est pas lu). Un .docx délégué au
+    client historique emporte le choix sur la voie texte.
     """
     path = Path(file_path)
     mime_type = _MIME_BY_SUFFIX.get(path.suffix.lower())
     if mime_type is None:
         # Pas de contrat texte côté bridge : un seul appel, via le client
         # historique — pas un second essai après un échec du bridge.
-        data, metadata = docie_client.extract_resume(path, progress=progress, session=session)
+        options = {"choix": choix} if choix is not None else {}
+        data, metadata = docie_client.extract_resume(path, progress=progress, session=session, **options)
         return data, {**metadata, "transport": "docie"}
 
     docie_bridge = _load_bridge()
@@ -124,8 +142,12 @@ def extract_resume(file_path, progress=None, *, session=None):
     except OSError as exc:
         raise DocIEError(f"Document introuvable ou illisible : {exc}") from None
 
+    options = {}
+    if choix is not None:
+        options["agent"] = choix.pour_agent(_compter_pages(content, mime_type))
+
     try:
-        bridge_result = docie_bridge.extract_document(content, mime_type, kind="resume", session=session)
+        bridge_result = docie_bridge.extract_document(content, mime_type, kind="resume", session=session, **options)
     except docie_bridge.DocIEBridgeError as exc:
         # Message FR stable par code (jamais de corps de réponse ni de clé
         # distante dans exc : docie_bridge.py les exclut déjà).
@@ -138,6 +160,14 @@ def extract_resume(file_path, progress=None, *, session=None):
     metadata = {
         "event_id": meta.get("request_id") or "",
         "model_profile": meta.get("model") or meta.get("agent") or "",
+        # Agent réellement appelé (#194) : c'est lui qui désigne le modèle
+        # servi sur la voie agent (choix_modele.modele_servi).
+        "agent": meta.get("agent") or "",
+        # Résultat partiel relevé par le bridge (#203) : [{champ, raison}] et
+        # plafond de blocs de la voie texte. Lus par process_cv pour un modèle
+        # explicitement choisi (#194).
+        "partiel": meta.get("partiel"),
+        "troncature_possible": meta.get("troncature_possible"),
         # `validation` est conservée telle quelle, y compris None : le bridge
         # renvoie None quand DocIE n'en a PAS joint, et une extraction terminée
         # en porte toujours une (listes vides quand tout va bien). La replier

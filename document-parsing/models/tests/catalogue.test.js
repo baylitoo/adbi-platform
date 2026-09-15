@@ -41,6 +41,18 @@ test("un modèle sans identifiant n'est pas proposé ; l'ancien DOCIE_AGENT_<TYP
   assert.equal(cat.nomVariable("agent", "kbis", "nuextract3"), "DOCIE_AGENT_KBIS_NUEXTRACT3");
 });
 
+test("expérimental : NuExtract3 en alternative du CV sur les deux voies, rien d'autre", () => {
+  const env = { DOCIE_MODELE_LFM25_2_6B: "store:l", DOCIE_MODELE_NUEXTRACT3: "store:n",
+    DOCIE_AGENT_RESUME_LFM25_2_6B: "a_l", DOCIE_AGENT_RESUME_NUEXTRACT3: "a_n" };
+  for (const voie of ["texte", "agent"]) {
+    assert.deepEqual(cat.modelesOfferts("resume", voie, { env }).map((o) => [o.id, o.experimental]),
+      [["lfm25_2_6b", false], ["nuextract3", true]], voie);
+  }
+  // Le même modèle, défaut éprouvé du contrat : pas expérimental.
+  assert.deepEqual(cat.modelesOfferts("contract", "texte", { env }).map((o) => [o.id, o.experimental]),
+    [["nuextract3", false], ["lfm25_2_6b", false]]);
+});
+
 test("URSSAF : LFM2.5 2.6B par défaut, 350M en alternative", () => {
   const env = { DOCIE_MODELE_LFM25_350M: "store:lfm2.5-350m", DOCIE_MODELE_LFM25_2_6B: "store:lfm2.5-2.6b" };
   assert.deepEqual(cat.modelesOfferts("urssaf", "texte", { env }).map((o) => [o.id, o.role]),

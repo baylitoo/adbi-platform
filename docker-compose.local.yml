@@ -182,6 +182,11 @@ services:
       DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
       DOCIE_API_KEY: ${DOCIE_API_KEY:-}
       DOCIE_AGENT_RESUME: ${DOCIE_AGENT_RESUME:-}
+      # Modeles proposes a l'import de CV (#194), voir docker-compose.yml.
+      DOCIE_MODELE_LFM25_2_6B: ${DOCIE_MODELE_LFM25_2_6B:-}
+      DOCIE_MODELE_NUEXTRACT3: ${DOCIE_MODELE_NUEXTRACT3:-}
+      DOCIE_AGENT_RESUME_LFM25_2_6B: ${DOCIE_AGENT_RESUME_LFM25_2_6B:-}
+      DOCIE_AGENT_RESUME_NUEXTRACT3: ${DOCIE_AGENT_RESUME_NUEXTRACT3:-}
       DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-900}
       # Le bridge refuse HTTP hors loopback par defaut ; derogation explicite
       # pour un reseau prive de confiance seulement (meme var que cv-parser).
@@ -226,6 +231,9 @@ services:
         # Table de synonymes de compétences partagée (#177 G/H) : `COPY
         # --from=fixtures` sans condition, lue au démarrage. Voir cv-parser/Dockerfile.
         fixtures: ./document-parsing/fixtures
+        # Catalogue des modèles par action (#194) : `COPY --from=modeles` sans
+        # condition, lu pour le choix du modèle. Voir cv-parser/Dockerfile.
+        modeles: ./document-parsing/models
     extra_hosts:
       - "host.docker.internal:host-gateway"
     container_name: adbi-cv-parser
@@ -253,6 +261,11 @@ services:
       # Variable racine dédiée (CVPARSER_...), voir docker-compose.yml.
       DOCIE_EXTRACTION_ENABLED: ${CVPARSER_DOCIE_EXTRACTION_ENABLED:-false}
       DOCIE_AGENT_RESUME: ${DOCIE_AGENT_RESUME:-}
+      # Modèles proposés au dépôt et à la ré-analyse de CV (#194), voir docker-compose.yml.
+      DOCIE_MODELE_LFM25_2_6B: ${DOCIE_MODELE_LFM25_2_6B:-}
+      DOCIE_MODELE_NUEXTRACT3: ${DOCIE_MODELE_NUEXTRACT3:-}
+      DOCIE_AGENT_RESUME_LFM25_2_6B: ${DOCIE_AGENT_RESUME_LFM25_2_6B:-}
+      DOCIE_AGENT_RESUME_NUEXTRACT3: ${DOCIE_AGENT_RESUME_NUEXTRACT3:-}
       # Analyses DocIE simultanées, dépôts et ré-analyses (#196), à aligner sur
       # le `n_parallel` du modèle servi pour les CV (#194). Vide -> défaut du
       # service : 2 (LFM2.5-2.6B). Variable racine dédiée (CVPARSER_...), voir

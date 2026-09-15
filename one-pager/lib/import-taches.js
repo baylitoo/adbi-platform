@@ -126,9 +126,18 @@ const MESSAGE_INTERNE = "Lecture impossible : erreur interne.";
  *   l'a annonce ;
  * - ImportError (lib/import-pipeline) -> code `input`, SON message : ce texte
  *   est ecrit par nous (« Ce PDF ne contient pas de texte… »), pas par un tiers ;
+ * - refus du catalogue des modeles pour un modele explicitement choisi (#194,
+ *   lib/choix-modele.js) -> son code (modele_non_propose, limite,
+ *   configuration) et SON message : ecrit par le catalogue (libelle du modele,
+ *   limite depassee, variable mal formee), jamais de texte amont ;
  * - tout le reste -> `interne`, message constant.
  */
+const CODES_CATALOGUE = { modele_non_propose: true, limite: true, configuration: true };
+
 function mapperErreur(e) {
+  if (e && e.name === "CatalogueError" && Object.hasOwn(CODES_CATALOGUE, String(e.code)) && typeof e.message === "string") {
+    return { code: e.code, message: e.message };
+  }
   if (e && e.name === "ImportError" && typeof e.message === "string") {
     return { code: "input", message: e.message };
   }

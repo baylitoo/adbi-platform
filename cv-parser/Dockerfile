@@ -20,6 +20,14 @@ COPY --from=bridge docie_bridge.py .
 # UN SEUL fichier, pas le dossier (fixtures/ contient aussi des CV d'exemple).
 # Même chemin que dans le dépôt, relatif au module : /app/.. -> /document-parsing/.
 COPY --from=fixtures competences_synonymes.json /document-parsing/fixtures/competences_synonymes.json
+# Catalogue des modèles par action (#194) : contexte de build additionnel
+# `modeles` (document-parsing/models/, voir docker-compose*.yml). choix_modele.py
+# charge /document-parsing/models/catalogue.py par son chemin (même profondeur
+# relative que dans le dépôt), qui lit catalogue.json à côté de lui. Lu à
+# l'appel : sans ces fichiers le service démarre et le dépôt sans choix
+# fonctionne, mais aucun modèle n'est proposé (message à l'écran) et un choix
+# échoue. Les deux fichiers seulement : tests/ n'a rien à faire dans l'image.
+COPY --from=modeles catalogue.json catalogue.py /document-parsing/models/
 
 ENV PYTHONUNBUFFERED=1
 ENV ADBI_HOTE=0.0.0.0

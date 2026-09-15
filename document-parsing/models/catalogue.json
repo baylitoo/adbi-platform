@@ -5,7 +5,8 @@
     "Le dépôt porte les rôles, les libellés et les conditions ; les identifiants réels viennent de l'environnement de déploiement (motifs sous `variables`). Un modèle sans identifiant configuré pour une voie n'est pas proposé sur cette voie.",
     "Aucun identifiant configuré pour une tâche et une voie : le consommateur garde son comportement d'avant le catalogue (DOCIE_MODEL_PROFILE, DOCIE_AGENT_<TYPE>).",
     "`limites` d'un modèle : évaluées par les chargeurs (catalogue.js, catalogue.py) sur le document réel, pour toutes les tâches. `prerequis` : condition de déploiement ou de contrôle côté ADBI, lue par un humain, jamais évaluée ici.",
-    "Lu à l'exécution par contrats (image Docker : COPY --from=modeles, voir contrats/Dockerfile)."
+    "`experimental: true` sur une entrée de tâche : le modèle y est proposé mais signalé « expérimental » dans les sélecteurs (aucune lecture réelle réussie sur ce type de document) ; exposé par les deux chargeurs, jamais évalué ici.",
+    "Lu à l'exécution par contrats, cv-parser et one-pager (images Docker : COPY du catalogue et du chargeur, voir leurs Dockerfile)."
   ],
   "version": 1,
   "variables": {
@@ -40,11 +41,11 @@
       "voies": {
         "texte": {
           "defaut": { "modele": "lfm25_2_6b", "condition": "Non proposé au-delà de 800 lignes non vides (#190)." },
-          "alternative": { "modele": "nuextract3", "prerequis": "Après la PR DocIE #522 (JSON invalide sur listes imbriquées avant elle)." }
+          "alternative": { "modele": "nuextract3", "experimental": true, "prerequis": "Après la PR DocIE #522 (JSON invalide sur listes imbriquées avant elle) ; expérimental tant qu'aucun CV riche en listes n'a été lu en réel depuis." }
         },
         "agent": {
           "defaut": { "modele": "lfm25_2_6b", "condition": "Agent OCR, pour les scans seulement." },
-          "alternative": { "modele": "nuextract3", "condition": "Vision : scan de 8 pages au plus.", "prerequis": "Après la PR DocIE #522." }
+          "alternative": { "modele": "nuextract3", "experimental": true, "condition": "Vision : scan de 8 pages au plus.", "prerequis": "Après la PR DocIE #522 ; expérimental tant qu'aucun CV riche en listes n'a été lu en réel depuis." }
         }
       }
     },

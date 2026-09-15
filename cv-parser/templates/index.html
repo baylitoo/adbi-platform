@@ -526,6 +526,22 @@
         <span class="formats-pill">PDF · DOCX · en lot</span>
       </div>
       <input type="file" id="fileInput" accept=".pdf,.docx" multiple />
+      {# Choix du modèle (#194) : présent dès qu'un modèle est proposé (catalogue +
+         identifiants configurés, choix_modele.py), VISIBLE seulement à partir de
+         deux. Même règle que contrats (#210) : le navigateur envoie `modele` pour
+         un fichier dès qu'au moins un modèle est proposé pour son format, défaut
+         compris — choix explicite, qui ne retombe jamais sur un autre modèle ni
+         sur une fiche vide. #}
+      {% if modeles %}
+      <select class="sort-select" id="modeleSelect" style="width:100%;margin-top:8px"{% if modeles|length < 2 %} hidden{% endif %}
+              data-formats="{{ (modeles_par_format or {})|tojson|forceescape }}"
+              aria-label="Modèle d'extraction" title="Modèle d'extraction utilisé pour les prochains CV">
+        {% for m in modeles %}
+        <option value="{{ m.id }}"{% if m.role == 'defaut' %} selected{% endif %}>{{ m.libelle }} — {% if m.experimental %}expérimental ({{ m.description }}){% else %}{{ m.description }}{% endif %}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+      {% if modeles_erreur %}<div class="up-sub" style="margin-top:6px">{{ modeles_erreur }}</div>{% endif %}
 
       <div class="upload-progress" id="uploadProgress" style="display:none">
         <div class="up-filename" id="upFilename">—</div>
@@ -797,6 +813,10 @@ function showParseSummary(data) {
     statsHtml += `<br><span style="font-size:10px;color:#9AAFC8;display:block;margin-top:5px">
       ⏱ Total <strong>${t.total_s}s</strong>${typeof t.llm_s === 'number' ? ` — LLM <strong>${t.llm_s}s</strong> (${llmPct}%)` : ''}</span>`;
   }
+  // Modèle qui a réellement servi, lu dans la réponse DocIE (#194).
+  if (s.modele) {
+    statsHtml += `<span style="font-size:10px;color:#9AAFC8;display:block;margin-top:3px">— lu par ${esc(s.modele)}</span>`;
+  }
   document.getElementById('parseStats').innerHTML = statsHtml;
   document.getElementById('openDossierBtn').href = `/cv/${data.id}`;
   document.getElementById('parseSummary').style.display = 'block';
@@ -816,13 +836,34 @@ function resetUploadZone() {
  * fichiers sans déclencher, à chaque fois, le panneau de synthèse et les
  * messages destinés à un import isolé.
  */
-async function envoyerCv(file, discret, suivi) {
+/** Valeur du sélecteur de modèle (#194), visible ou non ; null s'il n'existe pas. */
+function valeurSelecteurModele() {
+  const sel = document.getElementById('modeleSelect');
+  return sel ? sel.value : null;
+}
+
+/**
+ * Modèle envoyé pour CE fichier : la valeur du sélecteur dès qu'au moins un
+ * modèle est proposé pour son format (voie DocIE du PDF ou du DOCX), sinon null
+ * — le fichier part alors exactement comme avant le catalogue.
+ */
+function modeleChoisi(file, valeur = valeurSelecteurModele()) {
+  const sel = document.getElementById('modeleSelect');
+  if (!sel || !valeur) return null;
+  let formats = {};
+  try { formats = JSON.parse(sel.dataset.formats || '{}'); } catch { formats = {}; }
+  const ext = (String(file && file.name || '').match(/\.[^.]+$/) || [''])[0].toLowerCase();
+  return (formats[ext] || []).length ? valeur : null;
+}
+
+async function envoyerCv(file, discret, suivi, modele = modeleChoisi(file)) {
   // Jeton de suivi : le serveur y note sa progression réelle, le widget la lit.
   // C'est aussi l'identifiant de la tâche d'analyse (issue #196).
   const jeton = (crypto.randomUUID ? crypto.randomUUID()
                  : Date.now() + '-' + Math.random().toString(36).slice(2));
   if (!discret) ConvWidget.startLocal(file.name, jeton);   // en lot, la liste suffit
   const fd = new FormData(); fd.append('file', file); fd.append('jeton', jeton);
+  if (modele) fd.append('modele', modele);
   try {
     const r = await fetch('/api/upload', { method: 'POST', body: fd, credentials: 'include' });
     let data = await r.json();
@@ -888,6 +929,8 @@ function majBarreLot(faits, total, ok, rates) {
 async function lancerLot(fichiers) {
   if (lotEnCours) { showToast('Un import est déjà en cours', 3000, 'warn'); return; }
   lotEnCours = { annule: false };
+  // Le sélecteur est lu UNE fois : tout le lot part avec le choix fait au dépôt.
+  const valeurModele = valeurSelecteurModele();
 
   resetUploadZone();
   document.getElementById('lot').hidden = false;
@@ -912,7 +955,8 @@ async function lancerLot(fichiers) {
 
       // Étape serveur (attente et position comprises) au survol de la ligne.
       const r = await envoyerCv(fichiers[i], true,
-        t => { li.title = t.etape + (t.detail ? ` — ${t.detail}` : ''); });
+        t => { li.title = t.etape + (t.detail ? ` — ${t.detail}` : ''); },
+        modeleChoisi(fichiers[i], valeurModele));
       if (r.ok) {
         ok++; li.className = 'fait'; li.querySelector('.etat').textContent = '✓';
       } else {

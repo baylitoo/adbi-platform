@@ -19,21 +19,56 @@ const TAILLE_MAX = 20 * 1024 * 1024;
 
 /**
  * @param {import("express").Express} app
- * @param {{ importerCv: Function, db: { findByHash: Function }, gestionnaire: object }} deps
+ * @param {{ importerCv: Function, db: { findByHash: Function }, gestionnaire: object,
+ *           modelesProposes?: Function }} deps
+ *   `choixModele` (#194) : { modelesProposes, offresParVoie } ; par defaut lib/choix-modele.js.
  */
-function monterImport(app, { importerCv, db, gestionnaire }) {
+function monterImport(app, { importerCv, db, gestionnaire, choixModele = null }) {
   /**
-   * POST /api/import  { filename, contentBase64 } -> 202 { tache }
+   * GET /api/modeles[?tache=resume]
+   *   -> { modeles: [{ id, libelle, description, role }], voies: { texte, agent }, erreur? }
+   *
+   * Modeles proposes pour l'import d'un CV (#194), defaut d'abord, et leurs
+   * identifiants de catalogue par voie. Jamais d'identifiant reel (`store:`,
+   * agent). Le selecteur n'est visible qu'a partir de deux ; `modele` part des
+   * qu'un modele est propose pour la voie du fichier. Seule tache de ce service :
+   * `resume`. Catalogue illisible ou identifiant mal forme : aucun modele et la
+   * faute est dite (`erreur`), l'import sans choix reste possible.
+   */
+  app.get("/api/modeles", (req, res) => {
+    if (req.query.tache != null && req.query.tache !== "resume") {
+      return res.status(400).json({ error: "Tâche inconnue : ce service ne propose des modèles que pour « resume »." });
+    }
+    try {
+      // eslint-disable-next-line global-require
+      const choix = choixModele || require("./choix-modele");
+      res.json({ modeles: choix.modelesProposes(), voies: choix.offresParVoie() });
+    } catch (e) {
+      console.error("[modeles]", e);
+      res.json({ modeles: [], voies: { texte: [], agent: [] },
+        erreur: "Choix du modèle indisponible : catalogue des modèles illisible ou mal configuré." });
+    }
+  });
+
+  /**
+   * POST /api/import  { filename, contentBase64, modele? } -> 202 { tache }
    *
    * Validation synchrone (fichier present, 20 Mo), puis reponse immediate.
    * Le resultat de la tache est exactement l'ancienne reponse synchrone :
    * { id, hash, master, duree_ms, doublon } — le cv_master extrait, SANS
    * l'enregistrer : l'utilisateur valide d'abord (etape 2), c'est lui qui
    * declenche l'enregistrement.
+   *
+   * `modele` (#194) : non vide = modele explicitement choisi, sans repli local
+   * (lib/import-pipeline.js). Absent ou vide : import exactement comme avant.
    */
   app.post("/api/import", (req, res) => {
-    const { filename, contentBase64 } = req.body || {};
+    const { filename, contentBase64, modele } = req.body || {};
     if (!contentBase64) return res.status(400).json({ error: "Aucun fichier reçu." });
+    if (modele != null && typeof modele !== "string") {
+      return res.status(400).json({ error: "Modèle invalide." });
+    }
+    const choisi = modele ? modele.trim() : "";
 
     const buffer = Buffer.from(contentBase64, "base64");
     if (buffer.length > TAILLE_MAX) {
@@ -47,8 +82,11 @@ function monterImport(app, { importerCv, db, gestionnaire }) {
         // lib/import-pipeline choisit la voie d'extraction (locale par defaut,
         // DocIE si DOCIE_EXTRACTION_ENABLED=true : voie fichier pour un PDF, voie
         // texte pour un depot texte — voir issues #152 et #180)
-        // et gere elle-meme le repli local en cas d'echec DocIE.
-        const master = await importerCv(buffer, filename);
+        // et gere elle-meme le repli local en cas d'echec DocIE (jamais pour un
+        // modele choisi, #194).
+        const master = choisi
+          ? await importerCv(buffer, filename, { modele: choisi })
+          : await importerCv(buffer, filename);
         const hash = crypto.createHash("sha256").update(buffer).digest("hex");
         const existant = await db.findByHash(hash);
         return {

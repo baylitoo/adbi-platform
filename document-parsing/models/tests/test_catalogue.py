@@ -113,6 +113,15 @@ class Chargeur(unittest.TestCase):
         self.assertEqual([(o["id"], o["role"], o["identifiant"]) for o in offres],
                          [("nuextract3", "defaut", "store:nuextract3"), ("lfm25_2_6b", "alternative", "store:lfm2.5-2.6b")])
 
+    def test_experimental_nuextract3_alternative_du_cv_seulement(self):
+        env = {"DOCIE_MODELE_LFM25_2_6B": "store:l", "DOCIE_MODELE_NUEXTRACT3": "store:n",
+               "DOCIE_AGENT_RESUME_LFM25_2_6B": "a_l", "DOCIE_AGENT_RESUME_NUEXTRACT3": "a_n"}
+        for voie in ("texte", "agent"):
+            self.assertEqual([(o["id"], o["experimental"]) for o in cat.modeles_offerts("resume", voie, env=env)],
+                             [("lfm25_2_6b", False), ("nuextract3", True)], voie)
+        self.assertEqual([(o["id"], o["experimental"]) for o in cat.modeles_offerts("contract", "texte", env=env)],
+                         [("nuextract3", False), ("lfm25_2_6b", False)])
+
     def test_modele_sans_identifiant_non_propose(self):
         offres = cat.modeles_offerts("contract", "texte", env={"DOCIE_MODELE_LFM25_2_6B": "store:x"})
         self.assertEqual([o["id"] for o in offres], ["lfm25_2_6b"])
@@ -199,6 +208,8 @@ class PariteNode(unittest.TestCase):
             ("urssaf", "texte", {"DOCIE_MODELE_LFM25_350M": "store:350m", "DOCIE_MODELE_LFM25_2_6B": "store:2.6b"}, None),
             ("kbis", "agent", {"DOCIE_AGENT_KBIS_NUEXTRACT3": "k3"}, {"pages": 9}),
             ("rapprochement", "chat", {"ADBI_LLM_MODELE_LFM25_2_6B": "lfm2.5-2.6b", "ADBI_LLM_MODELE_NUEXTRACT3": "n"}, None),
+            ("resume", "texte", {"DOCIE_MODELE_LFM25_2_6B": "store:l", "DOCIE_MODELE_NUEXTRACT3": "store:n"}, {"lignes_non_vides": 800}),
+            ("resume", "agent", {"DOCIE_AGENT_RESUME_LFM25_2_6B": "a_l", "DOCIE_AGENT_RESUME_NUEXTRACT3": "a_n"}, {"pages": 8}),
         ]
         textes = [c["texte"] for c in FIXTURE["cas"]] + ["x\n" * 801, "\ufeff\n\u00a0\n\x1f"]
         script = r"""
@@ -206,14 +217,14 @@ const cat = require(process.argv[1]);
 const entree = JSON.parse(require("fs").readFileSync(0, "utf8"));
 const offres = entree.scenarios.map(([t, v, env, doc]) =>
   cat.modelesOfferts(t, v, { env, document: doc && { lignesNonVides: doc.lignes_non_vides, pages: doc.pages } })
-     .map((o) => [o.id, o.role, o.identifiant, o.variable]));
+     .map((o) => [o.id, o.role, o.identifiant, o.variable, o.experimental]));
 process.stdout.write(JSON.stringify({ offres, lignes: entree.textes.map(cat.compterLignesNonVides) }));
 """
         sortie = subprocess.run(["node", "-e", script, str(ICI.parent / "catalogue.js")],
                                 input=json.dumps({"scenarios": scenarios, "textes": textes}),
                                 capture_output=True, text=True, encoding="utf-8", check=True)
         js = json.loads(sortie.stdout)
-        py_offres = [[[o["id"], o["role"], o["identifiant"], o["variable"]]
+        py_offres = [[[o["id"], o["role"], o["identifiant"], o["variable"], o["experimental"]]
                       for o in cat.modeles_offerts(t, v, env=env, document=doc)] for t, v, env, doc in scenarios]
         self.assertEqual(js["offres"], py_offres)
         self.assertEqual(js["lignes"], [cat.compter_lignes_non_vides(t) for t in textes])

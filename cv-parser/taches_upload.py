@@ -54,7 +54,9 @@ sort du travail devient un code nommé et un message français constant ; le
 texte amont n'est jamais recopié (il part au journal serveur). Le repli
 existant du dépôt (fiche vide éditable + parse_warning quand process_cv
 échoue) est dans le travail lui-même et n'est pas modifié par ce module : un
-dépôt dont DocIE échoue se termine donc `terminee`. La ré-analyse n'a jamais eu
+dépôt SANS choix de modèle dont DocIE échoue se termine donc `terminee` ; avec
+un modèle explicitement choisi (#194, choix_modele.py), le repli ne s'applique
+pas et la tâche finit `echec` au code nommé. La ré-analyse n'a jamais eu
 ce repli (elle répondait 500) : son échec DocIE est un `echec` au code nommé.
 """
 import math
