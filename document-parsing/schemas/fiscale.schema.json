@@ -1,0 +1,47 @@
+{
+  "document_type": "fiscale",
+  "fields": [
+    {
+      "name": "company_name",
+      "type": "string",
+      "description": "Denomination de l'entreprise a qui l'attestation de regularite fiscale est delivree",
+      "fields": []
+    },
+    {
+      "name": "siren",
+      "type": "string",
+      "description": "Numero SIREN de l'entreprise tel qu'imprime",
+      "fields": []
+    },
+    {
+      "name": "siret",
+      "type": "string",
+      "description": "Numero SIRET de l'entreprise, quand il figure sur l'attestation",
+      "fields": []
+    },
+    {
+      "name": "tax_office",
+      "type": "string",
+      "description": "Service des impots emetteur (service des impots des entreprises ou comptable public) tel qu'imprime",
+      "fields": []
+    },
+    {
+      "name": "issued_date",
+      "type": "date",
+      "description": "Date de delivrance de l'attestation",
+      "fields": []
+    },
+    {
+      "name": "situation_date",
+      "type": "date",
+      "description": "Date a laquelle l'entreprise est declaree a jour de ses obligations fiscales, quand elle est imprimee a part de la date de delivrance",
+      "fields": []
+    },
+    {
+      "name": "regularity_statement",
+      "type": "string",
+      "description": "Mention attestant que l'entreprise est a jour de ses obligations fiscales, recopiee telle qu'imprimee",
+      "fields": []
+    }
+  ]
+}
