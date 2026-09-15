@@ -194,7 +194,7 @@ test("configuration : clé, URL racine HTTPS, délai aligné sur DOCIE_TIMEOUT_S
 
 test("texte seulement : PDF, image, tampon, vide, binaire, trop long ou schéma invalide -> input, sans appel", async () => {
   const cas = [[Buffer.from("%PDF-1.7"), CONTRAT], [new Uint8Array([137, 80, 78, 71]), CONTRAT], [{ mime: "image/png" }, CONTRAT],
-    ["", CONTRAT], ["   \n", CONTRAT], ["%PDF binaire", CONTRAT], ["x".repeat(oa.MAX_TEXT_BYTES + 1), CONTRAT],
+    ["", CONTRAT], ["   \n", CONTRAT], ["%PDF\u0000binaire", CONTRAT], ["x".repeat(oa.MAX_TEXT_BYTES + 1), CONTRAT],
     ["texte", null], ["texte", { document_type: "contract", fields: [{ name: "a", type: "image" }] }]];
   for (const [texte, dynamicSchema] of cas) {
     const { appels, fetchImpl } = simuler(reponse());

@@ -327,7 +327,7 @@ function parseOpenAI(body, { mode, modele, format, schemaName }) {
  */
 async function extraireViaOpenAI(texte, { mode, dynamicSchema, env = process.env, fetchImpl = fetch } = {}) {
   const { url, key, timeout, modele } = configurationOpenAI(env || {}, mode);
-  if (typeof texte !== "string" || !texte.trim() || texte.includes(" ")) {
+  if (typeof texte !== "string" || !texte.trim() || texte.includes("\u0000")) {
     fail("input", "OpenAI accepts extracted document text only (no PDF, image or binary content).");
   }
   if (Buffer.byteLength(texte, "utf8") > MAX_TEXT_BYTES) fail("input", "Document text must not exceed 4 MiB for OpenAI.");
