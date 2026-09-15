@@ -124,6 +124,30 @@ CHAMPS_IGNORES = {"years_experience"}
 # signaler » : exactement le champ douteux qu'on cherche à remonter.
 FEUILLES_APLATIES = ("item", "interest")
 
+# ── Résultat partiel relevé par le bridge (#203, #194) ───────────────────────
+# `metadata["partiel"]` = [{champ, raison}] : une valeur perdue, une boucle
+# coupée, une liste peut-être plafonnée. Ce sont des FAITS sur l'extraction, pas
+# un doute : ils sont dits à chaque dépôt, qu'un modèle ait été choisi ou non
+# (contrats le fait depuis #212). Libellés identiques, mot pour mot, à ceux de
+# one-pager/public/app.js::LIBELLES_PARTIEL — un test épingle la parité.
+LIBELLES_PARTIEL = {
+    "boucle": "la sortie du modèle se répétait, la liste a été coupée et la suite abandonnée",
+    "valeur_abandonnee": "valeur illisible (ni nombre ni montant), abandonnée",
+    "forme_invalide": "valeur écrite sous une forme que ce champ ne peut pas contenir, rien n'a été gardé",
+    "feuille_abandonnee": "valeur invalide abandonnée",
+    "liste_plafonnee_possible": "liste d'exactement 100 éléments, peut-être plafonnée",
+}
+
+# `troncature_possible` (#190) : un avertissement de fiche, jamais une marque de
+# champ — on ne sait pas QUELLE fin de document a été ignorée.
+AVERTISSEMENT_TRONCATURE = "CV peut-être tronqué : plus de 800 lignes"
+
+
+def libelle_partiel(champ, raison):
+    """Ligne française d'un résultat partiel. Une raison inconnue est gardée
+    telle quelle (même règle que contrats, #212), jamais ignorée."""
+    return "Résultat partiel — %s : %s" % (champ, LIBELLES_PARTIEL.get(raison, raison))
+
 
 def _segments(chemin):
     """« experience[0].start_date » -> ["experience", 0, "start_date"]."""
@@ -310,6 +334,26 @@ def revue_docie(data, metadata):
             warnings.append("docie_confiance_faible:%s" % chemin_docie)
         elif chemin not in needs_review:
             needs_review.append(chemin)
+
+    # Résultat partiel (#203) : dit sur TOUTES les voies, choix de modèle ou non
+    # (#194). Non bloquant : une marque et une ligne, aucune valeur modifiée.
+    # Contrairement à la confiance ci-dessus, AUCUN filtre `est_rempli` : une
+    # valeur abandonnée laisse précisément le champ vide, et c'est ce vide-là
+    # qu'il faut faire relire. Même traduction de chemin (#173/#175, missions
+    # retriées comprises) ; un chemin sans équivalent n'a que sa ligne.
+    partiel = metadata.get("partiel")
+    for entree in partiel if isinstance(partiel, list) else []:
+        if not isinstance(entree, dict) or not str(entree.get("champ") or "").strip():
+            continue
+        champ, raison = str(entree["champ"]), str(entree.get("raison") or "")
+        chemin = _chemin_fiche(champ, positions)
+        if chemin and chemin not in needs_review:
+            needs_review.append(chemin)
+        ligne = libelle_partiel(champ, raison)
+        if ligne not in warnings:
+            warnings.append(ligne)
+    if metadata.get("troncature_possible") is True:
+        warnings.append(AVERTISSEMENT_TRONCATURE)
 
     return {"needs_review": needs_review, "warnings": warnings}
 

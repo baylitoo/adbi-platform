@@ -1637,7 +1637,14 @@ def process_cv(file_path, jeton=None, modele=None) -> dict:
     # la confiance par champ n'arrivait même pas jusqu'ici. Stocké sur la fiche
     # (jamais modifiable par PATCH, voir CHAMPS_MODIFIABLES_CV) pour que l'écran
     # de relecture (templates/cv_detail.html) marque les champs concernés.
-    revue = revue_docie(raw_data, metadata)
+    #
+    # Résultat partiel (#203) : relevé sur TOUTES les voies — bridge (déjà dans
+    # `metadata`) comme client historique docie_client (même fonction du
+    # bridge, jamais une seconde copie) — et joint à la même revue, choix de
+    # modèle ou non : champs nommés « à vérifier », ligne par raison. Non
+    # vérifiable (None) sans choix : rien d'inventé, revue d'avant.
+    partiel = choix_modele.resultat_partiel(metadata, raw_data)
+    revue = revue_docie(raw_data, {**metadata, "partiel": partiel})
     cv_data["docie_review"] = revue
     if revue["needs_review"] or revue["warnings"]:
         cv_data["parse_warning"] = "DocIE signale des champs à vérifier. Relisez la fiche extraite."
@@ -1645,7 +1652,6 @@ def process_cv(file_path, jeton=None, modele=None) -> dict:
     # jamais présenté comme complet. Il est enregistré avec le modèle servi et
     # dit dans l'avertissement, champ par champ ; non vérifiable, il est dit aussi.
     if modele:
-        partiel = choix_modele.resultat_partiel(metadata, raw_data)
         cv_data["modele_extraction"]["partiel"] = partiel
         cv_data["modele_extraction"]["troncature_possible"] = metadata.get("troncature_possible")
         if partiel is None:
