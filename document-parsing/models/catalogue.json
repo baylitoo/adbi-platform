@@ -1,0 +1,168 @@
+{
+  "_commentaire": [
+    "Catalogue des modèles proposés par action (#194, « Liste retenue (2026-09-15) »).",
+    "Une seule liste : chaque modèle porte ses étiquettes (extraction et/ou chat) ; une tâche d'un usage ne propose jamais un modèle sans l'étiquette de cet usage.",
+    "Le dépôt porte les rôles, les libellés et les conditions ; les identifiants réels viennent de l'environnement de déploiement (motifs sous `variables`). Un modèle sans identifiant configuré pour une voie n'est pas proposé sur cette voie.",
+    "Aucun identifiant configuré pour une tâche et une voie : le consommateur garde son comportement d'avant le catalogue (DOCIE_MODEL_PROFILE, DOCIE_AGENT_<TYPE>).",
+    "`limites` d'un modèle : évaluées par les chargeurs (catalogue.js, catalogue.py) sur le document réel, pour toutes les tâches. `prerequis` : condition de déploiement ou de contrôle côté ADBI, lue par un humain, jamais évaluée ici.",
+    "Lu à l'exécution par contrats (image Docker : COPY --from=modeles, voir contrats/Dockerfile)."
+  ],
+  "version": 1,
+  "variables": {
+    "texte": "DOCIE_MODELE_{MODELE}",
+    "agent": "DOCIE_AGENT_{TACHE}_{MODELE}",
+    "chat": "ADBI_LLM_MODELE_{MODELE}"
+  },
+  "modeles": {
+    "lfm25_2_6b": {
+      "libelle": "LFM2.5 2.6B",
+      "description": "Rapide",
+      "etiquettes": ["extraction", "chat"],
+      "limites": { "texte": { "lignes_non_vides_max": 800 } }
+    },
+    "nuextract3": {
+      "libelle": "NuExtract3",
+      "description": "Précis mais lent — plusieurs minutes",
+      "etiquettes": ["extraction"],
+      "limites": { "agent": { "pages_max": 8 } }
+    },
+    "lfm25_350m": {
+      "libelle": "LFM2.5 350M",
+      "description": "Très rapide — documents simples",
+      "etiquettes": ["extraction"],
+      "limites": { "texte": { "lignes_non_vides_max": 800 } }
+    }
+  },
+  "taches": {
+    "resume": {
+      "libelle": "CV",
+      "usage": "extraction",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "Non proposé au-delà de 800 lignes non vides (#190)." },
+          "alternative": { "modele": "nuextract3", "prerequis": "Après la PR DocIE #522 (JSON invalide sur listes imbriquées avant elle)." }
+        },
+        "agent": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "Agent OCR, pour les scans seulement." },
+          "alternative": { "modele": "nuextract3", "condition": "Vision : scan de 8 pages au plus.", "prerequis": "Après la PR DocIE #522." }
+        }
+      }
+    },
+    "contract": {
+      "libelle": "Contrat",
+      "usage": "extraction",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "nuextract3", "condition": "Voie texte uniquement : un PDF envoyé en vision échoue en 400 à la 9e page." },
+          "alternative": { "modele": "lfm25_2_6b", "condition": "Seulement si le document fait au plus 800 lignes non vides." }
+        }
+      },
+      "sans_couche_texte": "Contrat scanné : aucune voie propre, échec explicite, saisie manuelle."
+    },
+    "kbis": {
+      "libelle": "Kbis",
+      "usage": "extraction",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "PDF avec couche texte." },
+          "alternative": { "modele": "nuextract3" }
+        },
+        "agent": {
+          "defaut": { "modele": "nuextract3", "condition": "Photo ou scan, en vision." },
+          "alternative": null,
+          "sans_alternative": "Photo : pas d'alternative valide (OCR + LFM2.5 réservé aux PDF texte)."
+        }
+      }
+    },
+    "urssaf": {
+      "libelle": "Attestation URSSAF",
+      "usage": "extraction",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b" },
+          "alternative": { "modele": "lfm25_350m", "prerequis": "Uniquement derrière nos contrôles de plausibilité de date." }
+        }
+      }
+    },
+    "fiscale": {
+      "libelle": "Attestation fiscale",
+      "usage": "extraction",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b" },
+          "alternative": { "modele": "lfm25_350m", "prerequis": "Uniquement derrière nos contrôles de plausibilité de date." }
+        }
+      }
+    },
+    "rib": {
+      "libelle": "RIB",
+      "usage": "extraction",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b" },
+          "alternative": { "modele": "lfm25_350m", "prerequis": "Uniquement derrière le contrôle IBAN modulo 97 et le format BIC." }
+        }
+      }
+    },
+    "cni": {
+      "libelle": "Carte d'identité (photo)",
+      "usage": "extraction",
+      "voies": {
+        "agent": {
+          "defaut": { "modele": "nuextract3", "condition": "Vision.", "prerequis": "Contrôle des chiffres de la MRZ." },
+          "alternative": null
+        }
+      }
+    },
+    "remplissage_extraction": {
+      "libelle": "Remplissage interactif — extraction",
+      "usage": "extraction",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "ocr_blocks paginés envoyés par ADBI ; evidence_ids filtrés sur la page cible." },
+          "alternative": null
+        }
+      }
+    },
+    "remplissage_redaction": {
+      "libelle": "Remplissage interactif — rédaction",
+      "usage": "chat",
+      "voies": {
+        "chat": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "Chat json_schema, affiché comme proposition sans preuve." },
+          "alternative": null
+        }
+      }
+    },
+    "rapprochement": {
+      "libelle": "Rapprochement",
+      "usage": "chat",
+      "voies": {
+        "chat": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "Un seul modèle, response_format json_schema." },
+          "alternative": null
+        }
+      }
+    },
+    "copilote": {
+      "libelle": "Copilote",
+      "usage": "chat",
+      "voies": {
+        "chat": {
+          "defaut": { "modele": "lfm25_2_6b" },
+          "alternative": null
+        }
+      }
+    },
+    "traduction": {
+      "libelle": "Traduction",
+      "usage": "chat",
+      "voies": {
+        "chat": {
+          "defaut": { "modele": "lfm25_2_6b" },
+          "alternative": null
+        }
+      }
+    }
+  }
+}
