@@ -78,6 +78,17 @@ MAX_ERROR_BYTES = 64 * 1024
 # TEXTE, où qu'il soit dans le corps (JSON imbriqué échappé ou texte brut), et
 # tout le reste retombe sur `upstream`.
 CONTEXT_OVERFLOW = re.compile(r"exceeds the available context size|exceed_context_size_error", re.IGNORECASE)
+# Plafond silencieux de blocs de la voie texte (#190). Sans `ocr_blocks` fournis
+# par l'appelant, DocIE (ocr/base.py, `text_to_blocks`) fait UN bloc par ligne
+# non vide : `sum(1 for ligne in texte.splitlines() if ligne.strip())`, sans
+# fenêtre de caractères. Tout profil à prompt générique ne garde ensuite que les
+# 800 premiers (`render_ocr_blocks(blocks, max_blocks=800)`), en HTTP 200 et sans
+# aucun avertissement. Le bridge ne connaît pas le profil servi : il rapporte un
+# fait de transport, « a pu être tronqué », jamais « a été tronqué ». Ce portage
+# reprend la règle DocIE à la lettre ; le portage JS la recopie avec une classe
+# explicite (voir docie-bridge.js), et
+# document-parsing/fixtures/blocs_texte_docie.json (tests seuls) fige les deux.
+DOCIE_BLOCS_TEXTE_MAX = 800
 # What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
 # This transport posts the document as an `image_url` data URI to
 # /v1/agents/<agent>/chat/completions, where DocIE OCRs it: liteparse renders
@@ -307,6 +318,11 @@ def prompt_profile(meta):
     return value if isinstance(value, str) and value else None
 
 
+def compter_blocs_texte(text):
+    """Nombre de blocs que DocIE fera de `text` (voir DOCIE_BLOCS_TEXTE_MAX)."""
+    return sum(1 for ligne in text.splitlines() if ligne.strip())
+
+
 def parse_response(body, expected_schema, agent):
     if not isinstance(body, dict):
         fail("response", "Invalid DocIE chat envelope.")
@@ -347,10 +363,13 @@ def parse_response(body, expected_schema, agent):
         fail("response", "Invalid DocIE validation metadata.")
     # No synthetic confidence/validation success when the agent omits metadata.
     confidence = reported_field_confidence(meta)
+    # `blocs_texte` / `troncature_possible` : None sur cette voie, « non
+    # mesurable » et non « non tronqué » -- c'est l'OCR distant qui fait les blocs.
     metadata = {"request_id": body.get("id"), "agent": agent, "model": body.get("model"),
                 "validation": validation, "usage": body.get("usage"),
                 "field_confidence": field_confidences(result) if confidence is None else confidence,
                 "prompt_profile": prompt_profile(meta),
+                "blocs_texte": None, "troncature_possible": None,
                 "schema_reported": any(item is not None for item in reported)}
     for name in ("queue_wait_ms", "latency_ms", "generation_ms"):
         value = meta.get(name, extracted.get(name, body.get(name)))
@@ -420,11 +439,14 @@ def parse_text_response(body, expected_schema):
     if validation is not None and not isinstance(validation, dict):
         fail("response", "Invalid DocIE validation metadata.")
     confidence = reported_field_confidence(body)
+    # `blocs_texte` / `troncature_possible` : le texte envoyé n'est pas dans la
+    # réponse ; extract_text() les renseigne, un appel direct les laisse à None.
     metadata = {"request_id": body.get("request_id"), "agent": None,
                 "model": body.get("model_profile"), "validation": validation,
                 "usage": body.get("usage"),
                 "field_confidence": field_confidences(result) if confidence is None else confidence,
                 "prompt_profile": None,
+                "blocs_texte": None, "troncature_possible": None,
                 "schema_reported": any(item is not None for item in reported)}
     for name in ("queue_wait_ms", "latency_ms", "generation_ms"):
         value = body.get(name)
@@ -626,7 +648,14 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, model_profile=None
     # recorded success on this endpoint used (cv-parser/docie_client.py, the
     # response saved by document-parsing/scripts/test_api.py). The chat path
     # keeps its own header, equally by measurement.
+    # Compté sur le texte exactement envoyé (#190). Fait de transport seulement :
+    # `troncature_possible` = au-delà de 800 blocs, un profil générique a PU
+    # tronquer ; False est une garantie contre ce plafond-là (pas contre la
+    # taille de contexte, dont le dépassement est bruyant : code `context`).
+    blocs = compter_blocs_texte(text)
     body, elapsed = post_json(base + "/v1/extract/text", {"x-api-key": key}, payload, key, timeout, session, loading=True)
     result = parse_text_response(body, schema)
+    result["metadata"]["blocs_texte"] = blocs
+    result["metadata"]["troncature_possible"] = blocs > DOCIE_BLOCS_TEXTE_MAX
     result["metadata"]["elapsed_ms"] = elapsed
     return result

@@ -5,7 +5,10 @@ const http = require("node:http");
 const cases = require("./contract.json");
 const textCases = require("./contract_text.json");
 const errorCases = require("./contract_errors.json");
-const { extractDocument, extractText, parseResponse, parseTextResponse, filePayload, DocIEBridgeError } = require("../docie-bridge");
+// Jeu d'essai partagé avec test_bridge.py, lu par les TESTS seulement.
+const blocsTexte = require("../../fixtures/blocs_texte_docie.json");
+const { extractDocument, extractText, parseResponse, parseTextResponse, filePayload, compterBlocsTexte,
+  DOCIE_BLOCS_TEXTE_MAX, DocIEBridgeError } = require("../docie-bridge");
 
 const RESUME_SCHEMA = { document_type: "adbi_resume", fields: [{ name: "name", type: "string" }] };
 
@@ -273,6 +276,38 @@ test("text loopback HTTP contract: /v1/extract/text, x-api-key, no data-URI wrap
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+// ------------------------------------------- blocs de la voie texte (#190) -----
+
+test("text blocks: shared fixture, one case per splitlines() separator and strip() edge character", () => {
+  assert.ok(blocsTexte.cas.length >= 20);
+  for (const c of blocsTexte.cas) assert.equal(compterBlocsTexte(c.texte), c.blocs, c.nom + " — " + c.preuve);
+});
+
+test("text blocks: extractText reports blocs_texte and troncature_possible (> 800), agent path reports null", async () => {
+  assert.equal(DOCIE_BLOCS_TEXTE_MAX, 800);
+  const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret", DOCIE_AGENT_RESUME: "adbi_agent_1" };
+  const sent = [];
+  const fetchImpl = async (url, options) => { sent.push(JSON.parse(options.body)); return new Response(JSON.stringify(textCases[1].body)); };
+  // Lignes vides et blancs intercalés : ils ne comptent pas, le texte part intact.
+  for (const [lignes, attendu] of [[800, false], [801, true]]) {
+    const texte = Array.from({ length: lignes }, (_, i) => "ligne " + i).join("\n \u00a0\n");
+    const { metadata } = await extractText(texte, { env, fetchImpl });
+    assert.equal(metadata.blocs_texte, lignes);
+    assert.equal(metadata.troncature_possible, attendu, String(lignes));
+    assert.equal(sent.at(-1).text, texte);
+  }
+  // Séparateurs Python et BOM seul : 800 lignes visibles par un split naïf, 801 blocs pour DocIE.
+  const piege = Array.from({ length: 800 }, (_, i) => "l" + i).join("\n") + "\u2028\ufeff";
+  const { metadata: piegee } = await extractText(piege, { env, fetchImpl });
+  assert.deepEqual([piegee.blocs_texte, piegee.troncature_possible], [801, true]);
+  // Appel direct du parseur : le texte n'y est pas, donc « inconnu ».
+  assert.equal(parseTextResponse(textCases[1].body, "adbi_resume").metadata.blocs_texte, null);
+  // Voie agent : l'OCR distant fait les blocs, rien à compter ici.
+  const agent = await extractDocument(Buffer.from("pdf"), "application/pdf", { env,
+    fetchImpl: async () => new Response(JSON.stringify(cases[2].body)) });
+  assert.deepEqual([agent.metadata.blocs_texte, agent.metadata.troncature_possible], [null, null]);
 });
 
 // ------------------------------------------------ choix par appel (#194) -----

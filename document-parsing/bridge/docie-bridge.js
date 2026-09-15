@@ -67,6 +67,27 @@ const MAX_ERROR_BYTES = 64 * 1024;
 // TEXTE, où qu'il soit dans le corps (JSON imbriqué échappé ou texte brut), et
 // tout le reste retombe sur `upstream`.
 const CONTEXT_OVERFLOW = /exceeds the available context size|exceed_context_size_error/i;
+// Plafond silencieux de blocs de la voie texte (#190). Sans `ocr_blocks` fournis
+// par l'appelant, DocIE (ocr/base.py, `text_to_blocks`) fait UN bloc par ligne
+// non vide : `sum(1 for ligne in texte.splitlines() if ligne.strip())`, sans
+// fenêtre de caractères. Tout profil à prompt générique ne garde ensuite que les
+// 800 premiers (`render_ocr_blocks(blocks, max_blocks=800)`), en HTTP 200 et sans
+// aucun avertissement. Le bridge ne connaît pas le profil servi : il rapporte un
+// fait de transport, « a pu être tronqué », jamais « a été tronqué ».
+//
+// Compter TROP ne coûte qu'un « a pu » inutile ; compter TROP PEU donne un faux
+// « non tronqué ». Deux pièges JS, mesurés contre CPython (3.14 ici ; ces deux
+// ensembles n'ont pas bougé au fil des 3.x) :
+//   * `splitlines()` coupe aussi sur \v \f \x1c \x1d \x1e \x85 \u2028 \u2029 :
+//     un `split(/\r\n|\r|\n/)` sous-compte ;
+//   * `strip()` retire ce que `str.isspace()` reconnaît, qui n'est PAS l'ensemble
+//     de `String.prototype.trim()` / `\s` : trim() retire \ufeff (BOM), que Python
+//     garde (ligne « BOM seul » = un bloc, sous-compte), et garde \x1c-\x1f et \x85,
+//     que Python retire. D'où une classe explicite, jamais trim() ni \s.
+// Règle figée par document-parsing/fixtures/blocs_texte_docie.json (tests seuls).
+const DOCIE_BLOCS_TEXTE_MAX = 800;
+const SEPARATEURS_LIGNE_PYTHON = /\r\n|[\n\v\f\r\x1c\x1d\x1e\x85\u2028\u2029]/;
+const LIGNE_BLANCHE_PYTHON = /^[\t\n\v\f\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
 const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf" };
 // What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
 // This transport posts the document as an `image_url` data URI to
@@ -248,6 +269,13 @@ function promptProfile(meta) {
   return typeof meta.prompt_profile === "string" && meta.prompt_profile ? meta.prompt_profile : null;
 }
 
+// Nombre de blocs que DocIE fera de `text` (voir DOCIE_BLOCS_TEXTE_MAX).
+function compterBlocsTexte(text) {
+  let blocs = 0;
+  for (const ligne of text.split(SEPARATEURS_LIGNE_PYTHON)) if (!LIGNE_BLANCHE_PYTHON.test(ligne)) blocs++;
+  return blocs;
+}
+
 function parseResponse(body, expectedSchema, agent) {
   if (!object(body)) fail("response", "Invalid DocIE chat envelope.");
   const choice = Array.isArray(body.choices) && body.choices[0];
@@ -270,9 +298,12 @@ function parseResponse(body, expectedSchema, agent) {
   const validation = Object.hasOwn(meta, "validation") ? meta.validation : (extracted.validation ?? null);
   if (validation != null && !object(validation)) fail("response", "Invalid DocIE validation metadata.");
   const confidence = reportedFieldConfidence(meta);
+  // `blocs_texte` / `troncature_possible` : null sur cette voie, « non
+  // mesurable » et non « non tronqué » — c'est l'OCR distant qui fait les blocs.
   const metadata = { request_id: body.id ?? null, agent, model: body.model ?? null,
     validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
-    prompt_profile: promptProfile(meta), schema_reported: reported.some(item => item != null) };
+    prompt_profile: promptProfile(meta), blocs_texte: null, troncature_possible: null,
+    schema_reported: reported.some(item => item != null) };
   for (const name of ["queue_wait_ms", "latency_ms", "generation_ms"]) {
     const value = Object.hasOwn(meta, name) ? meta[name] : (Object.hasOwn(extracted, name) ? extracted[name] : body[name]);
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) metadata[name] = value;
@@ -329,9 +360,12 @@ function parseTextResponse(body, expectedSchema) {
   const validation = body.validation ?? null;
   if (validation != null && !object(validation)) fail("response", "Invalid DocIE validation metadata.");
   const confidence = reportedFieldConfidence(body);
+  // `blocs_texte` / `troncature_possible` : le texte envoyé n'est pas dans la
+  // réponse ; extractText() les renseigne, un appel direct les laisse à null.
   const metadata = { request_id: body.request_id ?? null, agent: null, model: body.model_profile ?? null,
     validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
-    prompt_profile: null, schema_reported: reported.some(item => item != null) };
+    prompt_profile: null, blocs_texte: null, troncature_possible: null,
+    schema_reported: reported.some(item => item != null) };
   for (const name of ["queue_wait_ms", "latency_ms", "generation_ms"]) {
     const value = body[name];
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) metadata[name] = value;
@@ -512,11 +546,18 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, modelP
   // success on this endpoint used (cv-parser/docie_client.py, the response saved
   // by document-parsing/scripts/test_api.py). The chat path keeps its own
   // header, equally by measurement.
+  // Compté sur le texte exactement envoyé (#190). Fait de transport seulement :
+  // `troncature_possible` = au-delà de 800 blocs, un profil générique a PU
+  // tronquer ; `false` est une garantie contre ce plafond-là (pas contre la
+  // taille de contexte, dont le dépassement est bruyant : code `context`).
+  const blocs = compterBlocsTexte(text);
   const { body, elapsed } = await postJson(base + "/v1/extract/text", { "x-api-key": key }, payload, key, timeout, fetchImpl, { loading: true });
   const result = parseTextResponse(body, schema);
+  result.metadata.blocs_texte = blocs;
+  result.metadata.troncature_possible = blocs > DOCIE_BLOCS_TEXTE_MAX;
   result.metadata.elapsed_ms = elapsed;
   return result;
 }
 
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload,
-  MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };
+  compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };

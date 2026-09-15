@@ -12,8 +12,11 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from docie_bridge import (extract_document, extract_text, file_payload, parse_response, parse_text_response,
-                          DocIEBridgeError)
+                          compter_blocs_texte, DOCIE_BLOCS_TEXTE_MAX, DocIEBridgeError)
 
+# Jeu d'essai partagé avec bridge.test.js, lu par les TESTS seulement.
+FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
+BLOCS_TEXTE = json.loads((FIXTURES / "blocs_texte_docie.json").read_text(encoding="utf-8"))
 CASES = json.loads(Path(__file__).with_name("contract.json").read_text(encoding="utf-8"))
 TEXT_CASES = json.loads(Path(__file__).with_name("contract_text.json").read_text(encoding="utf-8"))
 ERROR_CASES = json.loads(Path(__file__).with_name("contract_errors.json").read_text(encoding="utf-8"))
@@ -332,6 +335,41 @@ class TextPathTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join()
+
+
+class TextBlocksTests(unittest.TestCase):
+    """#190 -- blocs que DocIE fera du texte envoyé, plafond silencieux de 800."""
+
+    def test_shared_fixture_matches_cpython_splitlines_and_strip(self):
+        self.assertGreaterEqual(len(BLOCS_TEXTE["cas"]), 20)
+        for case in BLOCS_TEXTE["cas"]:
+            with self.subTest(case=case["nom"], preuve=case["preuve"]):
+                # La règle DocIE elle-même, recalculée ici : le fichier ne peut
+                # pas s'écarter de CPython sans que ce test casse.
+                self.assertEqual(sum(1 for ligne in case["texte"].splitlines() if ligne.strip()), case["blocs"])
+                self.assertEqual(compter_blocs_texte(case["texte"]), case["blocs"])
+
+    def test_extract_text_reports_blocks_and_possible_truncation_agent_path_null(self):
+        self.assertEqual(DOCIE_BLOCS_TEXTE_MAX, 800)
+        env = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "test-secret", "DOCIE_AGENT_RESUME": "adbi_agent_1"}
+        session, sent = fake_session(lambda url, payload: TEXT_CASES[1]["body"])
+        # Lignes vides et blancs intercalés : ils ne comptent pas, le texte part intact.
+        for lignes, attendu in ((800, False), (801, True)):
+            texte = "\n \u00a0\n".join("ligne " + str(i) for i in range(lignes))
+            metadata = extract_text(texte, env=env, session=session)["metadata"]
+            self.assertEqual(metadata["blocs_texte"], lignes)
+            self.assertIs(metadata["troncature_possible"], attendu)
+            self.assertEqual(sent[-1][1]["text"], texte)
+        # Séparateurs Python et BOM seul : 800 lignes pour un split naïf, 801 blocs pour DocIE.
+        piege = "\n".join("l" + str(i) for i in range(800)) + "\u2028\ufeff"
+        metadata = extract_text(piege, env=env, session=session)["metadata"]
+        self.assertEqual((metadata["blocs_texte"], metadata["troncature_possible"]), (801, True))
+        # Appel direct du parseur : le texte n'y est pas, donc « inconnu ».
+        self.assertIsNone(parse_text_response(TEXT_CASES[1]["body"], "adbi_resume")["metadata"]["blocs_texte"])
+        # Voie agent : l'OCR distant fait les blocs, rien à compter ici.
+        agent_session, _ = fake_session(lambda url, payload: CASES[2]["body"])
+        metadata = extract_document(b"pdf", "application/pdf", env=env, session=agent_session)["metadata"]
+        self.assertEqual((metadata["blocs_texte"], metadata["troncature_possible"]), (None, None))
 
 
 def fake_session(answer, status=200):
