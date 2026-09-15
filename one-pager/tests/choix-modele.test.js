@@ -93,11 +93,24 @@ test("offre : rien de configure ou DocIE inactif -> aucun modele ; un seul -> un
     "l'identifiant reel ne part jamais vers le navigateur");
 });
 
-test("interface : le selecteur n'est rempli qu'a partir de deux modeles", () => {
+test("interface : selecteur visible a partir de deux ; modele envoye des qu'un modele est propose pour la voie du fichier", () => {
+  const vm = require("node:vm");
   const source = fs.readFileSync(path.join(__dirname, "..", "public", "app.js"), "utf8");
-  assert.match(source, /if \(modeles\.length > 1\) \{/);
+  assert.match(source, /\$\("#choix-modele-bloc"\)\.hidden = modeles\.length < 2;/);
   const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
   assert.match(html, /<div class="note" id="choix-modele-bloc" hidden>/);
+
+  // La fonction du navigateur, executee telle quelle.
+  const fonction = /function modeleChoisi\(file, valeur\) \{[\s\S]*?\n\}/.exec(source)[0];
+  const essai = (voies, nom, valeur = "lfm25_2_6b") =>
+    vm.runInNewContext(`const choixModeles = { voies: ${JSON.stringify(voies)} }; ${fonction}; modeleChoisi({ name: ${JSON.stringify(nom)} }, ${JSON.stringify(valeur)})`);
+  const unSeulTexte = { texte: ["lfm25_2_6b"], agent: [] };
+  assert.equal(essai(unSeulTexte, "cv.docx"), "lfm25_2_6b", "un seul modele (selecteur masque) : envoye quand meme");
+  assert.equal(essai(unSeulTexte, "cv.txt"), "lfm25_2_6b");
+  assert.equal(essai(unSeulTexte, "cv.pdf"), null, "aucun modele pour la voie fichier : import comme avant");
+  assert.equal(essai(unSeulTexte, "cv.doc"), null, ".doc : aucune voie DocIE");
+  assert.equal(essai({ texte: [], agent: ["nuextract3"] }, "CV.PDF", "nuextract3"), "nuextract3");
+  assert.equal(essai(unSeulTexte, "cv.docx", null), null);
 });
 
 // ── Voie texte : lignes non vides ──────────────────────────────────────────
@@ -110,7 +123,7 @@ test("voie texte : 800 lignes -> modele choisi envoye pour cet appel ; 801 -> re
   assert.equal(appels[0].payload.model_profile, "store:lfm2.5-2.6b");
   assert.deepEqual(master.source.modele, {
     voie: "texte", demande: "lfm25_2_6b",
-    servi: { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", identifiant: "store:lfm2.5-2.6b" },
+    servi: { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" },
   });
 
   const refus = docie();
@@ -140,7 +153,7 @@ test("voie fichier : 8 pages -> agent du modele choisi ; 9 pages ou illisible ->
   const { appels, fetchImpl } = docie();
   const master = await importerCv(pdfPages(8), "cv.pdf", { env: DEUX_AGENT, fetchImpl, modele: "nuextract3" });
   assert.match(appels[0].url, /\/v1\/agents\/agent_nu\/chat\/completions$/);
-  assert.deepEqual(master.source.modele.servi, { id: "nuextract3", libelle: "NuExtract3", identifiant: "agent_nu" });
+  assert.deepEqual(master.source.modele.servi, { id: "nuextract3", libelle: "NuExtract3" });
 
   for (const contenu of [pdfPages(9), Buffer.from("%PDF-1.4 illisible")]) {
     const refus = docie();
@@ -226,15 +239,28 @@ test("routes : GET /api/modeles ; `modele` transmis seulement s'il est choisi ; 
   const appels = [];
   const srv = await demarrer({
     importerCv: async (...args) => { appels.push(args); return { identity: {} }; },
-    modelesProposes: () => [{ id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "defaut" }],
+    choixModele: {
+      modelesProposes: () => [{ id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "defaut" }],
+      offresParVoie: () => ({ texte: ["lfm25_2_6b"], agent: [] }),
+    },
   });
-  const panne = await demarrer({ importerCv: async () => ({}), modelesProposes: () => { throw new Error("DOCIE_MODELE_X"); } });
+  const panne = await demarrer({
+    importerCv: async () => ({}),
+    choixModele: { modelesProposes: () => { throw new Error("DOCIE_MODELE_X"); }, offresParVoie: () => ({}) },
+  });
   try {
-    assert.deepEqual(await (await fetch(srv.base + "/api/modeles")).json(),
-      { modeles: [{ id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "defaut" }] });
+    const attendu = { modeles: [{ id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "defaut" }],
+      voies: { texte: ["lfm25_2_6b"], agent: [] } };
+    assert.deepEqual(await (await fetch(srv.base + "/api/modeles")).json(), attendu);
+    assert.deepEqual(await (await fetch(srv.base + "/api/modeles?tache=resume")).json(), attendu);
+    assert.equal((await fetch(srv.base + "/api/modeles?tache=contract")).status, 400);
     const erreur = await (await fetch(panne.base + "/api/modeles")).json();
-    assert.deepEqual(erreur.modeles, []);
+    assert.deepEqual([erreur.modeles, erreur.voies], [[], { texte: [], agent: [] }]);
     assert.match(erreur.erreur, /mal configuré/);
+    // Reel : jamais d'identifiant `store:` ni de nom d'agent vers le navigateur.
+    const { offresParVoie } = require("../lib/choix-modele");
+    assert.deepEqual(offresParVoie(DEUX_TEXTE), { texte: ["lfm25_2_6b", "nuextract3"], agent: [] });
+    assert.ok(!JSON.stringify([modelesProposes(DEUX_TEXTE), offresParVoie(DEUX_AGENT)]).match(/store:|agent_/));
 
     const contenu = Buffer.from("Alice").toString("base64");
     await srv.attendre((await (await srv.post({ filename: "a.txt", contentBase64: contenu })).json()).tache);

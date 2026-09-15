@@ -90,6 +90,23 @@ def modeles_proposes(ext=None):
     return sorted(vus.values(), key=lambda o: o["role"] != "defaut")
 
 
+def offres_par_format():
+    """{".pdf": [ids], ".docx": [ids]} : modèles proposés pour la voie de chaque
+    format accepté au dépôt. Le navigateur envoie `modele` pour un fichier dès
+    qu'au moins un modèle est proposé pour SON format (même règle que contrats,
+    #210), sélecteur affiché ou non."""
+    catalogue = None
+    offres = {}
+    for ext in (".pdf", ".docx"):
+        voie = voie_pour(ext)
+        if voie is None:
+            offres[ext] = []
+            continue
+        catalogue = catalogue or charger()
+        offres[ext] = [o["id"] for o in catalogue.modeles_offerts(TACHE, voie)]
+    return offres
+
+
 class Choix:
     """Un modèle explicitement choisi, vérifié voie par voie sur le document réel.
 
@@ -153,16 +170,17 @@ def resultat_partiel(metadata, data):
 
 
 def modele_servi(voie, metadata):
-    """Le modèle qui a RÉELLEMENT servi : {id, libelle, identifiant} ou None.
+    """Le modèle qui a RÉELLEMENT servi : {id, libelle} ou None.
 
     Lu dans la réponse (`model` voie texte, `agent` voie agent), rapproché des
-    identifiants configurés. Catalogue illisible : le nom brut, jamais une
-    exception — l'enregistrement de la fiche ne dépend pas du sélecteur.
+    identifiants configurés avec ou sans `store:` ; sans correspondance, le nom
+    brut rapporté par DocIE, jamais le modèle demandé. Même forme que contrats
+    (#210) : l'identifiant `store:` configuré n'est pas recopié sur la fiche.
+    Catalogue illisible : le nom brut, jamais une exception.
     """
     try:
-        return charger().modele_servi(TACHE, voie, metadata)
+        servi = charger().modele_servi(TACHE, voie, metadata)
     except Exception:
         brut = (metadata or {}).get("agent" if voie == "agent" else "model")
-        if not isinstance(brut, str) or not brut.strip():
-            return None
-        return {"id": None, "libelle": brut, "identifiant": brut}
+        servi = {"id": None, "libelle": brut} if isinstance(brut, str) and brut.strip() else None
+    return {"id": servi["id"], "libelle": servi["libelle"]} if servi else None

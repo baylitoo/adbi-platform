@@ -93,7 +93,14 @@ class Offre(unittest.TestCase):
         with environnement(DOCIE_MODELE_LFM25_2_6B="store:lfm2.5-2.6b"):
             modeles = choix_modele.modeles_proposes()
         self.assertEqual([m["id"] for m in modeles], ["lfm25_2_6b"])
-        self.assertNotIn('id="modeleSelect"', rendre("index.html", modeles=modeles, modeles_erreur=""))
+        with environnement(DOCIE_MODELE_LFM25_2_6B="store:lfm2.5-2.6b"):
+            formats = choix_modele.offres_par_format()
+        self.assertEqual(formats, {".pdf": ["lfm25_2_6b"], ".docx": ["lfm25_2_6b"]})
+        # Même règle que contrats (#210) : présent (sa valeur part avec le dépôt),
+        # mais masqué tant qu'il n'y a pas d'alternative.
+        html = rendre("index.html", modeles=modeles, modeles_par_format=formats, modeles_erreur="")
+        self.assertRegex(html, r'id="modeleSelect" style="[^"]*" hidden')
+        self.assertIn('data-formats="{&#34;.docx&#34;: [&#34;lfm25_2_6b&#34;], &#34;.pdf&#34;: [&#34;lfm25_2_6b&#34;]}"', html)
 
     def test_deux_modeles_defaut_d_abord_selecteur_affiche_defaut_preselectionne(self):
         with environnement(**DEUX_TEXTE):
@@ -102,6 +109,7 @@ class Offre(unittest.TestCase):
                          [("lfm25_2_6b", "defaut"), ("nuextract3", "alternative")])
         html = rendre("index.html", modeles=modeles, modeles_erreur="")
         self.assertIn('id="modeleSelect"', html)
+        self.assertNotRegex(html, r'id="modeleSelect" style="[^"]*" hidden')
         self.assertIn('<option value="lfm25_2_6b" selected>LFM2.5 2.6B', html)
         self.assertIn('<option value="nuextract3">NuExtract3', html)
 
@@ -120,8 +128,13 @@ class Offre(unittest.TestCase):
             self.assertEqual(choix_modele.voie_pour(".docx"), "texte")
             self.assertEqual([m["id"] for m in choix_modele.modeles_proposes(".pdf")], ["nuextract3"])
             self.assertEqual([m["id"] for m in choix_modele.modeles_proposes(".docx")], ["lfm25_2_6b"])
-            # Dépôt (format inconnu) : les deux voies réunies, défaut d'abord.
+            # Dépôt (format inconnu) : les deux voies réunies, défaut d'abord ; le
+            # navigateur n'envoie un modèle que pour un format qui en a un.
             self.assertEqual([m["id"] for m in choix_modele.modeles_proposes()], ["lfm25_2_6b", "nuextract3"])
+            self.assertEqual(choix_modele.offres_par_format(), {".pdf": ["nuextract3"], ".docx": ["lfm25_2_6b"]})
+        with environnement(DOCIE_EXTRACTION_ENABLED="true", DOCIE_MODELE_LFM25_2_6B="store:lfm2.5-2.6b"):
+            self.assertEqual(choix_modele.offres_par_format(), {".pdf": [], ".docx": ["lfm25_2_6b"]},
+                             "PDF sans agent configuré : envoyé sans modèle, comme avant")
         with environnement(**DEUX_TEXTE):
             self.assertEqual(choix_modele.voie_pour(".pdf"), "texte")
 
@@ -133,15 +146,18 @@ class Offre(unittest.TestCase):
             deux = choix_modele.modeles_proposes(".pdf")
         html = rendre("cv_detail.html", cv=cv, linked_cvs=[], modeles=deux, modeles_erreur="")
         self.assertIn('id="modeleSelect"', html)
-        self.assertIn("Extrait par NuExtract3", html)
+        self.assertIn("Lu par NuExtract3", html)
+        self.assertNotIn('id="modeleSelect" hidden', html)
         html = rendre("cv_detail.html", cv=cv, linked_cvs=[], modeles=deux[:1], modeles_erreur="")
+        self.assertIn('id="modeleSelect" hidden', html)
+        html = rendre("cv_detail.html", cv=cv, linked_cvs=[], modeles=[], modeles_erreur="")
         self.assertNotIn('id="modeleSelect"', html)
 
     def test_identifiant_mal_forme_pas_de_selecteur_mais_faute_dite(self):
         espace = fonctions_d_app("selecteur_modeles")
         with environnement(DOCIE_MODELE_LFM25_2_6B="store:lfm\x01", DOCIE_MODELE_NUEXTRACT3="store:nu"):
             contexte = espace["selecteur_modeles"]()
-        self.assertEqual(contexte["modeles"], [])
+        self.assertEqual((contexte["modeles"], contexte["modeles_par_format"]), ([], {}))
         self.assertIn("mal configuré", contexte["modeles_erreur"])
         with environnement(**DEUX_TEXTE):
             self.assertEqual(len(espace["selecteur_modeles"]()["modeles"]), 2)
@@ -291,7 +307,7 @@ class ModeleServi(unittest.TestCase):
         self.assertIsInstance(appels[0]["choix"], choix_modele.Choix)
         self.assertEqual(fiche["modele_extraction"], {
             "voie": "texte", "demande": "nuextract3",
-            "servi": {"id": "lfm25_2_6b", "libelle": "LFM2.5 2.6B", "identifiant": "lfm2.5-2.6b"},
+            "servi": {"id": "lfm25_2_6b", "libelle": "LFM2.5 2.6B"},
             "partiel": [], "troncature_possible": None})
 
     def test_sans_choix_modele_servi_enregistre_aussi(self):

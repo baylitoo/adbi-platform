@@ -457,7 +457,7 @@
     <div class="t-role">{{ cv.title or '—' }}</div>
     {# Modèle qui a réellement servi à la dernière extraction (#194). #}
     {% set servi = (cv.modele_extraction or {}).servi %}
-    {% if servi and servi.libelle %}<div class="t-role" style="opacity:.75">Extrait par {{ servi.libelle }}</div>{% endif %}
+    {% if servi and servi.libelle %}<div class="t-role" style="opacity:.75">Lu par {{ servi.libelle }}</div>{% endif %}
   </div>
   <div class="topbar-actions">
     <div class="api-badge" id="apiBadge" title="Statut API">
@@ -468,10 +468,11 @@
     {% for lc in linked_cvs %}
     <a href="/cv/{{ lc.id }}" class="tbtn tbtn-ghost" style="text-decoration:none" title="Voir la version {{ lc.language|upper }}">{{ lc.label }}</a>
     {% endfor %}
-    {# Choix du modèle (#194) : seulement si PLUSIEURS modèles sont proposés pour
-       la voie de ce fichier ; affiché, sa valeur est un choix explicite. #}
-    {% if (modeles or [])|length > 1 %}
-    <select class="tbtn tbtn-ghost" id="modeleSelect" aria-label="Modèle d'extraction" title="Modèle utilisé pour relancer l'analyse">
+    {# Choix du modèle (#194) : présent dès qu'un modèle est proposé pour la voie de
+       ce fichier, VISIBLE à partir de deux ; sa valeur part avec la ré-analyse
+       (choix explicite, même règle que contrats #210). #}
+    {% if modeles %}
+    <select class="tbtn tbtn-ghost" id="modeleSelect"{% if modeles|length < 2 %} hidden{% endif %} aria-label="Modèle d'extraction" title="Modèle utilisé pour relancer l'analyse">
       {% for m in modeles %}
       <option value="{{ m.id }}"{% if m.role == 'defaut' %} selected{% endif %}>{{ m.libelle }} — {{ m.description }}</option>
       {% endfor %}
@@ -1470,7 +1471,7 @@ async function relancerAnalyse(btn) {
   const texte = btn.innerHTML;
   btn.innerHTML = 'Analyse en cours…';
   try {
-    // Modèle choisi (#194) : envoyé seulement si le sélecteur est affiché.
+    // Modèle choisi (#194) : envoyé dès qu'un modèle est proposé (sélecteur visible ou non).
     const fd = new FormData();
     const sel = document.getElementById('modeleSelect');
     if (sel) fd.append('modele', sel.value);

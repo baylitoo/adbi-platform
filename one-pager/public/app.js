@@ -79,26 +79,30 @@ depot.addEventListener("drop", (e) => lancerFile([...e.dataTransfer.files]));
 $("#btn-file-vider").addEventListener("click", reinitImport);
 
 /*
- * Choix du modele (#194). Le selecteur n'apparait qu'a partir de DEUX modeles
- * proposes (catalogue + identifiants configures + DocIE actif) : tant qu'aucune
- * alternative n'est configuree, l'ecran ne change pas. Affiche, sa valeur
- * (defaut compris) part avec chaque import : un modele choisi n'est jamais
- * remplace par l'analyse locale, son echec s'affiche tel quel.
+ * Choix du modele (#194), meme regle que contrats (#210). Le selecteur est
+ * rempli des qu'un modele est propose (catalogue + identifiants configures +
+ * DocIE actif) et VISIBLE a partir de deux. Sa valeur (defaut compris) part avec
+ * chaque fichier dont la voie (PDF -> agent, texte et .docx -> texte) a au moins
+ * un modele propose : choix explicite, jamais remplace par l'analyse locale, son
+ * echec s'affiche tel quel. Aucun modele pour la voie : import comme avant.
  */
+const choixModeles = { voies: { texte: [], agent: [] } };
+
 async function chargerModeles() {
   let data;
   try {
-    data = await (await fetch("/api/modeles")).json();
+    data = await (await fetch("/api/modeles?tache=resume")).json();
   } catch {
     return;
   }
   const modeles = Array.isArray(data.modeles) ? data.modeles : [];
-  if (modeles.length > 1) {
+  choixModeles.voies = data.voies || { texte: [], agent: [] };
+  if (modeles.length) {
     $("#choix-modele").innerHTML = modeles.map((m) =>
       `<option value="${echapper(m.id)}"${m.role === "defaut" ? " selected" : ""}>${echapper(m.libelle)} — ${echapper(m.description)}</option>`
     ).join("");
-    $("#choix-modele-bloc").hidden = false;
   }
+  $("#choix-modele-bloc").hidden = modeles.length < 2;
   if (data.erreur) {
     $("#choix-modele-erreur").textContent = data.erreur;
     $("#choix-modele-erreur").hidden = false;
@@ -106,9 +110,16 @@ async function chargerModeles() {
 }
 chargerModeles();
 
-/** Modele choisi, ou null quand le selecteur n'est pas affiche. */
-function modeleChoisi() {
-  return $("#choix-modele-bloc").hidden ? null : $("#choix-modele").value || null;
+/** Valeur du selecteur, visible ou non ; null s'il est vide. */
+function valeurSelecteurModele() {
+  return $("#choix-modele").value || null;
+}
+
+/** Modele envoye pour CE fichier, ou null (aucun modele propose pour sa voie). */
+function modeleChoisi(file, valeur) {
+  if (!valeur) return null;
+  const voie = /\.pdf$/i.test(file.name) ? "agent" : /\.(docx|txt)$/i.test(file.name) ? "texte" : null;
+  return voie && (choixModeles.voies[voie] || []).length ? valeur : null;
 }
 
 /**
@@ -122,8 +133,8 @@ async function lancerFile(fichiers) {
     return notice("Aucun fichier exploitable : formats acceptés PDF, Word, texte.", "erreur");
   }
 
-  // Le modele est lu UNE fois : tout le lot part avec le choix fait au depot.
-  const modele = modeleChoisi();
+  // Le selecteur est lu UNE fois : tout le lot part avec le choix fait au depot.
+  const valeurModele = valeurSelecteurModele();
   etat.file = liste.map((f) => ({ nom: f.name, fichier: f, etat: "attente", detail: "" }));
   $("#import-erreur").hidden = true;
   depot.hidden = true;
@@ -135,7 +146,7 @@ async function lancerFile(fichiers) {
     item.etat = "encours";
     dessinerFile();
     try {
-      const data = await analyser(item.fichier, item, modele);
+      const data = await analyser(item.fichier, item, modeleChoisi(item.fichier, valeurModele));
       item.etat = "ok";
       item.resultat = data;
       item.detail = resumeImport(data.master);
@@ -215,7 +226,7 @@ function resumeImport(m) {
   bouts.push(`${m.experiences.length} mission${m.experiences.length > 1 ? "s" : ""}`);
   if (m.identity.seniority_years) bouts.push(`${m.identity.seniority_years} ans`);
   const servi = libelleModeleServi(m);
-  if (servi) bouts.push(servi);
+  if (servi) bouts.push(`lu par ${servi}`);
   return bouts.join(" · ");
 }
 
@@ -317,7 +328,7 @@ function remplirValidation() {
     <div class="kpi"><b>${m.experiences.length}</b><span>missions</span></div>
     <div class="kpi"><b>${m.technologies.length}</b><span>technologies</span></div>
     <div class="kpi"><b>${m.identity.seniority_years}</b><span>ans d'expérience</span></div>
-    ${libelleModeleServi(m) ? `<div class="kpi"><b>${echapper(libelleModeleServi(m))}</b><span>modèle</span></div>` : ""}
+    ${libelleModeleServi(m) ? `<div class="kpi"><b>${echapper(libelleModeleServi(m))}</b><span>lu par</span></div>` : ""}
     ${q.needs_review.map((r) => `<span class="puce-avert">à vérifier : ${echapper(r)}</span>`).join("")}
     ${q.warnings.map((w) => `<span class="puce-avert">${echapper(w.replace(/_/g, " "))}</span>`).join("")}
   `;

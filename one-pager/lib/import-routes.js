@@ -21,25 +21,32 @@ const TAILLE_MAX = 20 * 1024 * 1024;
  * @param {import("express").Express} app
  * @param {{ importerCv: Function, db: { findByHash: Function }, gestionnaire: object,
  *           modelesProposes?: Function }} deps
- *   `modelesProposes` (#194) : liste du selecteur ; par defaut lib/choix-modele.js.
+ *   `choixModele` (#194) : { modelesProposes, offresParVoie } ; par defaut lib/choix-modele.js.
  */
-function monterImport(app, { importerCv, db, gestionnaire, modelesProposes = null }) {
+function monterImport(app, { importerCv, db, gestionnaire, choixModele = null }) {
   /**
-   * GET /api/modeles -> { modeles: [{ id, libelle, description, role }], erreur? }
+   * GET /api/modeles[?tache=resume]
+   *   -> { modeles: [{ id, libelle, description, role }], voies: { texte, agent }, erreur? }
    *
-   * Modeles proposes pour l'import d'un CV (#194), defaut d'abord. Le selecteur
-   * n'est affiche qu'a partir de deux. Catalogue illisible ou identifiant mal
-   * forme : aucun modele et la faute est dite (`erreur`), l'import sans choix
-   * reste possible.
+   * Modeles proposes pour l'import d'un CV (#194), defaut d'abord, et leurs
+   * identifiants de catalogue par voie. Jamais d'identifiant reel (`store:`,
+   * agent). Le selecteur n'est visible qu'a partir de deux ; `modele` part des
+   * qu'un modele est propose pour la voie du fichier. Seule tache de ce service :
+   * `resume`. Catalogue illisible ou identifiant mal forme : aucun modele et la
+   * faute est dite (`erreur`), l'import sans choix reste possible.
    */
   app.get("/api/modeles", (req, res) => {
+    if (req.query.tache != null && req.query.tache !== "resume") {
+      return res.status(400).json({ error: "Tâche inconnue : ce service ne propose des modèles que pour « resume »." });
+    }
     try {
       // eslint-disable-next-line global-require
-      const proposer = modelesProposes || require("./choix-modele").modelesProposes;
-      res.json({ modeles: proposer() });
+      const choix = choixModele || require("./choix-modele");
+      res.json({ modeles: choix.modelesProposes(), voies: choix.offresParVoie() });
     } catch (e) {
       console.error("[modeles]", e);
-      res.json({ modeles: [], erreur: "Choix du modèle indisponible : catalogue des modèles illisible ou mal configuré." });
+      res.json({ modeles: [], voies: { texte: [], agent: [] },
+        erreur: "Choix du modèle indisponible : catalogue des modèles illisible ou mal configuré." });
     }
   });
 

@@ -37,6 +37,20 @@ function docieActif(env) {
   return require("./import-pipeline").docieActif(env);
 }
 
+/**
+ * { texte: [ids], agent: [ids] } : modeles proposes par voie. Le navigateur
+ * envoie `modele` pour un fichier des qu'au moins un modele est propose pour SA
+ * voie (PDF -> agent, texte et .docx -> texte), selecteur affiche ou non — meme
+ * regle que contrats (#210).
+ */
+function offresParVoie(env = process.env) {
+  if (!docieActif(env)) return { texte: [], agent: [] };
+  const catalogue = chargerCatalogue();
+  const offres = {};
+  for (const voie of ["texte", "agent"]) offres[voie] = catalogue.modelesOfferts(TACHE, voie, { env }).map((o) => o.id);
+  return offres;
+}
+
 /** Modeles du selecteur, defaut d'abord : [{ id, libelle, description, role }]. */
 function modelesProposes(env = process.env) {
   if (!docieActif(env)) return [];
@@ -88,16 +102,20 @@ async function compterPages(buffer) {
 
 /**
  * Modele qui a REELLEMENT servi, lu dans les metadonnees DocIE (`model` voie
- * texte, `agent` voie agent) : { id, libelle, identifiant } ou null. Catalogue
- * illisible : le nom brut, jamais une exception.
+ * texte, `agent` voie agent) : { id, libelle } ou null — meme forme que contrats
+ * (#210), sans l'identifiant configure. Sans correspondance, le nom brut rapporte
+ * par DocIE, jamais le modele demande. Catalogue illisible : le nom brut, jamais
+ * une exception.
  */
 function modeleServi(voie, metadata, env = process.env) {
+  let servi;
   try {
-    return chargerCatalogue().modeleServi(TACHE, voie, { env, metadata });
+    servi = chargerCatalogue().modeleServi(TACHE, voie, { env, metadata });
   } catch {
     const brut = voie === "agent" ? (metadata || {}).agent : (metadata || {}).model;
-    return typeof brut === "string" && brut.trim() ? { id: null, libelle: brut, identifiant: brut } : null;
+    servi = typeof brut === "string" && brut.trim() ? { id: null, libelle: brut } : null;
   }
+  return servi ? { id: servi.id, libelle: servi.libelle } : null;
 }
 
-module.exports = { modelesProposes, choisir, compterLignesNonVides, compterPages, modeleServi, chargerCatalogue, TACHE };
+module.exports = { modelesProposes, offresParVoie, choisir, compterLignesNonVides, compterPages, modeleServi, chargerCatalogue, TACHE };

@@ -1888,16 +1888,23 @@ def index():
 
 
 def selecteur_modeles(ext=None) -> dict:
-    """Contexte du sélecteur de modèle (#194) : `modeles` (défaut d'abord) et
-    `modeles_erreur`. Le gabarit n'affiche le sélecteur qu'à partir de DEUX
-    modèles. Catalogue illisible ou identifiant mal formé : pas de sélecteur,
-    mais la faute est dite à l'écran — la page reste utilisable sans choix."""
+    """Contexte du sélecteur de modèle (#194) : `modeles` (défaut d'abord),
+    `modeles_par_format` (dépôt : modèles proposés pour la voie du PDF et du
+    DOCX) et `modeles_erreur`. Le sélecteur est présent dès qu'un modèle est
+    proposé, visible à partir de deux ; le navigateur envoie `modele` pour un
+    fichier dès qu'un modèle est proposé pour son format (même règle que
+    contrats, #210). Catalogue illisible ou identifiant mal formé : pas de
+    sélecteur, mais la faute est dite à l'écran — la page reste utilisable sans
+    choix."""
     try:
         import choix_modele
-        return {"modeles": choix_modele.modeles_proposes(ext), "modeles_erreur": ""}
+        return {"modeles": choix_modele.modeles_proposes(ext),
+                "modeles_par_format": {} if ext else choix_modele.offres_par_format(),
+                "modeles_erreur": ""}
     except Exception as exc:
         print(f"[ERREUR] catalogue des modèles : {exc!r}")
-        return {"modeles": [], "modeles_erreur": "Choix du modèle indisponible : catalogue des modèles illisible ou mal configuré."}
+        return {"modeles": [], "modeles_par_format": {},
+                "modeles_erreur": "Choix du modèle indisponible : catalogue des modèles illisible ou mal configuré."}
 
 
 @app.route("/needs")
