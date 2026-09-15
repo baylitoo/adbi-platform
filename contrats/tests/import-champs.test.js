@@ -123,6 +123,39 @@ test("index.html : section, liste d'avertissements, ids principaux présents ; i
   assert.ok(!/warnings \|\| \[\]\)\.slice\(0, 3\)/.test(APP_JS));
 });
 
+test("garde-fou anti-dérive : messages SIREN/SIRET identiques à public/kbis-champs.js, statuts de lib/siren-siret.js ; marque .invalid stylée dans le modal", () => {
+  const K = require("../public/kbis-champs");
+  const { STATUTS } = require("../lib/siren-siret");
+  assert.deepEqual(CHAMPS.MESSAGES_STATUT, K.MESSAGES_STATUT);
+  assert.equal(CHAMPS.MESSAGE_STATUT_INCONNU, K.MESSAGE_STATUT_INCONNU);
+  for (const s of Object.keys(CHAMPS.MESSAGES_STATUT)) assert.ok(STATUTS.includes(s), s);
+  assert.deepEqual([...STATUTS].sort(), ["absent", "valide", ...Object.keys(CHAMPS.MESSAGES_STATUT)].sort(), "chaque statut non valide/absent a son message");
+  assert.deepEqual(CHAMPS.IDS_SIREN_SIRET, ["impStSiren", "impStSiret"]);
+  // La classe « invalid » n'était stylée que sous .field : sans cette règle,
+  // la marque posée par app.js::marquerChampImport ne se verrait pas.
+  const CSS = fs.readFileSync(path.join(__dirname, "..", "public", "styles.css"), "utf8");
+  const regle = CSS.split(/\r?\n/).find((l) => l.startsWith(".field input.invalid"));
+  assert.ok(regle && regle.split("{")[0].split(",").includes(".import-grille input.invalid"), regle);
+});
+
+test("aVerifierSirenSiret : signalé SSI statut ni valide ni absent ; drapeau absent -> [] ; statut inconnu -> signalé", () => {
+  const c = (s1, s2) => ({ siren: { valeur: "x", chiffres: null, statut: s1 }, siret: { valeur: "y", chiffres: null, statut: s2 } });
+  for (const d of [undefined, null, "valide", 0]) assert.deepEqual(CHAMPS.aVerifierSirenSiret(d), []);
+  assert.deepEqual(CHAMPS.aVerifierSirenSiret(c("valide", "absent")), []);
+  assert.deepEqual(CHAMPS.aVerifierSirenSiret(c("cle_invalide", "valide")), [
+    { key: "stSiren", id: "impStSiren", libelle: "SIREN", statut: "cle_invalide", message: "clé de contrôle invalide — vérifier sur le document" },
+  ]);
+  const deux = CHAMPS.aVerifierSirenSiret(c("discordant", "discordant"));
+  assert.deepEqual(deux.map((a) => [a.id, a.message]), [["impStSiren", CHAMPS.MESSAGES_STATUT.discordant], ["impStSiret", CHAMPS.MESSAGES_STATUT.discordant]]);
+  assert.equal(CHAMPS.resumeSirenSiret(deux), "SIREN : " + CHAMPS.MESSAGES_STATUT.discordant + " ; SIRET : " + CHAMPS.MESSAGES_STATUT.discordant);
+  assert.deepEqual(CHAMPS.aVerifierSirenSiret(c("absent", "format_invalide")).map((a) => a.id), ["impStSiret"]);
+  // Échec fermé : statut futur, statut non textuel, entrée manquante.
+  assert.deepEqual(CHAMPS.aVerifierSirenSiret({ siren: { statut: "statut_futur" }, siret: { statut: 3 } }).map((a) => [a.statut, a.message]),
+    [["statut_futur", CHAMPS.MESSAGE_STATUT_INCONNU], [null, CHAMPS.MESSAGE_STATUT_INCONNU]]);
+  assert.equal(CHAMPS.aVerifierSirenSiret({ siren: { statut: "valide" } }).length, 1);
+  assert.equal(CHAMPS.resumeSirenSiret([]), "");
+});
+
 test("import manuel sans toucher la section : payload identique à avant, pour chaque type", () => {
   for (const type of ["sous-traitance", "cds", "cdi", "cdd", "avenant"]) {
     const lire = formulaire(SAISIE_MANUELLE);
