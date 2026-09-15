@@ -41,8 +41,14 @@
 // silencieusement (piège vérifié avant d'écrire ce fichier).
 const path = require("path");
 const { isEnabled, loadBridge, sniffMime } = require("./docie-extraction");
+// Contrôle de clé du SIREN / SIRET (#194), écrit une seule fois pour les deux
+// mappings JS (portage de document-parsing/mappings/siren_siret.py).
+const { controlerSirenSiret, messagesSirenSiret } = require("./siren-siret");
 
 const DOCIE_KIND = "contract";
+
+// Nom de champ DocIE sous lequel chaque numéro est lu (avertissements).
+const CHAMPS_SIREN_SIRET = { siren: "st_siren", siret: "st_siret" };
 
 // Les 19 champs réellement extraits du document par le schéma DocIE
 // "contract" (document-parsing/scripts/register_and_test.py, table
@@ -356,6 +362,17 @@ function mapContractResult(docieResult, { validation } = {}) {
     }
   }
 
+  // Clé de Luhn du SIREN / SIRET (#194, règle « échouer bruyamment ») : un
+  // seul chiffre mal lu passait jusqu'ici le seul contrôle existant, de
+  // format. La valeur lue reste dans `values` (un relecteur la corrige d'un
+  // chiffre) ; l'échec part en avertissement nommé et dans
+  // `controleSirenSiret`. Avertissements placés AVANT les notes DocIE : le
+  // front n'affiche que les premiers.
+  const controleSirenSiret = controlerSirenSiret(docieResult.st_siren, docieResult.st_siret);
+  for (const probleme of messagesSirenSiret(controleSirenSiret)) {
+    warnings.push(CHAMPS_SIREN_SIRET[probleme.champ] + ": " + probleme.message);
+  }
+
   for (const note of docieResult.extraction_notes || []) {
     warnings.push("DocIE extraction_notes: " + note);
   }
@@ -376,7 +393,14 @@ function mapContractResult(docieResult, { validation } = {}) {
   if (!values.numeroContrat) errors.push("Le numéro du contrat est requis.");
   if (!values.stNom) errors.push("Le nom du sous-traitant / co-contractant est requis.");
 
-  return { values, warnings, errors, ok: errors.length === 0 };
+  // `controleSirenSiret` vit à côté de `values`, jamais dedans : `values` doit
+  // rester exactement les champs de fields.js::sousTraitance, que
+  // /api/contracts/importer stocke tels quels. Il traverse
+  // extractContractValues (Object.assign) jusqu'à la réponse HTTP. Un numéro
+  // invalide n'est PAS une erreur bloquante : `errors` reste le miroir des
+  // contrôles de l'import. Un consommateur n'utilise stSiren / stSiret que si
+  // le statut vaut exactement "valide".
+  return { values, warnings, errors, ok: errors.length === 0, controleSirenSiret };
 }
 
 // Point d'entrée serveur (POST /api/contracts/importer/extraire). PAS de

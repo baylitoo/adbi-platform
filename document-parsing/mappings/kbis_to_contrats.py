@@ -66,7 +66,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+# Controle de cle du SIREN / SIRET (#194), ecrit une seule fois pour les deux
+# mappings Python.
+from siren_siret import controler_siren_siret, messages_siren_siret
+
 DOCIE_SCHEMA_NAME = "kbis"
+
+# Nom de champ DocIE sous lequel chaque numero est lu (avertissements).
+CHAMPS_SIREN_SIRET: dict[str, str] = {"siren": "siren", "siret": "siret_siege"}
 
 # ---------------------------------------------------------------------------
 # 1) Les 8 cles que contrats/lib/docanalyze.js::analyzeDocumentLocal renvoie
@@ -464,6 +471,14 @@ def map_docie_kbis_to_analysis(
         else:  # "string"
             enriched[out_key] = "" if raw is None else str(raw)
 
+    # Cle de Luhn du SIREN / SIRET (#194, regle « echouer bruyamment »). Les
+    # valeurs lues restent dans `siren` / `siret` : les vider ferait basculer
+    # un Kbis lisible dans la branche « illisible » ci-dessous (#179 B1).
+    controle = controler_siren_siret(_extract_scalar(result, "siren"), _extract_scalar(result, "siret_siege"))
+    problemes = messages_siren_siret(controle)
+    for probleme in problemes:
+        warnings.append(f"{CHAMPS_SIREN_SIRET[probleme['champ']]}: {probleme['message']}")
+
     capital_amount, capital_currency = _extract_money_pair(result, "share_capital", warnings)
     enriched["capitalSocial"] = capital_amount
     enriched["capitalSocialDevise"] = capital_currency
@@ -532,6 +547,11 @@ def map_docie_kbis_to_analysis(
             issues.append("DocIE n'a pas validé l'extraction (vérification manuelle recommandée).")
         if name_matches is False:
             issues.append("La société du document ne correspond pas au sous-traitant saisi.")
+        # Dans `issues` et pas seulement dans `warnings` : le chemin de
+        # production (contrats/lib/docie-extraction.js) ne garde que
+        # `analysis` et jette les avertissements. isValid n'est PAS touche :
+        # le document reste un Kbis lisible, c'est un numero qui est douteux.
+        issues.extend(probleme["message"] for probleme in problemes)
         if not issued_date:
             issues.append("Date de délivrance non trouvée dans le document.")
         summary = document_type + (" — délivré le " + issued_date if issued_date else "")
@@ -561,6 +581,13 @@ def map_docie_kbis_to_analysis(
     # perdre une information reelle sans aucun benefice de parite, puisque
     # ces cles n'existent de toute facon pas cote docanalyze.js.
     analysis.update(enriched)
+    # Verdict LISIBLE PAR MACHINE du controle de cle (voir siren_siret.py),
+    # present dans les deux branches. Volontairement HORS de ENRICHED_KEYS :
+    # ce n'est pas un champ lu sur le Kbis, et un consommateur qui parcourt
+    # les cles enrichies pour les proposer au contrat ne doit pas le trouver
+    # la. Un consommateur n'utilise `siren` / `siret` que si le statut
+    # correspondant vaut exactement "valide".
+    analysis["controleSirenSiret"] = controle
 
     return KbisMappingResult(analysis=analysis, warnings=warnings)
 

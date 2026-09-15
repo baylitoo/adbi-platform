@@ -48,7 +48,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+# Controle de cle du SIREN / SIRET (#194), ecrit une seule fois pour les deux
+# mappings Python -- meme import nu que urssaf_to_contrats.py depuis
+# kbis_to_contrats.py.
+from siren_siret import controler_siren_siret, messages_siren_siret
+
 DOCIE_SCHEMA_NAME = "contract"
+
+# Nom de champ DocIE sous lequel chaque numero est lu, pour que l'avertissement
+# nomme le champ du schema comme tous les autres avertissements du module.
+CHAMPS_SIREN_SIRET: dict[str, str] = {"siren": "st_siren", "siret": "st_siret"}
 
 # ---------------------------------------------------------------------------
 # 1) Champs reellement EXTRAITS DU DOCUMENT par le schema DocIE "contract"
@@ -170,11 +179,21 @@ class MappingResult:
     reconnu, devise inattendue, notes DocIE...). `errors` reprend les memes
     controles bloquants que /api/contracts/importer cote contrats/server.js
     (numeroContrat / stNom requis) -- verifies ICI, avant tout appel HTTP,
-    pour que l'echec se voie au mapping plutot qu'a l'import."""
+    pour que l'echec se voie au mapping plutot qu'a l'import.
+
+    `controle_siren_siret` est le verdict LISIBLE PAR MACHINE du controle de
+    cle (#194, voir siren_siret.py) : {"siren": {valeur, chiffres, statut},
+    "siret": {...}}. Il vit a cote de `values` et jamais dedans : `values`
+    doit rester exactement les champs de fields.js::sousTraitance, que
+    /api/contracts/importer stocke tels quels. Un consommateur n'utilise
+    stSiren / stSiret que si le statut vaut exactement "valide". Un numero
+    invalide n'est PAS une erreur bloquante : `errors` reste le miroir des
+    controles de l'import, et la valeur lue reste proposee au relecteur."""
 
     values: dict[str, str]
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    controle_siren_siret: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -395,6 +414,16 @@ def map_docie_contract_to_sous_traitance(extraction_response: dict) -> MappingRe
             raw = _extract_scalar(result, docie_key)
             values[contrats_key] = "" if raw is None else str(raw)
 
+    # Cle de Luhn du SIREN / SIRET (#194, regle « echouer bruyamment ») : un
+    # seul chiffre mal lu passait jusqu'ici le seul controle existant, de
+    # format. La valeur lue reste dans `values` (un relecteur la corrige d'un
+    # chiffre) ; l'echec part en avertissement nomme et dans
+    # controle_siren_siret. Avertissements places AVANT les notes DocIE : le
+    # front n'affiche que les premiers.
+    controle = controler_siren_siret(_extract_scalar(result, "st_siren"), _extract_scalar(result, "st_siret"))
+    for probleme in messages_siren_siret(controle):
+        warnings.append(f"{CHAMPS_SIREN_SIRET[probleme['champ']]}: {probleme['message']}")
+
     for note in result.get("extraction_notes") or []:
         warnings.append(f"DocIE extraction_notes: {note}")
     validation = extraction_response.get("validation") or {}
@@ -411,7 +440,7 @@ def map_docie_contract_to_sous_traitance(extraction_response: dict) -> MappingRe
     if not values.get("stNom"):
         errors.append("Le nom du sous-traitant / co-contractant est requis.")
 
-    return MappingResult(values=values, warnings=warnings, errors=errors)
+    return MappingResult(values=values, warnings=warnings, errors=errors, controle_siren_siret=controle)
 
 
 def build_import_payload(

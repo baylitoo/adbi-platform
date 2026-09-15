@@ -588,5 +588,69 @@ class TestNomPartage(unittest.TestCase):
                 self.assertEqual(cas["resultat"] is False, bloquant in analysis["issues"])
 
 
+class TestSirenSiretPartage(unittest.TestCase):
+    """#194 (liste retenue, « echouer bruyamment ») : chaque cas de
+    document-parsing/fixtures/siren_siret.json traverse le mapping Kbis de bout
+    en bout. Le verdict doit arriver dans `analysis` (issues +
+    controleSirenSiret), pas seulement dans `warnings` : le chemin de
+    production (contrats/lib/docie-extraction.js) jette les avertissements."""
+
+    CHAMPS = {"siren": "siren", "siret": "siret_siege"}
+
+    @classmethod
+    def setUpClass(cls):
+        with open(REPO_ROOT / "document-parsing" / "fixtures" / "siren_siret.json", encoding="utf-8") as fh:
+            cls.fixture = json.load(fh)
+
+    def test_port_declare_dans_la_fixture(self):
+        self.assertIn("document-parsing/mappings/kbis_to_contrats.py (Python)", self.fixture["_ports"])
+
+    def test_chaque_cas_traverse_le_mapping(self):
+        for cas in self.fixture["cas"]:
+            with self.subTest(siren=cas["siren"], siret=cas["siret"], preuve=cas["preuve"]):
+                envelope = {
+                    "schema_name": "kbis",
+                    "result": {
+                        "company_name": {"value": "SUND INDUSTRY SYSTEM"},
+                        "siren": {"value": cas["siren"]},
+                        "siret_siege": {"value": cas["siret"]},
+                        "issued_date": {"value": "2026-09-04"},
+                    },
+                    "validation": {"valid": True, "errors": [], "warnings": []},
+                }
+                mapping = map_docie_kbis_to_analysis(envelope)
+                a = mapping.analysis
+                self.assertEqual("" if cas["siren"] is None else str(cas["siren"]), a["siren"])
+                self.assertEqual("" if cas["siret"] is None else str(cas["siret"]), a["siret"])
+                self.assertEqual(cas["statut_siren"], a["controleSirenSiret"]["siren"]["statut"])
+                self.assertEqual(cas["statut_siret"], a["controleSirenSiret"]["siret"]["statut"])
+                # Aucune autre issue dans cette enveloppe : les issues sont
+                # EXACTEMENT les messages du controle.
+                self.assertEqual([m["message"] for m in cas["messages"]], a["issues"])
+                attendus = [f"{self.CHAMPS[m['champ']]}: {m['message']}" for m in cas["messages"]]
+                obtenus = [w for w in mapping.warnings if w.startswith(("siren: ", "siret_siege: "))]
+                self.assertEqual(attendus, obtenus)
+                # Un numero douteux ne rend le Kbis ni illisible ni invalide.
+                self.assertTrue(a["isValid"])
+                self.assertEqual("Extrait Kbis", a["documentType"])
+
+    def test_verdict_hors_des_cles_enrichies_et_present_si_illisible(self):
+        self.assertNotIn("controleSirenSiret", ENRICHED_KEYS)
+        a = map_docie_kbis_to_analysis(_load_fixture("kbis_extraction_sample_unreadable.json")).analysis
+        self.assertEqual("absent", a["controleSirenSiret"]["siren"]["statut"])
+        self.assertEqual("absent", a["controleSirenSiret"]["siret"]["statut"])
+
+    def test_siren_de_la_fixture_edge_signale_sans_etre_vide(self):
+        # kbis_extraction_sample_edge_cases.json porte siren 123456789, dont la
+        # cle est fausse. Le vider ferait basculer ce Kbis (company_name
+        # absent, siret absent) dans la branche « illisible ».
+        a = map_docie_kbis_to_analysis(_load_fixture("kbis_extraction_sample_edge_cases.json")).analysis
+        self.assertEqual("123456789", a["siren"])
+        self.assertEqual("cle_invalide", a["controleSirenSiret"]["siren"]["statut"])
+        self.assertEqual("Extrait Kbis", a["documentType"])
+        self.assertTrue(a["isValid"])
+        self.assertTrue(any("clé de contrôle invalide" in i for i in a["issues"]))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -34,6 +34,12 @@
 // dupliqué ici, ce module se contente de ne PAS inventer ces champs.
 const path = require("path");
 const { checkName } = require("./docanalyze");
+// Contrôle de clé du SIREN / SIRET (#194), écrit une seule fois pour les deux
+// mappings JS (portage de document-parsing/mappings/siren_siret.py).
+const { controlerSirenSiret, messagesSirenSiret } = require("./siren-siret");
+
+// Nom de champ DocIE sous lequel chaque numéro est lu (avertissements).
+const CHAMPS_SIREN_SIRET = { siren: "siren", siret: "siret_siege" };
 
 // ---------------------------------------------------------------------------
 // Les 8 clés que contrats/lib/docanalyze.js::analyzeDocumentLocal renvoie
@@ -297,6 +303,13 @@ function mapKbisResult(docieResult, { expectedName, items, validation } = {}) {
       : (raw === null || raw === undefined ? "" : String(raw));
   }
 
+  // Clé de Luhn du SIREN / SIRET (#194, règle « échouer bruyamment »). Les
+  // valeurs lues restent dans `siren` / `siret` : les vider ferait basculer un
+  // Kbis lisible dans la branche « illisible » ci-dessous (#179 B1).
+  const controleSirenSiret = controlerSirenSiret(docieResult.siren, docieResult.siret_siege);
+  const problemes = messagesSirenSiret(controleSirenSiret);
+  for (const probleme of problemes) warnings.push(CHAMPS_SIREN_SIRET[probleme.champ] + ": " + probleme.message);
+
   const [capitalSocial, capitalSocialDevise] = extractMoneyPair(docieResult, "share_capital", warnings);
 
   const rawCompanyName = docieResult.company_name;
@@ -345,6 +358,10 @@ function mapKbisResult(docieResult, { expectedName, items, validation } = {}) {
     documentType = "Extrait Kbis";
     if (docieSaysInvalid) issues.push("DocIE n'a pas validé l'extraction (vérification manuelle recommandée).");
     if (nameMatches === false) issues.push("La société du document ne correspond pas au sous-traitant saisi.");
+    // Dans `issues` et pas seulement dans `warnings` : lib/docie-extraction.js
+    // ne garde que `analysis` et jette les avertissements. isValid n'est PAS
+    // touché : le document reste un Kbis lisible, c'est un numéro qui est douteux.
+    for (const probleme of problemes) issues.push(probleme.message);
     if (!issuedDate) issues.push("Date de délivrance non trouvée dans le document.");
     summary = documentType + (issuedDate ? " — délivré le " + issuedDate : "");
   }
@@ -367,6 +384,13 @@ function mapKbisResult(docieResult, { expectedName, items, validation } = {}) {
   Object.assign(analysis, enriched);
   analysis.capitalSocial = capitalSocial;
   analysis.capitalSocialDevise = capitalSocialDevise;
+  // Verdict LISIBLE PAR MACHINE du contrôle de clé (voir lib/siren-siret.js),
+  // présent dans les deux branches. Volontairement HORS de ENRICHED_KEYS : ce
+  // n'est pas un champ lu sur le Kbis, et un consommateur qui parcourt les clés
+  // enrichies pour les proposer au contrat ne doit pas le trouver là. Un
+  // consommateur n'utilise `siren` / `siret` que si le statut correspondant
+  // vaut exactement "valide".
+  analysis.controleSirenSiret = controleSirenSiret;
 
   return { analysis, warnings };
 }
