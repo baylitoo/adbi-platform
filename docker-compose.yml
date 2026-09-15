@@ -186,6 +186,9 @@ services:
         # Table de synonymes de compétences partagée (#177 G/H) : `COPY
         # --from=fixtures` sans condition, lue au démarrage. Voir cv-parser/Dockerfile.
         fixtures: ./document-parsing/fixtures
+        # Catalogue des modèles par action (#194) : `COPY --from=modeles` sans
+        # condition, lu pour le choix du modèle. Voir cv-parser/Dockerfile.
+        modeles: ./document-parsing/models
     volumes:
       - parser-data:/app/data
       - parser-uploads:/app/uploads

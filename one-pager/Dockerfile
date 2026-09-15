@@ -44,6 +44,17 @@ COPY --chown=node:node document-parsing/fixtures/mission_en_cours.json \
      document-parsing/fixtures/competences_synonymes.json \
      /document-parsing/fixtures/
 
+# Catalogue des modeles par action (#194) : lib/choix-modele.js charge
+# ../../document-parsing/models/catalogue (le chargeur et catalogue.json a cote)
+# pour GET /api/modeles et pour un import avec un modele choisi. Charge a
+# l'appel, comme le bridge : sans ces fichiers le service demarre et l'import
+# sans choix fonctionne, mais aucun modele n'est propose et un choix echoue.
+# Les deux fichiers seulement : tests/ n'a rien a faire dans l'image. A
+# reintegrer dans Dockerfile.dockerignore (liste blanche).
+COPY --chown=node:node document-parsing/models/catalogue.json \
+     document-parsing/models/catalogue.js \
+     /document-parsing/models/
+
 ENV NODE_ENV=production
 # Sans ca, server.js lie 127.0.0.1 (defaut poste de dev) : injoignable via le
 # port publie du conteneur malgre "-p 4200:4200" (voir server.js).
