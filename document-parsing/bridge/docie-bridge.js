@@ -276,6 +276,84 @@ function compterBlocsTexte(text) {
   return blocs;
 }
 
+// Résultat partiel (#194, « échouer bruyamment »). DocIE ne signale une valeur
+// perdue que par des AVERTISSEMENTS, avec `validation.valid` toujours vrai :
+// sans ce relevé, une extraction partielle ressemble à une extraction complète.
+// `metadata.partiel = [{champ, raison}]` les rend lisibles par machine ; le
+// bridge ne décide rien (refuser, signaler : c'est aux consommateurs).
+//
+// ATTENTION : ces libellés sont des chaînes lisibles tirées du code DocIE (lu
+// par l'équipe DocIE, jamais exécuté sur notre déploiement), PAS un contrat
+// versionné. Ils sont figés par document-parsing/fixtures/avertissements_docie.json
+// (tests seuls) : si DocIE change un libellé, un test doit casser, plutôt que la
+// règle s'affaiblir en silence. Un avertissement inconnu est ignoré pour
+// `partiel` (jamais deviné) ; tous restent intacts dans `validation`.
+//
+// Le champ est ce qui précède le premier ": " — un chemin sans blanc ni ":"
+// (`skills`, `experience[0].end_date`), sinon l'avertissement est ignoré.
+const RAISONS_PARTIEL = ["boucle", "valeur_abandonnee", "forme_invalide", "feuille_abandonnee", "liste_plafonnee_possible"];
+const CHAMP_AVERTISSEMENT = /^[^\t\n\v\f\r :]+$/;
+// Boucle (PR DocIE #485) : "<champ>: model output repeated itself (<motif>);
+// list truncated at the loop start, remaining items dropped; confidence capped
+// to 0.5 as a review flag". Reconnue à sa sous-chaîne stable, AVANT les autres
+// formes : le motif répété peut contenir ": " ou "; dropped".
+const AVERTISSEMENT_BOUCLE = ": model output repeated itself (";
+const MOTIFS_AVERTISSEMENT = [
+  // "<nom>: <brut> is not a number; value dropped" / "... is not a currency; value dropped"
+  [/^([^\t\n\v\f\r :]+): [\s\S]* is not a (?:number|currency); value dropped$/, "valeur_abandonnee"],
+  // "<chemin>: the model wrote <texte> in a shape this field cannot hold; nothing was kept"
+  [/^([^\t\n\v\f\r :]+): the model wrote [\s\S]* in a shape this field cannot hold; nothing was kept$/, "forme_invalide"],
+  // "<chemin>: <message pydantic>; dropped" (une feuille invalide abandonnée par passe)
+  [/^([^\t\n\v\f\r :]+): [\s\S]+; dropped$/, "feuille_abandonnee"],
+];
+// Plafond `maxItems: 100` des listes contraintes par grammaire : AUCUNE trace
+// côté DocIE. Une liste d'exactement 100 éléments « a pu » être plafonnée ;
+// 101 n'est pas ce plafond (NuExtract3, sans grammaire, n'en a pas).
+const DOCIE_LISTE_MAX = 100;
+
+function reconnaitreAvertissement(texte) {
+  if (typeof texte !== "string") return null;
+  const boucle = texte.indexOf(AVERTISSEMENT_BOUCLE);
+  if (boucle >= 0) {
+    const champ = texte.slice(0, boucle);
+    return CHAMP_AVERTISSEMENT.test(champ) ? { champ, raison: "boucle" } : null;
+  }
+  for (const [motif, raison] of MOTIFS_AVERTISSEMENT) {
+    const trouve = motif.exec(texte);
+    if (trouve) return { champ: trouve[1], raison };
+  }
+  return null;
+}
+
+// Un seul endroit pour les deux voies. `result` est DÉJÀ déballé (une liste dans
+// une enveloppe ancrée compte comme liste). Sources : `validation.warnings` et
+// `result.extraction_notes` (la voie texte y recopie la même chaîne) ; une paire
+// (champ, raison) n'apparaît qu'une fois. Entrées non textuelles ignorées.
+function resultatPartiel(validation, result) {
+  const partiel = [], vus = new Set();
+  const ajouter = (champ, raison) => {
+    const cle = JSON.stringify([champ, raison]);
+    if (!vus.has(cle)) { vus.add(cle); partiel.push({ champ, raison }); }
+  };
+  for (const source of [object(validation) ? validation.warnings : null, object(result) ? result.extraction_notes : null]) {
+    if (!Array.isArray(source)) continue;
+    for (const texte of source) {
+      const reconnu = reconnaitreAvertissement(texte);
+      if (reconnu) ajouter(reconnu.champ, reconnu.raison);
+    }
+  }
+  const parcourir = (value, path) => {
+    if (Array.isArray(value)) {
+      if (value.length === DOCIE_LISTE_MAX) ajouter(path, "liste_plafonnee_possible");
+      value.forEach((item, index) => parcourir(item, path + "[" + index + "]"));
+    } else if (object(value)) {
+      for (const [key, item] of Object.entries(value)) parcourir(item, path ? path + "." + key : key);
+    }
+  };
+  parcourir(result, "");
+  return partiel;
+}
+
 function parseResponse(body, expectedSchema, agent) {
   if (!object(body)) fail("response", "Invalid DocIE chat envelope.");
   const choice = Array.isArray(body.choices) && body.choices[0];
@@ -298,17 +376,18 @@ function parseResponse(body, expectedSchema, agent) {
   const validation = Object.hasOwn(meta, "validation") ? meta.validation : (extracted.validation ?? null);
   if (validation != null && !object(validation)) fail("response", "Invalid DocIE validation metadata.");
   const confidence = reportedFieldConfidence(meta);
+  const unwrapped = unwrap(result);
   // `blocs_texte` / `troncature_possible` : null sur cette voie, « non
   // mesurable » et non « non tronqué » — c'est l'OCR distant qui fait les blocs.
   const metadata = { request_id: body.id ?? null, agent, model: body.model ?? null,
     validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
-    prompt_profile: promptProfile(meta), blocs_texte: null, troncature_possible: null,
-    schema_reported: reported.some(item => item != null) };
+    prompt_profile: promptProfile(meta), partiel: resultatPartiel(validation, unwrapped),
+    blocs_texte: null, troncature_possible: null, schema_reported: reported.some(item => item != null) };
   for (const name of ["queue_wait_ms", "latency_ms", "generation_ms"]) {
     const value = Object.hasOwn(meta, name) ? meta[name] : (Object.hasOwn(extracted, name) ? extracted[name] : body[name]);
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) metadata[name] = value;
   }
-  return { schema_name: expectedSchema, result: unwrap(result), metadata };
+  return { schema_name: expectedSchema, result: unwrapped, metadata };
 }
 
 // Démarrage à froid sur la voie texte (#194). Un `model_profile` `store:<nom>`
@@ -360,17 +439,18 @@ function parseTextResponse(body, expectedSchema) {
   const validation = body.validation ?? null;
   if (validation != null && !object(validation)) fail("response", "Invalid DocIE validation metadata.");
   const confidence = reportedFieldConfidence(body);
+  const unwrapped = unwrap(result);
   // `blocs_texte` / `troncature_possible` : le texte envoyé n'est pas dans la
   // réponse ; extractText() les renseigne, un appel direct les laisse à null.
   const metadata = { request_id: body.request_id ?? null, agent: null, model: body.model_profile ?? null,
     validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
-    prompt_profile: null, blocs_texte: null, troncature_possible: null,
-    schema_reported: reported.some(item => item != null) };
+    prompt_profile: null, partiel: resultatPartiel(validation, unwrapped),
+    blocs_texte: null, troncature_possible: null, schema_reported: reported.some(item => item != null) };
   for (const name of ["queue_wait_ms", "latency_ms", "generation_ms"]) {
     const value = body[name];
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) metadata[name] = value;
   }
-  return { schema_name: expectedSchema, result: unwrap(result), metadata };
+  return { schema_name: expectedSchema, result: unwrapped, metadata };
 }
 
 // Lecture bornée d'un corps d'erreur, pour le seul classement. Un corps
@@ -560,4 +640,5 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, modelP
 }
 
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload,
-  compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };
+  compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
+  MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };

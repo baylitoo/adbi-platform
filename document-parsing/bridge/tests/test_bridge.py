@@ -12,11 +12,13 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from docie_bridge import (extract_document, extract_text, file_payload, parse_response, parse_text_response,
-                          compter_blocs_texte, DOCIE_BLOCS_TEXTE_MAX, DocIEBridgeError)
+                          compter_blocs_texte, DOCIE_BLOCS_TEXTE_MAX, reconnaitre_avertissement, resultat_partiel,
+                          RAISONS_PARTIEL, DocIEBridgeError)
 
-# Jeu d'essai partagé avec bridge.test.js, lu par les TESTS seulement.
+# Jeux d'essai partagés avec bridge.test.js, lus par les TESTS seulement.
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 BLOCS_TEXTE = json.loads((FIXTURES / "blocs_texte_docie.json").read_text(encoding="utf-8"))
+AVERTISSEMENTS = json.loads((FIXTURES / "avertissements_docie.json").read_text(encoding="utf-8"))
 CASES = json.loads(Path(__file__).with_name("contract.json").read_text(encoding="utf-8"))
 TEXT_CASES = json.loads(Path(__file__).with_name("contract_text.json").read_text(encoding="utf-8"))
 ERROR_CASES = json.loads(Path(__file__).with_name("contract_errors.json").read_text(encoding="utf-8"))
@@ -69,7 +71,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(truncated["field_confidence"]["experience[0].description"], 0.5)
         self.assertEqual(len(truncated["validation"]["warnings"]), 1)
         self.assertEqual(truncated["latency_ms"], 285014)
-        # Warnings are carried verbatim: their prose has no field-path contract.
+        # Warnings are carried verbatim, even the ones metadata["partiel"] reads (#194).
         self.assertEqual(parse_response(CASES[4]["body"], "adbi_resume", "adbi_agent_1")["metadata"]["validation"]["warnings"][0],
                          "derived subtotal not found in the document")
 
@@ -370,6 +372,65 @@ class TextBlocksTests(unittest.TestCase):
         agent_session, _ = fake_session(lambda url, payload: CASES[2]["body"])
         metadata = extract_document(b"pdf", "application/pdf", env=env, session=agent_session)["metadata"]
         self.assertEqual((metadata["blocs_texte"], metadata["troncature_possible"]), (None, None))
+
+
+class PartialResultTests(unittest.TestCase):
+    """#194 -- avertissements DocIE de résultat partiel -> metadata["partiel"]."""
+
+    def test_shared_fixture_closed_reasons_unknown_ignored_never_raises(self):
+        self.assertEqual(list(RAISONS_PARTIEL), AVERTISSEMENTS["_raisons"])
+        couvertes = set()
+        for case in AVERTISSEMENTS["avertissements"]:
+            with self.subTest(case=case["nom"], preuve=case["preuve"]):
+                self.assertEqual(reconnaitre_avertissement(case["avertissement"]), case["attendu"])
+            if case["attendu"]:
+                couvertes.add(case["attendu"]["raison"])
+        # Listes : par le vrai parseur, donc après déballage des enveloppes.
+        for case in AVERTISSEMENTS["listes"]:
+            with self.subTest(case=case["nom"], preuve=case["preuve"]):
+                self.assertEqual(parse_text_response({"result": case["result"]}, "adbi_resume")["metadata"]["partiel"],
+                                 case["attendu"])
+            couvertes.update(entree["raison"] for entree in case["attendu"])
+        # Chaque raison du jeu fermé a au moins un cas.
+        self.assertEqual(couvertes, set(RAISONS_PARTIEL))
+        # Tous les avertissements à la fois : seuls les reconnus, dans l'ordre.
+        warnings = [case["avertissement"] for case in AVERTISSEMENTS["avertissements"]]
+        self.assertEqual(resultat_partiel({"valid": True, "warnings": warnings}, {}),
+                         [case["attendu"] for case in AVERTISSEMENTS["avertissements"] if case["attendu"]])
+        # Formes inattendues : jamais d'exception.
+        for validation in (None, "x", [], {"warnings": "skills: model output repeated itself (x)"}, {"warnings": None}):
+            self.assertEqual(resultat_partiel(validation, {"extraction_notes": 7}), [])
+
+    def test_both_paths_warnings_verbatim_extraction_notes_counted_once(self):
+        cas = {case["nom"]: case["avertissement"] for case in AVERTISSEMENTS["avertissements"]}
+        env = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "test-secret", "DOCIE_AGENT_RESUME": "adbi_agent_1"}
+        # Aucun vecteur existant n'est partiel.
+        for case in CASES:
+            self.assertEqual(parse_response(case["body"], "adbi_resume", "adbi_agent_1")["metadata"]["partiel"], [], case["name"])
+        for case in TEXT_CASES:
+            self.assertEqual(parse_text_response(case["body"], "adbi_resume")["metadata"]["partiel"], [], case["name"])
+        # Voie texte : la boucle arrive dans validation.warnings ET result.extraction_notes.
+        text = copy.deepcopy(TEXT_CASES[0]["body"])
+        text["validation"]["warnings"] = [cas["boucle"], "derived subtotal not found in the document", cas["nombre_abandonne"]]
+        text["result"]["extraction_notes"] = [cas["boucle"]]
+        text["result"]["interests"] = {"value": ["centre " + str(i) for i in range(100)], "confidence": 1, "evidence_ids": []}
+        avant = copy.deepcopy(text["validation"])
+        session, _ = fake_session(lambda url, payload: text)
+        lu = extract_text("CV", env=env, session=session)
+        self.assertEqual(lu["metadata"]["partiel"], [{"champ": "skills", "raison": "boucle"},
+                                                     {"champ": "tjm", "raison": "valeur_abandonnee"},
+                                                     {"champ": "interests", "raison": "liste_plafonnee_possible"}])
+        self.assertEqual(lu["metadata"]["validation"], avant)
+        self.assertIs(lu["metadata"]["validation"]["valid"], True)
+        self.assertEqual(lu["result"]["extraction_notes"], [cas["boucle"]])
+        # Voie agent : docie_agent.validation.warnings.
+        agent = copy.deepcopy(CASES[3]["body"])
+        agent["docie_agent"]["validation"]["warnings"].append(cas["forme_invalide"])
+        avant_agent = copy.deepcopy(agent["docie_agent"]["validation"])
+        agent_session, _ = fake_session(lambda url, payload: agent)
+        lu_agent = extract_document(b"pdf", "application/pdf", env=env, session=agent_session)
+        self.assertEqual(lu_agent["metadata"]["partiel"], [{"champ": "experience[2].dates", "raison": "forme_invalide"}])
+        self.assertEqual(lu_agent["metadata"]["validation"], avant_agent)
 
 
 def fake_session(answer, status=200):

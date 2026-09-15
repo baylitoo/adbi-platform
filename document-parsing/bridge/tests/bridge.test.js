@@ -7,8 +7,9 @@ const textCases = require("./contract_text.json");
 const errorCases = require("./contract_errors.json");
 // Jeu d'essai partagé avec test_bridge.py, lu par les TESTS seulement.
 const blocsTexte = require("../../fixtures/blocs_texte_docie.json");
+const avertissements = require("../../fixtures/avertissements_docie.json");
 const { extractDocument, extractText, parseResponse, parseTextResponse, filePayload, compterBlocsTexte,
-  DOCIE_BLOCS_TEXTE_MAX, DocIEBridgeError } = require("../docie-bridge");
+  DOCIE_BLOCS_TEXTE_MAX, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL, DocIEBridgeError } = require("../docie-bridge");
 
 const RESUME_SCHEMA = { document_type: "adbi_resume", fields: [{ name: "name", type: "string" }] };
 
@@ -31,7 +32,7 @@ test("shared contract vectors, latency, validation and per-field confidence pres
   assert.equal(truncated.field_confidence["experience[0].description"], 0.5);
   assert.equal(truncated.validation.warnings.length, 1);
   assert.equal(truncated.latency_ms, 285014);
-  // Warnings are carried verbatim: their prose has no field-path contract to parse.
+  // Warnings are carried verbatim, even the ones metadata.partiel reads (#194).
   assert.equal(parseResponse(cases[4].body, "adbi_resume", "adbi_agent_1").metadata.validation.warnings[0],
     "derived subtotal not found in the document");
 });
@@ -308,6 +309,60 @@ test("text blocks: extractText reports blocs_texte and troncature_possible (> 80
   const agent = await extractDocument(Buffer.from("pdf"), "application/pdf", { env,
     fetchImpl: async () => new Response(JSON.stringify(cases[2].body)) });
   assert.deepEqual([agent.metadata.blocs_texte, agent.metadata.troncature_possible], [null, null]);
+});
+
+// ------------------------------------------- résultat partiel (#194) -----
+
+test("partial result: shared fixture of DocIE warning strings, closed reason set, unknown ignored, never throws", () => {
+  assert.deepEqual(RAISONS_PARTIEL, avertissements._raisons);
+  const couvertes = new Set();
+  for (const c of avertissements.avertissements) {
+    assert.deepEqual(reconnaitreAvertissement(c.avertissement), c.attendu, c.nom + " — " + c.preuve);
+    if (c.attendu) couvertes.add(c.attendu.raison);
+  }
+  // Listes : par le vrai parseur, donc après déballage des enveloppes.
+  for (const c of avertissements.listes) {
+    assert.deepEqual(parseTextResponse({ result: c.result }, "adbi_resume").metadata.partiel, c.attendu, c.nom + " — " + c.preuve);
+    for (const entree of c.attendu) couvertes.add(entree.raison);
+  }
+  // Chaque raison du jeu fermé a au moins un cas.
+  assert.deepEqual([...couvertes].sort(), [...RAISONS_PARTIEL].sort());
+  // Tous les avertissements à la fois : seuls les reconnus, dans l'ordre.
+  const warnings = avertissements.avertissements.map(c => c.avertissement);
+  assert.deepEqual(resultatPartiel({ valid: true, warnings }, {}),
+    avertissements.avertissements.filter(c => c.attendu).map(c => c.attendu));
+  // Formes inattendues : jamais d'exception.
+  for (const validation of [null, "x", [], { warnings: "skills: model output repeated itself (x)" }, { warnings: null }]) {
+    assert.deepEqual(resultatPartiel(validation, { extraction_notes: 7 }), []);
+  }
+});
+
+test("partial result: metadata.partiel on both paths, warnings kept verbatim, same string in extraction_notes counted once", async () => {
+  const cas = nom => avertissements.avertissements.find(c => c.nom === nom).avertissement;
+  const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret", DOCIE_AGENT_RESUME: "adbi_agent_1" };
+  // Aucun vecteur existant n'est partiel.
+  for (const c of cases) assert.deepEqual(parseResponse(c.body, "adbi_resume", "adbi_agent_1").metadata.partiel, [], c.name);
+  for (const c of textCases) assert.deepEqual(parseTextResponse(c.body, "adbi_resume").metadata.partiel, [], c.name);
+  // Voie texte : la boucle arrive dans validation.warnings ET result.extraction_notes.
+  const text = structuredClone(textCases[0].body);
+  text.validation.warnings = [cas("boucle"), "derived subtotal not found in the document", cas("nombre_abandonne")];
+  text.result.extraction_notes = [cas("boucle")];
+  text.result.interests = { value: Array.from({ length: 100 }, (_, i) => "centre " + i), confidence: 1, evidence_ids: [] };
+  const avant = structuredClone(text.validation);
+  const lu = await extractText("CV", { env, fetchImpl: async () => new Response(JSON.stringify(text)) });
+  assert.deepEqual(lu.metadata.partiel, [{ champ: "skills", raison: "boucle" }, { champ: "tjm", raison: "valeur_abandonnee" },
+    { champ: "interests", raison: "liste_plafonnee_possible" }]);
+  assert.deepEqual(lu.metadata.validation, avant);
+  assert.equal(lu.metadata.validation.valid, true);
+  assert.deepEqual(lu.result.extraction_notes, [cas("boucle")]);
+  // Voie agent : docie_agent.validation.warnings.
+  const agent = structuredClone(cases[3].body);
+  agent.docie_agent.validation.warnings.push(cas("forme_invalide"));
+  const avantAgent = structuredClone(agent.docie_agent.validation);
+  const luAgent = await extractDocument(Buffer.from("pdf"), "application/pdf", { env,
+    fetchImpl: async () => new Response(JSON.stringify(agent)) });
+  assert.deepEqual(luAgent.metadata.partiel, [{ champ: "experience[2].dates", raison: "forme_invalide" }]);
+  assert.deepEqual(luAgent.metadata.validation, avantAgent);
 });
 
 // ------------------------------------------------ choix par appel (#194) -----

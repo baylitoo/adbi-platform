@@ -323,6 +323,97 @@ def compter_blocs_texte(text):
     return sum(1 for ligne in text.splitlines() if ligne.strip())
 
 
+# Résultat partiel (#194, « échouer bruyamment »). DocIE ne signale une valeur
+# perdue que par des AVERTISSEMENTS, avec `validation.valid` toujours vrai :
+# sans ce relevé, une extraction partielle ressemble à une extraction complète.
+# `metadata["partiel"] = [{champ, raison}]` les rend lisibles par machine ; le
+# bridge ne décide rien (refuser, signaler : c'est aux consommateurs).
+#
+# ATTENTION : ces libellés sont des chaînes lisibles tirées du code DocIE (lu
+# par l'équipe DocIE, jamais exécuté sur notre déploiement), PAS un contrat
+# versionné. Ils sont figés par document-parsing/fixtures/avertissements_docie.json
+# (tests seuls) : si DocIE change un libellé, un test doit casser, plutôt que la
+# règle s'affaiblir en silence. Un avertissement inconnu est ignoré pour
+# `partiel` (jamais deviné) ; tous restent intacts dans `validation`.
+#
+# Le champ est ce qui précède le premier ": " -- un chemin sans blanc ni ":"
+# (`skills`, `experience[0].end_date`), sinon l'avertissement est ignoré.
+# Classes et motifs identiques caractère pour caractère à docie-bridge.js.
+RAISONS_PARTIEL = ("boucle", "valeur_abandonnee", "forme_invalide", "feuille_abandonnee", "liste_plafonnee_possible")
+CHAMP_AVERTISSEMENT = re.compile(r"[^\t\n\v\f\r :]+")
+# Boucle (PR DocIE #485) : "<champ>: model output repeated itself (<motif>);
+# list truncated at the loop start, remaining items dropped; confidence capped
+# to 0.5 as a review flag". Reconnue à sa sous-chaîne stable, AVANT les autres
+# formes : le motif répété peut contenir ": " ou "; dropped".
+AVERTISSEMENT_BOUCLE = ": model output repeated itself ("
+MOTIFS_AVERTISSEMENT = (
+    # "<nom>: <brut> is not a number; value dropped" / "... is not a currency; value dropped"
+    (re.compile(r"([^\t\n\v\f\r :]+): [\s\S]* is not a (?:number|currency); value dropped"), "valeur_abandonnee"),
+    # "<chemin>: the model wrote <texte> in a shape this field cannot hold; nothing was kept"
+    (re.compile(r"([^\t\n\v\f\r :]+): the model wrote [\s\S]* in a shape this field cannot hold; nothing was kept"),
+     "forme_invalide"),
+    # "<chemin>: <message pydantic>; dropped" (une feuille invalide abandonnée par passe)
+    (re.compile(r"([^\t\n\v\f\r :]+): [\s\S]+; dropped"), "feuille_abandonnee"),
+)
+# Plafond `maxItems: 100` des listes contraintes par grammaire : AUCUNE trace
+# côté DocIE. Une liste d'exactement 100 éléments « a pu » être plafonnée ;
+# 101 n'est pas ce plafond (NuExtract3, sans grammaire, n'en a pas).
+DOCIE_LISTE_MAX = 100
+
+
+def reconnaitre_avertissement(texte):
+    if not isinstance(texte, str):
+        return None
+    boucle = texte.find(AVERTISSEMENT_BOUCLE)
+    if boucle >= 0:
+        champ = texte[:boucle]
+        return {"champ": champ, "raison": "boucle"} if CHAMP_AVERTISSEMENT.fullmatch(champ) else None
+    for motif, raison in MOTIFS_AVERTISSEMENT:
+        trouve = motif.fullmatch(texte)
+        if trouve:
+            return {"champ": trouve.group(1), "raison": raison}
+    return None
+
+
+def resultat_partiel(validation, result):
+    """Un seul endroit pour les deux voies.
+
+    `result` est DÉJÀ déballé (une liste dans une enveloppe ancrée compte comme
+    liste). Sources : `validation.warnings` et `result.extraction_notes` (la
+    voie texte y recopie la même chaîne) ; une paire (champ, raison) n'apparaît
+    qu'une fois. Entrées non textuelles ignorées.
+    """
+    partiel, vus = [], set()
+
+    def ajouter(champ, raison):
+        if (champ, raison) not in vus:
+            vus.add((champ, raison))
+            partiel.append({"champ": champ, "raison": raison})
+
+    sources = (validation.get("warnings") if isinstance(validation, dict) else None,
+               result.get("extraction_notes") if isinstance(result, dict) else None)
+    for source in sources:
+        if not isinstance(source, list):
+            continue
+        for texte in source:
+            reconnu = reconnaitre_avertissement(texte)
+            if reconnu:
+                ajouter(reconnu["champ"], reconnu["raison"])
+
+    def parcourir(value, path):
+        if isinstance(value, list):
+            if len(value) == DOCIE_LISTE_MAX:
+                ajouter(path, "liste_plafonnee_possible")
+            for index, item in enumerate(value):
+                parcourir(item, path + "[" + str(index) + "]")
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                parcourir(item, (path + "." + str(key)) if path else str(key))
+
+    parcourir(result, "")
+    return partiel
+
+
 def parse_response(body, expected_schema, agent):
     if not isinstance(body, dict):
         fail("response", "Invalid DocIE chat envelope.")
@@ -363,19 +454,21 @@ def parse_response(body, expected_schema, agent):
         fail("response", "Invalid DocIE validation metadata.")
     # No synthetic confidence/validation success when the agent omits metadata.
     confidence = reported_field_confidence(meta)
+    unwrapped = unwrap(result)
     # `blocs_texte` / `troncature_possible` : None sur cette voie, « non
     # mesurable » et non « non tronqué » -- c'est l'OCR distant qui fait les blocs.
     metadata = {"request_id": body.get("id"), "agent": agent, "model": body.get("model"),
                 "validation": validation, "usage": body.get("usage"),
                 "field_confidence": field_confidences(result) if confidence is None else confidence,
                 "prompt_profile": prompt_profile(meta),
+                "partiel": resultat_partiel(validation, unwrapped),
                 "blocs_texte": None, "troncature_possible": None,
                 "schema_reported": any(item is not None for item in reported)}
     for name in ("queue_wait_ms", "latency_ms", "generation_ms"):
         value = meta.get(name, extracted.get(name, body.get(name)))
         if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
             metadata[name] = value
-    return {"schema_name": expected_schema, "result": unwrap(result), "metadata": metadata}
+    return {"schema_name": expected_schema, "result": unwrapped, "metadata": metadata}
 
 
 def loading_detail(body):
@@ -439,6 +532,7 @@ def parse_text_response(body, expected_schema):
     if validation is not None and not isinstance(validation, dict):
         fail("response", "Invalid DocIE validation metadata.")
     confidence = reported_field_confidence(body)
+    unwrapped = unwrap(result)
     # `blocs_texte` / `troncature_possible` : le texte envoyé n'est pas dans la
     # réponse ; extract_text() les renseigne, un appel direct les laisse à None.
     metadata = {"request_id": body.get("request_id"), "agent": None,
@@ -446,13 +540,14 @@ def parse_text_response(body, expected_schema):
                 "usage": body.get("usage"),
                 "field_confidence": field_confidences(result) if confidence is None else confidence,
                 "prompt_profile": None,
+                "partiel": resultat_partiel(validation, unwrapped),
                 "blocs_texte": None, "troncature_possible": None,
                 "schema_reported": any(item is not None for item in reported)}
     for name in ("queue_wait_ms", "latency_ms", "generation_ms"):
         value = body.get(name)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
             metadata[name] = value
-    return {"schema_name": expected_schema, "result": unwrap(result), "metadata": metadata}
+    return {"schema_name": expected_schema, "result": unwrapped, "metadata": metadata}
 
 
 def read_error_text(response, key):
