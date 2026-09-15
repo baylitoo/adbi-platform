@@ -779,5 +779,6 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, ocrBlo
 
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
-  DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
+  DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, LIGNE_BLANCHE_PYTHON,
+  reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
   MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };
