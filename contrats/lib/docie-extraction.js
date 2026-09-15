@@ -44,6 +44,8 @@ const { analyzeDocumentLocal } = require("./docanalyze");
 const { mapKbisResult } = require("./kbis-mapping");
 const { mapUrssafResult } = require("./urssaf-mapping");
 const { mapRibResult } = require("./rib-mapping");
+const choixModele = require("./choix-modele");
+const { mapperErreur } = require("./taches-extraction");
 
 // Conservé tel quel (exporté historiquement) : la pièce de la voie agent.
 const ELIGIBLE_ITEM_ID = "kbis";
@@ -242,7 +244,7 @@ function mapUrssafDocieResult(docieResponse, options) {
 // Renvoie l'analyse DocIE, ou null si le document n'a pas de couche texte
 // exploitable — dans ce cas l'appelant retombe sur l'analyse locale en
 // nommant `raisonRepli`. Ne renvoie JAMAIS une extraction sur un texte vide.
-async function extractViaTexte(kind, { dataBase64, mimeType, items, expectedName } = {}, deps = {}) {
+async function extractViaTexte(kind, { dataBase64, mimeType, items, expectedName, modele = null } = {}, deps = {}) {
   if (!Object.hasOwn(PIECES_TEXTE, kind || "")) throw new Error("Pièce sans voie texte : " + kind);
   if (!dataBase64) throw new Error("Aucun fichier reçu.");
   const env = deps.env || process.env;
@@ -252,13 +254,32 @@ async function extractViaTexte(kind, { dataBase64, mimeType, items, expectedName
   if (!verdict.ok) return { analysis: null, raisonRepli: verdict.raison };
   const { extractText } = deps.extractText ? deps : loadBridge();
   const options = { kind, dynamicSchema: (deps.dynamicSchema || chargerSchema(kind)), env };
+  // Modèle choisi (#194) : vérifié sur le texte lu, envoyé tel quel, jamais
+  // remplacé. Seules les pièces à sélecteur (lib/choix-modele.js::TACHES) en
+  // acceptent un ; pour les autres, un `modele` reçu est refusé, nommé.
+  const choisi = modele !== null ? choixModele.choisirPourTexte(kind, modele, verdict.texte, { env }) : null;
+  if (choisi) options.modelProfile = choisi.identifiant;
   if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;
   const response = await extractText(verdict.texte, options);
-  return { analysis: mapTexteDocieResult(kind, response, { items, expectedName }), raisonRepli: null };
+  const analysis = mapTexteDocieResult(kind, response, { items, expectedName });
+  if (choisi) analysis.modele = choixModele.modeleServiPublic(kind, response.metadata, { env });
+  return { analysis, raisonRepli: null };
 }
 
 function extractUrssafViaTexte(body, deps) {
   return extractViaTexte("urssaf", body, deps);
+}
+
+// Erreur présentable d'un modèle choisi (#194) : code nommé et message français
+// constant (table des tâches de pré-remplissage), jamais le texte amont.
+function erreurModeleChoisi(error) {
+  const { code, message } = mapperErreur(error);
+  const texte = code === "context" ? "Document trop long pour le modèle d'extraction."
+    : code === "interne" ? "Analyse impossible : erreur interne."
+    : message;
+  const err = new Error(texte);
+  err.code = code;
+  return err;
 }
 
 // Point d'entrée unique appelé par server.js : bascule flag + repli. En cas
@@ -272,10 +293,14 @@ async function analyzeDocument(body = {}, deps = {}) {
   const env = deps.env || process.env;
   const voie = isEnabled(env) ? voiePour(body.items) : null;
   if (!voie) return analyzeLocal(body);
+  // Modèle choisi (#194, champ `modele`, voie texte seulement) : un échec
+  // remonte nommé, sans analyse locale en repli. Sans `modele` : inchangé.
+  const modele = voie === "texte" ? choixModele.demandeModele(body) : null;
   try {
     if (voie === "texte") {
-      const { analysis, raisonRepli } = await extractViaTexte(pieceDemandee(body.items), body, deps);
+      const { analysis, raisonRepli } = await extractViaTexte(pieceDemandee(body.items), { ...body, modele }, deps);
       if (analysis) return analysis;
+      if (modele !== null) throw new choixModele.ErreurChoixModele("scan");
       // Pas d'échec DocIE ici : DocIE n'a tout simplement pas été sollicité,
       // faute de couche texte. Avertissement DISTINCT de celui d'un échec
       // d'extraction, parce que les deux ne se corrigent pas pareil — celui-ci
@@ -288,6 +313,10 @@ async function analyzeDocument(body = {}, deps = {}) {
     }
     return await extractViaDocie(body, deps);
   } catch (error) {
+    if (modele !== null) {
+      console.error("[docie-extraction] Modèle choisi en échec, sans repli (code=" + ((error && error.code) || "erreur") + "):", error && error.message);
+      throw erreurModeleChoisi(error);
+    }
     const code = (error && error.code) || "erreur";
     console.error("[docie-extraction] Extraction DocIE en échec, repli sur l'analyse locale (code=" + code + "):", error && error.message);
     const local = await analyzeLocal(body);

@@ -184,6 +184,8 @@
         </details>
         <div class="modal-actions">
           <button id="impPreremplir" class="btn-up" type="button" title="Extrait les champs ci-dessus depuis le PDF via DocIE (relecture obligatoire avant import)">🪄 Pré-remplir depuis le PDF</button>
+          <!-- Modèle d'extraction (#194) : rempli par app.js depuis /api/modeles, masqué s'il n'y a qu'un modèle. -->
+          <select id="impModele" class="tpl-select hidden" title="Modèle d'extraction du pré-remplissage"></select>
           <span id="impPreremplirStatus" class="status"></span>
         </div>
         <ul id="impAvertissements" class="ent-etabs hidden"></ul>
