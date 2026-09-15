@@ -899,7 +899,7 @@ async function lancerLot(fichiers) {
   majBarreLot(0, fichiers.length, 0, 0);
 
   // Deux envois SIMULTANÉS : le serveur met chaque analyse en file et en
-  // traite ADBI_UPLOAD_MAX_CONCURRENT à la fois (2 par défaut, issue #196), et
+  // traite ADBI_EXTRACTION_MAX_CONCURRENT à la fois (2 par défaut, issue #196), et
   // un lot de 10 CV prend presque moitié moins de temps qu'en file simple.
   let ok = 0, rates = 0, faits = 0, suivant = 0;
   const travailleur = async () => {

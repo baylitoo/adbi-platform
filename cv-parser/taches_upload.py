@@ -36,10 +36,11 @@ français que le widget affiche (« Analyse du CV »), pas `en_attente` /
 
 Bornes (en mémoire, process unique — gunicorn.conf.py garde UN worker pour les
 verrous de fiche ; cet état en dépend de la même façon) :
-  - `ADBI_UPLOAD_MAX_CONCURRENT` extractions à la fois, défaut 2 : les deux
-    slots (`n_parallel`) de LFM2.5-2.6B, modèle CV par défaut (#194). Au-delà,
-    les requêtes attendraient DANS llama-server et cette attente compterait
-    dans le `timeout_seconds` de DocIE. À aligner sur le modèle servi ;
+  - `ADBI_EXTRACTION_MAX_CONCURRENT` extractions à la fois (ancien nom
+    `ADBI_UPLOAD_MAX_CONCURRENT` toujours lu), défaut 2 : les deux slots
+    (`n_parallel`) de LFM2.5-2.6B, modèle CV par défaut (#194). Au-delà, les
+    requêtes attendraient DANS llama-server et cette attente compterait dans
+    le `timeout_seconds` de DocIE. À aligner sur le modèle servi ;
   - MAX_EN_ATTENTE (20) tâches en file, ordre d'arrivée ; au-delà, refus ;
   - une tâche finie est oubliée TTL_S (30 min) après sa fin. Purge paresseuse
     à chaque création / lecture : aucun minuteur, horloge injectable. Une
@@ -66,10 +67,28 @@ import uuid
 from collections import deque
 from datetime import datetime, timezone
 
-VARIABLE_MAX_SIMULTANEES = "ADBI_UPLOAD_MAX_CONCURRENT"
+# Même nom de variable dans les trois services (one-pager, contrats, cv-parser,
+# #196) ; le docker-compose.yml racine la remplit depuis
+# CVPARSER_EXTRACTION_MAX_CONCURRENT.
+VARIABLE_MAX_SIMULTANEES = "ADBI_EXTRACTION_MAX_CONCURRENT"
+# Nom d'origine (PR #202), gardé comme alias : lu seulement quand la variable
+# ci-dessus est absente ou vide, pour qu'un .env existant ne perde pas son
+# réglage. Aucun fichier compose ne l'a jamais transmis.
+VARIABLE_MAX_SIMULTANEES_ALIAS = "ADBI_UPLOAD_MAX_CONCURRENT"
+# Défaut 2 : cv-parser extrait des CV, modèle par défaut LFM2.5-2.6B servi avec
+# `n_parallel` 2 (liste retenue de #194). À baisser à 1 pour NuExtract3.
 MAX_SIMULTANEES_DEFAUT = 2
+# Borne haute : bien au-delà de tout `n_parallel` de #194 (1 ou 2) ; attrape une
+# faute de frappe ou la confusion avec la taille de file (20).
+MAX_SIMULTANEES_BORNE = 16
+# File et conservation restent en dur : elles bornent la mémoire et le confort
+# de l'utilisateur, pas les slots du modèle.
 MAX_EN_ATTENTE = 20
 TTL_S = 30 * 60
+
+# Entier décimal ASCII seulement : int() accepterait aussi "+3", "1_0" ou des
+# chiffres non ASCII. Même règle que les services Node.
+_ENTIER_RE = re.compile(r"[0-9]+")
 
 # Jeton proposé par le navigateur (crypto.randomUUID, ou son repli
 # horodatage-aléatoire dans templates/index.html). Tout autre forme est
@@ -103,19 +122,24 @@ class ErreurTache(RuntimeError):
 def max_simultanees_depuis_env(env=None) -> int:
     """Plafond d'extractions simultanées, lu dans l'environnement.
 
-    Absent ou vide -> défaut (2). Présent mais illisible ou < 1 -> ValueError
-    au démarrage : une faute de frappe ne doit pas passer pour « 2 ».
+    ADBI_EXTRACTION_MAX_CONCURRENT, sinon l'alias ADBI_UPLOAD_MAX_CONCURRENT.
+    Absentes, vides ou blanches -> défaut (2) : compose transmet une chaîne vide
+    quand la variable racine n'est pas renseignée. Présente mais autre chose
+    qu'un entier décimal entre 1 et MAX_SIMULTANEES_BORNE -> ValueError au
+    démarrage (import d'app.py) : une faute de frappe ne doit pas passer pour
+    « 2 ».
     """
     env = os.environ if env is None else env
-    brut = (env.get(VARIABLE_MAX_SIMULTANEES) or "").strip()
-    if not brut:
+    for variable in (VARIABLE_MAX_SIMULTANEES, VARIABLE_MAX_SIMULTANEES_ALIAS):
+        brut = (env.get(variable) or "").strip()
+        if brut:
+            break
+    else:
         return MAX_SIMULTANEES_DEFAUT
-    try:
-        valeur = int(brut)
-    except ValueError:
-        raise ValueError(f"{VARIABLE_MAX_SIMULTANEES} doit être un entier >= 1 (reçu : {brut!r}).") from None
-    if valeur < 1:
-        raise ValueError(f"{VARIABLE_MAX_SIMULTANEES} doit être un entier >= 1 (reçu : {brut!r}).")
+    valeur = int(brut) if _ENTIER_RE.fullmatch(brut) else 0
+    if not 1 <= valeur <= MAX_SIMULTANEES_BORNE:
+        raise ValueError(
+            f"{variable} doit être un entier entre 1 et {MAX_SIMULTANEES_BORNE} (reçu : {brut!r}).")
     return valeur
 
 

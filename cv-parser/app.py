@@ -1882,7 +1882,7 @@ def invite_page(token):
 #
 # Depuis l'issue #196, un dépôt est une TÂCHE (taches_upload.py) : POST
 # /api/upload répond 202 aussitôt et l'extraction tourne hors des threads
-# gunicorn, bornée à ADBI_UPLOAD_MAX_CONCURRENT. Le jeton de progression EST
+# gunicorn, bornée à ADBI_EXTRACTION_MAX_CONCURRENT. Le jeton de progression EST
 # l'identifiant de la tâche : ses libellés, son état et son résultat vivent dans
 # la tâche, lisibles par son seul auteur. La ré-analyse d'une fiche
 # (reanalyser_cv) passe par la même file, donc le même plafond.
@@ -2181,7 +2181,7 @@ def reanalyser_cv(file_id):
     le document. La progression passe par le même jeton que le dépôt.
 
     Tâche asynchrone depuis l'issue #196, dans la MÊME file que le dépôt
-    (TACHES_UPLOAD) : même plafond ADBI_UPLOAD_MAX_CONCURRENT, même attente,
+    (TACHES_UPLOAD) : même plafond ADBI_EXTRACTION_MAX_CONCURRENT, même attente,
     même durée de conservation — dépôts et ré-analyses se partagent les slots
     DocIE au lieu d'avoir chacun les leurs. 202 { tache } ; suivi sur
     /api/upload/progression/<tache>, par son seul auteur.
