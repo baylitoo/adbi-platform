@@ -252,9 +252,13 @@ test("checklist sans choix : lignes ajoutées sous le verdict, verdict intact (U
   const r = rendrePartiel({ partiel: [{ champ: "iban", raison: "boucle" }] }, "rib");
   assert.equal(r.el.textContent, "✅ verdict");
   assert.deepEqual(r.lignes, [["chk-date-status warn", "⚠ Résultat partiel — IBAN : " + CHAMPS.MESSAGES_PARTIEL.boucle]]);
-  const k = rendrePartiel({ partiel: [{ champ: "siren", raison: "liste_plafonnee_possible" }], choixModele: true }, "kbis");
-  assert.equal(k.el.textContent, "✅ verdict", "Kbis : aucun champ de verdict soumis au choix");
+  // Kbis (#194, sélecteur par type d'entrée) : un champ HORS verdict, même avec
+  // un modèle choisi, n'ajoute que la ligne ; le cas bloquant est testé à part.
+  const k = rendrePartiel({ partiel: [{ champ: "legal_form", raison: "liste_plafonnee_possible" }], choixModele: true }, "kbis");
+  assert.equal(k.el.textContent, "✅ verdict", "Kbis : champ hors verdict, verdict intact");
   assert.equal(k.lignes.length, 1);
+  const kSansChoix = rendrePartiel({ partiel: [{ champ: "siren", raison: "liste_plafonnee_possible" }] }, "kbis");
+  assert.equal(kSansChoix.el.textContent, "✅ verdict", "Kbis sans choix : jamais bloquant");
 });
 
 test("checklist, modèle choisi : champ du verdict perdu -> ⛔ « lecture non retenue » ; champ hors verdict, autre société ou troncature seule -> verdict intact", () => {

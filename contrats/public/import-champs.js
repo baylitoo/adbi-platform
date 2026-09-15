@@ -237,14 +237,15 @@ var CONTRATS_IMPORT_CHAMPS = (function () {
     },
   };
 
-  // Champs dont dépend le VERDICT de la ligne d'état d'une pièce : URSSAF (nom,
-  // validité 6 mois, clé SIREN/SIRET), RIB (titulaire, IBAN, BIC). Avec un
-  // modèle choisi, un de ces champs dans `partiel` fait de la ligne un ⛔ :
-  // un verdict bâti sur une valeur perdue ne peut pas être validé. Kbis : aucun
-  // sélecteur dans ce service, donc jamais de choix explicite.
+  // Champs dont dépend le VERDICT de la ligne d'état d'une pièce : URSSAF et
+  // Kbis (nom, validité 6 mois, clé SIREN/SIRET), RIB (titulaire, IBAN, BIC).
+  // Avec un modèle choisi, un de ces champs dans `partiel` fait de la ligne un
+  // ⛔ : un verdict bâti sur une valeur perdue ne peut pas être validé. Kbis :
+  // sélecteur par type d'entrée (#194), mêmes règles sur ses deux voies.
   var CHAMPS_VERDICT = {
     urssaf: ["company_name", "issued_date", "siren", "siret"],
     rib: ["account_holder", "iban", "bic"],
+    kbis: ["company_name", "issued_date", "siren", "siret_siege"],
   };
 
   function aPropre(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }

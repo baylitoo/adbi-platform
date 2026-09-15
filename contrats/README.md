@@ -52,7 +52,11 @@ deux voies différentes — voir `lib/docie-extraction.js`.
 - **Kbis** — voie agent (`DOCIE_BASE_URL`/`DOCIE_API_KEY`/`DOCIE_AGENT_KBIS`) :
   le PDF ou l'image part entier, les backends OCR de DocIE le lisent, et
   l'agent résout son schéma **par nom** — ce schéma doit donc exister côté
-  Studio DocIE.
+  Studio DocIE. Dès qu'un modèle du catalogue est configuré (#194), le Kbis est
+  **choisi par type d'entrée** : un PDF à couche texte complète passe par la voie
+  texte (`document-parsing/schemas/kbis.schema.json`, LFM2.5 2.6B par défaut),
+  une photo ou un scan par NuExtract3 en vision (`DOCIE_AGENT_KBIS_NUEXTRACT3`,
+  8 pages au plus). Même analyse sur les deux voies.
 - **Attestation de vigilance URSSAF** — voie texte : la couche texte du PDF est
   lue localement, puis envoyée avec la **définition du schéma dans le corps de
   la requête** (`document-parsing/schemas/urssaf.schema.json`). Aucun

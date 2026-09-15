@@ -133,24 +133,36 @@ function monterPreremplissage(app, {
   });
 
   /**
-   * GET /api/modeles?tache=contract|urssaf|rib -> { tache, modeles: [{ id, libelle,
-   * description, role, lignesMax }] } (#194), defaut d'abord.
+   * GET /api/modeles?tache=contract|urssaf|rib|kbis[&voie=texte|agent] ->
+   * { tache, voie?, modeles: [{ id, libelle, description, role, lignesMax }] }
+   * (#194), defaut d'abord.
    *
    * Monte ici plutot que dans server.js pour garder server.js intact. Sert les
-   * trois selecteurs de ce service : pre-remplissage de contrat, analyses URSSAF
-   * et RIB.
-   * Aucun identifiant reel (`store:<nom>`) dans la reponse. Flag DocIE coupe ou
-   * rien de configure -> liste vide : le navigateur n'affiche aucun selecteur et
-   * n'envoie aucun `modele`, soit exactement le comportement d'avant.
+   * quatre selecteurs de ce service : pre-remplissage de contrat, analyses
+   * URSSAF, RIB et Kbis.
+   * `voie` (Kbis seulement, « choisi par type d'entree ») : offres de la voie du
+   * fichier choisi dans le navigateur (PDF -> texte, image -> agent). Elle ne
+   * decide jamais de la voie de l'extraction : le serveur la tranche sur le
+   * fichier recu (lib/docie-extraction.js::extractParType). Voie non admise pour
+   * la tache -> 400.
+   * Aucun identifiant reel (`store:<nom>`, nom d'agent) dans la reponse. Flag
+   * DocIE coupe ou rien de configure -> liste vide : le navigateur n'affiche
+   * aucun selecteur et n'envoie aucun `modele`, soit exactement le comportement
+   * d'avant.
    */
   app.get("/api/modeles", (req, res) => {
     const tache = String((req.query && req.query.tache) || "");
     if (!Object.hasOwn(choixModele.TACHES, tache)) {
       return res.status(400).json({ error: "Tâche sans sélecteur de modèle.", code: "tache" });
     }
-    if (!isEnabled(env)) return res.json({ tache, modeles: [] });
+    const voie = req.query && req.query.voie !== undefined ? String(req.query.voie) : null;
+    if (voie !== null && !choixModele.voiesDe(tache).includes(voie)) {
+      return res.status(400).json({ error: "Voie inconnue pour cette tâche.", code: "voie" });
+    }
+    const entete = voie !== null ? { tache, voie } : { tache };
+    if (!isEnabled(env)) return res.json({ ...entete, modeles: [] });
     try {
-      res.json({ tache, modeles: choixModele.offresPubliques(tache, { env }) });
+      res.json({ ...entete, modeles: choixModele.offresPubliques(tache, { env, voie }) });
     } catch (e) {
       journal("[modeles]", e);
       const code = e && e.name === "ErreurChoixModele" ? e.code : "interne";
