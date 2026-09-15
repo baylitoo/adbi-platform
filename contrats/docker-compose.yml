@@ -60,6 +60,10 @@ services:
       DOCIE_MODELE_NUEXTRACT3: ${DOCIE_MODELE_NUEXTRACT3:-}
       DOCIE_MODELE_LFM25_2_6B: ${DOCIE_MODELE_LFM25_2_6B:-}
       DOCIE_MODELE_LFM25_350M: ${DOCIE_MODELE_LFM25_350M:-}
+      # Kbis photo ou scan avec un modèle choisi (#194, vision) : agent DocIE de
+      # NuExtract3 pour le schéma kbis. Vide = non proposé ; Kbis sans choix
+      # toujours par DOCIE_AGENT_KBIS. Même piège que #164 sans cette ligne.
+      DOCIE_AGENT_KBIS_NUEXTRACT3: ${DOCIE_AGENT_KBIS_NUEXTRACT3:-}
       # Le bridge refuse toute DOCIE_BASE_URL en http:// hors localhost sans
       # DOCIE_ALLOW_HTTP=true (document-parsing/bridge/docie-bridge.js). Absente
       # d'ici, elle n'atteignait jamais le conteneur : sur un DocIE en http
