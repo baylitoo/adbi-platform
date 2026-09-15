@@ -14,7 +14,9 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 
-const { importerCv, ImportError } = require("./lib/import-pipeline");
+const { importerCv } = require("./lib/import-pipeline");
+const { creerGestionnaire } = require("./lib/import-taches");
+const { monterImport } = require("./lib/import-routes");
 const { build, GABARIT, cheminBadge } = require("./lib/onepager");
 const { buildPptx, buildLivret } = require("./lib/render-pptx");
 const db = require("./lib/db.pg");
@@ -85,43 +87,15 @@ app.get("/api/sante", async (req, res) => {
 // ------------------------------------------------------------- Import -----
 
 /**
- * POST /api/import  { filename, contentBase64 }
- * Renvoie le cv_master extrait, sans l'enregistrer : l'utilisateur valide
- * d'abord (etape 2), c'est lui qui declenche l'enregistrement.
+ * POST /api/import  { filename, contentBase64 } -> 202 { tache }
+ * GET  /api/taches/:id -> etat, puis le cv_master extrait (non enregistre :
+ * l'utilisateur valide d'abord, etape 2).
+ *
+ * Tache asynchrone depuis l'issue #196 : un grand CV prend plusieurs minutes
+ * cote DocIE, trop pour une requete HTTP. Contrat, concurrence (2) et duree de
+ * conservation (30 min) : lib/import-taches.js ; routes : lib/import-routes.js.
  */
-app.post("/api/import", async (req, res) => {
-  try {
-    const { filename, contentBase64 } = req.body || {};
-    if (!contentBase64) return res.status(400).json({ error: "Aucun fichier reçu." });
-
-    const buffer = Buffer.from(contentBase64, "base64");
-    if (buffer.length > 20 * 1024 * 1024) {
-      return res.status(413).json({ error: "Fichier trop volumineux (20 Mo maximum)." });
-    }
-
-    const t0 = Date.now();
-    // lib/import-pipeline choisit la voie d'extraction (locale par defaut,
-    // DocIE si DOCIE_EXTRACTION_ENABLED=true : voie fichier pour un PDF, voie
-    // texte pour un depot texte — voir issues #152 et #180)
-    // et gere elle-meme le repli local en cas d'echec DocIE.
-    const master = await importerCv(buffer, filename);
-    const hash = crypto.createHash("sha256").update(buffer).digest("hex");
-    const existant = await db.findByHash(hash);
-
-    res.json({
-      id: crypto.randomUUID(),
-      hash,
-      master,
-      duree_ms: Date.now() - t0,
-      // Un meme fichier deja importe : on previent au lieu de creer un doublon.
-      doublon: existant ? { id: existant.id, nom: existant.nom, maj_le: existant.maj_le } : null,
-    });
-  } catch (e) {
-    if (e instanceof ImportError) return res.status(e.status).json({ error: e.message });
-    console.error("[import]", e);
-    res.status(500).json({ error: "Lecture impossible : " + (e.message || "erreur inconnue") });
-  }
-});
+monterImport(app, { importerCv, db, gestionnaire: creerGestionnaire() });
 
 // --------------------------------------------------------------- CRUD -----
 
