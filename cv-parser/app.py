@@ -1247,7 +1247,9 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
         for exp in normalized["experience"]:
             for brut in re.split(r"[,;/•|]", str(exp.get("env_technique") or "")):
                 tech = brut.strip(" .-—")
-                cle = tech.lower()
+                # Même clé que la boucle des compétences (#177 G/H) : « k8s » et
+                # « Kubernetes », « Sécurité » et « Securite » ne font qu'une.
+                cle = cle_competence(tech)
                 if 1 < len(tech) < 45 and cle not in vues:
                     vues.add(cle)
                     technologies.append(tech)

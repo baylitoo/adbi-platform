@@ -223,6 +223,39 @@ class PorteeEtLecteursTests(unittest.TestCase):
         self.assertEqual(espace["_get_skills_flat"](stockee), ["kubernetes"])
 
 
+class RepliTechnologiesDesMissionsTests(unittest.TestCase):
+    """Repli « Technologies des missions » (CV sans section compétences).
+
+    Relevé par #198 : sa clé de doublon était encore `tech.lower()`. Même clé
+    désormais que la boucle des compétences. Effet borné à `skills` (fiche,
+    exports) : `skills_flat` était déjà dédoublonné par normalize_skills.
+    """
+
+    ENV = "k8s, Kubernetes, Sécurité, Securite, Docker"
+
+    def _fiche(self):
+        data = _donnees(_docie())
+        for i, exp in enumerate(data["experience"]):
+            exp["env_technique"] = self.ENV if i == 0 else ""
+        return normalize_cv_data(data)
+
+    def test_le_repli_dedoublonne_par_cle_competence(self):
+        fiche = self._fiche()
+        self.assertEqual(_groupes(fiche),
+                         [("Technologies des missions", ["k8s", "Sécurité", "Docker"])])
+        self.assertEqual(fiche["skills_flat"], ["Kubernetes", "Sécurité", "Docker"])
+
+    def test_temoin_l_ancienne_cle_gardait_les_doublons(self):
+        vues, technologies = set(), []
+        for brut in re.split(r"[,;/•|]", self.ENV):
+            tech = brut.strip(" .-—")
+            if 1 < len(tech) < 45 and tech.lower() not in vues:
+                vues.add(tech.lower())
+                technologies.append(tech)
+        self.assertEqual(technologies, ["k8s", "Kubernetes", "Sécurité", "Securite", "Docker"])
+        self.assertEqual(normalize_skills(technologies), ["Kubernetes", "Sécurité", "Docker"])
+
+
 def _bloc_service(compose, service):
     texte = (DEPOT / compose).read_text(encoding="utf-8")
     debut = texte.index(f"\n  {service}:\n")
