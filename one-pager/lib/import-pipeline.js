@@ -138,10 +138,10 @@ async function importerAvecModele(buffer, filename, { env, fetchImpl, modele }) 
       "convertissez ce fichier, ou importez-le sans choisir de modèle.");
   }
 
-  // Resultat partiel rapporte par le bridge (#203) : jamais presente comme
-  // complet pour un modele choisi — un avertissement nomme par champ.
-  let metadata = {};
-  const options = { env, fetchImpl, metadonnees: (m) => { metadata = m || {}; } };
+  // Resultat partiel rapporte par le bridge (#203) : avertissement nomme par
+  // champ et marque de relecture poses par mapperAdbiResume, sur toutes les
+  // voies DocIE, choix ou non — rien a ajouter ici.
+  const options = { env, fetchImpl };
   let master;
   if (source.voie === "agent") {
     const offre = choix.choisir("agent", modele, { pages: await choix.compterPages(buffer) }, env);
@@ -151,10 +151,6 @@ async function importerAvecModele(buffer, filename, { env, fetchImpl, modele }) 
     const offre = choix.choisir("texte", modele, { lignesNonVides: choix.compterLignesNonVides(texte) }, env);
     master = await extraireTexteViaDocie(texte, filename, { ...options, modelProfile: offre.identifiant });
   }
-  for (const { champ, raison } of Array.isArray(metadata.partiel) ? metadata.partiel : []) {
-    master.quality.warnings.push(`docie_resultat_partiel:${champ}:${raison}`);
-  }
-  if (metadata.troncature_possible === true) master.quality.warnings.push("docie_troncature_possible");
   return noterModele(master, source.voie, modele, env);
 }
 

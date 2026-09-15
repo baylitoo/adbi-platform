@@ -79,9 +79,10 @@ function texte(v) {
  *
  * DocIE plafonne la confiance d'un champ a exactement 0.5 quand il a du
  * tronquer une liste qui bouclait : la valeur rendue est alors partielle, mais
- * rien dans le CV extrait ne le montre. C'est le seul signal par champ que
- * l'agent emette ; `validation.warnings` est une prose libre, sans contrat de
- * format, qu'on affiche telle quelle sans jamais en extraire un nom de champ.
+ * rien dans le CV extrait ne le montre. `validation.warnings` est une prose
+ * libre, sans contrat de format, affichee telle quelle : ce module n'en extrait
+ * jamais un nom de champ. Seul le bridge le fait (`metadata.partiel`, #203),
+ * lu plus bas dans mapperAdbiResume.
  */
 const SEUIL_CONFIANCE = 0.5;
 
@@ -452,9 +453,8 @@ function mapperAdbiResume(data, metadata, doc) {
   } else {
     for (const [cle, prefixe] of [["errors", "docie_erreur"], ["warnings", "docie_avertissement"]]) {
       const entrees = Array.isArray(validation[cle]) ? validation[cle] : [];
-      // Texte repris verbatim : la prose de DocIE n'a aucun format stable dont
-      // on pourrait deduire un nom de champ, et le pretendre serait pire que
-      // de l'afficher telle quelle au relecteur.
+      // Texte repris verbatim : ce module n'en deduit aucun nom de champ ; le
+      // bridge le fait en un seul endroit (`metadata.partiel`, lu plus bas).
       for (const entree of entrees) {
         const message = texteDocie(entree);
         if (message) warnings.push(`${prefixe}:${message}`);
@@ -474,6 +474,23 @@ function mapperAdbiResume(data, metadata, doc) {
     if (!chemin) warnings.push(`docie_confiance_faible:${cheminDocie}`);
     else if (!needs_review.includes(chemin)) needs_review.push(chemin);
   }
+
+  // ── Resultat partiel releve par le bridge (#203) ───────────────────────────
+  // Des FAITS sur l'extraction (valeur abandonnee, boucle coupee, liste peut-etre
+  // plafonnee, document peut-etre tronque) : dits sur les deux voies (fichier et
+  // texte), qu'un modele ait ete choisi ou non (#194, comme contrats #212).
+  // Non bloquant : un avertissement nomme (`docie_resultat_partiel:<champ>:<raison>`,
+  // le code de #211, libelle en francais par public/app.js) et la marque « a
+  // verifier » du champ traduit par cheminMaster (missions retriees comprises).
+  // Pas de filtre estRempli : une valeur abandonnee laisse justement le champ vide.
+  for (const entree of Array.isArray(meta.partiel) ? meta.partiel : []) {
+    if (!entree || typeof entree !== "object" || typeof entree.champ !== "string" || !entree.champ) continue;
+    const code = `docie_resultat_partiel:${entree.champ}:${entree.raison}`;
+    if (!warnings.includes(code)) warnings.push(code);
+    const chemin = cheminMaster(entree.champ, idParIndexDocie);
+    if (chemin && !needs_review.includes(chemin)) needs_review.push(chemin);
+  }
+  if (meta.troncature_possible === true) warnings.push("docie_troncature_possible");
 
   const master = {
     source: {
