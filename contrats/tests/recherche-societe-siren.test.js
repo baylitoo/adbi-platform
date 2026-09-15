@@ -5,6 +5,8 @@
 //
 // Aucun réseau : globalThis.fetch est remplacé par un bouchon qui compte ses
 // appels (et rend une réponse gouv.fr factice pour les témoins positifs).
+// Indépendant du poste : source et clés Pappers/INSEE épinglées par
+// avecConfiguration (secrets.json et variables d'environnement).
 // Aucune base : server.js n'est jamais require() (il exige DATABASE_URL) ; la
 // route est relue dans sa source et montée sur une app Express de test.
 const { test } = require("node:test");
@@ -33,75 +35,139 @@ async function avecFetchBouchon(fn) {
   try { return await fn(appels); } finally { globalThis.fetch = avant; }
 }
 
-test("précondition : source de recherche par défaut (gouv.fr), sans clé Pappers/INSEE configurée", () => {
-  // Le refus est placé avant le choix de la source : il vaut quelle que soit
-  // la source. Les témoins positifs ci-dessous supposent gouv.fr.
-  assert.equal(settingsStatus().source, "gouv");
+// Configuration de la recherche ÉPINGLÉE pour la durée d'un test : le résultat
+// ne doit pas dépendre du poste. integrations.js choisit la source dans
+// data/secrets.json (écran Paramètres) et lit les clés dans PAPPERS_API_KEY /
+// INSEE_API_KEY OU dans ce fichier. Mesuré avant cet épinglage : un
+// secrets.json « source pappers » avec sa clé, ou « source insee » avec
+// INSEE_API_KEY exportée, faisait échouer 4 tests sur 7.
+// - variables : PAPPERS_API_KEY et INSEE_API_KEY retirées, ou posées selon
+//   `config.env`, puis restaurées ;
+// - fichier : integrations.js lit data/secrets.json par fs.existsSync /
+//   fs.readFileSync AU MOMENT DE L'APPEL. Ces deux fonctions sont bouchonnées
+//   pour ce seul chemin (`config.secrets` null -> fichier absent), puis
+//   restaurées : aucun point d'injection ajouté au code de production.
+const CHEMIN_SECRETS = path.resolve(__dirname, "..", "data", "secrets.json");
+const VARIABLES_CLES = ["PAPPERS_API_KEY", "INSEE_API_KEY"];
+const DEFAUT = { nom: "gouv.fr (défaut)", secrets: null, env: {} };
+const PAPPERS = { nom: "Pappers", secrets: { source: "pappers" }, env: { PAPPERS_API_KEY: "cle-factice" } };
+const INSEE = { nom: "INSEE", secrets: { source: "insee" }, env: { INSEE_API_KEY: "cle-factice" } };
+const PAPPERS_SANS_CLE = { nom: "Pappers choisi, clé absente", secrets: { source: "pappers" }, env: {} };
+const INSEE_SANS_CLE = { nom: "INSEE choisi, clé absente", secrets: { source: "insee" }, env: {} };
+const CONFIGURATIONS = [DEFAUT, PAPPERS, INSEE];
+
+async function avecConfiguration(config, fn) {
+  const envAvant = {};
+  for (const k of VARIABLES_CLES) {
+    envAvant[k] = process.env[k];
+    if (config.env[k] === undefined) delete process.env[k];
+    else process.env[k] = config.env[k];
+  }
+  const existsAvant = fs.existsSync;
+  const lireAvant = fs.readFileSync;
+  const estSecrets = (p) => typeof p === "string" && path.resolve(p) === CHEMIN_SECRETS;
+  fs.existsSync = function (p, ...reste) {
+    return estSecrets(p) ? config.secrets !== null : existsAvant.call(this, p, ...reste);
+  };
+  fs.readFileSync = function (p, ...reste) {
+    if (!estSecrets(p)) return lireAvant.call(this, p, ...reste);
+    if (config.secrets === null) {
+      const e = new Error("ENOENT : secrets.json absent (bouchon de test)");
+      e.code = "ENOENT";
+      throw e;
+    }
+    return JSON.stringify(config.secrets);
+  };
+  try {
+    return await fn();
+  } finally {
+    fs.existsSync = existsAvant;
+    fs.readFileSync = lireAvant;
+    for (const k of VARIABLES_CLES) {
+      if (envAvant[k] === undefined) delete process.env[k];
+      else process.env[k] = envAvant[k];
+    }
+  }
+}
+
+test("configuration épinglée : la source ne dépend ni du secrets.json ni des variables du poste", async () => {
+  // Témoins de l'épinglage lui-même (le bouchon atteint bien integrations.js).
+  // « Pappers/INSEE choisi, clé absente » retombe sur gouv.fr SEULEMENT si
+  // la PAPPERS_API_KEY / INSEE_API_KEY exportée sur le poste ne fuit pas.
+  for (const [config, source] of [[DEFAUT, "gouv"], [PAPPERS_SANS_CLE, "gouv"], [INSEE_SANS_CLE, "gouv"], [PAPPERS, "pappers"], [INSEE, "insee"]]) {
+    await avecConfiguration(config, () => assert.equal(settingsStatus().source, source, config.nom));
+  }
 });
 
-test("SIREN à clé invalide (jeu d'essai #201) : 400 nommé, AUCUN appel sortant", async () => {
+test("SIREN à clé invalide (jeu d'essai #201) : 400 nommé, AUCUN appel sortant, quelle que soit la source (gouv.fr, Pappers, INSEE)", async () => {
   const refuses = SIREN_SIRET.cas
     .filter((c) => typeof c.siren === "string" && c.statut_siren === "cle_invalide" && c.siren.replace(/\D/g, "").length === 9)
     .map((c) => c.siren);
   assert.ok(refuses.length >= 7, "cas du jeu d'essai : " + refuses.length);
-  await avecFetchBouchon(async (appels) => {
-    for (const q of refuses) {
-      await assert.rejects(getCompany(q), (e) => {
-        assert.equal(e.status, 400, q);
-        assert.equal(e.message, "SIREN « " + q.trim() + " » : clé de contrôle invalide — un chiffre est probablement mal saisi ou mal lu. Recherche non lancée.");
-        return true;
-      });
-    }
-    assert.deepEqual(appels, [], "aucun appel à un fournisseur");
-  });
+  for (const config of CONFIGURATIONS) {
+    await avecConfiguration(config, () => avecFetchBouchon(async (appels) => {
+      for (const q of refuses) {
+        await assert.rejects(getCompany(q), (e) => {
+          assert.equal(e.status, 400, config.nom + " " + q);
+          assert.equal(e.message, "SIREN « " + q.trim() + " » : clé de contrôle invalide — un chiffre est probablement mal saisi ou mal lu. Recherche non lancée.");
+          return true;
+        });
+      }
+      assert.deepEqual(appels, [], config.nom + " : aucun appel à un fournisseur");
+    }));
+  }
 });
 
-test("SIRET dont le SIREN contenu a une clé invalide : 400 nommé, aucun appel sortant", async () => {
-  await avecFetchBouchon(async (appels) => {
-    for (const q of ["12345678900012", "94109131700013", "941 091 317 00013"]) {
-      assert.equal(controlerSirenSiret(q.replace(/\D/g, "").slice(0, 9), null).siren.statut, "cle_invalide", "précondition " + q);
-      await assert.rejects(getCompany(q), (e) => {
-        assert.equal(e.status, 400);
-        assert.equal(e.message, "SIRET « " + q + " » : le SIREN qu'il contient (" + q.replace(/\D/g, "").slice(0, 9) + ") a une clé de contrôle invalide — un chiffre est probablement mal saisi ou mal lu. Recherche non lancée.");
-        return true;
-      });
-    }
-    assert.deepEqual(appels, []);
-  });
+test("SIRET dont le SIREN contenu a une clé invalide : 400 nommé, aucun appel sortant, quelle que soit la source", async () => {
+  for (const config of CONFIGURATIONS) {
+    await avecConfiguration(config, () => avecFetchBouchon(async (appels) => {
+      for (const q of ["12345678900012", "94109131700013", "941 091 317 00013"]) {
+        assert.equal(controlerSirenSiret(q.replace(/\D/g, "").slice(0, 9), null).siren.statut, "cle_invalide", "précondition " + q);
+        await assert.rejects(getCompany(q), (e) => {
+          assert.equal(e.status, 400);
+          assert.equal(e.message, "SIRET « " + q + " » : le SIREN qu'il contient (" + q.replace(/\D/g, "").slice(0, 9) + ") a une clé de contrôle invalide — un chiffre est probablement mal saisi ou mal lu. Recherche non lancée.");
+          return true;
+        });
+      }
+      assert.deepEqual(appels, [], config.nom);
+    }));
+  }
 });
 
-test("témoins : SIREN / SIRET valides -> la recherche part (un appel, par SIREN)", async () => {
-  await avecFetchBouchon(async (appels) => {
+test("témoins (source gouv.fr épinglée) : SIREN / SIRET valides -> la recherche part (un appel, par SIREN)", async () => {
+  await avecConfiguration(DEFAUT, () => avecFetchBouchon(async (appels) => {
     const r = await getCompany("941091316");
     assert.equal(r.stSiren, "941091316");
     await getCompany("941 091 316 00013");
     assert.equal(appels.length, 2);
     for (const u of appels) assert.equal(new URL(u).searchParams.get("q"), "941091316");
-  });
+  }));
 });
 
-test("La Poste : SIRET hors Luhn (lacune connue de #201) -> recherche possible, par son SIREN 356000000 qui passe Luhn", async () => {
+test("La Poste (source gouv.fr épinglée) : SIRET hors Luhn (lacune connue de #201) -> recherche possible, par son SIREN 356000000 qui passe Luhn", async () => {
   const lacune = SIREN_SIRET.cas.find((c) => c.siret === "35600000000001");
   assert.equal(lacune.statut_siret, "cle_invalide", "précondition : #201 le déclare clé invalide");
-  await avecFetchBouchon(async (appels) => {
+  await avecConfiguration(DEFAUT, () => avecFetchBouchon(async (appels) => {
     await getCompany("35600000000001");
     await getCompany("356000000");
     assert.deepEqual(appels.map((u) => new URL(u).searchParams.get("q")), ["356000000", "356000000"]);
-  });
+  }));
   // Même règle pour tout SIRET : seul le SIREN recherché compte (NIC jamais envoyé).
-  await avecFetchBouchon(async (appels) => {
+  await avecConfiguration(DEFAUT, () => avecFetchBouchon(async (appels) => {
     await getCompany("94109131600031"); // clé SIRET fausse, SIREN valide (jeu d'essai)
     assert.equal(appels.length, 1);
-  });
+  }));
 });
 
-test("format : message et refus d'avant inchangés (nom de société, 8 chiffres), aucun appel", async () => {
-  await avecFetchBouchon(async (appels) => {
-    for (const q of ["ADCONSI", "94109131", "", undefined]) {
-      await assert.rejects(getCompany(q), { message: "Saisir un SIREN (9 chiffres) ou un SIRET (14 chiffres)." });
-    }
-    assert.deepEqual(appels, []);
-  });
+test("format : message et refus d'avant inchangés (nom de société, 8 chiffres), aucun appel, quelle que soit la source", async () => {
+  for (const config of CONFIGURATIONS) {
+    await avecConfiguration(config, () => avecFetchBouchon(async (appels) => {
+      for (const q of ["ADCONSI", "94109131", "", undefined]) {
+        await assert.rejects(getCompany(q), { message: "Saisir un SIREN (9 chiffres) ou un SIRET (14 chiffres)." });
+      }
+      assert.deepEqual(appels, [], config.nom);
+    }));
+  }
 });
 
 function routeLookup() {
@@ -129,14 +195,14 @@ function poster(port, corps) {
   });
 }
 
-test("route POST /api/lookup (vrai gestionnaire de server.js) : 400 + message pour une clé invalide, sans appel sortant ; 200 sinon", async () => {
+test("route POST /api/lookup (vrai gestionnaire de server.js, source gouv.fr épinglée) : 400 + message pour une clé invalide, sans appel sortant ; 200 sinon", async () => {
   const app = express();
   app.use(express.json());
   // eslint-disable-next-line no-new-func
   new Function("app", "getCompany", routeLookup())(app, getCompany);
   const serveur = await new Promise((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
   try {
-    await avecFetchBouchon(async (appels) => {
+    await avecConfiguration(DEFAUT, () => avecFetchBouchon(async (appels) => {
       const port = serveur.address().port;
       const ko = await poster(port, { q: "123456789" });
       assert.equal(ko.status, 400);
@@ -146,7 +212,7 @@ test("route POST /api/lookup (vrai gestionnaire de server.js) : 400 + message po
       assert.equal(ok.status, 200);
       assert.equal(ok.body.stSiren, "941091316");
       assert.equal(appels.length, 1);
-    });
+    }));
   } finally {
     await new Promise((resolve) => serveur.close(resolve));
   }
