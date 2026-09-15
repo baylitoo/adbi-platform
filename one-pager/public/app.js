@@ -88,6 +88,11 @@ $("#btn-file-vider").addEventListener("click", reinitImport);
  */
 const choixModeles = { voies: { texte: [], agent: [] } };
 
+/** Texte d'une option : un modele experimental du catalogue le dit (#194). */
+function libelleOptionModele(m) {
+  return `${m.libelle} — ${m.experimental ? `expérimental (${m.description})` : m.description}`;
+}
+
 async function chargerModeles() {
   let data;
   try {
@@ -99,7 +104,7 @@ async function chargerModeles() {
   choixModeles.voies = data.voies || { texte: [], agent: [] };
   if (modeles.length) {
     $("#choix-modele").innerHTML = modeles.map((m) =>
-      `<option value="${echapper(m.id)}"${m.role === "defaut" ? " selected" : ""}>${echapper(m.libelle)} — ${echapper(m.description)}</option>`
+      `<option value="${echapper(m.id)}"${m.role === "defaut" ? " selected" : ""}>${echapper(libelleOptionModele(m))}</option>`
     ).join("");
   }
   $("#choix-modele-bloc").hidden = modeles.length < 2;

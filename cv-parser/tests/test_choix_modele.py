@@ -110,8 +110,13 @@ class Offre(unittest.TestCase):
         html = rendre("index.html", modeles=modeles, modeles_erreur="")
         self.assertIn('id="modeleSelect"', html)
         self.assertNotRegex(html, r'id="modeleSelect" style="[^"]*" hidden')
-        self.assertIn('<option value="lfm25_2_6b" selected>LFM2.5 2.6B', html)
-        self.assertIn('<option value="nuextract3">NuExtract3', html)
+        self.assertIn('<option value="lfm25_2_6b" selected>LFM2.5 2.6B — Rapide</option>', html)
+        # Alternative du CV marquée expérimentale dans le catalogue (DocIE : aucune
+        # lecture réelle réussie d'un CV riche en listes depuis la PR #522).
+        self.assertEqual([m["experimental"] for m in modeles], [False, True])
+        self.assertIn('<option value="nuextract3">NuExtract3 — expérimental (Précis mais lent — plusieurs minutes)</option>', html)
+        cv = {"id": "cv-1", "name": "A", "title": "B", "contact": {}, "ext": ".pdf"}
+        self.assertIn("NuExtract3 — expérimental (", rendre("cv_detail.html", cv=cv, linked_cvs=[], modeles=modeles, modeles_erreur=""))
 
     def test_alternative_seule_configuree_proposee_seule(self):
         with environnement(DOCIE_MODELE_NUEXTRACT3="store:nuextract3"):

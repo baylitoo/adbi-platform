@@ -474,7 +474,7 @@
     {% if modeles %}
     <select class="tbtn tbtn-ghost" id="modeleSelect"{% if modeles|length < 2 %} hidden{% endif %} aria-label="Modèle d'extraction" title="Modèle utilisé pour relancer l'analyse">
       {% for m in modeles %}
-      <option value="{{ m.id }}"{% if m.role == 'defaut' %} selected{% endif %}>{{ m.libelle }} — {{ m.description }}</option>
+      <option value="{{ m.id }}"{% if m.role == 'defaut' %} selected{% endif %}>{{ m.libelle }} — {% if m.experimental %}expérimental ({{ m.description }}){% else %}{{ m.description }}{% endif %}</option>
       {% endfor %}
     </select>
     {% endif %}

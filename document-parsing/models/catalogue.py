@@ -74,7 +74,10 @@ def _tache(catalogue: dict, tache: str) -> dict:
 
 def modeles_configures(tache: str, voie: str, env: Mapping[str, str] | None = None,
                        catalogue: dict | None = None) -> list[dict]:
-    """Modèles configurés pour (tache, voie), défaut d'abord, sans regarder le document."""
+    """Modèles configurés pour (tache, voie), défaut d'abord, sans regarder le document.
+
+    ``experimental`` : vrai seulement si l'entrée de la tâche le déclare.
+    """
     catalogue = catalogue or charger_catalogue()
     env = os.environ if env is None else env
     t = _tache(catalogue, tache)
@@ -107,6 +110,7 @@ def modeles_configures(tache: str, voie: str, env: Mapping[str, str] | None = No
             "limites": dict((modele.get("limites") or {}).get(voie) or {}),
             "condition": entree.get("condition"),
             "prerequis": entree.get("prerequis"),
+            "experimental": entree.get("experimental") is True,
         })
     return offres
 

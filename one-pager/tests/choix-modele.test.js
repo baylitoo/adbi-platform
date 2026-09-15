@@ -89,8 +89,21 @@ test("offre : rien de configure ou DocIE inactif -> aucun modele ; un seul -> un
   assert.deepEqual(modelesProposes(DEUX_TEXTE).map((m) => [m.id, m.role]),
     [["lfm25_2_6b", "defaut"], ["nuextract3", "alternative"]]);
   assert.deepEqual(modelesProposes({ ...BASE, DOCIE_AGENT_RESUME_NUEXTRACT3: "agent_nu" }).map((m) => m.id), ["nuextract3"]);
-  assert.deepEqual(Object.keys(modelesProposes(DEUX_AGENT)[0]), ["id", "libelle", "description", "role"],
+  assert.deepEqual(Object.keys(modelesProposes(DEUX_AGENT)[0]), ["id", "libelle", "description", "role", "experimental"],
     "l'identifiant reel ne part jamais vers le navigateur");
+  // Alternative du CV marquee experimentale dans le catalogue.
+  assert.deepEqual(modelesProposes(DEUX_TEXTE).map((m) => [m.id, m.experimental]), [["lfm25_2_6b", false], ["nuextract3", true]]);
+});
+
+test("interface : un modele experimental le dit dans son option", () => {
+  const vm = require("node:vm");
+  const source = fs.readFileSync(path.join(__dirname, "..", "public", "app.js"), "utf8");
+  assert.match(source, /\$\{echapper\(libelleOptionModele\(m\)\)\}/);
+  const fonction = /function libelleOptionModele\(m\) \{[\s\S]*?\n\}/.exec(source)[0];
+  const libelle = (m) => vm.runInNewContext(`${fonction}; libelleOptionModele(${JSON.stringify(m)})`);
+  const [defaut, alternative] = modelesProposes(DEUX_TEXTE);
+  assert.equal(libelle(defaut), "LFM2.5 2.6B — Rapide");
+  assert.equal(libelle(alternative), "NuExtract3 — expérimental (Précis mais lent — plusieurs minutes)");
 });
 
 test("interface : selecteur visible a partir de deux ; modele envoye des qu'un modele est propose pour la voie du fichier", () => {

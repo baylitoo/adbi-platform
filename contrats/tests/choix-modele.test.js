@@ -128,6 +128,18 @@ test("GET /api/modeles : rien de configuré ou flag coupé -> liste vide ; confi
   }
 });
 
+test("GET /api/modeles?tache=contract : octet pour octet, le drapeau `experimental` du catalogue (CV) ne sort pas ici", async () => {
+  const srv = await demarrer({ env: { ...BASE, ...MODELES_CONTRAT } });
+  try {
+    assert.equal(await (await srv.modeles("contract")).text(),
+      '{"tache":"contract","modeles":[' +
+      '{"id":"nuextract3","libelle":"NuExtract3","description":"Précis mais lent — plusieurs minutes","role":"defaut","lignesMax":null},' +
+      '{"id":"lfm25_2_6b","libelle":"LFM2.5 2.6B","description":"Rapide","role":"alternative","lignesMax":800}]}');
+  } finally {
+    await srv.fermer();
+  }
+});
+
 test("GET /api/modeles : identifiant mal formé -> 500 nommé, la valeur n'est jamais renvoyée", async () => {
   const srv = await demarrer({ env: { ...BASE, DOCIE_MODELE_NUEXTRACT3: "store:secret\u0001" } });
   try {

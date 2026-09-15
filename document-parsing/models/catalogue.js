@@ -108,7 +108,9 @@ function tacheDuCatalogue(catalogue, tache) {
 /**
  * Modèles configurés pour (tache, voie), défaut d'abord, SANS regarder le
  * document. Chaque entrée : { id, libelle, description, etiquettes, role,
- * voie, variable, identifiant, limites, condition, prerequis }.
+ * voie, variable, identifiant, limites, condition, prerequis, experimental }.
+ * `experimental` : vrai seulement si l'entrée de la tâche le déclare (le même
+ * modèle peut être éprouvé sur une tâche et expérimental sur une autre).
  */
 function modelesConfigures(tache, voie, { env = process.env, catalogue = chargerCatalogue() } = {}) {
   const t = tacheDuCatalogue(catalogue, tache);
@@ -140,6 +142,7 @@ function modelesConfigures(tache, voie, { env = process.env, catalogue = charger
       limites: { ...((modele.limites || {})[voie] || {}) },
       condition: entree.condition || null,
       prerequis: entree.prerequis || null,
+      experimental: entree.experimental === true,
     });
   }
   return offres;

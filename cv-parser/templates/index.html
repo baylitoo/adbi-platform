@@ -537,7 +537,7 @@
               data-formats="{{ (modeles_par_format or {})|tojson|forceescape }}"
               aria-label="Modèle d'extraction" title="Modèle d'extraction utilisé pour les prochains CV">
         {% for m in modeles %}
-        <option value="{{ m.id }}"{% if m.role == 'defaut' %} selected{% endif %}>{{ m.libelle }} — {{ m.description }}</option>
+        <option value="{{ m.id }}"{% if m.role == 'defaut' %} selected{% endif %}>{{ m.libelle }} — {% if m.experimental %}expérimental ({{ m.description }}){% else %}{{ m.description }}{% endif %}</option>
         {% endfor %}
       </select>
       {% endif %}

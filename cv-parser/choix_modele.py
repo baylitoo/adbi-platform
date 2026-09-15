@@ -86,7 +86,8 @@ def modeles_proposes(ext=None):
     for voie in voies:
         for offre in catalogue.modeles_offerts(TACHE, voie):
             vus.setdefault(offre["id"], {"id": offre["id"], "libelle": offre["libelle"],
-                                         "description": offre["description"], "role": offre["role"]})
+                                         "description": offre["description"], "role": offre["role"],
+                                         "experimental": offre.get("experimental") is True})
     return sorted(vus.values(), key=lambda o: o["role"] != "defaut")
 
 

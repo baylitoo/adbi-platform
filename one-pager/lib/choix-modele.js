@@ -51,7 +51,7 @@ function offresParVoie(env = process.env) {
   return offres;
 }
 
-/** Modeles du selecteur, defaut d'abord : [{ id, libelle, description, role }]. */
+/** Modeles du selecteur, defaut d'abord : [{ id, libelle, description, role, experimental }]. */
 function modelesProposes(env = process.env) {
   if (!docieActif(env)) return [];
   const catalogue = chargerCatalogue();
@@ -60,7 +60,9 @@ function modelesProposes(env = process.env) {
   // pas connu ; un modele configure sur une seule voie est verifie a l'envoi.
   for (const voie of ["texte", "agent"]) {
     for (const o of catalogue.modelesOfferts(TACHE, voie, { env })) {
-      if (!vus.has(o.id)) vus.set(o.id, { id: o.id, libelle: o.libelle, description: o.description, role: o.role });
+      if (!vus.has(o.id)) {
+        vus.set(o.id, { id: o.id, libelle: o.libelle, description: o.description, role: o.role, experimental: o.experimental === true });
+      }
     }
   }
   return [...vus.values()].sort((a, b) => (a.role === "defaut" ? 0 : 1) - (b.role === "defaut" ? 0 : 1));
