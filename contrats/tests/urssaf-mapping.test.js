@@ -371,15 +371,22 @@ test("siren/siret : même sortie que le portage Python sur chaque cas (exécutio
     "                'avertissements': [w for w in m.warnings if w.startswith(('siren: ', 'siret: '))]})",
     "sys.stdout.buffer.write(json.dumps(out, ensure_ascii=False).encode('utf-8'))",
   ].join("\n");
-  const python = spawnSync(process.platform === "win32" ? "python" : "python3", [
+  const interpreteur = process.platform === "win32" ? "python" : "python3";
+  // On ne saute QUE si l'interpréteur manque. Mesuré par mutation : sauter sur
+  // tout statut non nul masquait un mapping Python cassé (drapeau retiré ->
+  // KeyError dans ce script) en « Python indisponible », test sauté au lieu
+  // d'échouer.
+  const sonde = spawnSync(interpreteur, ["-c", "pass"], { encoding: "utf-8" });
+  if (sonde.error || sonde.status !== 0) {
+    t.skip("Python indisponible : " + (sonde.error ? sonde.error.message : sonde.stderr));
+    return;
+  }
+  const python = spawnSync(interpreteur, [
     "-c", script,
     path.join(RACINE, "document-parsing", "mappings"),
     path.join(RACINE, "document-parsing", "fixtures", "siren_siret.json"),
   ], { encoding: "utf-8" });
-  if (python.error || python.status !== 0) {
-    t.skip("Python indisponible : " + (python.error ? python.error.message : python.stderr));
-    return;
-  }
+  assert.equal(python.status, 0, "le mapping Python a échoué sur la fixture : " + python.stderr);
   const sortiesPython = JSON.parse(python.stdout);
   assert.equal(sortiesPython.length, SIREN_SIRET.cas.length);
   SIREN_SIRET.cas.forEach((cas, i) => {
