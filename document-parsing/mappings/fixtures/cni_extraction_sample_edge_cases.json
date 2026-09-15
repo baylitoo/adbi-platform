@@ -1,0 +1,136 @@
+{
+  "request_id": "req-fixture-cni-edge-0001",
+  "schema_name": "cni",
+  "model_profile": "nuextract3",
+  "document_hash": "sha256:req-fixture-cni-edge-0001",
+  "result": {
+    "document_type": "cni",
+    "extraction_notes": [
+      "low confidence on mrz_line1"
+    ],
+    "surname": {
+      "value": "SPECIMEN",
+      "evidence_ids": [],
+      "confidence": 0.6
+    },
+    "given_names": {
+      "value": "JEAN PAUL",
+      "evidence_ids": [],
+      "confidence": 0.6
+    },
+    "document_number": null,
+    "nationality": {
+      "value": "   ",
+      "evidence_ids": [],
+      "confidence": 0.2
+    },
+    "birth_date": {
+      "value": "1980-01-01",
+      "evidence_ids": [],
+      "confidence": 0.5
+    },
+    "sex": {
+      "value": null,
+      "evidence_ids": [],
+      "confidence": 0.0
+    },
+    "issue_date": {
+      "value": "le 2 janvier 2025",
+      "evidence_ids": [],
+      "confidence": 0.5
+    },
+    "expiry_date": {
+      "value": "30/02/2035",
+      "evidence_ids": [],
+      "confidence": 0.4
+    },
+    "mrz_line1": {
+      "value": "IDFRASPECIMEM13<<<<<<<<<<<<<<<",
+      "evidence_ids": [],
+      "confidence": 0.5
+    },
+    "mrz_line2": {
+      "value": "8001014M3501014FRA<<<<<<<<<<<6",
+      "evidence_ids": [],
+      "confidence": 0.5
+    }
+  },
+  "validation": {
+    "valid": false,
+    "errors": [
+      "mrz_line1 douteuse"
+    ],
+    "warnings": [
+      "confiance faible"
+    ]
+  },
+  "usage": null,
+  "latency_ms": 9876,
+  "dynamic_schema": {
+    "document_type": "cni",
+    "fields": [
+      {
+        "name": "surname",
+        "type": "string",
+        "description": "Nom de famille du titulaire, tel qu'imprime (nom de naissance)",
+        "fields": []
+      },
+      {
+        "name": "given_names",
+        "type": "string",
+        "description": "Prenom(s) du titulaire, tels qu'imprimes, dans l'ordre du document",
+        "fields": []
+      },
+      {
+        "name": "document_number",
+        "type": "string",
+        "description": "Numero du titre tel qu'imprime en clair sur la carte",
+        "fields": []
+      },
+      {
+        "name": "nationality",
+        "type": "string",
+        "description": "Nationalite du titulaire telle qu'imprimee",
+        "fields": []
+      },
+      {
+        "name": "birth_date",
+        "type": "date",
+        "description": "Date de naissance du titulaire",
+        "fields": []
+      },
+      {
+        "name": "sex",
+        "type": "string",
+        "description": "Sexe du titulaire tel qu'imprime (F ou M sur une carte francaise)",
+        "fields": []
+      },
+      {
+        "name": "issue_date",
+        "type": "date",
+        "description": "Date de delivrance de la carte",
+        "fields": []
+      },
+      {
+        "name": "expiry_date",
+        "type": "date",
+        "description": "Date d'expiration de la carte",
+        "fields": []
+      },
+      {
+        "name": "mrz_line1",
+        "type": "string",
+        "description": "Premiere ligne de la zone de lecture automatique (MRZ), 30 caracteres A-Z, 0-9 ou < , recopiee telle quelle",
+        "fields": []
+      },
+      {
+        "name": "mrz_line2",
+        "type": "string",
+        "description": "Deuxieme ligne de la zone de lecture automatique (MRZ), 30 caracteres A-Z, 0-9 ou < , recopiee telle quelle",
+        "fields": []
+      }
+    ]
+  },
+  "routing": null,
+  "response_format_style": "json_schema"
+}
