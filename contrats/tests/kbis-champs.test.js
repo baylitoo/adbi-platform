@@ -256,6 +256,8 @@ async function analyserDansNavigateur(itemId, reponse) {
     renderControleSirenSiret: (el, res) => { propHost.controleRendu = res; },
     renderPropositionKbis: (host, res) => { host.rendu = res; },
     majNoteCoordonnees: () => {},
+    // Résultat partiel (#203) : hors sujet ici, bouchon neutre.
+    renderResultatPartiel: () => {},
     JSON,
   };
   vm.createContext(ctx);

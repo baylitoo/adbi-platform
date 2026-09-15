@@ -156,6 +156,8 @@ async function analyser({ selecteur, reponse }) {
     renderPropositionKbis: () => {}, majNoteCoordonnees: () => {},
     // Verdict SIREN/SIRET (#204) : hors sujet ici, bouchons neutres.
     renderControleSirenSiret: () => {},
+    // Résultat partiel (#203) : hors sujet ici, bouchon neutre.
+    renderResultatPartiel: () => {},
     CONTRATS_KBIS_CHAMPS: { extraire: () => ({}), controleCompact: () => null },
     JSON, Error,
   };

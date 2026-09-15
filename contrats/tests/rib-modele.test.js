@@ -250,6 +250,8 @@ async function analyserDansNavigateur({ reponse, status = 200, selecteur = null 
     state: { values: { stNom: "Sund Industry System" }, dateState: {} },
     fileToBase64: async () => "JVBERi0=",
     fetch: async (url, options) => { envois.push(JSON.parse(options.body)); return { ok: status < 300, status, json: async () => reponse }; },
+    // Résultat partiel (#203) : couvert par resultat-partiel.test.js, bouchon neutre.
+    renderResultatPartiel: () => {},
     JSON, Error,
   };
   vm.createContext(ctx);

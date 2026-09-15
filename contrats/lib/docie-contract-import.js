@@ -40,7 +40,7 @@
 // Python sans tenir compte de unwrap() produirait 19 champs vides,
 // silencieusement (piège vérifié avant d'écrire ce fichier).
 const path = require("path");
-const { isEnabled, loadBridge, sniffMime, coucheTexteUtilisable } = require("./docie-extraction");
+const { isEnabled, loadBridge, sniffMime, coucheTexteUtilisable, signauxPartielsPublics } = require("./docie-extraction");
 const choixModele = require("./choix-modele");
 
 // Définition du schéma "contract" pour la voie TEXTE (#194). Sur
@@ -87,6 +87,10 @@ const MAPPED_FIELDS = {
   tjm: ["tjm", "money"],
   delai_paiement: ["delaiPaiement", "number"],
 };
+
+// Champ DocIE de premier niveau -> clé contrats : rattache un signal de résultat
+// partiel (#203, `tjm.amount` -> `tjm`) au champ du modal à marquer.
+const CLES_CONTRATS = Object.fromEntries(Object.entries(MAPPED_FIELDS).map(([docie, [cle]]) => [docie, cle]));
 
 // Constantes ADBI déjà portées par leur `default` dans fields.js —
 // contrats/server.js::resolveBody les réapplique à CHAQUE rendu PDF/DOCX
@@ -442,7 +446,9 @@ async function extractContractValues(body = {}, deps = {}) {
   const response = await extractDocument(buffer, mime, options);
   const metadata = response.metadata || {};
   const mapped = mapContractResult(response.result, { validation: metadata.validation });
-  return Object.assign({ requestId: metadata.request_id || null }, mapped);
+  // Résultat partiel (#203, #194), sur les deux voies : `partiel` (avec la clé
+  // contrats du champ) et `troncaturePossible`, seulement s'ils sont présents.
+  return Object.assign({ requestId: metadata.request_id || null }, mapped, signauxPartielsPublics(metadata, { cles: CLES_CONTRATS }));
 }
 
 // Contrat lu par un modèle choisi dans le catalogue (#194).
@@ -476,7 +482,7 @@ async function extraireParModele(buffer, mime, modele, env, deps) {
   const mapped = mapContractResult(response.result, { validation: metadata.validation });
   return Object.assign({ requestId: metadata.request_id || null }, mapped, {
     modele: choixModele.modeleServiPublic(DOCIE_KIND, metadata, { env }),
-  });
+  }, signauxPartielsPublics(metadata, { cles: CLES_CONTRATS }));
 }
 
 module.exports = {

@@ -536,6 +536,7 @@ function buildChecklist() {
       const saved = state.dateState[it.id];
       if (saved && typeof saved === "object") {
         renderChecklistDocResult(status, saved);
+        renderResultatPartiel(status, saved, it.id);
         renderControleSirenSiret(status, saved);
       }
       // Kbis : proposition des valeurs lues à reporter dans le contrat (#170).
@@ -605,8 +606,14 @@ async function analyzeChecklistDoc(it, fileObj, statusEl, btn) {
     // réponse : une analyse locale garde exactement la forme d'avant.
     const controle = CONTRATS_KBIS_CHAMPS.controleCompact(d);
     if (controle) res.controleSirenSiret = controle;
+    // Résultat partiel (#203) et choix explicite (#194, clé `modele` présente
+    // même si DocIE n'a rapporté aucun modèle) : gardés seulement s'ils sont là.
+    if (Array.isArray(d.partiel) && d.partiel.length) res.partiel = d.partiel;
+    if (d.troncaturePossible === true) res.troncaturePossible = true;
+    if (Object.prototype.hasOwnProperty.call(d, "modele")) res.choixModele = true;
     state.dateState[it.id] = res;
     renderChecklistDocResult(statusEl, res);
+    renderResultatPartiel(statusEl, res, it.id);
     renderControleSirenSiret(statusEl, res);
     const prop = statusEl.parentNode && statusEl.parentNode.querySelector("[data-kbis-proposition]");
     if (prop) renderPropositionKbis(prop, res);
@@ -803,7 +810,10 @@ function ajouterAnalyseRib(item, it) {
   item.appendChild(row);
   item.appendChild(status);
   const saved = state.dateState[it.id];
-  if (saved && typeof saved === "object") renderRibResult(status, saved);
+  if (saved && typeof saved === "object") {
+    renderRibResult(status, saved);
+    renderResultatPartiel(status, saved, it.id);
+  }
 }
 
 async function analyserRib(it, fileObj, statusEl, btn) {
@@ -832,6 +842,7 @@ async function analyserRib(it, fileObj, statusEl, btn) {
     const res = ribRetenu(d, fileObj.name);
     state.dateState[it.id] = res;
     renderRibResult(statusEl, res);
+    renderResultatPartiel(statusEl, res, it.id);
   } catch (e) {
     statusEl.textContent = "Erreur : " + e.message;
     statusEl.className = "chk-doc-status err";
@@ -856,7 +867,41 @@ function ribRetenu(d, fileName) {
   // aucune clé ajoutée : même forme qu'avant.
   if (d.modele) res.modele = d.modele;
   if (d.controleIbanBicExige === true) res.controleExige = true;
+  // Résultat partiel (#203) et choix explicite : même règle que analyzeChecklistDoc.
+  if (Array.isArray(d.partiel) && d.partiel.length) res.partiel = d.partiel;
+  if (d.troncaturePossible === true) res.troncaturePossible = true;
+  if (Object.prototype.hasOwnProperty.call(d, "modele")) res.choixModele = true;
   return res;
+}
+
+// Résultat partiel et troncature possible (#203, #194) sous la ligne d'état
+// d'une pièce (URSSAF, RIB, Kbis) : une ligne compacte par champ touché, et
+// « document peut-être tronqué (> 800 lignes) ». Faits de l'extraction :
+// toujours affichés, sans changer le verdict quand aucun modèle n'a été choisi.
+//
+// Modèle choisi (« échouer bruyamment ») : si un champ dont dépend le verdict
+// (CONTRATS_IMPORT_CHAMPS.CHAMPS_VERDICT : date, société, SIREN/SIRET ; titulaire,
+// IBAN, BIC) a été perdu, la ligne d'état devient ⛔ « lecture non retenue » :
+// un ✅ ou un ⚠️ bâti sur une valeur perdue validerait ce que le modèle n'a pas
+// lu. La tâche n'échoue pas pour autant (#211) : les autres valeurs et les
+// lignes restent visibles. Rien à dire (analyse locale, réponse d'avant #203) :
+// aucun effet. Appelé juste après le rendu du verdict, avant les lignes ajoutées.
+function renderResultatPartiel(el, res, piece) {
+  const P = CONTRATS_IMPORT_CHAMPS;
+  const signaux = P.signauxPartiels(res);
+  if (!signaux) return;
+  const perdus = res.choixModele === true && res.nameMatches !== false ? P.champsVerdictPartiels(signaux, piece) : [];
+  if (perdus.length) {
+    el.className = "chk-doc-status err";
+    el.textContent = "⛔ Lecture non retenue — résultat partiel du modèle choisi sur : " + perdus.join(", ") + " (à vérifier sur le document)" +
+      (piece === "rib" && res.modele && res.modele.libelle ? " — lu par " + res.modele.libelle : "");
+  }
+  P.lignesPartiel(signaux, piece).forEach((texte) => {
+    const sous = document.createElement("div");
+    sous.className = "chk-date-status warn";
+    sous.textContent = "⚠ " + texte;
+    el.appendChild(sous);
+  });
 }
 
 // Une ligne : ⛔ autre titulaire ou IBAN non « valide », ⚠️ BIC douteux ou
@@ -2953,6 +2998,22 @@ async function validerImport() {
   st.textContent = "Import en cours…";
   st.className = "status";
   try {
+    // Résultat partiel d'un modèle choisi (#194, « échouer bruyamment ») : un
+    // champ perdu par l'extraction n'est pas importé tant qu'il n'a pas été
+    // ressaisi. Un champ modifié depuis le pré-remplissage est tenu pour relu :
+    // son blocage et sa marque tombent. Sans choix de modèle, rien n'est bloqué.
+    const bloques = [];
+    CONTRATS_IMPORT_CHAMPS.IDS_CHAMPS.forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el || !el.partielBloquant) return;
+      if (el.value === el.partielBloquant.valeur) {
+        if (bloques.indexOf(el.partielBloquant.libelle) === -1) bloques.push(el.partielBloquant.libelle);
+      } else {
+        el.partielBloquant = null;
+        marquerChampImport(el, null);
+      }
+    });
+    if (bloques.length) throw new Error("import bloqué — résultat partiel du modèle choisi, champ(s) à ressaisir : " + bloques.join(", ") + ".");
     const type = $("#impType").value;
     // Construction des `values` : public/import-champs.js (logique pure,
     // testée) — les 7 clés historiques à l'identique, plus les 12 autres
@@ -3060,12 +3121,19 @@ async function preremplirImportDepuisPdf() {
       const el = document.getElementById(id);
       if (el) el.value = valeur;
     });
-    const warnings = d.warnings || [];
+    // Résultat partiel (#203) : lignes en tête de la liste, puis les
+    // avertissements DocIE. Sans signal : exactement la liste d'avant.
+    const signaux = CONTRATS_IMPORT_CHAMPS.signauxPartiels(d);
+    const warnings = CONTRATS_IMPORT_CHAMPS.lignesPartiel(signaux, "contract").concat(d.warnings || []);
     // SIREN/SIRET dont la clé n'est pas « valide » (#201, `controleSirenSiret`
     // à côté de `values`) : le champ reste rempli pour relecture, mais il est
     // marqué et la ligne d'état nomme le problème. Drapeau absent : [] (avant).
     const aVerifier = CONTRATS_IMPORT_CHAMPS.aVerifierSirenSiret(d.controleSirenSiret);
-    marquerChampsImportAVerifier(aVerifier);
+    // Champs nommés par le résultat partiel : même marque. Modèle choisi (clé
+    // `modele` présente) : marque BLOQUANTE, validerImport refuse l'import tant
+    // que le champ n'a pas été modifié. Sans choix : marque seule.
+    const partiels = CONTRATS_IMPORT_CHAMPS.aVerifierPartiel(signaux, Object.prototype.hasOwnProperty.call(d, "modele"));
+    marquerChampsImportAVerifier(aVerifier.concat(partiels));
     // Section dépliée dès qu'elle contient quelque chose à relire.
     if (CONTRATS_IMPORT_CHAMPS.nbAutresPreremplis(v) || warnings.length || aVerifier.length) $("#impAutres").open = true;
     // TOUS les avertissements, en liste sous la ligne d'état (auparavant
@@ -3074,12 +3142,18 @@ async function preremplirImportDepuisPdf() {
     afficherAvertissementsImport(warnings);
     const notes = warnings.length ? " (" + warnings.length + " avertissement" + (warnings.length > 1 ? "s" : "") + " ci-dessous)" : "";
     const sirenSiret = aVerifier.length ? " — " + CONTRATS_IMPORT_CHAMPS.resumeSirenSiret(aVerifier) + " (champ signalé)" : "";
-    if (d.errors && d.errors.length) {
+    const partiel = CONTRATS_IMPORT_CHAMPS.resumePartiel(signaux, "contract");
+    const bloquants = partiels.filter((p) => p.bloquant);
+    if (bloquants.length) {
+      st.className = "status err";
+      st.textContent = "⛔ Résultat partiel du modèle choisi — à ressaisir avant import : " +
+        bloquants.map((p) => p.libelle).filter((x, i, t) => t.indexOf(x) === i).join(", ") + sirenSiret + notes;
+    } else if (d.errors && d.errors.length) {
       st.className = "status warn";
-      st.textContent = "⚠️ Champs pré-remplis à vérifier — " + d.errors.join(" ") + sirenSiret + notes;
-    } else if (aVerifier.length) {
+      st.textContent = "⚠️ Champs pré-remplis à vérifier — " + d.errors.join(" ") + sirenSiret + partiel + notes;
+    } else if (aVerifier.length || partiel) {
       st.className = "status warn";
-      st.textContent = "⚠️ Champs pré-remplis à vérifier" + sirenSiret + notes;
+      st.textContent = "⚠️ Champs pré-remplis à vérifier" + sirenSiret + partiel + notes;
     } else {
       st.className = "status ok";
       st.textContent = "✓ Champs pré-remplis depuis le PDF — à relire avant import" + notes;
@@ -3112,11 +3186,18 @@ function marquerChampImport(el, alerte) {
   }
 }
 
-// Applique la liste complète : SIREN/SIRET listés marqués, les autres démarqués.
+// Applique la liste complète (SIREN/SIRET #201, résultat partiel #203) aux 19
+// champs du modal : listés marqués, les autres démarqués. Plusieurs alertes sur
+// un même champ : messages joints. Alerte `bloquant` (modèle choisi) : la valeur
+// au moment du marquage est retenue sur l'élément ; validerImport refuse
+// l'import tant qu'elle n'a pas changé.
 function marquerChampsImportAVerifier(aVerifier) {
-  CONTRATS_IMPORT_CHAMPS.IDS_SIREN_SIRET.forEach((id) => {
+  CONTRATS_IMPORT_CHAMPS.IDS_CHAMPS.forEach((id) => {
     const el = document.getElementById(id);
-    if (el) marquerChampImport(el, (aVerifier || []).find((a) => a.id === id) || null);
+    if (!el) return;
+    const alertes = (aVerifier || []).filter((a) => a.id === id);
+    marquerChampImport(el, alertes.length ? { libelle: alertes[0].libelle, message: alertes.map((a) => a.message).join(" ; ") } : null);
+    el.partielBloquant = alertes.some((a) => a.bloquant) ? { valeur: el.value, libelle: alertes[0].libelle } : null;
   });
 }
 
