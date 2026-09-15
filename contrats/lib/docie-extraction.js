@@ -262,7 +262,14 @@ async function extractViaTexte(kind, { dataBase64, mimeType, items, expectedName
   if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;
   const response = await extractText(verdict.texte, options);
   const analysis = mapTexteDocieResult(kind, response, { items, expectedName });
-  if (choisi) analysis.modele = choixModele.modeleServiPublic(kind, response.metadata, { env });
+  if (choisi) {
+    analysis.modele = choixModele.modeleServiPublic(kind, response.metadata, { env });
+    // RIB lu par l'alternative du catalogue (LFM2.5 350M) : admise seulement
+    // derrière le contrôle IBAN/BIC. Le drapeau dit au navigateur qu'un IBAN ou
+    // un BIC non « valide » fait de cette lecture un échec (⛔), pas une alerte.
+    // Absent sinon : la réponse du modèle par défaut reste celle de #209.
+    if (choixModele.exigeControleIbanBic(kind, choisi, analysis.modele, { env })) analysis.controleIbanBicExige = true;
+  }
   return { analysis, raisonRepli: null };
 }
 

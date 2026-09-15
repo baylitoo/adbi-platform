@@ -512,8 +512,9 @@ function buildChecklist() {
       ubtn.addEventListener("click", () => ufile.click());
       ufile.addEventListener("change", () => { if (ufile.files[0]) analyzeChecklistDoc(it, ufile.files[0], status, ubtn); ufile.value = ""; });
       drow.appendChild(ubtn);
-      // Sélecteur de modèle (#194), URSSAF seulement : rempli depuis
-      // /api/modeles, masqué tant qu'il n'y a pas au moins deux modèles.
+      // Sélecteur de modèle (#194), URSSAF seulement parmi les pièces datées
+      // (le RIB a le sien, ajouterAnalyseRib) : rempli depuis /api/modeles,
+      // masqué tant qu'il n'y a pas au moins deux modèles.
       if (it.id === "urssaf") {
         const selModele = document.createElement("select");
         selModele.className = "tpl-select hidden";
@@ -790,6 +791,14 @@ function ajouterAnalyseRib(item, it) {
   ubtn.addEventListener("click", () => ufile.click());
   ufile.addEventListener("change", () => { if (ufile.files[0]) analyserRib(it, ufile.files[0], status, ubtn); ufile.value = ""; });
   row.appendChild(ubtn);
+  // Sélecteur de modèle (#194), mêmes règles que l'URSSAF : rempli depuis
+  // /api/modeles?tache=rib, masqué tant qu'il n'y a pas au moins deux modèles.
+  const selModele = document.createElement("select");
+  selModele.className = "tpl-select hidden";
+  selModele.title = "Modèle d'extraction";
+  selModele.dataset.modeleSelecteur = "1";
+  remplirSelecteurModeles(selModele, "rib");
+  row.appendChild(selModele);
   row.appendChild(ufile);
   item.appendChild(row);
   item.appendChild(status);
@@ -802,6 +811,9 @@ async function analyserRib(it, fileObj, statusEl, btn) {
   btn.disabled = true; btn.textContent = "Analyse…";
   statusEl.textContent = "🔎 Analyse du RIB…";
   statusEl.className = "chk-doc-status";
+  const ligneItem = statusEl.parentNode;
+  const selModele = ligneItem && ligneItem.querySelector("[data-modele-selecteur]");
+  const modele = selModele && selModele.options.length ? selModele.value : "";
   try {
     const dataBase64 = await fileToBase64(fileObj);
     const r = await fetch("/api/document/analyze", {
@@ -811,6 +823,8 @@ async function analyserRib(it, fileObj, statusEl, btn) {
         dataBase64,
         items: [{ id: it.id, label: it.label }],
         expectedName: state.values.stNom || "",
+        // Choix explicite (#194) : un échec s'affiche, sans analyse locale en repli.
+        ...(modele ? { modele } : {}),
       }),
     });
     const d = await r.json();
@@ -831,42 +845,65 @@ async function analyserRib(it, fileObj, statusEl, btn) {
 // locale ne porte pas `controleIbanBic` : controle vaut alors null.
 function ribRetenu(d, fileName) {
   const c = d.controleIbanBic;
-  return {
+  const res = {
     fileName, companyName: d.companyName || "", nameMatches: d.nameMatches,
     titulaire: d.titulaireCompte || "", iban: d.iban || "", bic: d.bic || "", banque: d.nomBanque || "",
     controle: c ? { iban: c.iban.statut, bic: c.bic.statut } : null,
     alertes: (d.issues || []).filter((i) => /^(IBAN|BIC) /.test(i)),
   };
+  // Modèle choisi (#194) : modèle servi, et drapeau du serveur quand c'est
+  // l'alternative admise seulement derrière le contrôle IBAN/BIC. Sans choix,
+  // aucune clé ajoutée : même forme qu'avant.
+  if (d.modele) res.modele = d.modele;
+  if (d.controleIbanBicExige === true) res.controleExige = true;
+  return res;
 }
 
 // Une ligne : ⛔ autre titulaire ou IBAN non « valide », ⚠️ BIC douteux ou
 // analyse locale (rien de contrôlé), ✅ IBAN à clé valide et BIC cohérent.
+//
+// Garde de l'alternative (#194, `controleExige`, LFM2.5 350M) : ce modèle n'est
+// admis que parce qu'un IBAN ou un BIC mal lu devient un signal bruyant. Tout
+// ce qui n'est pas « IBAN valide ET BIC valide » est donc un ⛔ : jamais le ⚠️
+// d'un BIC douteux (le catalogue pose le contrôle du BIC dans la condition
+// d'admission, et un BIC n'a aucune clé qui rattrape une lettre mal lue), ni le
+// ⚠️ « non contrôlé » d'une réponse sans contrôle. Testé AVANT les autres
+// branches, pour qu'aucune ne puisse le contourner. Modèle par défaut : #209.
 function renderRibResult(el, res) {
+  const luPar = res.modele && res.modele.libelle ? " — lu par " + res.modele.libelle : "";
   if (res.nameMatches === false) {
     el.className = "chk-doc-status err";
-    el.textContent = "⛔ RIB au nom de « " + (res.companyName || "?") + " » — ce n'est PAS le sous-traitant saisi (« " + (state.values.stNom || "") + " »)";
+    el.textContent = "⛔ RIB au nom de « " + (res.companyName || "?") + " » — ce n'est PAS le sous-traitant saisi (« " + (state.values.stNom || "") + " »)" + luPar;
+    return;
+  }
+  const titulaire = res.titulaire ? "Titulaire : " + res.titulaire + (res.nameMatches === true ? " ✓" : "") + " — " : "";
+  const alerte = (champ) => (res.alertes || []).find((a) => a.startsWith(champ + " "));
+  if (res.controleExige === true && !(res.controle && res.controle.iban === "valide" && res.controle.bic === "valide")) {
+    const motif = !res.controle ? "IBAN et BIC non contrôlés"
+      : res.controle.iban !== "valide" ? (alerte("IBAN") || "IBAN non contrôlé")
+      : (alerte("BIC") || "BIC non lu sur le document");
+    el.className = "chk-doc-status err";
+    el.textContent = "⛔ " + titulaire + motif + " — lecture non retenue : ce modèle n'est admis qu'avec un IBAN et un BIC contrôlés valides" + luPar;
     return;
   }
   if (!res.controle) {
     el.className = "chk-doc-status warn";
-    el.textContent = "⚠️ IBAN et BIC non lus ni contrôlés (analyse locale) — vérifier le RIB à la main";
+    el.textContent = "⚠️ IBAN et BIC non lus ni contrôlés (analyse locale) — vérifier le RIB à la main" + luPar;
     return;
   }
-  const titulaire = res.titulaire ? "Titulaire : " + res.titulaire + (res.nameMatches === true ? " ✓" : "") + " — " : "";
-  const alerte = (champ) => res.alertes.find((a) => a.startsWith(champ + " "));
   if (res.controle.iban !== "valide") {
     el.className = "chk-doc-status err";
-    el.textContent = "⛔ " + titulaire + (alerte("IBAN") || "IBAN non contrôlé");
+    el.textContent = "⛔ " + titulaire + (alerte("IBAN") || "IBAN non contrôlé") + luPar;
     return;
   }
   const ligne = titulaire + "IBAN " + res.iban + " (clé valide)" + (res.bic ? " — BIC " + res.bic : "") + (res.banque ? " — " + res.banque : "");
   if (res.controle.bic !== "valide") {
     el.className = "chk-doc-status warn";
-    el.textContent = "⚠️ " + ligne + " — " + (alerte("BIC") || "BIC non lu sur le document");
+    el.textContent = "⚠️ " + ligne + " — " + (alerte("BIC") || "BIC non lu sur le document") + luPar;
     return;
   }
   el.className = "chk-doc-status ok";
-  el.textContent = "✅ " + ligne;
+  el.textContent = "✅ " + ligne + luPar;
 }
 
 /* ------------------------------------------------------------------ */
