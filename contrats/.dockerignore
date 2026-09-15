@@ -8,6 +8,10 @@ data/secrets.json
 data/contrats.sqlite
 data/code-parametres.txt
 data/webhooks-en-echec.json
+# Contrats generes et personnalisation des modeles : donnees locales,
+# ignorees par git (.gitignore racine) — jamais dans l'image non plus.
+data/contrats-generes
+data/templates-perso.json
 
 # Divers
 .git
