@@ -423,6 +423,10 @@ class PartialResultTests(unittest.TestCase):
         self.assertEqual(lu["metadata"]["validation"], avant)
         self.assertIs(lu["metadata"]["validation"]["valid"], True)
         self.assertEqual(lu["result"]["extraction_notes"], [cas["boucle"]])
+        # Sans `validation`, `result.extraction_notes` suffit.
+        notes = {"result": {"name": "Ada", "extraction_notes": [cas["feuille_abandonnee"]]}}
+        self.assertEqual(parse_text_response(notes, "adbi_resume")["metadata"]["partiel"],
+                         [{"champ": "contact.email", "raison": "feuille_abandonnee"}])
         # Voie agent : docie_agent.validation.warnings.
         agent = copy.deepcopy(CASES[3]["body"])
         agent["docie_agent"]["validation"]["warnings"].append(cas["forme_invalide"])

@@ -355,6 +355,9 @@ test("partial result: metadata.partiel on both paths, warnings kept verbatim, sa
   assert.deepEqual(lu.metadata.validation, avant);
   assert.equal(lu.metadata.validation.valid, true);
   assert.deepEqual(lu.result.extraction_notes, [cas("boucle")]);
+  // Sans `validation`, `result.extraction_notes` suffit.
+  const notes = { result: { name: "Ada", extraction_notes: [cas("feuille_abandonnee")] } };
+  assert.deepEqual(parseTextResponse(notes, "adbi_resume").metadata.partiel, [{ champ: "contact.email", raison: "feuille_abandonnee" }]);
   // Voie agent : docie_agent.validation.warnings.
   const agent = structuredClone(cases[3].body);
   agent.docie_agent.validation.warnings.push(cas("forme_invalide"));
