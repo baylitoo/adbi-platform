@@ -515,15 +515,19 @@ function mapperAdbiResume(data, metadata, doc) {
  *
  * @param {Buffer} buffer
  * @param {string} filename
- * @param {{env?: object, fetchImpl?: Function}} [options]
+ * @param {{env?: object, fetchImpl?: Function, agent?: string, metadonnees?: Function}} [options]
+ *   `agent` (#194) : agent du modele choisi, pour CET appel seulement ;
+ *   `metadonnees` : recoit les metadonnees du bridge (resultat partiel, #203).
  */
-async function extraireViaDocie(buffer, filename, { env = process.env, fetchImpl } = {}) {
+async function extraireViaDocie(buffer, filename, { env = process.env, fetchImpl, agent = null, metadonnees = null } = {}) {
   const { extractDocument } = chargerBridge();
   const { result, metadata } = await extractDocument(buffer, "application/pdf", {
     kind: "resume",
     env,
     fetchImpl,
+    ...(agent ? { agent } : {}),
   });
+  if (metadonnees) metadonnees(metadata);
   return mapperAdbiResume(result, metadata, { filename });
 }
 
@@ -546,16 +550,20 @@ async function extraireViaDocie(buffer, filename, { env = process.env, fetchImpl
  *
  * @param {string} texteSource  texte du document, deja decode
  * @param {string} filename
- * @param {{env?: object, fetchImpl?: Function}} [options]
+ * @param {{env?: object, fetchImpl?: Function, modelProfile?: string, metadonnees?: Function}} [options]
+ *   `modelProfile` (#194) : identifiant du modele choisi, pour CET appel ;
+ *   `metadonnees` : recoit les metadonnees du bridge (resultat partiel, #203).
  */
-async function extraireTexteViaDocie(texteSource, filename, { env = process.env, fetchImpl } = {}) {
+async function extraireTexteViaDocie(texteSource, filename, { env = process.env, fetchImpl, modelProfile = null, metadonnees = null } = {}) {
   const { extractText } = chargerBridge();
   const { result, metadata } = await extractText(texteSource, {
     kind: "resume",
     dynamicSchema: chargerSchemaResume(),
     env,
     fetchImpl,
+    ...(modelProfile ? { modelProfile } : {}),
   });
+  if (metadonnees) metadonnees(metadata);
   return mapperAdbiResume(result, metadata, { filename });
 }
 

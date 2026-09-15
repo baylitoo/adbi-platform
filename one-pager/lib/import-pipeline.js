@@ -30,6 +30,12 @@
  * renvoyer une erreur : l'import ne doit jamais rester bloque a cause d'une
  * indisponibilite DocIE. Le repli est trace dans `source.extraction_method`
  * et `quality.warnings`, jamais silencieux.
+ *
+ * SAUF modele explicitement choisi (#194, lib/choix-modele.js) : un modele
+ * choisi ne retombe ni sur un autre modele ni sur l'analyse locale. Le choix est
+ * verifie sur le document reel (lignes non vides, pages), envoye pour CET appel
+ * (`modelProfile` voie texte, `agent` voie fichier), et toute erreur — refus du
+ * catalogue, erreur nommee du bridge — sort telle quelle : la tache echoue.
  */
 
 const { ingest, isPdf, estTexteBrut, estDocx, texteDocx } = require("./ingest");
@@ -65,6 +71,32 @@ async function extractionLocale(buffer, filename) {
 }
 
 /**
+ * Ce que le fichier EST pour DocIE : { voie: "agent" } pour un PDF,
+ * { voie: "texte", texte() } pour un depot texte ou un .docx, null sinon.
+ * `texte()` rend le texte envoye ; un DOCX illisible y leve son erreur.
+ */
+function sourceDocie(buffer, filename) {
+  if (isPdf(buffer)) return { voie: "agent" };
+  if (estTexteBrut(buffer, filename)) {
+    // Meme decodage que lib/ingest#readTxt, pour que les deux voies lisent le
+    // meme document. La marque d'ordre des octets est retiree : elle n'est pas
+    // du contenu, et DocIE recevrait un premier caractere invisible.
+    return {
+      voie: "texte",
+      texte: async () => {
+        const brut = buffer.toString("utf8");
+        return brut.charCodeAt(0) === 0xfeff ? brut.slice(1) : brut;
+      },
+    };
+  }
+  // Le rendu se fait a l'appel de texte() : un DOCX que mammoth ne sait pas lire
+  // tombe dans le meme `catch` que les erreurs DocIE, et la voie historique le
+  // refuse ensuite exactement comme drapeau baisse.
+  if (estDocx(buffer, filename)) return { voie: "texte", texte: () => texteDocx(buffer) };
+  return null;
+}
+
+/**
  * Choisit la surface DocIE qui correspond a ce que le fichier EST, ou null
  * quand aucune ne convient (le fichier reste alors sur la voie historique).
  *
@@ -73,47 +105,85 @@ async function extractionLocale(buffer, filename) {
  * Deux copies de la regle de repli, c'est deux conventions qui divergent.
  */
 function voieDocie(buffer, filename) {
-  if (isPdf(buffer)) {
-    return (options) => extraireViaDocie(buffer, filename, options);
+  const source = sourceDocie(buffer, filename);
+  if (!source) return null;
+  if (source.voie === "agent") return (options) => extraireViaDocie(buffer, filename, options);
+  return async (options) => extraireTexteViaDocie(await source.texte(), filename, options);
+}
+
+/** Modele qui a reellement servi, range dans la source du cv_master (#194). */
+function noterModele(master, voie, demande, env) {
+  // eslint-disable-next-line global-require
+  const { modeleServi } = require("./choix-modele");
+  master.source.modele = { voie, demande, servi: modeleServi(voie, master.source.docie, env) };
+  return master;
+}
+
+/**
+ * Import avec un modele explicitement choisi (#194) : aucun `catch`, aucun
+ * repli. Refus du catalogue (CatalogueError : modele_non_propose, limite,
+ * configuration), format sans voie DocIE (ImportError) et erreurs du bridge
+ * sortent tels quels.
+ */
+async function importerAvecModele(buffer, filename, { env, fetchImpl, modele }) {
+  // eslint-disable-next-line global-require
+  const choix = require("./choix-modele");
+  if (!docieActif(env)) {
+    throw new (choix.chargerCatalogue().CatalogueError)("configuration",
+      "Choix du modèle impossible : l'extraction DocIE est désactivée sur ce service.");
   }
-  if (estTexteBrut(buffer, filename)) {
-    // Meme decodage que lib/ingest#readTxt, pour que les deux voies lisent le
-    // meme document. La marque d'ordre des octets est retiree : elle n'est pas
-    // du contenu, et DocIE recevrait un premier caractere invisible.
-    const brut = buffer.toString("utf8");
-    const contenu = brut.charCodeAt(0) === 0xfeff ? brut.slice(1) : brut;
-    return (options) => extraireTexteViaDocie(contenu, filename, options);
+  const source = sourceDocie(buffer, filename);
+  if (!source) {
+    throw new ImportError(422, "Le modèle choisi lit les PDF, les documents Word (.docx) et le texte : " +
+      "convertissez ce fichier, ou importez-le sans choisir de modèle.");
   }
-  if (estDocx(buffer, filename)) {
-    // Le rendu se fait DANS la fonction renvoyee : un DOCX que mammoth ne sait
-    // pas lire tombe dans le meme `catch` que les erreurs DocIE, et la voie
-    // historique le refuse ensuite exactement comme drapeau baisse.
-    return async (options) => extraireTexteViaDocie(await texteDocx(buffer), filename, options);
+
+  // Resultat partiel rapporte par le bridge (#203) : jamais presente comme
+  // complet pour un modele choisi — un avertissement nomme par champ.
+  let metadata = {};
+  const options = { env, fetchImpl, metadonnees: (m) => { metadata = m || {}; } };
+  let master;
+  if (source.voie === "agent") {
+    const offre = choix.choisir("agent", modele, { pages: await choix.compterPages(buffer) }, env);
+    master = await extraireViaDocie(buffer, filename, { ...options, agent: offre.identifiant });
+  } else {
+    const texte = await source.texte();
+    const offre = choix.choisir("texte", modele, { lignesNonVides: choix.compterLignesNonVides(texte) }, env);
+    master = await extraireTexteViaDocie(texte, filename, { ...options, modelProfile: offre.identifiant });
   }
-  return null;
+  for (const { champ, raison } of Array.isArray(metadata.partiel) ? metadata.partiel : []) {
+    master.quality.warnings.push(`docie_resultat_partiel:${champ}:${raison}`);
+  }
+  if (metadata.troncature_possible === true) master.quality.warnings.push("docie_troncature_possible");
+  return noterModele(master, source.voie, modele, env);
 }
 
 /**
  * @param {Buffer} buffer
  * @param {string} filename
- * @param {{env?: object, fetchImpl?: Function}} [options]
+ * @param {{env?: object, fetchImpl?: Function, modele?: string}} [options]
+ *   `modele` : identifiant du catalogue explicitement choisi (#194).
  * @returns {Promise<object>} cv_master
  */
-async function importerCv(buffer, filename, { env = process.env, fetchImpl } = {}) {
-  const voie = docieActif(env) ? voieDocie(buffer, filename) : null;
+async function importerCv(buffer, filename, { env = process.env, fetchImpl, modele = null } = {}) {
+  if (modele) return importerAvecModele(buffer, filename, { env, fetchImpl, modele });
+  const source = docieActif(env) ? sourceDocie(buffer, filename) : null;
+  const voie = source ? voieDocie(buffer, filename) : null;
   if (voie) {
+    let master;
     try {
-      return await voie({ env, fetchImpl });
+      master = await voie({ env, fetchImpl });
     } catch (e) {
       const code = (e && e.code) || "error";
       console.warn(`[docie:repli_local] ${code} — ${(e && e.message) || e}`);
-      const master = await extractionLocale(buffer, filename);
-      master.source.extraction_method = `local_fallback:${code}`;
-      master.quality.warnings.push(`docie_indisponible_repli_local:${code}`);
-      return master;
+      const local = await extractionLocale(buffer, filename);
+      local.source.extraction_method = `local_fallback:${code}`;
+      local.quality.warnings.push(`docie_indisponible_repli_local:${code}`);
+      return local;
     }
+    return noterModele(master, source.voie, null, env);
   }
   return extractionLocale(buffer, filename);
 }
 
-module.exports = { importerCv, ImportError, docieActif, voieDocie };
+module.exports = { importerCv, ImportError, docieActif, voieDocie, sourceDocie };

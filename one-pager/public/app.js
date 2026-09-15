@@ -78,6 +78,39 @@ depot.addEventListener("drop", (e) => lancerFile([...e.dataTransfer.files]));
 
 $("#btn-file-vider").addEventListener("click", reinitImport);
 
+/*
+ * Choix du modele (#194). Le selecteur n'apparait qu'a partir de DEUX modeles
+ * proposes (catalogue + identifiants configures + DocIE actif) : tant qu'aucune
+ * alternative n'est configuree, l'ecran ne change pas. Affiche, sa valeur
+ * (defaut compris) part avec chaque import : un modele choisi n'est jamais
+ * remplace par l'analyse locale, son echec s'affiche tel quel.
+ */
+async function chargerModeles() {
+  let data;
+  try {
+    data = await (await fetch("/api/modeles")).json();
+  } catch {
+    return;
+  }
+  const modeles = Array.isArray(data.modeles) ? data.modeles : [];
+  if (modeles.length > 1) {
+    $("#choix-modele").innerHTML = modeles.map((m) =>
+      `<option value="${echapper(m.id)}"${m.role === "defaut" ? " selected" : ""}>${echapper(m.libelle)} — ${echapper(m.description)}</option>`
+    ).join("");
+    $("#choix-modele-bloc").hidden = false;
+  }
+  if (data.erreur) {
+    $("#choix-modele-erreur").textContent = data.erreur;
+    $("#choix-modele-erreur").hidden = false;
+  }
+}
+chargerModeles();
+
+/** Modele choisi, ou null quand le selecteur n'est pas affiche. */
+function modeleChoisi() {
+  return $("#choix-modele-bloc").hidden ? null : $("#choix-modele").value || null;
+}
+
 /**
  * Import en lot : les fichiers sont traites l'un apres l'autre, jamais en
  * parallele. L'analyse d'un CV de 8 pages sature deja un cœur ; lancer dix
@@ -89,6 +122,8 @@ async function lancerFile(fichiers) {
     return notice("Aucun fichier exploitable : formats acceptés PDF, Word, texte.", "erreur");
   }
 
+  // Le modele est lu UNE fois : tout le lot part avec le choix fait au depot.
+  const modele = modeleChoisi();
   etat.file = liste.map((f) => ({ nom: f.name, fichier: f, etat: "attente", detail: "" }));
   $("#import-erreur").hidden = true;
   depot.hidden = true;
@@ -100,7 +135,7 @@ async function lancerFile(fichiers) {
     item.etat = "encours";
     dessinerFile();
     try {
-      const data = await analyser(item.fichier, item);
+      const data = await analyser(item.fichier, item, modele);
       item.etat = "ok";
       item.resultat = data;
       item.detail = resumeImport(data.master);
@@ -140,12 +175,12 @@ const LIBELLE_ETAPE = {
   extraction: () => "lecture du CV…",
 };
 
-async function analyser(file, item) {
+async function analyser(file, item, modele = null) {
   const contentBase64 = await lireBase64(file);
   const r = await fetch("/api/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filename: file.name, contentBase64 }),
+    body: JSON.stringify({ filename: file.name, contentBase64, ...(modele ? { modele } : {}) }),
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error || "Import impossible.");
@@ -179,7 +214,15 @@ function resumeImport(m) {
   if (m.identity.full_name || m.identity.trigram) bouts.push(m.identity.full_name || m.identity.trigram);
   bouts.push(`${m.experiences.length} mission${m.experiences.length > 1 ? "s" : ""}`);
   if (m.identity.seniority_years) bouts.push(`${m.identity.seniority_years} ans`);
+  const servi = libelleModeleServi(m);
+  if (servi) bouts.push(servi);
   return bouts.join(" · ");
+}
+
+/** Modele qui a reellement servi (#194, lu dans la reponse DocIE), ou "". */
+function libelleModeleServi(m) {
+  const modele = m.source && m.source.modele;
+  return (modele && modele.servi && modele.servi.libelle) || "";
 }
 
 function dessinerFile() {
@@ -274,6 +317,7 @@ function remplirValidation() {
     <div class="kpi"><b>${m.experiences.length}</b><span>missions</span></div>
     <div class="kpi"><b>${m.technologies.length}</b><span>technologies</span></div>
     <div class="kpi"><b>${m.identity.seniority_years}</b><span>ans d'expérience</span></div>
+    ${libelleModeleServi(m) ? `<div class="kpi"><b>${echapper(libelleModeleServi(m))}</b><span>modèle</span></div>` : ""}
     ${q.needs_review.map((r) => `<span class="puce-avert">à vérifier : ${echapper(r)}</span>`).join("")}
     ${q.warnings.map((w) => `<span class="puce-avert">${echapper(w.replace(/_/g, " "))}</span>`).join("")}
   `;

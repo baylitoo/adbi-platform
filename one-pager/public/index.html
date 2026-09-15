@@ -47,6 +47,12 @@
     <div>
       <button class="btn primaire" id="btn-parcourir">Choisir des fichiers</button>
     </div>
+    <!-- Choix du modele (#194) : rempli par app.js depuis GET /api/modeles,
+         affiche seulement quand PLUSIEURS modeles sont proposes. -->
+    <div class="note" id="choix-modele-bloc" hidden>
+      <select id="choix-modele" aria-label="Modèle d'extraction" title="Modèle d'extraction utilisé pour ces CV"></select>
+    </div>
+    <div class="note" id="choix-modele-erreur" hidden></div>
     <input type="file" id="fichier" accept=".pdf,.docx,.doc,.txt" multiple hidden>
     <div class="note">Tout reste sur ce poste : aucun envoi vers Internet.</div>
   </div>

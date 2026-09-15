@@ -1,0 +1,103 @@
+"use strict";
+
+/**
+ * Choix du modele d'extraction d'un CV importe, par action (#194).
+ *
+ * Le catalogue partage (document-parsing/models/catalogue.json et son chargeur
+ * catalogue.js, source unique) dit quels modeles proposer pour la tache
+ * `resume`, sur quelle voie DocIE, avec quel identifiant reel
+ * (DOCIE_MODELE_<MODELE> voie texte, DOCIE_AGENT_RESUME_<MODELE> voie agent).
+ * Ce module ne fait que l'appliquer a one-pager :
+ *
+ * - la VOIE suit l'aiguillage existant de lib/import-pipeline (#180) : PDF ->
+ *   voie agent (fichier), depot texte et .docx -> voie texte ;
+ * - rien n'est propose tant que DOCIE_EXTRACTION_ENABLED n'est pas actif :
+ *   proposer un modele que l'import ne peut pas appeler finirait en analyse
+ *   locale, precisement ce que le choix interdit ;
+ * - le selecteur (public/app.js) ne s'affiche qu'a partir de DEUX modeles ;
+ * - un choix EXPLICITE = un champ `modele` non vide dans POST /api/import. Le
+ *   selecteur, quand il est affiche, l'envoie toujours (defaut compris). Il est
+ *   verifie sur le document REEL avant l'envoi (lignes non vides, pages) et
+ *   n'est jamais remplace : refus nomme (CatalogueError `modele_non_propose`,
+ *   `limite`, `configuration`), jamais de repli local.
+ *
+ * Le chargeur n'est `require` qu'a l'appel, comme le bridge : sans le fichier
+ * (image sans la copie du Dockerfile), l'import sans choix fonctionne encore.
+ */
+
+const TACHE = "resume";
+
+function chargerCatalogue() {
+  // eslint-disable-next-line global-require
+  return require("../../document-parsing/models/catalogue");
+}
+
+function docieActif(env) {
+  // eslint-disable-next-line global-require
+  return require("./import-pipeline").docieActif(env);
+}
+
+/** Modeles du selecteur, defaut d'abord : [{ id, libelle, description, role }]. */
+function modelesProposes(env = process.env) {
+  if (!docieActif(env)) return [];
+  const catalogue = chargerCatalogue();
+  const vus = new Map();
+  // Voies des formats acceptes, reunies : le format du prochain fichier n'est
+  // pas connu ; un modele configure sur une seule voie est verifie a l'envoi.
+  for (const voie of ["texte", "agent"]) {
+    for (const o of catalogue.modelesOfferts(TACHE, voie, { env })) {
+      if (!vus.has(o.id)) vus.set(o.id, { id: o.id, libelle: o.libelle, description: o.description, role: o.role });
+    }
+  }
+  return [...vus.values()].sort((a, b) => (a.role === "defaut" ? 0 : 1) - (b.role === "defaut" ? 0 : 1));
+}
+
+/**
+ * Le modele `modele` pour `voie`, verifie sur `document`
+ * ({ lignesNonVides } voie texte, { pages } voie agent, pages null = illisible).
+ * Leve CatalogueError ; ne rend jamais un autre modele que celui demande.
+ */
+function choisir(voie, modele, document, env = process.env) {
+  const catalogue = chargerCatalogue();
+  const illisible = voie === "agent" && document.pages == null;
+  const offre = catalogue.choisirModele(TACHE, voie, { env, modele, document: illisible ? null : document });
+  if (illisible && typeof offre.limites.pages_max === "number") {
+    // Une limite non verifiable n'est pas une limite respectee.
+    throw new catalogue.CatalogueError("limite",
+      `${offre.libelle} : nombre de pages du document illisible, limite de ${offre.limites.pages_max} pages non vérifiable.`);
+  }
+  return offre;
+}
+
+function compterLignesNonVides(texte) {
+  return chargerCatalogue().compterLignesNonVides(texte);
+}
+
+/** Pages d'un PDF (meme lecteur que lib/ingest), ou null s'il est illisible. */
+async function compterPages(buffer) {
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer), isEvalSupported: false, useSystemFonts: true }).promise;
+    const pages = doc.numPages;
+    await doc.destroy();
+    return pages;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Modele qui a REELLEMENT servi, lu dans les metadonnees DocIE (`model` voie
+ * texte, `agent` voie agent) : { id, libelle, identifiant } ou null. Catalogue
+ * illisible : le nom brut, jamais une exception.
+ */
+function modeleServi(voie, metadata, env = process.env) {
+  try {
+    return chargerCatalogue().modeleServi(TACHE, voie, { env, metadata });
+  } catch {
+    const brut = voie === "agent" ? (metadata || {}).agent : (metadata || {}).model;
+    return typeof brut === "string" && brut.trim() ? { id: null, libelle: brut, identifiant: brut } : null;
+  }
+}
+
+module.exports = { modelesProposes, choisir, compterLignesNonVides, compterPages, modeleServi, chargerCatalogue, TACHE };
