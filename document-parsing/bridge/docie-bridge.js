@@ -76,8 +76,8 @@ const CONTEXT_OVERFLOW = /exceeds the available context size|exceed_context_size
 // fait de transport, « a pu être tronqué », jamais « a été tronqué ».
 //
 // Compter TROP ne coûte qu'un « a pu » inutile ; compter TROP PEU donne un faux
-// « non tronqué ». Deux pièges JS, mesurés contre CPython (3.14 ici ; ces deux
-// ensembles n'ont pas bougé au fil des 3.x) :
+// « non tronqué ». Deux pièges JS, mesurés contre CPython 3.14 (le test Python
+// recalcule la règle à chaque exécution : une dérive de version casse un test) :
 //   * `splitlines()` coupe aussi sur \v \f \x1c \x1d \x1e \x85 \u2028 \u2029 :
 //     un `split(/\r\n|\r|\n/)` sous-compte ;
 //   * `strip()` retire ce que `str.isspace()` reconnaît, qui n'est PAS l'ensemble
