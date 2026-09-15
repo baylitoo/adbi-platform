@@ -67,6 +67,27 @@ const MAX_ERROR_BYTES = 64 * 1024;
 // TEXTE, où qu'il soit dans le corps (JSON imbriqué échappé ou texte brut), et
 // tout le reste retombe sur `upstream`.
 const CONTEXT_OVERFLOW = /exceeds the available context size|exceed_context_size_error/i;
+// Plafond silencieux de blocs de la voie texte (#190). Sans `ocr_blocks` fournis
+// par l'appelant, DocIE (ocr/base.py, `text_to_blocks`) fait UN bloc par ligne
+// non vide : `sum(1 for ligne in texte.splitlines() if ligne.strip())`, sans
+// fenêtre de caractères. Tout profil à prompt générique ne garde ensuite que les
+// 800 premiers (`render_ocr_blocks(blocks, max_blocks=800)`), en HTTP 200 et sans
+// aucun avertissement. Le bridge ne connaît pas le profil servi : il rapporte un
+// fait de transport, « a pu être tronqué », jamais « a été tronqué ».
+//
+// Compter TROP ne coûte qu'un « a pu » inutile ; compter TROP PEU donne un faux
+// « non tronqué ». Deux pièges JS, mesurés contre CPython 3.14 (le test Python
+// recalcule la règle à chaque exécution : une dérive de version casse un test) :
+//   * `splitlines()` coupe aussi sur \v \f \x1c \x1d \x1e \x85 \u2028 \u2029 :
+//     un `split(/\r\n|\r|\n/)` sous-compte ;
+//   * `strip()` retire ce que `str.isspace()` reconnaît, qui n'est PAS l'ensemble
+//     de `String.prototype.trim()` / `\s` : trim() retire \ufeff (BOM), que Python
+//     garde (ligne « BOM seul » = un bloc, sous-compte), et garde \x1c-\x1f et \x85,
+//     que Python retire. D'où une classe explicite, jamais trim() ni \s.
+// Règle figée par document-parsing/fixtures/blocs_texte_docie.json (tests seuls).
+const DOCIE_BLOCS_TEXTE_MAX = 800;
+const SEPARATEURS_LIGNE_PYTHON = /\r\n|[\n\v\f\r\x1c\x1d\x1e\x85\u2028\u2029]/;
+const LIGNE_BLANCHE_PYTHON = /^[\t\n\v\f\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
 const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf", rib: "rib" };
 // What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
 // This transport posts the document as an `image_url` data URI to
