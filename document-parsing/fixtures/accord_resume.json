@@ -1,0 +1,116 @@
+{
+  "_description": "Jeu d'essai partage, TESTS SEULEMENT : « le meme CV lu par les deux services donne-t-il les memes donnees ? ». C'est le dernier contrat manquant des paires de mapping. contract, kbis, rib et urssaf ont chacun leur reference Python, leur portage et leurs fixtures communes ; resume n'avait rien, et l'inventaire #177 a mesure une douzaine de divergences reelles avant qu'elles soient corrigees une a une. Sans test d'egalite, rien ne casse si l'un des deux ports derive a nouveau demain.",
+  "_ports": [
+    "cv-parser : docie_client.py::map_resume PUIS app.py::normalize_cv_data (la chaine complete -- map_resume seule ne dit pas ce que le commercial voit)",
+    "one-pager : lib/docie-extract.js::mapperAdbiResume, appele sur la sortie du VRAI pont (document-parsing/bridge/docie-bridge.js)"
+  ],
+  "_lecture": "Lu par cv-parser/tests/test_accord_resume.py, qui execute les deux ports sur la meme entree : Python en direct, JS par un sous-processus node. Aucun reseau, aucune base, aucun appel DocIE.",
+  "_pourquoi_pas_une_egalite_stricte": "Les deux sorties ne sont PAS le meme objet et ne doivent pas le devenir. cv-parser produit une fiche de CVtheque plate (`experience`, `projects`, `html_content`) ; one-pager produit un `cv_master` (`identity`, `experiences`, `technologies`, `quality`) destine a un dossier d'une page. Comparer les objets entiers ferait echouer le test sur des differences voulues, et la seule facon de le faire passer serait de faire converger deux produits qui n'ont pas le meme usage. Ce fichier compare donc les DONNEES, champ par champ, par une table de correspondance explicite -- et declare a part les differences de forme legitimes, pour qu'elles restent visibles au lieu d'etre tolerees en silence.",
+  "_regles": {
+    "exact": "egalite de chaine apres str() et strip()",
+    "casse": "egalite apres passage en majuscules, decomposition NFD et retrait des marques de categorie Unicode M (meme normalisation que nom_docie.json) : la casse ADBI du one-pager (« Camille BERANGER ») ne doit pas faire echouer la comparaison du nom",
+    "nombre": "egalite numerique, absent valant 0",
+    "telephone_fr": "chiffres seuls, prefixe 33 ou 0 de tete retire, comparaison des 9 derniers chiffres : one-pager stocke l'E.164 (+33612345678), cv-parser le verbatim du CV (06 12 34 56 78)",
+    "liste_normalisee": "listes comparees apres retrait des entrees vides, normalisation `casse` de chaque element, et tri : l'ordre interne d'une liste d'items n'est pas un contrat"
+  },
+  "correspondance": [
+    { "py": "name", "js": "identity.full_name", "regle": "casse", "preuve": "#177 ligne 1 : one-pager applique la casse ADBI (N.properName) pour son gabarit ; la valeur lue est la meme" },
+    { "py": "title", "js": "identity.title", "regle": "exact", "preuve": "#177 ligne 2 : le meme repli sur le role de la mission la plus recente existe des deux cotes depuis #176" },
+    { "py": "years_experience", "js": "identity.seniority_years", "regle": "nombre", "preuve": "#177 lignes 3 a 9 : toute la famille periode/tri/anciennete a ete alignee ; c'est le chiffre qui la resume" },
+    { "py": "contact.email", "js": "contact.email", "regle": "exact", "preuve": "champ plat du schema servi" },
+    { "py": "contact.linkedin", "js": "contact.linkedin", "regle": "exact", "preuve": "champ plat du schema servi" },
+    { "py": "contact.github", "js": "contact.github", "regle": "exact", "preuve": "champ plat du schema servi" },
+    { "py": "contact.phone", "js": "contact.phone", "regle": "telephone_fr", "preuve": "#177 ligne 19 : difference de FORME assumee (E.164 contre verbatim), meme numero" },
+    { "py": "contact.location", "js": "contact.location.city", "regle": "exact", "preuve": "one-pager structure le lieu ; la chaine lue est identique" },
+    { "py": "experience[].company", "js": "experiences[].company", "regle": "casse", "preuve": "les deux ports trient les missions de la plus recente a la plus ancienne (#177 ligne 7) : la comparaison rang par rang verifie AUSSI cet ordre" },
+    { "py": "experience[].title", "js": "experiences[].role", "regle": "casse", "preuve": "meme valeur, nom de champ different selon le produit" },
+    { "py": "experience[].location", "js": "experiences[].location", "regle": "casse", "preuve": "#177 ligne 17 : le lieu de mission etait perdu cote Python, il est conserve depuis #176" },
+    { "py": "education[].title", "js": "education[].degree", "regle": "casse", "preuve": "le schema servi ne declare que `degree` ; les deux ports le rangent sous un nom different" },
+    { "py": "education[].subtitle", "js": "education[].institution", "regle": "casse", "preuve": "idem pour `institution`" },
+    { "py": "skills[].category", "js": "skills[].label", "regle": "casse", "preuve": "meme categorie, nom de champ different" },
+    { "py": "skills[].items", "js": "skills[].items", "regle": "liste_normalisee", "preuve": "#177 ligne 13 : le dedoublonnage est desormais INTRA-categorie des deux cotes, donc les listes doivent coincider" },
+    { "py": "languages[].language", "js": "languages[].name", "regle": "casse", "preuve": "meme valeur, nom de champ different" },
+    { "py": "languages[].level", "js": "languages[].level", "regle": "casse", "preuve": "#178 : « natif » vaut C2 des deux cotes" }
+  ],
+  "comptes": [
+    { "py": "experience", "js": "experiences", "preuve": "une mission perdue d'un seul cote est la panne la plus grave de cet inventaire" },
+    { "py": "education", "js": "education", "preuve": "idem" },
+    { "py": "skills", "js": "skills", "preuve": "idem" },
+    { "py": "languages", "js": "languages", "preuve": "idem" },
+    { "py": "certifications", "js": "certifications", "preuve": "idem" },
+    { "py": "interests", "js": "interests", "preuve": "idem" }
+  ],
+  "differences_produit": [
+    { "quoi": "identity.initials / identity.trigram", "ou": "one-pager seulement", "preuve": "#177 ligne 1 : elements de gabarit du dossier d'une page, sans equivalent en CVtheque" },
+    { "quoi": "contact.phone_display", "ou": "one-pager seulement", "preuve": "#177 ligne 19 : mise en forme d'affichage derivee de l'E.164" },
+    { "quoi": "education[].period contre education[].end_year", "ou": "formes differentes", "preuve": "#177 ligne 14 : « 2016 - 2019 » cote CVtheque, 2019 cote one-pager (la derniere annee). MESURE : les deux formes coexistent volontairement, seuls `degree` et `institution` sont compares" },
+    { "quoi": "experience[].period contre experiences[].start_date / end_date / is_current / duration_months", "ou": "formes differentes", "preuve": "#177 lignes 4 a 9 : la CVtheque garde une periode lisible (« Depuis Mars 2019 »), le one-pager des dates et un drapeau. MESURE sur le cas `mission_sans_date_de_fin` : meme lecture, deux formes" },
+    { "quoi": "technologies / quality / summary / source", "ou": "one-pager seulement", "preuve": "derives propres au dossier d'une page" },
+    { "quoi": "projects / html_content / anciennete_source / skills_flat / skills_raw_flat", "ou": "cv-parser seulement", "preuve": "champs de la fiche CVtheque : `projects` vient de la voie LLM (app.py), `skills_flat` sert au rapprochement" }
+  ],
+  "cas": [
+    {
+      "nom": "reponse_docie_enregistree",
+      "fichier": "cv_samples/results/simple_docie.json",
+      "preuve": "seule REPONSE REELLE de DocIE conservee dans le depot pour le schema resume (voie texte). C'est la source de verite de l'inventaire #177 lui-meme. Les autres fichiers de ce dossier ne sont pas utilisables : `*_cv_parser.json` sont des fiches deja mappees, et le `docie` de `*_comparison.json` est un resume aplati (ou `_error` pour dense et scanned)."
+    },
+    {
+      "nom": "mission_sans_date_de_fin",
+      "preuve": "MESURE : anciennete 8 des deux cotes, meme ordre. La CVtheque ecrit « Depuis Mars 2019 », le one-pager pose is_current=true -- deux formes, une seule lecture. Regression visee : #177 ligne 6, ou une mission sans fin comptait 0 an cote Python.",
+      "reponse": {
+        "schema_name": "resume",
+        "result": {
+          "name": "Camille Beranger", "title": "Developpeuse", "years_experience": 5,
+          "contact": { "email": "c@example.fr", "phone": "06 12 34 56 78", "linkedin": "", "github": "", "location": "Lyon, France" },
+          "experience": [{ "company": "Numelia", "title": "Dev", "start_date": "Mars 2019", "location": "Lyon" }],
+          "education": [], "skills": [], "languages": [], "certifications": [], "interests": []
+        }
+      }
+    },
+    {
+      "nom": "item_nul_dans_les_competences",
+      "preuve": "MESURE : les deux cotes rendent ['Python']. #177 ligne 20 : Python garde un \"\" intermediaire que `normalize_cv_data` filtre, le JS filtre des le mapping -- l'ecart ne survit a aucune sortie, et ce cas le fige.",
+      "reponse": {
+        "schema_name": "resume",
+        "result": {
+          "name": "Camille Beranger", "title": "Developpeuse", "years_experience": 5,
+          "contact": { "email": "c@example.fr", "phone": "06 12 34 56 78", "linkedin": "", "github": "", "location": "Lyon, France" },
+          "experience": [],
+          "education": [],
+          "skills": [{ "category": "Langages", "items": [{ "item": null }, { "item": "Python" }] }],
+          "languages": [], "certifications": [], "interests": []
+        }
+      }
+    },
+    {
+      "nom": "annee_en_plage",
+      "preuve": "MESURE : `degree` et `institution` identiques ; la forme de l'annee differe volontairement (#177 ligne 14, difference produit declaree ci-dessus).",
+      "reponse": {
+        "schema_name": "resume",
+        "result": {
+          "name": "Camille Beranger", "title": "Developpeuse", "years_experience": 5,
+          "contact": { "email": "c@example.fr", "phone": "06 12 34 56 78", "linkedin": "", "github": "", "location": "Lyon, France" },
+          "experience": [],
+          "education": [{ "degree": "Master", "institution": "Lyon 1", "year": "2016 - 2019" }],
+          "skills": [], "languages": [], "certifications": [], "interests": []
+        }
+      }
+    },
+    {
+      "nom": "ordre_des_missions",
+      "preuve": "MESURE : les deux ports rendent Recent puis Ancien, anciennete 9 des deux cotes. Regression visee : #177 ligne 7, ou DocIE rend les missions dans l'ordre du document et ou seul one-pager triait -- le meme CV se lisait a l'envers selon le service.",
+      "reponse": {
+        "schema_name": "resume",
+        "result": {
+          "name": "Camille Beranger", "title": "Developpeuse", "years_experience": 5,
+          "contact": { "email": "c@example.fr", "phone": "06 12 34 56 78", "linkedin": "", "github": "", "location": "Lyon, France" },
+          "experience": [
+            { "company": "Ancien", "title": "Dev", "start_date": "Janvier 2015", "end_date": "Juin 2017" },
+            { "company": "Recent", "title": "Lead", "start_date": "Mars 2020", "end_date": "Aujourd'hui" }
+          ],
+          "education": [], "skills": [], "languages": [], "certifications": [], "interests": []
+        }
+      }
+    }
+  ]
+}
