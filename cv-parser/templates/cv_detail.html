@@ -953,7 +953,7 @@
               </div>
             </div>
             <div class="field-row"><span class="field-label">Client</span>
-              <div class="field-val" contenteditable="true" data-f="client" data-empty="{{ 'true' if not exp.client else 'false' }}" data-placeholder="Nom du client / donneur d'ordre">{{ exp.client or '' }}</div></div>
+              <div class="field-val{{ ' a-verifier' if chemin_exp ~ 'client' in a_verifier }}" contenteditable="true" data-f="client" data-empty="{{ 'true' if not exp.client else 'false' }}" data-placeholder="Nom du client / donneur d'ordre">{{ exp.client or '' }}</div></div>
             {# #177 ligne 17 : le lieu de la mission, que DocIE rend et que la
                fiche jetait. Case ÉDITABLE et non simple affichage : collectData
                ramasse les missions par la boucle générique [data-f], donc tout

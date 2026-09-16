@@ -993,7 +993,24 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
             periode = f"Depuis {debut}"
         normalized["experience"].append({
             "company": str(exp.get("company") or exp.get("entreprise") or "").strip(),
-            "client": str(exp.get("client") or "").strip(),
+            # Le CLIENT FINAL de la mission, que DocIE rend sous `end_client`
+            # (adbi_resume le déclare depuis #243) et que cette ligne jetait :
+            # elle ne lisait que `client`, un nom qu'aucun schéma servi ne
+            # produit. Même panne que `location` (#177 ligne 17) — le
+            # dictionnaire reconstruit ne lisait pas la bonne clé, la donnée
+            # tombait en silence, et la case « Client » restait vide alors que
+            # DocIE l'avait extraite.
+            #
+            # `client` reste PRIORITAIRE : c'est la clé que remplit la voie
+            # locale (app.py:1366) et que porte toute fiche déjà enregistrée.
+            # `end_client` ne sert donc que lorsque la valeur vient de DocIE.
+            #
+            # Le nom de FICHE reste `client`, pas `end_client` : matcher.py
+            # (_get_all_text), les deux exports et les trois gabarits le lisent
+            # déjà sous ce nom. one-pager garde `end_client` du sien — la
+            # divergence est assumée, renommer ici casserait le rapprochement
+            # pour aligner un mot.
+            "client": str(exp.get("client") or exp.get("end_client") or "").strip(),
             "title": str(exp.get("title") or exp.get("poste") or "").strip(),
             # #177 ligne 17 : le LIEU de la mission est conservé.
             #
