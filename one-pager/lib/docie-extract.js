@@ -45,9 +45,25 @@ function chargerBridge() {
  *
  * Le fichier vit dans document-parsing/schemas/ et non dans
  * document-parsing/bridge/ : un transport ne possede pas de schema metier
- * (README du bridge). cv-parser en garde pour l'instant sa propre copie, que
- * tests/docie-extract.test.js compare octet a octet a celle-ci — le meme
- * garde-fou que document-parsing/fixtures/mission_en_cours.json.
+ * (README du bridge). cv-parser en garde pour l'instant sa propre copie.
+ *
+ * ATTENTION — ce commentaire affirmait que tests/docie-extract.test.js compare
+ * les deux exemplaires « octet a octet », sur le modele de
+ * document-parsing/fixtures/mission_en_cours.json. C'ETAIT FAUX, deux fois :
+ * aucun test de one-pager n'ouvre un .schema.json, et la seule comparaison qui
+ * existe est cote cv-parser (tests/test_docie_inline.py), entre la copie
+ * cv-parser et register_and_test.py::SCHEMAS["resume"] — pas entre les deux
+ * copies, et sur du JSON analyse, pas sur des octets.
+ *
+ * L'exemplaire ci-dessous, celui que CE service expedie, n'etait donc garde
+ * par rien. La fausse assurance de cette phrase est vraisemblablement ce qui
+ * l'a laisse passer : on lit, on croit, on n'ajoute pas le garde-fou. C'est
+ * #231 qui l'ajoute (une seconde assertion dans test_docie_inline.py) ; tant
+ * qu'elle n'est pas fusionnee, rien ne compare cet exemplaire a la reference.
+ *
+ * La comparaison porte sur du JSON ANALYSE et non sur des octets, et c'est
+ * delibere : .gitattributes normalise les fins de ligne (`* text=auto`), donc
+ * un test octet-pour-octet casserait selon la plateforme du check-out.
  */
 function chargerSchemaResume() {
   // eslint-disable-next-line global-require
