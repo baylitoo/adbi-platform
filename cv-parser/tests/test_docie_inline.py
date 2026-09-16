@@ -132,9 +132,34 @@ class InlineTests(unittest.TestCase):
         session.request.assert_not_called()
 
     def test_schema_matches_existing_contract(self):
-        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "document-parsing/scripts"))
+        racine = Path(__file__).resolve().parents[2]
+        sys.path.insert(0, str(racine / "document-parsing/scripts"))
         from register_and_test import SCHEMAS
         expected = copy.deepcopy(SCHEMAS["resume"])
         expected["document_type"] = "adbi_resume"
         actual = json.loads((Path(__file__).resolve().parents[1] / "adbi_resume.schema.json").read_text())
         self.assertEqual(actual, expected)
+        # Le schema `adbi_resume` existe en DEUX exemplaires, et c'est voulu :
+        # l'image cv-parser n'embarque pas document-parsing/, l'image one-pager
+        # n'embarque pas cv-parser/ (one-pager/Dockerfile:33 copie l'exemplaire
+        # ci-dessous, whitelist .dockerignore:31-32). Voir
+        # document-parsing/bridge/README.md.
+        #
+        # Seul l'exemplaire cv-parser etait epingle (assert ci-dessus). Celui
+        # que one-pager EXPEDIE reellement a DocIE
+        # (one-pager/lib/docie-extract.js:54) ne l'etait par aucun test, ni ici
+        # ni cote JS : le modifier seul ne faisait rougir personne, et les deux
+        # services envoyaient alors deux schemas differents pour le meme
+        # document, en silence. Meme classe que #177/#179, sur un schema au
+        # lieu d'un mapping.
+        #
+        # Comparaison sur le JSON ANALYSE, jamais sur les octets : les deux
+        # fichiers different deja par 217 fins de ligne (CRLF ici, LF chez
+        # cv-parser). Un test octet-pour-octet echouerait aujourd'hui pour la
+        # mauvaise raison, et se ferait « reparer » en normalisant les fins de
+        # ligne -- ce qui ne garde rien du tout. Ne pas non plus relire le meme
+        # fichier des deux cotes : la comparaison passerait pour toujours.
+        expedie_par_one_pager = json.loads(
+            (racine / "document-parsing/schemas/adbi_resume.schema.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(expedie_par_one_pager, expected)
