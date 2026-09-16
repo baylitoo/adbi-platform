@@ -27,8 +27,7 @@ Pourquoi lire la source des ponts plutôt que d'ajouter un jeu d'essai partagé
 sous `document-parsing/fixtures/` — la discipline habituelle quand deux services
 doivent s'accorder : ici les deux parties comparées sont des CONSTANTES DE CODE,
 pas des cas d'entrée-sortie. Un fichier de fixture serait un quatrième endroit
-où écrire la même liste, et personne ne garantirait qu'un pont le lise (celui de
-`mission_en_cours.json` déclare deux ports, mais aucun test JS ne l'ouvre).
+où écrire la même liste, et rien n'obligerait un pont à le lire.
 Lire la source des ponts compare les deux vraies listes, sans en créer une
 troisième.
 """
