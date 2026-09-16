@@ -62,9 +62,12 @@ except ImportError:
     _DOCX_AVAILABLE = False
 
 # ── Config centralisée ────────────────────────────────────────────────────────
+from urllib.parse import urlsplit
+
 from config import (
     UPLOAD_DIR, MAX_LLM_CHARS,
     CV_LIST_MAX, CV_SKILLS_FLAT_MAX,
+    FACTORY_URL,
     get_active_llm, set_active_llm,
 )
 
@@ -1874,15 +1877,46 @@ def _versionner_statiques(endpoint, valeurs):
         pass                                    # fichier absent : on laisse tel quel
 
 
+def _retour_apres_connexion() -> str:
+    """Destination sûre après connexion : le hub si `?next=` le désigne, sinon "/".
+
+    `next` est fourni par l'appelant, donc hostile par défaut. Une page de
+    connexion qui redirige vers une URL arbitraire est une redirection ouverte
+    à l'endroit le PIRE possible : la victime vient d'y saisir son mot de
+    passe, et l'écran suivant peut être une copie de cette même page.
+
+    D'où une liste blanche stricte plutôt qu'un filtrage : seul FACTORY_URL
+    (ADBI_FACTORY_URL) est accepté, comparé sur son ORIGINE exacte -- schéma,
+    hôte et port. Pas de comparaison par préfixe : « https://hub.example.fr »
+    ne doit pas laisser passer « https://hub.example.fr.attaquant.test ».
+    Variable vide, `next` absent, ou origine non reconnue -> "/", sans erreur :
+    une redirection refusée n'est pas un incident à montrer à l'utilisateur.
+    """
+    demande = (request.args.get("next") or "").strip()
+    if not demande or not FACTORY_URL:
+        return "/"
+    try:
+        voulu, attendu = urlsplit(demande), urlsplit(FACTORY_URL)
+    except ValueError:
+        return "/"
+    if (voulu.scheme, voulu.netloc) == (attendu.scheme, attendu.netloc) and voulu.scheme in ("http", "https"):
+        return demande
+    return "/"
+
+
 @app.route("/login")
 def login_page():
     # Mode local (ADBI_AUTH non posee) : pas de page de connexion.
     if not AUTH_ACTIVE:
         return redirect("/")
+    retour = _retour_apres_connexion()
     token = request.cookies.get("adbi_access")
     if token and verify_access_token(token):
-        return redirect("/")
-    return render_template("login.html")
+        # Deja connecte : on honore `next` aussi, sinon un utilisateur renvoye
+        # ici par le hub avec une session valide resterait bloque sur /app au
+        # lieu de repartir d'ou il venait.
+        return redirect(retour)
+    return render_template("login.html", retour=retour)
 
 
 @app.route("/")

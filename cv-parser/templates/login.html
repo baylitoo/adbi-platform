@@ -205,7 +205,11 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
       return;
     }
     sessionStorage.setItem('adbi_user', JSON.stringify(data.user));
-    window.location.href = '/';
+    // Destination DEJA validee cote serveur (app.py::_retour_apres_connexion) :
+    // soit "/", soit exactement l'origine d'ADBI_FACTORY_URL. `tojson` echappe
+    // la valeur en litteral JavaScript -- jamais d'interpolation brute dans un
+    // bloc <script>, meme pour une valeur qu'on vient de valider.
+    window.location.href = {{ (retour or '/') | tojson }};
   } catch(ex) {
     err.textContent = 'Erreur réseau — réessayez';
     err.classList.add('show');

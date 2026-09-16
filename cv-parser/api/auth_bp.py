@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request, make_response, redirect
 from config import (
     ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS,
     LOGIN_MAX_ECHECS, LOGIN_FENETRE_S,
+    COOKIE_DOMAIN,
 )
 from core.activity_pg import log_event
 from core.auth import (
@@ -120,35 +121,55 @@ def _schema_public() -> str:
     return "https" if request.is_secure else "http"
 
 
+def _portee_cookie() -> dict:
+    """`domain=` à passer à set_cookie/delete_cookie, ou rien.
+
+    COOKIE_DOMAIN vide -> dictionnaire VIDE, pas `domain=None` ni `domain=""` :
+    l'attribut est alors totalement absent de l'en-tête et le cookie reste
+    « host-only », exactement comme aujourd'hui. C'est ce qui garantit qu'un
+    déploiement qui ne pose pas la variable ne voit AUCUN changement.
+
+    Posée, elle étend le cookie aux sous-domaines, ce qui permet aux quatre
+    services Node de VÉRIFIER le jeton (auth/auth-adbi.js) sans que quiconque
+    d'autre que cv-parser n'en émette. Voir #245 pour la série, #253 pour la
+    bascule de domaine (qui ne change que la valeur de cette variable).
+    """
+    return {"domain": COOKIE_DOMAIN} if COOKIE_DOMAIN else {}
+
+
 def _set_cookies(resp, access_token: str, refresh_token: str):
     # `Secure` suit le schéma réel : absent en HTTP (sinon le navigateur ne
     # renverrait plus le cookie et la connexion cesserait de fonctionner sur
     # le déploiement actuel), posé dès que le TLS est en place.
     secure = _schema_public() == "https"
+    portee = _portee_cookie()
     resp.set_cookie(
         "adbi_access", access_token,
         httponly=True, samesite="Lax", secure=secure,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        path="/",
+        path="/", **portee,
     )
     resp.set_cookie(
         "adbi_refresh", refresh_token,
         httponly=True, samesite="Lax", secure=secure,
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-        path="/api/auth/refresh",
+        path="/api/auth/refresh", **portee,
     )
     return resp
 
 
 def _clear_cookies(resp):
-    # Mêmes attributs qu'à la pose : un cookie `Secure`/`SameSite` supprimé
-    # avec des attributs discordants n'est pas remplacé par le navigateur —
-    # la déconnexion laisserait le jeton en place.
+    # Mêmes attributs qu'à la pose : un cookie `Secure`/`SameSite`/`Domain`
+    # supprimé avec des attributs discordants n'est pas remplacé par le
+    # navigateur — la déconnexion laisserait le jeton en place. `domain` en
+    # fait partie : un cookie posé sur .outils.adbi.fr et supprimé sans
+    # `domain` survivrait à la déconnexion, sur TOUS les services.
     secure = _schema_public() == "https"
+    portee = _portee_cookie()
     resp.delete_cookie("adbi_access", path="/",
-                       httponly=True, samesite="Lax", secure=secure)
+                       httponly=True, samesite="Lax", secure=secure, **portee)
     resp.delete_cookie("adbi_refresh", path="/api/auth/refresh",
-                       httponly=True, samesite="Lax", secure=secure)
+                       httponly=True, samesite="Lax", secure=secure, **portee)
     return resp
 
 
