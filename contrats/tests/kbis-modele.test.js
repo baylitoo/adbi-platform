@@ -304,7 +304,11 @@ test("GET /api/modeles?tache=kbis : voie texte (défaut) LFM2.5 2.6B puis NuExtr
     assert.equal(JSON.parse(texte.texte).voie, "texte");
     assert.deepEqual(JSON.parse(texte.texte).modeles.map((m) => m.id), ["lfm25_2_6b", "nuextract3"]);
     const agent = await srv.get("tache=kbis&voie=agent");
-    assert.deepEqual(JSON.parse(agent.texte), { tache: "kbis", voie: "agent", modeles: [{ id: "nuextract3", libelle: "NuExtract3", description: "Précis mais lent — plusieurs minutes", role: "defaut", lignesMax: null }] });
+    // `experimental` (#194, #217) sort désormais de cette route pour toutes les
+    // pièces. Il vaut `false` ici : la voie AGENT ne peut recevoir aucun modèle
+    // externe — le fournisseur ne déclare que la voie `texte` (catalogue.json),
+    // et lib/choix-modele.js ne demande les externes que sur cette voie-là.
+    assert.deepEqual(JSON.parse(agent.texte), { tache: "kbis", voie: "agent", modeles: [{ id: "nuextract3", libelle: "NuExtract3", description: "Précis mais lent — plusieurs minutes", role: "defaut", experimental: false, lignesMax: null }] });
     for (const r of [defaut, texte, agent]) assert.ok(!/store:|kbis-nuextract3|kbis-historique/.test(r.texte));
     assert.equal((await srv.get("tache=kbis&voie=chat")).status, 400);
     assert.equal((await srv.get("tache=urssaf&voie=agent")).status, 400);

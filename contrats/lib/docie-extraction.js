@@ -68,6 +68,13 @@ const VOIES = { kbis: "agent", urssaf: "texte", rib: "texte" };
 // relative depuis contrats/lib, donc même chemin ici dans les deux cas.
 const BRIDGE_PATH = path.join(__dirname, "..", "..", "document-parsing", "bridge", "docie-bridge.js");
 
+// Transport des modèles HORS ADBI (#194, #217), voisin du bridge dans le même
+// dossier partagé — donc déjà dans l'image (contrats/Dockerfile copie le
+// dossier ENTIER, `COPY --from=bridge .`). Même chemin relatif, même require
+// paresseux : sans clé OpenAI, aucun modèle externe n'est proposé et ce module
+// n'est jamais chargé.
+const OPENAI_PATH = path.join(__dirname, "..", "..", "document-parsing", "bridge", "openai-responses.js");
+
 // Même raisonnement de chemin que BRIDGE_PATH : document-parsing/schemas/ est
 // une source partagée hors de contrats/, copiée à la même profondeur relative
 // dans l'image Docker (voir Dockerfile, contexte de build "schemas" : le
@@ -124,6 +131,12 @@ function loadBridge() {
   return require(BRIDGE_PATH);
 }
 
+// Même raisonnement que loadBridge() : chargé seulement quand un modèle externe
+// a été explicitement choisi.
+function loadOpenAI() {
+  return require(OPENAI_PATH);
+}
+
 function sniffMime(mimeType, buffer) {
   const m = String(mimeType || "").toLowerCase();
   if (["application/pdf", "image/png", "image/jpeg", "image/webp"].includes(m)) return m;
@@ -156,6 +169,14 @@ function signauxPartielsPublics(metadata, { cles = null } = {}) {
     });
   if (partiel.length) sortie.partiel = partiel;
   if (m.troncature_possible === true) sortie.troncaturePossible = true;
+  // `sans_preuve` (#194, modèles externes) : le transport OpenAI ne rend NI
+  // `evidence_ids` NI confiance par champ (document-parsing/bridge/
+  // openai-responses.js). Aucun champ n'est donc « vérifié » par l'extraction :
+  // c'est tout le résultat qui est à relire, pas tel ou tel champ. Sans cette
+  // clé, la sortie d'un modèle externe ressemblerait EXACTEMENT à celle d'un
+  // modèle DocIE ancré — `partiel` y est vide et `troncature_possible` faux,
+  // donc rien d'autre ne s'afficherait.
+  if (m.sans_preuve === true) sortie.sansPreuve = true;
   return sortie;
 }
 
@@ -321,16 +342,30 @@ async function extractViaTexte(kind, { dataBase64, mimeType, items, expectedName
 // garde la forme « sans choix », repli local compris.
 async function extraireTexteLu(kind, texte, { items, expectedName, modele = null, profilSansChoix = null } = {}, deps = {}) {
   const env = deps.env || process.env;
-  const { extractText } = deps.extractText ? deps : loadBridge();
   const options = { kind, dynamicSchema: (deps.dynamicSchema || chargerSchema(kind)), env };
   // Modèle choisi (#194) : vérifié sur le texte lu, envoyé tel quel, jamais
   // remplacé. Seules les pièces à sélecteur (lib/choix-modele.js::TACHES) en
   // acceptent un ; pour les autres, un `modele` reçu est refusé, nommé.
   const choisi = modele !== null ? choixModele.choisirPourTexte(kind, modele, texte, { env }) : null;
-  if (choisi) options.modelProfile = choisi.identifiant;
-  else if (profilSansChoix) options.modelProfile = profilSansChoix;
   if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;
-  const response = await extractText(texte, options);
+  // Modèle EXTERNE explicitement choisi (#194, #217) : le texte part chez le
+  // fournisseur, pas chez DocIE. `choisi.identifiant` est alors le MODE du
+  // transport (`rapide` / `raisonnement`), jamais un profil DocIE — l'envoyer à
+  // `extractText` demanderait à DocIE un modèle nommé « rapide ».
+  // Aucun repli : un échec remonte nommé (voir analyzeDocument).
+  let response;
+  if (choixModele.estExterne(choisi)) {
+    const { extraireViaOpenAI } = deps.extraireViaOpenAI ? deps : loadOpenAI();
+    response = await extraireViaOpenAI(texte, {
+      mode: choisi.mode, dynamicSchema: options.dynamicSchema, env,
+      ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+    });
+  } else {
+    const { extractText } = deps.extractText ? deps : loadBridge();
+    if (choisi) options.modelProfile = choisi.identifiant;
+    else if (profilSansChoix) options.modelProfile = profilSansChoix;
+    response = await extractText(texte, options);
+  }
   const analysis = mapTexteDocieResult(kind, response, { items, expectedName });
   if (choisi) {
     analysis.modele = choixModele.modeleServiPublic(kind, response.metadata, { env, voie: "texte" });

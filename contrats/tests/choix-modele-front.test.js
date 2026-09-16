@@ -33,12 +33,12 @@ function faux(extra = {}) {
 }
 
 const OFFRES_CONTRAT = [
-  { id: "nuextract3", libelle: "NuExtract3", description: "Précis mais lent — plusieurs minutes", role: "defaut", lignesMax: null },
-  { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "alternative", lignesMax: 800 },
+  { id: "nuextract3", libelle: "NuExtract3", description: "Précis mais lent — plusieurs minutes", role: "defaut", experimental: false, lignesMax: null },
+  { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "alternative", experimental: false, lignesMax: 800 },
 ];
 const OFFRES_URSSAF = [
-  { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "defaut", lignesMax: 800 },
-  { id: "lfm25_350m", libelle: "LFM2.5 350M", description: "Très rapide — documents simples", role: "alternative", lignesMax: 800 },
+  { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "defaut", experimental: false, lignesMax: 800 },
+  { id: "lfm25_350m", libelle: "LFM2.5 350M", description: "Très rapide — documents simples", role: "alternative", experimental: false, lignesMax: 800 },
 ];
 
 async function remplir(offres) {
