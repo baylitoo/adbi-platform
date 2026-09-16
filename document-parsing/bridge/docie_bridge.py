@@ -71,12 +71,34 @@ MAX_ERROR_BYTES = 64 * 1024
 # Dépassement de contexte du serveur de modèle (#190). Sur un profil à prompt
 # « document entier », un document trop long fait refuser le prompt par
 # llama-server (« request (N tokens) exceeds the available context size »,
-# type `exceed_context_size_error`) ; DocIE (classify_response_error puis
-# _openai_error) renvoie alors le statut amont avec error.type="upstream_error"
-# et ce corps dans le message. Le statut exact est « lu, non tracé » de bout en
-# bout, et 400 est aussi celui d'une requête invalide : on reconnaît donc le
-# TEXTE, où qu'il soit dans le corps (JSON imbriqué échappé ou texte brut), et
-# tout le reste retombe sur `upstream`.
+# type `exceed_context_size_error`).
+#
+# VOIE AGENT SEULEMENT. Là, le runtime emballe l'échec en
+# `AgentError(status_code=…, error_type="upstream_error")` : le statut amont
+# ressort et le corps amont est dans `message`, donc la regex ci-dessous le
+# reconnaît. Le statut exact est « lu, non tracé » de bout en bout, et 400 est
+# aussi celui d'une requête invalide : on reconnaît donc le TEXTE, où qu'il soit
+# dans le corps (JSON imbriqué échappé ou texte brut).
+#
+# SUR /v1/extract/text, CETTE REGEX NE PEUT JAMAIS SE DÉCLENCHER, et ce n'est
+# pas une fragilité de formulation : le message n'arrive pas du tout. Mesuré chez
+# DocIE (exécution des pannes derrière la route, sans modèle ni réseau) :
+# dépassement de contexte, 503 de chargement, 429, lecture expirée, file saturée,
+# sortie tronquée, réponse non-JSON — TOUT ressort en HTTP 500 avec le corps en
+# texte brut « Internal Server Error ». Pas de JSON, pas de type d'erreur, pas
+# d'en-tête. La route appelle `extract_from_text` sans try/except, les erreurs de
+# passerelle sont de simples RuntimeError et l'application n'a aucun gestionnaire
+# d'exception : le 500 par défaut de FastAPI est tout ce qui reste, et le message
+# amont est jeté avant de nous parvenir.
+#
+# Conséquence à connaître avant de s'y fier : sur la voie texte, un document trop
+# long ressort en `upstream` (« le service a répondu en erreur ») et non en
+# `context` (« document trop long »). `upstream` n'y est donc pas « tout le
+# reste » mais « toute défaillance du modèle », indistinguables. Le correctif
+# appartient à DocIE (mapper les erreurs de passerelle vers des statuts, comme le
+# fait déjà la voie agent) ; rien ici ne peut le rattraper.
+#
+# Tout ce qui n'est pas reconnu retombe sur `upstream`.
 CONTEXT_OVERFLOW = re.compile(r"exceeds the available context size|exceed_context_size_error", re.IGNORECASE)
 # Plafond silencieux de blocs de la voie texte (#190). Sans `ocr_blocks` fournis
 # par l'appelant, DocIE (ocr/base.py, `text_to_blocks`) fait UN bloc par ligne
