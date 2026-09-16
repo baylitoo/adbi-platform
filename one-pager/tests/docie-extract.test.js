@@ -146,6 +146,45 @@ test("deduit le titre de la mission la plus recente quand DocIE ne renvoie pas d
   assert.ok(master.quality.warnings.includes("titre_deduit_de_la_mission_la_plus_recente"));
 });
 
+// Client final et intermediaire : le repli `end_client: company` est parti.
+//
+// Avant, la voie DocIE recopiait l'EMPLOYEUR dans `end_client` et laissait
+// `via` vide, faute de champs au schema. Consequence mesuree sur les
+// consommateurs : score.js:62 recevait deux fois la meme chaine dans une meule
+// de foin qui suppose deux signaux distincts, et l'ecran de relecture
+// (public/app.js:438) affichait un champ « Client final » pre-rempli avec le
+// nom de l'employeur -- une valeur fausse et plausible, pire qu'un vide.
+//
+// Sans ce test, la voie resterait non epinglee : aucune fixture ne portait
+// `end_client` ni `via`, donc une faute de frappe sur le nom du champ aurait
+// laisse les 110 tests verts.
+test("client final et intermediaire : lus de DocIE, jamais fabriques depuis l'employeur", () => {
+  const avecClient = {
+    ...ADBI_RESUME_COMPLET,
+    experience: [
+      { ...ADBI_RESUME_COMPLET.experience[0], company: "DLA Conseil", end_client: "Urssaf IDF", via: "Externatic" },
+      { ...ADBI_RESUME_COMPLET.experience[1] },
+    ],
+  };
+  const master = mapperAdbiResume(avecClient, METADATA_OK, { filename: "cv.pdf" });
+
+  // Tri chronologique decroissant : la mission en cours reste en tete.
+  const recente = master.experiences[0];
+  assert.equal(recente.company, "DLA Conseil", "l'employeur reste l'employeur");
+  assert.equal(recente.end_client, "Urssaf IDF", "le client final vient de DocIE");
+  assert.equal(recente.via, "Externatic", "l'intermediaire vient de DocIE");
+  // Le coeur du defaut : les deux ne doivent plus etre la meme valeur.
+  assert.notEqual(recente.end_client, recente.company);
+
+  // Mission sans client final ni intermediaire nommes : VIDE, pas l'employeur.
+  // Les consommateurs ont deja leur repli (`end_client || company`), donc rien
+  // n'est perdu a l'affichage -- mais on ne fabrique pas de valeur fausse.
+  const ancienne = master.experiences[1];
+  assert.equal(ancienne.company, "Capgemini");
+  assert.equal(ancienne.end_client, "", "aucun client final nomme -> vide, jamais l'employeur");
+  assert.equal(ancienne.via, "", "aucun intermediaire nomme -> vide");
+});
+
 test("signale une validation DocIE negative et un schema non confirme", () => {
   const master1 = mapperAdbiResume(ADBI_RESUME_COMPLET, { validation: { valid: false } }, { filename: "cv.pdf" });
   assert.ok(master1.quality.warnings.includes("docie_validation_negative"));
