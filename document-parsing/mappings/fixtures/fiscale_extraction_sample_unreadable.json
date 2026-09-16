@@ -1,0 +1,97 @@
+{
+  "request_id": "req-fixture-fiscale-unreadable-0001",
+  "schema_name": "fiscale",
+  "model_profile": "lfm25_2_6b",
+  "document_hash": "sha256:req-fixture-fiscale-unreadable-0001",
+  "result": {
+    "document_type": "fiscale",
+    "extraction_notes": [
+      "scan illisible, aucun champ identifiant extrait"
+    ],
+    "company_name": {
+      "value": null,
+      "evidence_ids": [],
+      "confidence": 0.0
+    },
+    "siren": {
+      "value": null,
+      "evidence_ids": [],
+      "confidence": 0.0
+    },
+    "siret": {
+      "value": null,
+      "evidence_ids": [],
+      "confidence": 0.0
+    },
+    "tax_office": {
+      "value": "SIE",
+      "evidence_ids": [],
+      "confidence": 0.2
+    },
+    "issued_date": {
+      "value": null,
+      "evidence_ids": [],
+      "confidence": 0.0
+    },
+    "situation_date": null,
+    "regularity_statement": null
+  },
+  "validation": {
+    "valid": false,
+    "errors": [
+      "aucun champ identifiant"
+    ],
+    "warnings": []
+  },
+  "usage": null,
+  "latency_ms": 12345,
+  "dynamic_schema": {
+    "document_type": "fiscale",
+    "fields": [
+      {
+        "name": "company_name",
+        "type": "string",
+        "description": "Denomination de l'entreprise a qui l'attestation de regularite fiscale est delivree",
+        "fields": []
+      },
+      {
+        "name": "siren",
+        "type": "string",
+        "description": "Numero SIREN de l'entreprise tel qu'imprime",
+        "fields": []
+      },
+      {
+        "name": "siret",
+        "type": "string",
+        "description": "Numero SIRET de l'entreprise, quand il figure sur l'attestation",
+        "fields": []
+      },
+      {
+        "name": "tax_office",
+        "type": "string",
+        "description": "Service des impots emetteur (service des impots des entreprises ou comptable public) tel qu'imprime",
+        "fields": []
+      },
+      {
+        "name": "issued_date",
+        "type": "date",
+        "description": "Date de delivrance de l'attestation",
+        "fields": []
+      },
+      {
+        "name": "situation_date",
+        "type": "date",
+        "description": "Date a laquelle l'entreprise est declaree a jour de ses obligations fiscales, quand elle est imprimee a part de la date de delivrance",
+        "fields": []
+      },
+      {
+        "name": "regularity_statement",
+        "type": "string",
+        "description": "Mention attestant que l'entreprise est a jour de ses obligations fiscales, recopiee telle qu'imprimee",
+        "fields": []
+      }
+    ]
+  },
+  "routing": null,
+  "response_format_style": "json_schema"
+}

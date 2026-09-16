@@ -5,9 +5,9 @@
 Tous les cas viennent de document-parsing/fixtures/siren_siret.json, le jeu
 d'essai que le portage JS (contrats/tests/siren-siret.test.js) execute lui
 aussi, messages exacts compris : une divergence entre les deux langages
-redevient un echec de test (discipline de #179). Les six mappings (contrat,
-Kbis et URSSAF, dans chaque langage) executent en plus chaque cas de bout en
-bout dans leurs propres tests.
+redevient un echec de test (discipline de #179). Les huit mappings (contrat,
+Kbis, URSSAF et attestation fiscale, dans chaque langage) executent en plus
+chaque cas de bout en bout dans leurs propres tests.
 
 Lancer : python -m unittest discover -s document-parsing/mappings
 """
