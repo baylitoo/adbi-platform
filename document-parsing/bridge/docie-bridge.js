@@ -183,12 +183,35 @@ function perCallAgent(value) {
   if (!AGENT_NAME.test(agent)) fail("input", "Invalid per-call DocIE agent name.");
   return agent;
 }
-// Code de langue envoyé à DocIE (voir extractText). DocIE ne valide RIEN : la
-// valeur va telle quelle dans un prompt et dans la fabrique OCR. On borne donc
-// la FORME ici — lettres ASCII, tiret admis (« fr », « fr-FR »), 2 à 8
-// caractères — sans jamais énumérer les langues valides : ce transport ne
-// décide pas lesquelles existent, et un code exotique mais bien formé doit
-// pouvoir passer. Refus en `input`, comme ses voisins par appel.
+// Code de langue envoyé à DocIE sur la voie texte (voir extractText).
+//
+// POURQUOI valider ici, et c'est le seul motif nécessaire : DocIE ne valide
+// RIEN (`language: str | None`, schemas/api.py:26, aucun validateur) et la
+// valeur entre VERBATIM dans un prompt. Vrai sans condition.
+//
+// CE QU'ELLE FAIT vraiment sur cette voie : des prompts, rien d'autre.
+// `extract_from_text` (extract/service.py:344-384) découpe en blocs et extrait
+// sans jamais instancier d'OCR. La fabrique `get_ocr_backend`
+// (ocr/factory.py:32) et le raise de `PaddleOCRBackend(lang=...)` (:41-42) ne
+// sont atteints que depuis `extract_from_file` (extract/service.py:452) et
+// `_extract_pipeline` (:557), qui exigent un chemin de fichier. Sur
+// /v1/extract/text un code mal formé est donc COSMÉTIQUE : une mauvaise ligne
+// de prompt, pas une panne. Ne pas invoquer l'OCR pour justifier ce garde-fou.
+//
+// PORTÉE RÉELLE, à ne pas surestimer : la ligne « Language: ... »
+// (llm/prompts.py:223) n'est rendue que par les profils de prompt GÉNÉRIQUES ;
+// `nuextract3`, `nuextract_v1` et `document_only` n'en rendent AUCUNE. Le
+// second site (llm/prompts.py:324, « Language hint ») appartient au proposeur
+// de schéma, jamais atteint puisque ce pont envoie toujours `dynamic_schema`.
+// La valeur n'est pas relue dans la réponse (`ExtractionResponse` n'a pas de
+// champ langue).
+//
+// FORME seulement — lettres ASCII, tiret admis (« fr », « fr-FR ») — jamais une
+// liste de langues autorisées : ce transport ne décide pas lesquelles existent,
+// et un code exotique mais bien formé doit pouvoir passer. Le consommateur sait
+// si son déploiement gère la langue. Refus en `input`, comme ses voisins par appel.
+//
+// Sources lues sur origin/dev-agents-milestone @ c8c010e ; aucun appel distant.
 const CODE_LANGUE = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,4})?$/;
 function codeLangue(value) {
   const code = typeof value === "string" ? value.trim() : "";
@@ -620,27 +643,14 @@ async function extractDocument(content, mimeType, { kind = "resume", agent: agen
  * rapporte (`model_profile`), pas celui demandé. Pas de liste de modèles
  * autorisés ici : voir perCallModelProfile().
  *
- * `langue` : code de langue du document, FACULTATIF et sans défaut ici. Omis,
- * le prompt de DocIE lit littéralement « Language: unknown »
- * (llm/prompts.py:223). Fourni, la valeur part VERBATIM : rien ne la valide ni
- * ne la normalise côté DocIE (`language: str | None`, schemas/api.py:26, aucun
- * validateur), et elle atteint DEUX endroits — la ligne du prompt, et la
- * fabrique de backend OCR (`get_ocr_backend(name, language=...)`,
- * ocr/factory.py:32).
- *
- * Aucun défaut dans ce transport, et c'est délibéré : « ce document est en
- * français » est une connaissance MÉTIER, que le pont n'a pas. Le consommateur
- * qui sait la langue l'envoie (les pièces d'affaires françaises) ; celui qui ne
- * la sait pas s'abstient. Pour un CV de langue inconnue, « Language: fr. » est
- * une AFFIRMATION FAUSSE adressée au modèle là où « unknown » est vraie — et
- * c'est le second endroit qui peut faire mal : sur un déploiement PaddleOCR,
- * `PaddleOCRBackend(lang=...)` lève sur un code non supporté et fait ÉCHOUER
- * l'extraction (ocr/factory.py:41-42). Sur liteparse (le défaut) un code faux
- * n'est qu'un mauvais indice d'OCR ; tesseract l'ignore entièrement.
- *
- * Validé ici parce que DocIE ne valide rien : cette chaîne entre dans un
- * prompt. Forme seulement, jamais une liste de langues autorisées — le pont ne
- * décide pas quelles langues existent.
+ * `langue` : code de langue du document, FACULTATIF et SANS DÉFAUT ici. Omis,
+ * le prompt de DocIE lit « Language: unknown » — ce qui est VRAI. Aucun défaut
+ * dans ce transport, délibérément : « ce document est en français » est une
+ * connaissance MÉTIER que le pont n'a pas. Le consommateur qui la sait l'envoie
+ * (les pièces d'affaires françaises) ; celui qui ne la sait pas s'abstient — un
+ * CV de langue inconnue annoncé « fr » serait une AFFIRMATION FAUSSE au modèle
+ * là où « unknown » est vraie. Forme validée, portée réelle selon le profil de
+ * prompt, et sources DocIE : voir codeLangue().
  *
  * Volontairement ABSENT de la voie agent : ce corps-là ne lit pas `language`,
  * le runtime ne le prend que sur la SPEC de l'agent (agents/runtime.py:550,

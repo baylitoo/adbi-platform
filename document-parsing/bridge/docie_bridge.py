@@ -202,10 +202,32 @@ def per_call_agent(value):
     return agent
 
 
-# Code de langue envoyé à DocIE (voir extract_text). DocIE ne valide RIEN : la
-# valeur va telle quelle dans un prompt et dans la fabrique OCR. On borne donc
-# la FORME ici -- lettres ASCII, tiret admis (« fr », « fr-FR ») -- sans jamais
-# énumérer les langues valides : ce transport ne décide pas lesquelles existent.
+# Code de langue envoyé à DocIE sur la voie texte (voir extract_text).
+#
+# POURQUOI valider ici, et c'est le seul motif nécessaire : DocIE ne valide RIEN
+# (`language: str | None`, schemas/api.py:26, aucun validateur) et la valeur
+# entre VERBATIM dans un prompt. Vrai sans condition.
+#
+# CE QU'ELLE FAIT vraiment sur cette voie : des prompts, rien d'autre.
+# `extract_from_text` (extract/service.py:344-384) découpe en blocs et extrait
+# sans jamais instancier d'OCR. La fabrique `get_ocr_backend` (ocr/factory.py:32)
+# et le raise de `PaddleOCRBackend(lang=...)` (:41-42) ne sont atteints que
+# depuis `extract_from_file` (extract/service.py:452) et `_extract_pipeline`
+# (:557), qui exigent un chemin de fichier. Sur /v1/extract/text un code mal
+# formé est donc COSMÉTIQUE : une mauvaise ligne de prompt, pas une panne.
+# Ne pas invoquer l'OCR pour justifier ce garde-fou.
+#
+# PORTÉE RÉELLE, à ne pas surestimer : la ligne « Language: ... »
+# (llm/prompts.py:223) n'est rendue que par les profils de prompt GÉNÉRIQUES ;
+# `nuextract3`, `nuextract_v1` et `document_only` n'en rendent AUCUNE. Le second
+# site (llm/prompts.py:324) appartient au proposeur de schéma, jamais atteint
+# puisque ce pont envoie toujours `dynamic_schema`. La valeur n'est pas relue
+# dans la réponse.
+#
+# FORME seulement -- lettres ASCII, tiret admis (« fr », « fr-FR ») -- jamais une
+# liste de langues autorisées : ce transport ne décide pas lesquelles existent.
+#
+# Sources lues sur origin/dev-agents-milestone @ c8c010e ; aucun appel distant.
 CODE_LANGUE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,4})?$")
 
 
@@ -729,23 +751,14 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, model_profile=None
     RÉPONSE rapporte (`model_profile`), pas celui demandé. Pas de liste de
     modèles autorisés ici : voir per_call_model_profile().
 
-    `langue` : code de langue du document, FACULTATIF et sans défaut ici. Omis,
-    le prompt de DocIE lit littéralement « Language: unknown »
-    (llm/prompts.py:223). Fourni, la valeur part VERBATIM : rien ne la valide ni
-    ne la normalise côté DocIE (`language: str | None`, schemas/api.py:26), et
-    elle atteint DEUX endroits -- la ligne du prompt, et la fabrique de backend
-    OCR (`get_ocr_backend(name, language=...)`, ocr/factory.py:32).
-
-    Aucun défaut dans ce transport, et c'est délibéré : « ce document est en
-    français » est une connaissance MÉTIER, que le pont n'a pas. Le consommateur
-    qui sait la langue l'envoie ; celui qui ne la sait pas s'abstient. Pour un CV
-    de langue inconnue, « Language: fr. » est une AFFIRMATION FAUSSE là où
-    « unknown » est vraie -- et sur un déploiement PaddleOCR un code non
-    supporté fait ÉCHOUER l'extraction (ocr/factory.py:41-42), alors que
-    liteparse n'en fait qu'un mauvais indice et que tesseract l'ignore.
-
-    Validé ici parce que DocIE ne valide rien : cette chaîne entre dans un
-    prompt. Forme seulement, jamais une liste de langues autorisées.
+    `langue` : code de langue du document, FACULTATIF et SANS DÉFAUT ici. Omis,
+    le prompt de DocIE lit « Language: unknown » -- ce qui est VRAI. Aucun défaut
+    dans ce transport, délibérément : « ce document est en français » est une
+    connaissance MÉTIER que le pont n'a pas. Le consommateur qui la sait l'envoie ;
+    celui qui ne la sait pas s'abstient -- un CV de langue inconnue annoncé « fr »
+    serait une AFFIRMATION FAUSSE au modèle là où « unknown » est vraie. Forme
+    validée, portée réelle selon le profil de prompt, et sources DocIE : voir
+    code_langue().
 
     Volontairement ABSENT de la voie agent : ce corps-là ne lit pas `language`,
     le runtime ne le prend que sur la SPEC de l'agent (agents/runtime.py:550).

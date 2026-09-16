@@ -480,6 +480,14 @@ async function extraireParModele(buffer, mime, modele, env, deps) {
     // rédigé en français. Sans ce champ, le prompt de DocIE lit « Language:
     // unknown ».
     //
+    // Portée réelle, à ne pas surestimer : DocIE ne rend la ligne « Language »
+    // que sur les profils de prompt GÉNÉRIQUES. Le profil `nuextract3` — notre
+    // défaut pour le contrat — n'en rend aucune, donc la valeur n'y change
+    // rien. Elle compte sur les profils LFM que ce même catalogue propose.
+    // Envoyée systématiquement parce qu'elle est VRAIE et que le profil se
+    // choisit par appel : au pont de la transmettre, à DocIE d'en faire ce que
+    // son profil prévoit.
+    //
     // À ne PAS généraliser aux CV : leur langue n'est pas connue avant lecture,
     // et annoncer « fr » sur un CV anglais serait une affirmation fausse au
     // modèle là où « unknown » est vraie. cv-parser et one-pager s'abstiennent

@@ -581,8 +581,11 @@ class LanguageTests(unittest.TestCase):
 
     def test_malformed_language_refused_before_network_no_allowlist(self):
         session = Mock()
-        # Cette chaîne entre dans un prompt, et rien ne la filtre côté DocIE ;
-        # une forme invalide fait de plus lever PaddleOCR (ocr/factory.py:41).
+        # Seule justification : cette chaîne entre VERBATIM dans un prompt et
+        # rien ne la filtre côté DocIE (pas de validateur sur
+        # `language: str | None`). PAS de casse OCR à invoquer ici : la voie
+        # texte n'instancie aucun backend OCR (extract/service.py:344-384), la
+        # fabrique n'étant atteinte que par les voies fichier (:452, :557).
         for langue in ("", "   ", "f", "francais_long", "fr;DROP", "fr\nLanguage: en", 42, {}, "fr-"):
             with self.subTest(langue=langue), self.assertRaises(DocIEBridgeError) as raised:
                 extract_text("CV", langue=langue, env=self.ENV, session=session)
