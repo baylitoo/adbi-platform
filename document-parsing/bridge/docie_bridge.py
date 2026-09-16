@@ -221,6 +221,42 @@ def per_call_agent(value):
     return agent
 
 
+# Code de langue envoyé à DocIE sur la voie texte (voir extract_text).
+#
+# POURQUOI valider ici, et c'est le seul motif nécessaire : DocIE ne valide RIEN
+# (`language: str | None`, schemas/api.py:26, aucun validateur) et la valeur
+# entre VERBATIM dans un prompt. Vrai sans condition.
+#
+# CE QU'ELLE FAIT vraiment sur cette voie : des prompts, rien d'autre.
+# `extract_from_text` (extract/service.py:344-384) découpe en blocs et extrait
+# sans jamais instancier d'OCR. La fabrique `get_ocr_backend` (ocr/factory.py:32)
+# et le raise de `PaddleOCRBackend(lang=...)` (:41-42) ne sont atteints que
+# depuis `extract_from_file` (extract/service.py:452) et `_extract_pipeline`
+# (:557), qui exigent un chemin de fichier. Sur /v1/extract/text un code mal
+# formé est donc COSMÉTIQUE : une mauvaise ligne de prompt, pas une panne.
+# Ne pas invoquer l'OCR pour justifier ce garde-fou.
+#
+# PORTÉE RÉELLE, à ne pas surestimer : la ligne « Language: ... »
+# (llm/prompts.py:223) n'est rendue que par les profils de prompt GÉNÉRIQUES ;
+# `nuextract3`, `nuextract_v1` et `document_only` n'en rendent AUCUNE. Le second
+# site (llm/prompts.py:324) appartient au proposeur de schéma, jamais atteint
+# puisque ce pont envoie toujours `dynamic_schema`. La valeur n'est pas relue
+# dans la réponse.
+#
+# FORME seulement -- lettres ASCII, tiret admis (« fr », « fr-FR ») -- jamais une
+# liste de langues autorisées : ce transport ne décide pas lesquelles existent.
+#
+# Sources lues sur origin/dev-agents-milestone @ c8c010e ; aucun appel distant.
+CODE_LANGUE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,4})?$")
+
+
+def code_langue(value):
+    code = value.strip() if isinstance(value, str) else ""
+    if not CODE_LANGUE.fullmatch(code):
+        fail("input", 'Invalid language code; use a form such as "fr" or "fr-FR".')
+    return code
+
+
 def per_call_model_profile(value):
     profile = value.strip() if isinstance(value, str) else ""
     if not profile or CONTROL_CHARACTERS.search(profile) or len(profile.encode("utf-8")) > 128:
@@ -788,7 +824,7 @@ def extract_document(content, mime_type, *, kind="resume", agent=None, env=None,
     return result
 
 
-def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, model_profile=None, env=None, session=None):
+def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, model_profile=None, langue=None, env=None, session=None):
     """Send already-readable text to POST /v1/extract/text. One call, no retry.
 
     For a source that HAS machine-readable text -- a .txt, a DOCX's paragraphs,
@@ -833,6 +869,18 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, m
     Absent : comportement inchangé. `metadata["model"]` reste celui que la
     RÉPONSE rapporte (`model_profile`), pas celui demandé. Pas de liste de
     modèles autorisés ici : voir per_call_model_profile().
+
+    `langue` : code de langue du document, FACULTATIF et SANS DÉFAUT ici. Omis,
+    le prompt de DocIE lit « Language: unknown » -- ce qui est VRAI. Aucun défaut
+    dans ce transport, délibérément : « ce document est en français » est une
+    connaissance MÉTIER que le pont n'a pas. Le consommateur qui la sait l'envoie ;
+    celui qui ne la sait pas s'abstient -- un CV de langue inconnue annoncé « fr »
+    serait une AFFIRMATION FAUSSE au modèle là où « unknown » est vraie. Forme
+    validée, portée réelle selon le profil de prompt, et sources DocIE : voir
+    code_langue().
+
+    Volontairement ABSENT de la voie agent : ce corps-là ne lit pas `language`,
+    le runtime ne le prend que sur la SPEC de l'agent (agents/runtime.py:550).
     """
     env = os.environ if env is None else env
     if kind not in SCHEMAS:
@@ -852,6 +900,8 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, m
             fail("input", "dynamic_schema describes another document type.")
         payload["schema_mode"] = "dynamic"
         payload["dynamic_schema"] = dynamic_schema
+    if langue is not None:
+        payload["language"] = code_langue(langue)
     # Blocs fournis : le même plafond d'octets borne le corps entier. `text` et
     # les blocs voyagent ensemble, donc la seule borne honnête porte sur leur
     # somme -- sans quoi un texte de 20 Mio doublé par ses blocs ferait un corps

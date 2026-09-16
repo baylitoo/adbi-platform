@@ -202,6 +202,42 @@ function perCallAgent(value) {
   if (!AGENT_NAME.test(agent)) fail("input", "Invalid per-call DocIE agent name.");
   return agent;
 }
+// Code de langue envoyé à DocIE sur la voie texte (voir extractText).
+//
+// POURQUOI valider ici, et c'est le seul motif nécessaire : DocIE ne valide
+// RIEN (`language: str | None`, schemas/api.py:26, aucun validateur) et la
+// valeur entre VERBATIM dans un prompt. Vrai sans condition.
+//
+// CE QU'ELLE FAIT vraiment sur cette voie : des prompts, rien d'autre.
+// `extract_from_text` (extract/service.py:344-384) découpe en blocs et extrait
+// sans jamais instancier d'OCR. La fabrique `get_ocr_backend`
+// (ocr/factory.py:32) et le raise de `PaddleOCRBackend(lang=...)` (:41-42) ne
+// sont atteints que depuis `extract_from_file` (extract/service.py:452) et
+// `_extract_pipeline` (:557), qui exigent un chemin de fichier. Sur
+// /v1/extract/text un code mal formé est donc COSMÉTIQUE : une mauvaise ligne
+// de prompt, pas une panne. Ne pas invoquer l'OCR pour justifier ce garde-fou.
+//
+// PORTÉE RÉELLE, à ne pas surestimer : la ligne « Language: ... »
+// (llm/prompts.py:223) n'est rendue que par les profils de prompt GÉNÉRIQUES ;
+// `nuextract3`, `nuextract_v1` et `document_only` n'en rendent AUCUNE. Le
+// second site (llm/prompts.py:324, « Language hint ») appartient au proposeur
+// de schéma, jamais atteint puisque ce pont envoie toujours `dynamic_schema`.
+// La valeur n'est pas relue dans la réponse (`ExtractionResponse` n'a pas de
+// champ langue).
+//
+// FORME seulement — lettres ASCII, tiret admis (« fr », « fr-FR ») — jamais une
+// liste de langues autorisées : ce transport ne décide pas lesquelles existent,
+// et un code exotique mais bien formé doit pouvoir passer. Le consommateur sait
+// si son déploiement gère la langue. Refus en `input`, comme ses voisins par appel.
+//
+// Sources lues sur origin/dev-agents-milestone @ c8c010e ; aucun appel distant.
+const CODE_LANGUE = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,4})?$/;
+function codeLangue(value) {
+  const code = typeof value === "string" ? value.trim() : "";
+  if (!CODE_LANGUE.test(code)) fail("input", "Invalid language code; use a form such as \"fr\" or \"fr-FR\".");
+  return code;
+}
+
 function perCallModelProfile(value) {
   const profile = typeof value === "string" ? value.trim() : "";
   if (!profile || /[\u0000-\u001f\u007f]/.test(profile) || Buffer.byteLength(profile, "utf8") > 128) {
@@ -725,8 +761,21 @@ async function extractDocument(content, mimeType, { kind = "resume", agent: agen
  * Absent : comportement inchangé. `metadata.model` reste celui que la RÉPONSE
  * rapporte (`model_profile`), pas celui demandé. Pas de liste de modèles
  * autorisés ici : voir perCallModelProfile().
+ *
+ * `langue` : code de langue du document, FACULTATIF et SANS DÉFAUT ici. Omis,
+ * le prompt de DocIE lit « Language: unknown » — ce qui est VRAI. Aucun défaut
+ * dans ce transport, délibérément : « ce document est en français » est une
+ * connaissance MÉTIER que le pont n'a pas. Le consommateur qui la sait l'envoie
+ * (les pièces d'affaires françaises) ; celui qui ne la sait pas s'abstient — un
+ * CV de langue inconnue annoncé « fr » serait une AFFIRMATION FAUSSE au modèle
+ * là où « unknown » est vraie. Forme validée, portée réelle selon le profil de
+ * prompt, et sources DocIE : voir codeLangue().
+ *
+ * Volontairement ABSENT de la voie agent : ce corps-là ne lit pas `language`,
+ * le runtime ne le prend que sur la SPEC de l'agent (agents/runtime.py:550,
+ * 594, 639). L'y ajouter serait ignoré en silence.
  */
-async function extractText(text, { kind = "resume", dynamicSchema = null, ocrBlocks = null, modelProfile = null, env = process.env, fetchImpl = fetch } = {}) {
+async function extractText(text, { kind = "resume", dynamicSchema = null, ocrBlocks = null, modelProfile = null, langue = null, env = process.env, fetchImpl = fetch } = {}) {
   if (!Object.hasOwn(SCHEMAS, kind)) fail("configuration", "Unsupported document kind.");
   const { base, key, timeout } = connection(env);
   const schema = SCHEMAS[kind];
@@ -739,6 +788,7 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, ocrBlo
     payload.schema_mode = "dynamic";
     payload.dynamic_schema = dynamicSchema;
   }
+  if (langue != null) payload.language = codeLangue(langue);
   // Blocs fournis : le même plafond d'octets borne le corps entier. `text` et
   // les blocs voyagent ensemble, donc la seule borne honnête porte sur leur
   // somme — sans quoi un texte de 20 Mio doublé par ses blocs ferait un corps de

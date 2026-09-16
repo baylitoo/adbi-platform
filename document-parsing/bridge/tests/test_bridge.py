@@ -324,7 +324,9 @@ class TextPathTests(unittest.TestCase):
             self.assertEqual(payload["dynamic_schema"], RESUME_SCHEMA)
             # No data-URI wrapper and nothing from the chat path: this endpoint
             # reads none of it, and `ocr_blocks` is not sent for plain text.
-            for absent in ("messages", "model", "max_tokens", "parallel_extraction", "ocr_blocks"):
+            # `language` est absente PAR DÉFAUT, et c'est un choix : sans langue
+            # connue, DocIE lit « Language: unknown », ce qui est VRAI.
+            for absent in ("messages", "model", "max_tokens", "parallel_extraction", "ocr_blocks", "language"):
                 self.assertNotIn(absent, payload)
             codes = {401: "auth", 403: "auth", 413: "limits", 429: "rate_limit"}
             for status in (401, 413, 429, 500):
@@ -631,6 +633,51 @@ class PerCallChoiceTests(unittest.TestCase):
             self.assertEqual(sent[-1][1]["model_profile"], profile)
         file_ok, _ = fake_session(lambda url, payload: CASES[2]["body"])
         extract_document(b"pdf", "application/pdf", agent="a" * 128, env=env, session=file_ok)
+
+
+class LanguageTests(unittest.TestCase):
+    """Langue du document : fournie par l'appelant, jamais devinée ici."""
+
+    ENV = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "test-secret",
+           "DOCIE_AGENT_RESUME": "adbi_agent_1"}
+
+    def test_language_sent_verbatim_absent_by_default_never_on_agent_path(self):
+        session, sent = fake_session(lambda url, payload: TEXT_CASES[1]["body"])
+        # Fournie : elle part VERBATIM. DocIE ne valide ni ne normalise rien
+        # (`language: str | None`, schemas/api.py:26) ; la valeur atteint la ligne
+        # du prompt et la fabrique OCR sans être touchée.
+        for langue, attendu in (("fr", "fr"), ("  fr  ", "fr"), ("fr-FR", "fr-FR"), ("EN", "EN")):
+            with self.subTest(langue=langue):
+                extract_text("CV", langue=langue, env=self.ENV, session=session)
+                self.assertEqual(sent[-1][1]["language"], attendu)
+        # Absente : aucune clé. « Language: unknown » côté DocIE est une réponse
+        # honnête ; un défaut « fr » posé ici mentirait sur un document anglais.
+        extract_text("CV", env=self.ENV, session=session)
+        self.assertNotIn("language", sent[-1][1])
+        # Voie AGENT : la langue vient de la SPEC de l'agent (agents/runtime.py:550),
+        # jamais du corps. L'ajouter ici serait accepté puis ignoré en silence.
+        agent_session, agent_sent = fake_session(lambda url, payload: CASES[2]["body"])
+        extract_document(b"pdf", "application/pdf", env=self.ENV, session=agent_session)
+        self.assertNotIn("language", agent_sent[-1][1])
+
+    def test_malformed_language_refused_before_network_no_allowlist(self):
+        session = Mock()
+        # Seule justification : cette chaîne entre VERBATIM dans un prompt et
+        # rien ne la filtre côté DocIE (pas de validateur sur
+        # `language: str | None`). PAS de casse OCR à invoquer ici : la voie
+        # texte n'instancie aucun backend OCR (extract/service.py:344-384), la
+        # fabrique n'étant atteinte que par les voies fichier (:452, :557).
+        for langue in ("", "   ", "f", "francais_long", "fr;DROP", "fr\nLanguage: en", 42, {}, "fr-"):
+            with self.subTest(langue=langue), self.assertRaises(DocIEBridgeError) as raised:
+                extract_text("CV", langue=langue, env=self.ENV, session=session)
+            self.assertEqual(raised.exception.code, "input")
+        session.post.assert_not_called()
+        # Forme seule : aucune liste de langues autorisées. Le transport ne décide
+        # pas lesquelles existent -- c'est DocIE et son moteur OCR qui tranchent.
+        ok, sent = fake_session(lambda url, payload: TEXT_CASES[1]["body"])
+        for langue in ("de", "pt-BR", "zh", "ar"):
+            extract_text("CV", langue=langue, env=self.ENV, session=ok)
+            self.assertEqual(sent[-1][1]["language"], langue)
 
 
 if __name__ == "__main__":
