@@ -1,0 +1,238 @@
+{
+  "_description": "Jeu d'essai partagé : « ces deux lignes de MRZ lues par DocIE sur une pièce d'identité sont-elles possibles ? ». Le catalogue des modèles (document-parsing/models/catalogue.json, tâche « cni » de la clé `taches`) propose NuExtract3 par la voie vision avec pour `prerequis` « Contrôle des chiffres de la MRZ. » : ce jeu d'essai est la règle de ce contrôle. Les deux contrôleurs ET les deux mappings CNI exécutent chaque cas ci-dessous, messages exacts compris : une divergence entre langages redevient un échec de test (discipline de #179).",
+  "_lecture": "Lu par les TESTS seulement. Le code de production ne charge jamais ce fichier : contrats/Dockerfile ne copie que des fixtures nommées une à une, et l'algorithme vit dans document-parsing/mappings/mrz.py et contrats/lib/mrz.js.",
+  "_ports": ["document-parsing/mappings/mrz.py (Python, controle)", "contrats/lib/mrz.js (JS, controle)", "document-parsing/mappings/cni_to_contrats.py (Python)", "contrats/lib/cni-mapping.js (JS)"],
+  "_format": "FORMAT MODÉLISÉ : TD1, trois lignes de 30 caractères. « La carte nationale d'identité française postérieure à 2021 est au format TD1 » est CITÉ DE MÉMOIRE et n'a pas pu être relu (travail hors réseau, rien dans le dépôt) : c'est la seule affirmation de format de ce fichier, et elle est incertaine. Une carte d'un autre format sort en « format_invalide » : faux positif BRUYANT, jamais une perte de donnée. L'ancienne carte française (avant 2021), dont la MRZ compte deux lignes de 36 caractères d'un format national différent, n'est PAS couverte. Seules les lignes 1 et 2 sont contrôlées : elles portent tous les chiffres de contrôle ; la ligne 3 ne porte que les noms, déjà demandés en clair par `surname` et `given_names`.",
+  "_regle": "(1) null -> « absent ». (2) Sinon la valeur est prise sous forme de texte (un nombre JSON aussi ; un flottant entier comme l'entier) ; les caractères de `motif_separateurs` sont retirés et les lettres a-z (ASCII seulement) mises en majuscules, POUR LE CONTRÔLE SEULEMENT. S'il ne reste rien -> « absent ». (3) La ligne doit compter exactement `longueur_ligne` caractères A-Z, 0-9 ou « < », sinon « format_invalide ». (4) Chiffre de contrôle ICAO 9303 : « < » vaut 0, un chiffre sa valeur, A=10 ... Z=35 ; les poids `poids` (7, 3, 1) se répètent sur la chaîne ; le chiffre attendu est la somme pondérée modulo 10. Quatre chiffres sont vérifiés, aux tranches de `tranches` (comptées à partir de 0) : numéro de document, date de naissance, date d'expiration et composite. (5) Un chiffre dont la ligne porteuse est absente vaut « absent » ; dont la ligne porteuse est mal formée vaut « non_controle » (le défaut est déjà nommé par le message de la ligne). Le composite dépend des DEUX lignes : « absent » si aucune n'a été lue, « non_controle » si l'une n'est pas exploitable.",
+  "_composite": "LIMITE DE VÉRIFICATION, à lire avant de se fier au composite. Les tranches assemblées (`tranches.composite`) viennent d'ICAO 9303 partie 5, CITÉES DE MÉMOIRE et non relues : aucune source n'a pu être consultée. Les lignes de ce jeu d'essai ont leurs chiffres CALCULÉS par l'algorithme décrit ici : la fixture prouve donc que les deux portages calculent la même chose, et que le composite attrape bien un caractère mal lu n'importe où dans les lignes 1 et 2 — elle ne prouve PAS que les tranches sont celles d'ICAO. Si elles sont fausses, le composite d'une vraie carte sortira en « cle_invalide » : faux positif BRUYANT et visible dès la première pièce réelle, jamais une valeur fausse acceptée en silence. Les chiffres du numéro de document et des deux dates, eux, ne dépendent d'aucune tranche devinée : leur position se lit directement dans le tableau TD1, et le cas « arithmétique à la main » ci-dessous recalcule l'un d'eux sans passer par le code.",
+  "_specimens": "Aucun numéro de titre réel, d'aucune personne. Le numéro « SPECIMEN1 » est fabriqué, et les lignes sont construites caractère par caractère (code « ID », État « FRA », date de naissance 800101, sexe M, expiration 350101, nationalité FRA, remplissage « < »). Les lectures fausses en sont dérivées d'un caractère. Le champ TD1 du numéro compte 9 caractères ; le mécanisme de débordement d'un numéro plus long vers les données optionnelles n'a PAS pu être relu, donc aucun numéro long ne figure ici et le numéro lu en clair (`document_number`) n'est jamais comparé à celui de la MRZ.",
+  "_couverture": "CE QUE LE CONTRÔLE ATTRAPE, MESURÉ et non supposé (les tests refont la mesure sur le spécimen ci-dessous, et elle est figée ici pour ne pas promettre plus). Sur les 2160 substitutions d'UN caractère des lignes 1 et 2 par un autre caractère de MRZ : 1667 sont refusées, 493 passent. Les manquées sont de deux sortes, toutes deux structurelles. (1) Cinq positions de la ligne 1 (le code de document et le code d'État, caractères 1 à 5) et quatre de la ligne 2 (le sexe, caractère 8, et la nationalité, caractères 16 à 18) ne sont dans AUCUNE tranche contrôlée : aucun chiffre ne les couvre, jamais. Un sexe ou une nationalité mal lus ne seront donc pas signalés. (2) Partout ailleurs, une substitution passe si et seulement si l'écart de valeur entre les deux caractères est un multiple de 10 (mesuré : les 169 manquées en tranche couverte le sont toutes) — « 0 » lu « A », « S » lu « I », « P » lu « Z »… C'est la limite intrinsèque d'une clé modulo 10, là où le modulo 97 de l'IBAN refuse toute substitution de même classe (voir iban_bic.json) : une clé à un chiffre ne peut pas faire mieux. Les quatre chiffres de contrôle eux-mêmes sont, eux, toujours refusés s'ils sont mal lus.",
+  "_echec": "Valeur CONSERVÉE, jamais vidée : un relecteur corrige un caractère en le voyant. L'échec est visible (`messages`, distinct pour un format de ligne et pour chaque chiffre) et lisible par machine (`statut` par élément) : un consommateur n'utilise une valeur de la MRZ que si son statut vaut exactement « valide ».",
+  "_messages": "Un statut « non_controle » ne produit AUCUN message : la ligne qui le cause a déjà le sien, et répéter la même panne quatre fois noierait les vraies. Un statut « absent » non plus : c'est au mapping de dire si l'absence de MRZ est un problème. `champ` vaut le nom du champ DocIE qui porte la ligne en cause (`mrz_line1` ou `mrz_line2`). Les messages viennent dans cet ordre : lignes mal formées, puis numéro, naissance, expiration, composite.",
+  "motif_separateurs": "[ \\t\\n\\r\\u00a0\\u202f]",
+  "longueur_ligne": 30,
+  "poids": [7, 3, 1],
+  "tranches": {
+    "numero_document": {"ligne": 1, "debut": 5, "fin": 14, "chiffre": 14},
+    "date_naissance": {"ligne": 2, "debut": 0, "fin": 6, "chiffre": 6},
+    "date_expiration": {"ligne": 2, "debut": 8, "fin": 14, "chiffre": 14},
+    "composite": {"morceaux": [[1, 5, 30], [2, 0, 7], [2, 8, 15], [2, 18, 29]], "chiffre": 29}
+  },
+  "statuts": ["absent", "format_invalide", "non_controle", "cle_invalide", "valide"],
+  "cas": [
+    {
+      "ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<",
+      "ligne2": "8001014M3501014FRA<<<<<<<<<<<6",
+      "statuts": {"ligne1": "valide", "ligne2": "valide", "numero_document": "valide", "date_naissance": "valide", "date_expiration": "valide", "composite": "valide"},
+      "compacts": {"ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<", "ligne2": "8001014M3501014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "SPECIMEN1", "date_naissance": "800101", "date_expiration": "350101", "composite": "SPECIMEN13<<<<<<<<<<<<<<<80010143501014<<<<<<<<<<<"},
+      "cles": {"numero_document": ["3", "3"], "date_naissance": ["4", "4"], "date_expiration": ["4", "4"], "composite": ["6", "6"]},
+      "messages": [],
+      "preuve": "SPÉCIMEN de référence, construit caractère par caractère (voir `_specimens`) : les quatre chiffres sont calculés par la règle ci-dessus, aucune carte réelle n'a été lue"
+    },
+    {
+      "ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<",
+      "ligne2": "8001014M3501014FRA<<<<<<<<<<<6",
+      "arithmetique": {"chaine": "SPECIMEN1", "produits": [196, 75, 14, 84, 54, 22, 98, 69, 1], "somme": 613, "chiffre": "3"},
+      "statuts": {"ligne1": "valide", "ligne2": "valide", "numero_document": "valide", "date_naissance": "valide", "date_expiration": "valide", "composite": "valide"},
+      "compacts": {"ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<", "ligne2": "8001014M3501014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "SPECIMEN1", "date_naissance": "800101", "date_expiration": "350101", "composite": "SPECIMEN13<<<<<<<<<<<<<<<80010143501014<<<<<<<<<<<"},
+      "cles": {"numero_document": ["3", "3"], "date_naissance": ["4", "4"], "date_expiration": ["4", "4"], "composite": ["6", "6"]},
+      "messages": [],
+      "preuve": "MÊME spécimen, avec l'ARITHMÉTIQUE FAITE À LA MAIN du chiffre du numéro, indépendamment du code : S=28x7=196, P=25x3=75, E=14x1=14, C=12x7=84, I=18x3=54, M=22x1=22, E=14x7=98, N=23x3=69, 1=1x1=1 ; somme 613, modulo 10 = 3, qui est bien le 15e caractère de la ligne 1. Les tests recalculent `produits` et `somme` depuis `poids` et la table de valeurs : les poids 7-3-1 et la table A=10..Z=35 sont donc corroborés sans passer par les tranches citées de mémoire"
+    },
+    {
+      "ligne1": "idfraspecimen13<<<<<<<<<<<<<<<",
+      "ligne2": "8001014m3501014fra<<<<<<<<<<<6",
+      "statuts": {"ligne1": "valide", "ligne2": "valide", "numero_document": "valide", "date_naissance": "valide", "date_expiration": "valide", "composite": "valide"},
+      "compacts": {"ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<", "ligne2": "8001014M3501014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "SPECIMEN1", "date_naissance": "800101", "date_expiration": "350101", "composite": "SPECIMEN13<<<<<<<<<<<<<<<80010143501014<<<<<<<<<<<"},
+      "cles": {"numero_document": ["3", "3"], "date_naissance": ["4", "4"], "date_expiration": ["4", "4"], "composite": ["6", "6"]},
+      "messages": [],
+      "preuve": "minuscules : mises en majuscules POUR LE CONTRÔLE, la valeur rendue garde la casse lue"
+    },
+    {
+      "ligne1": "IDFRA SPECIMEN1 3<<<<<<<<<<<<<<<",
+      "ligne2": "8001014M3501014FRA<<<<<<<<<<<6",
+      "statuts": {"ligne1": "valide", "ligne2": "valide", "numero_document": "valide", "date_naissance": "valide", "date_expiration": "valide", "composite": "valide"},
+      "compacts": {"ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<", "ligne2": "8001014M3501014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "SPECIMEN1", "date_naissance": "800101", "date_expiration": "350101", "composite": "SPECIMEN13<<<<<<<<<<<<<<<80010143501014<<<<<<<<<<<"},
+      "cles": {"numero_document": ["3", "3"], "date_naissance": ["4", "4"], "date_expiration": ["4", "4"], "composite": ["6", "6"]},
+      "messages": [],
+      "preuve": "espaces insérés par la lecture entre les groupes de la ligne : retirés pour le contrôle seulement"
+    },
+    {
+      "ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<\n",
+      "ligne2": "8001014M3501014FRA<<<<<<<<<<<6",
+      "statuts": {"ligne1": "valide", "ligne2": "valide", "numero_document": "valide", "date_naissance": "valide", "date_expiration": "valide", "composite": "valide"},
+      "compacts": {"ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<", "ligne2": "8001014M3501014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "SPECIMEN1", "date_naissance": "800101", "date_expiration": "350101", "composite": "SPECIMEN13<<<<<<<<<<<<<<<80010143501014<<<<<<<<<<<"},
+      "cles": {"numero_document": ["3", "3"], "date_naissance": ["4", "4"], "date_expiration": ["4", "4"], "composite": ["6", "6"]},
+      "messages": [],
+      "preuve": "saut de ligne final, fréquent quand la MRZ est recopiée depuis un texte : retiré comme séparateur (en Python, ^...$ l'accepterait par accident, d'où fullmatch)"
+    },
+    {
+      "ligne1": "IDFRASPECIMEM13<<<<<<<<<<<<<<<",
+      "ligne2": "8001014M3501014FRA<<<<<<<<<<<6",
+      "statuts": {"ligne1": "valide", "ligne2": "valide", "numero_document": "cle_invalide", "date_naissance": "valide", "date_expiration": "valide", "composite": "cle_invalide"},
+      "compacts": {"ligne1": "IDFRASPECIMEM13<<<<<<<<<<<<<<<", "ligne2": "8001014M3501014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "SPECIMEM1", "date_naissance": "800101", "date_expiration": "350101", "composite": "SPECIMEM13<<<<<<<<<<<<<<<80010143501014<<<<<<<<<<<"},
+      "cles": {"numero_document": ["3", "0"], "date_naissance": ["4", "4"], "date_expiration": ["4", "4"], "composite": ["6", "3"]},
+      "messages": [
+        {"champ": "mrz_line1", "message": "Numéro de document « SPECIMEM1 » de la MRZ : chiffre de contrôle invalide (lu 3, calculé 0), caractère probablement mal lu — valeur conservée, à vérifier sur le document"},
+        {"champ": "mrz_line2", "message": "Chiffre de contrôle composite de la MRZ invalide (lu 6, calculé 3) : au moins un caractère des lignes 1 et 2 est mal lu — valeur conservée, à vérifier sur le document"}
+      ],
+      "preuve": "N du numéro lu M, confusion classique en OCR : le chiffre du numéro le refuse, ET le composite aussi — deux messages, le numéro d'abord"
+    },
+    {
+      "ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<",
+      "ligne2": "8001074M3501014FRA<<<<<<<<<<<6",
+      "statuts": {"ligne1": "valide", "ligne2": "valide", "numero_document": "valide", "date_naissance": "cle_invalide", "date_expiration": "valide", "composite": "cle_invalide"},
+      "compacts": {"ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<", "ligne2": "8001074M3501014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "SPECIMEN1", "date_naissance": "800107", "date_expiration": "350101", "composite": "SPECIMEN13<<<<<<<<<<<<<<<80010743501014<<<<<<<<<<<"},
+      "cles": {"numero_document": ["3", "3"], "date_naissance": ["4", "0"], "date_expiration": ["4", "4"], "composite": ["6", "8"]},
+      "messages": [
+        {"champ": "mrz_line2", "message": "Date de naissance « 800107 » de la MRZ : chiffre de contrôle invalide (lu 4, calculé 0), caractère probablement mal lu — valeur conservée, à vérifier sur le document"},
+        {"champ": "mrz_line2", "message": "Chiffre de contrôle composite de la MRZ invalide (lu 6, calculé 8) : au moins un caractère des lignes 1 et 2 est mal lu — valeur conservée, à vérifier sur le document"}
+      ],
+      "preuve": "jour de naissance lu 07 au lieu de 01 : une date parfaitement plausible, que seul le chiffre de contrôle refuse — c'est exactement l'erreur qu'aucune relecture à l'œil n'attrape"
+    },
+    {
+      "ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<",
+      "ligne2": "8001014M3601014FRA<<<<<<<<<<<6",
+      "statuts": {"ligne1": "valide", "ligne2": "valide", "numero_document": "valide", "date_naissance": "valide", "date_expiration": "cle_invalide", "composite": "cle_invalide"},
+      "compacts": {"ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<", "ligne2": "8001014M3601014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "SPECIMEN1", "date_naissance": "800101", "date_expiration": "360101", "composite": "SPECIMEN13<<<<<<<<<<<<<<<80010143601014<<<<<<<<<<<"},
+      "cles": {"numero_document": ["3", "3"], "date_naissance": ["4", "4"], "date_expiration": ["4", "7"], "composite": ["6", "3"]},
+      "messages": [
+        {"champ": "mrz_line2", "message": "Date d'expiration « 360101 » de la MRZ : chiffre de contrôle invalide (lu 4, calculé 7), caractère probablement mal lu — valeur conservée, à vérifier sur le document"},
+        {"champ": "mrz_line2", "message": "Chiffre de contrôle composite de la MRZ invalide (lu 6, calculé 3) : au moins un caractère des lignes 1 et 2 est mal lu — valeur conservée, à vérifier sur le document"}
+      ],
+      "preuve": "année d'expiration lue 36 au lieu de 35 : une carte qui semble valable un an de plus"
+    },
+    {
+      "ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<",
+      "ligne2": "8001014M3501014FRA<<<<<<<<<<<7",
+      "statuts": {"ligne1": "valide", "ligne2": "valide", "numero_document": "valide", "date_naissance": "valide", "date_expiration": "valide", "composite": "cle_invalide"},
+      "compacts": {"ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<", "ligne2": "8001014M3501014FRA<<<<<<<<<<<7"},
+      "valeurs": {"numero_document": "SPECIMEN1", "date_naissance": "800101", "date_expiration": "350101", "composite": "SPECIMEN13<<<<<<<<<<<<<<<80010143501014<<<<<<<<<<<"},
+      "cles": {"numero_document": ["3", "3"], "date_naissance": ["4", "4"], "date_expiration": ["4", "4"], "composite": ["7", "6"]},
+      "messages": [
+        {"champ": "mrz_line2", "message": "Chiffre de contrôle composite de la MRZ invalide (lu 7, calculé 6) : au moins un caractère des lignes 1 et 2 est mal lu — valeur conservée, à vérifier sur le document"}
+      ],
+      "preuve": "dernier caractère de la ligne 2 (le composite lui-même) lu 7 au lieu de 6 : les trois autres chiffres restent valides, un seul message"
+    },
+    {
+      "ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<",
+      "ligne2": "8001014M3501014FRA<<<<<<<<<<<6",
+      "statuts": {"ligne1": "format_invalide", "ligne2": "valide", "numero_document": "non_controle", "date_naissance": "valide", "date_expiration": "valide", "composite": "non_controle"},
+      "compacts": {"ligne1": null, "ligne2": "8001014M3501014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "", "date_naissance": "800101", "date_expiration": "350101", "composite": ""},
+      "cles": {"numero_document": [null, null], "date_naissance": ["4", "4"], "date_expiration": ["4", "4"], "composite": [null, null]},
+      "messages": [
+        {"champ": "mrz_line1", "message": "MRZ ligne 1 « IDFRASPECIMEN13<<<<<<<<<<<<<< » : format invalide, 30 caractères A-Z, 0-9 ou « < » attendus (format TD1) — valeur conservée, à vérifier sur le document"}
+      ],
+      "preuve": "un caractère perdu à la lecture : 29 au lieu de 30. Les chiffres de la ligne 1 passent en « non_controle » — surtout pas en « valide » par défaut — et la ligne 2, lisible, reste contrôlée"
+    },
+    {
+      "ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<<",
+      "ligne2": "8001014M3501014FRA<<<<<<<<<<<6",
+      "statuts": {"ligne1": "format_invalide", "ligne2": "valide", "numero_document": "non_controle", "date_naissance": "valide", "date_expiration": "valide", "composite": "non_controle"},
+      "compacts": {"ligne1": null, "ligne2": "8001014M3501014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "", "date_naissance": "800101", "date_expiration": "350101", "composite": ""},
+      "cles": {"numero_document": [null, null], "date_naissance": ["4", "4"], "date_expiration": ["4", "4"], "composite": [null, null]},
+      "messages": [
+        {"champ": "mrz_line1", "message": "MRZ ligne 1 « IDFRASPECIMEN13<<<<<<<<<<<<<<<< » : format invalide, 30 caractères A-Z, 0-9 ou « < » attendus (format TD1) — valeur conservée, à vérifier sur le document"}
+      ],
+      "preuve": "un caractère en trop : 31 au lieu de 30. Une MRZ d'un autre format (l'ancienne carte française compte 36 caractères par ligne) tombe ici aussi"
+    },
+    {
+      "ligne1": "ID-FRASPECIMEN13<<<<<<<<<<<<<<",
+      "ligne2": "8001014M3501014FRA<<<<<<<<<<<6",
+      "statuts": {"ligne1": "format_invalide", "ligne2": "valide", "numero_document": "non_controle", "date_naissance": "valide", "date_expiration": "valide", "composite": "non_controle"},
+      "compacts": {"ligne1": null, "ligne2": "8001014M3501014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "", "date_naissance": "800101", "date_expiration": "350101", "composite": ""},
+      "cles": {"numero_document": [null, null], "date_naissance": ["4", "4"], "date_expiration": ["4", "4"], "composite": [null, null]},
+      "messages": [
+        {"champ": "mrz_line1", "message": "MRZ ligne 1 « ID-FRASPECIMEN13<<<<<<<<<<<<<< » : format invalide, 30 caractères A-Z, 0-9 ou « < » attendus (format TD1) — valeur conservée, à vérifier sur le document"}
+      ],
+      "preuve": "un « < » lu comme un tiret : le tiret n'est PAS un séparateur ici, à la différence de iban_bic.json — le retirer masquerait la lecture fausse en rendant la ligne valide"
+    },
+    {
+      "ligne1": "IDFRASPECIMEN1٤<<<<<<<<<<<<<<<",
+      "ligne2": "8001014M3501014FRA<<<<<<<<<<<6",
+      "statuts": {"ligne1": "format_invalide", "ligne2": "valide", "numero_document": "non_controle", "date_naissance": "valide", "date_expiration": "valide", "composite": "non_controle"},
+      "compacts": {"ligne1": null, "ligne2": "8001014M3501014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "", "date_naissance": "800101", "date_expiration": "350101", "composite": ""},
+      "cles": {"numero_document": [null, null], "date_naissance": ["4", "4"], "date_expiration": ["4", "4"], "composite": [null, null]},
+      "messages": [
+        {"champ": "mrz_line1", "message": "MRZ ligne 1 « IDFRASPECIMEN1٤<<<<<<<<<<<<<<< » : format invalide, 30 caractères A-Z, 0-9 ou « < » attendus (format TD1) — valeur conservée, à vérifier sur le document"}
+      ],
+      "preuve": "chiffre arabe-indien à la place du chiffre de contrôle : [0-9] le refuse des deux côtés, là où \\d l'accepterait en Python seulement"
+    },
+    {
+      "ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<",
+      "ligne2": null,
+      "statuts": {"ligne1": "valide", "ligne2": "absent", "numero_document": "valide", "date_naissance": "absent", "date_expiration": "absent", "composite": "non_controle"},
+      "compacts": {"ligne1": "IDFRASPECIMEN13<<<<<<<<<<<<<<<", "ligne2": null},
+      "valeurs": {"numero_document": "SPECIMEN1", "date_naissance": "", "date_expiration": "", "composite": ""},
+      "cles": {"numero_document": ["3", "3"], "date_naissance": [null, null], "date_expiration": [null, null], "composite": [null, null]},
+      "messages": [],
+      "preuve": "seule la ligne 1 a été lue : son chiffre est contrôlé, ceux de la ligne 2 sont « absent » (rien à contrôler) et le composite « non_controle » (il lui faut les deux lignes). Aucun message : c'est au mapping de dire si une MRZ incomplète est un problème"
+    },
+    {
+      "ligne1": null,
+      "ligne2": "8001014M3501014FRA<<<<<<<<<<<6",
+      "statuts": {"ligne1": "absent", "ligne2": "valide", "numero_document": "absent", "date_naissance": "valide", "date_expiration": "valide", "composite": "non_controle"},
+      "compacts": {"ligne1": null, "ligne2": "8001014M3501014FRA<<<<<<<<<<<6"},
+      "valeurs": {"numero_document": "", "date_naissance": "800101", "date_expiration": "350101", "composite": ""},
+      "cles": {"numero_document": [null, null], "date_naissance": ["4", "4"], "date_expiration": ["4", "4"], "composite": [null, null]},
+      "messages": [],
+      "preuve": "seule la ligne 2 a été lue : ses deux chiffres sont contrôlés"
+    },
+    {
+      "ligne1": null,
+      "ligne2": null,
+      "statuts": {"ligne1": "absent", "ligne2": "absent", "numero_document": "absent", "date_naissance": "absent", "date_expiration": "absent", "composite": "absent"},
+      "compacts": {"ligne1": null, "ligne2": null},
+      "valeurs": {"numero_document": "", "date_naissance": "", "date_expiration": "", "composite": ""},
+      "cles": {"numero_document": [null, null], "date_naissance": [null, null], "date_expiration": [null, null], "composite": [null, null]},
+      "messages": [],
+      "preuve": "{\"value\": null} des deux côtés : « champ vu, rien trouvé », aucun avertissement — le composite est « absent » et non « non_controle », il n'y a rien à contrôler"
+    },
+    {
+      "ligne1": "",
+      "ligne2": "   ",
+      "statuts": {"ligne1": "absent", "ligne2": "absent", "numero_document": "absent", "date_naissance": "absent", "date_expiration": "absent", "composite": "absent"},
+      "compacts": {"ligne1": null, "ligne2": null},
+      "valeurs": {"numero_document": "", "date_naissance": "", "date_expiration": "", "composite": ""},
+      "cles": {"numero_document": [null, null], "date_naissance": [null, null], "date_expiration": [null, null], "composite": [null, null]},
+      "messages": [],
+      "preuve": "chaîne vide et champ réduit à des espaces : absents, même règle que date_docie.json et nombre_docie.json"
+    },
+    {
+      "ligne1": 1234,
+      "ligne2": null,
+      "statuts": {"ligne1": "format_invalide", "ligne2": "absent", "numero_document": "non_controle", "date_naissance": "absent", "date_expiration": "absent", "composite": "non_controle"},
+      "compacts": {"ligne1": null, "ligne2": null},
+      "valeurs": {"numero_document": "", "date_naissance": "", "date_expiration": "", "composite": ""},
+      "cles": {"numero_document": [null, null], "date_naissance": [null, null], "date_expiration": [null, null], "composite": [null, null]},
+      "messages": [
+        {"champ": "mrz_line1", "message": "MRZ ligne 1 « 1234 » : format invalide, 30 caractères A-Z, 0-9 ou « < » attendus (format TD1) — valeur conservée, à vérifier sur le document"}
+      ],
+      "preuve": "#179 A14 : un champ `string` rendu en NOMBRE est contrôlé sous forme de texte"
+    },
+    {
+      "ligne1": 1234.0,
+      "ligne2": null,
+      "statuts": {"ligne1": "format_invalide", "ligne2": "absent", "numero_document": "non_controle", "date_naissance": "absent", "date_expiration": "absent", "composite": "non_controle"},
+      "compacts": {"ligne1": null, "ligne2": null},
+      "valeurs": {"numero_document": "", "date_naissance": "", "date_expiration": "", "composite": ""},
+      "cles": {"numero_document": [null, null], "date_naissance": [null, null], "date_expiration": [null, null], "composite": [null, null]},
+      "messages": [
+        {"champ": "mrz_line1", "message": "MRZ ligne 1 « 1234 » : format invalide, 30 caractères A-Z, 0-9 ou « < » attendus (format TD1) — valeur conservée, à vérifier sur le document"}
+      ],
+      "preuve": "nombre JSON à décimale nulle : String() rend « 1234 » en JS, le portage Python ramène le flottant entier à l'entier — sans quoi il rendrait « 1234.0 »"
+    }
+  ]
+}
