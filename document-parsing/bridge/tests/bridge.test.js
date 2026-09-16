@@ -144,11 +144,18 @@ test("file path: largest accepted document fits DocIE's 26 MiB request body, one
 
 test("loopback HTTP contract and sanitized failures without retries", async () => {
   let status = 200;
+  let retryAfter = null;
   const calls = [];
   const server = http.createServer(async (req, res) => {
     let body = ""; for await (const chunk of req) body += chunk;
     calls.push({ url: req.url, auth: req.headers.authorization, payload: JSON.parse(body) });
-    res.writeHead(status, { "Content-Type": "application/json" });
+    // `Retry-After` seulement sur 429, et seulement quand le test le demande :
+    // DocIE l'émet sur le quota par fenêtre et le blocage d'IP, PAS sur la
+    // limite de concurrence du locataire (mesuré chez eux, security.py:178).
+    // Les deux cas doivent donc être couverts ici.
+    const entetes = { "Content-Type": "application/json" };
+    if (status === 429 && retryAfter !== null) entetes["Retry-After"] = retryAfter;
+    res.writeHead(status, entetes);
     res.end(JSON.stringify(status === 200 ? cases[0].body : { error: "test-secret" }));
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -173,10 +180,41 @@ test("loopback HTTP contract and sanitized failures without retries", async () =
       status = next; const before = calls.length;
       await assert.rejects(extractDocument(Buffer.from("pdf"), "application/pdf", { env }), error => {
         assert.equal(error.status, status); assert.equal(error.code, codes[status] || "upstream");
-        assert.ok(!error.message.includes("test-secret")); return true;
+        assert.ok(!error.message.includes("test-secret"));
+        // Sans en-tête, AUCUN code ne porte d'eta : c'est le repli, et il doit
+        // rester la règle — la limite de concurrence du locataire arrive ainsi
+        // (429 sans `Retry-After`, mesuré chez DocIE, security.py:178).
+        assert.equal(error.eta_seconds, null, "eta sans Retry-After, statut " + status);
+        return true;
       });
       assert.equal(calls.length, before + 1);
     }
+
+    // 429 AVEC `Retry-After` : la valeur remonte dans `eta_seconds`, comme
+    // `loading` le fait depuis `detail.eta_seconds`. C'est une LONGUEUR de
+    // fenêtre, pas un compte à rebours — le pont la transporte, il ne
+    // l'interprète pas. Mêmes cas limites que le portage Python.
+    //
+    // Les chiffres arabes-indiens (« ٣٠ ») ne sont PAS testés ici, et c'est
+    // mesuré : un en-tête HTTP est du latin-1, donc la valeur ne peut pas
+    // voyager — côté Python le serveur d'essai refuse de l'encoder, la connexion
+    // tombe et le pont rend `network`, pas `rate_limit`. Le motif `[0-9]` (et
+    // non `\d`, que Python accepte pour ces chiffres-là) reste la bonne défense,
+    // mais elle se vérifie sur entierPositif() directement, pas par HTTP.
+    status = 429;
+    for (const [entete, attendu] of [["30", 30], [" 30 ", 30], ["0", 0],
+                                     ["-5", null], ["1.5", null], ["abc", null], ["", null],
+                                     ["Wed, 21 Oct 2015 07:28:00 GMT", null]]) {
+      retryAfter = entete;
+      await assert.rejects(extractDocument(Buffer.from("pdf"), "application/pdf", { env }), error => {
+        assert.equal(error.code, "rate_limit", JSON.stringify(entete));
+        assert.equal(error.eta_seconds, attendu, JSON.stringify(entete));
+        // Le message reste constant : l'en-tête renseigne l'eta, jamais le texte.
+        assert.ok(!error.message.includes("test-secret"));
+        return true;
+      });
+    }
+    retryAfter = null;
   } finally {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));

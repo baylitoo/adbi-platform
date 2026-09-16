@@ -128,8 +128,15 @@ ENVELOPE_MARKERS = ("confidence", "evidence_ids", "model_confidence", "model_log
 
 
 class DocIEBridgeError(RuntimeError):
-    # `eta_seconds` : seul le code `loading` le renseigne (délai annoncé par
-    # DocIE, nombre fini >= 0) ; None partout ailleurs. Même nom que côté Node.
+    # `eta_seconds` : renseigné par `loading` (délai annoncé par DocIE dans
+    # `detail.eta_seconds`) et par `rate_limit` (en-tête `Retry-After`, quand
+    # DocIE l'émet) ; None partout ailleurs. Nombre fini >= 0. Même nom que
+    # côté Node.
+    #
+    # Les deux ne disent pas la même chose : `loading` annonce une estimation de
+    # chargement, `rate_limit` la LONGUEUR de la fenêtre de quota, qui ne décroît
+    # pas quand la fenêtre se vide. Un consommateur qui l'affiche doit le dire
+    # comme un ordre de grandeur, pas comme un compte à rebours.
     def __init__(self, code, message, status=None, eta_seconds=None):
         super().__init__(message)
         self.code = code
@@ -250,6 +257,30 @@ def unwrap(value):
 
 def number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+ENTIER_DECIMAL = re.compile(r"[0-9]+")
+
+
+def entier_positif(valeur):
+    """En-tete `Retry-After` -> secondes entieres non negatives, sinon None.
+
+    L'en-tete est une CHAINE quand il est la, absent sinon. La RFC autorise
+    aussi une date HTTP ; DocIE n'en emet pas, et deviner un fuseau serait pire
+    que ne rien dire -- donc seules les secondes sont lues, tout le reste vaut
+    None et laisse le message vague en place.
+
+    `[0-9]` et non `\\d` ni `str.isdigit()` : ces deux-la acceptent aussi les
+    chiffres arabes-indiens, pas le `[0-9]` de JS (#179 ligne A15). Les deux
+    portages doivent refuser « ٣٠ » de la meme facon.
+    """
+    if not isinstance(valeur, str):
+        return None
+    texte = valeur.strip()
+    if not ENTIER_DECIMAL.fullmatch(texte):
+        return None
+    n = int(texte)
+    return n if n <= 2 ** 53 - 1 else None
 
 
 def field_confidences(value, path="", into=None):
@@ -590,9 +621,26 @@ def post_json(endpoint, headers, payload, key, timeout, session, *, loading=Fals
                 status = response.status_code
                 code = {401: "auth", 403: "auth", 413: "limits", 429: "rate_limit"}.get(status)
                 if code:
+                    # `Retry-After` sur 429 : DocIE l'emet sur le quota par
+                    # fenetre et sur le blocage d'IP apres echecs
+                    # d'authentification, PAS sur la limite de concurrence du
+                    # locataire -- mesure chez eux (security.py:178, 188-194,
+                    # 223-225). Absent, illisible ou negatif : on garde le
+                    # message vague, qui reste la regle et non l'exception.
+                    #
+                    # La valeur est la LONGUEUR de la fenetre, pas un delai
+                    # calcule : elle ne decroit pas quand la fenetre se vide.
+                    #
+                    # Lue sur l'en-tete, jamais sur le corps : un corps amont ne
+                    # sert ici qu'a classer, jamais a informer.
+                    #
+                    # Secondes uniquement. La RFC autorise aussi une date HTTP ;
+                    # DocIE n'en emet pas, et deviner un fuseau serait pire que
+                    # ne rien dire.
+                    retry = entier_positif(response.headers.get("Retry-After")) if status == 429 else None
                     message = ("DocIE refused the document as beyond its configured limits (size, OCR blocks or pages)."
                                if status == 413 else "DocIE request failed (HTTP " + str(status) + ").")
-                    fail(code, message, status)
+                    fail(code, message, status, retry)
                 text = read_error_text(response, key)
                 # `loading` : voie texte seulement (voir loading_detail). Un
                 # 202, ou un corps `detail.status == "loading"` sous un autre
