@@ -10,13 +10,13 @@
     {
       "name": "title",
       "type": "string",
-      "description": null,
+      "description": "Intitule de poste affiche en tete du CV, pas l'intitule d'une mission particuliere",
       "fields": []
     },
     {
       "name": "years_experience",
       "type": "number",
-      "description": null,
+      "description": "Nombre total d'annees d'experience professionnelle, en chiffres",
       "fields": []
     },
     {
@@ -51,7 +51,7 @@
         {
           "name": "location",
           "type": "string",
-          "description": null,
+          "description": "Ville de residence du candidat, pas le lieu d'une mission",
           "fields": []
         }
       ]
@@ -70,25 +70,25 @@
         {
           "name": "title",
           "type": "string",
-          "description": null,
+          "description": "Role tenu sur cette mission, pas l'intitule de poste affiche en tete du CV",
           "fields": []
         },
         {
           "name": "start_date",
           "type": "date",
-          "description": null,
+          "description": "Date de debut de cette mission",
           "fields": []
         },
         {
           "name": "end_date",
           "type": "date",
-          "description": null,
+          "description": "Date de fin de cette mission, vide si la mission est en cours",
           "fields": []
         },
         {
           "name": "location",
           "type": "string",
-          "description": null,
+          "description": "Lieu ou cette mission a ete realisee, pas la ville de residence du candidat",
           "fields": []
         },
         {
@@ -170,7 +170,7 @@
         {
           "name": "level",
           "type": "string",
-          "description": null,
+          "description": "Niveau declare pour cette langue, recopie tel qu'imprime",
           "fields": []
         }
       ]
