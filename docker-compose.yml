@@ -187,11 +187,29 @@ services:
           memory: 512m
 
   coffre:
-    build: ./coffre
+    # additional_contexts (Compose >= 2.17) : expose auth/ (bibliotheque de
+    # verification des jetons, #247) au Dockerfile via `COPY --from=auth`, sans
+    # la dupliquer dans coffre/. Meme mecanisme que factory et contrats. Sans
+    # ce contexte, le build echoue : le Dockerfile n'a rien a copier.
+    build:
+      context: ./coffre
+      additional_contexts:
+        auth: ./auth
     volumes:
       - coffre-data:/app/data
     environment:
       ADBI_COFFRE_PORT: 4300
+      # Controle d'acces du coffre (#245). ADBI_AUTH absent/off -> passage
+      # libre sous l'identite locale, comportement actuel inchange a l'octet.
+      # Pose a "on", le coffre exige une session emise par cv-parser et
+      # VERIFIEE ici avec le meme secret -- le coffre n'emet jamais de jeton.
+      ADBI_AUTH: ${ADBI_AUTH:-}
+      ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
+      # URL publique du hub. Le coffre est affiche dans une <iframe> du hub :
+      # un visiteur sans session recoit une page qui renvoie le NIVEAU
+      # SUPERIEUR vers le hub, seul capable de renouveler la session. Vide ->
+      # 401 en clair, sans cible de reconnexion.
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
     restart: unless-stopped
     deploy:
       resources:
