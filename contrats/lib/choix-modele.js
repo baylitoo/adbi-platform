@@ -99,14 +99,34 @@ function demandeModele(corps) {
   return valeur;
 }
 
+// Modèles HORS ADBI (#194) : le catalogue ne les propose que si le consommateur
+// les demande (`externes: true`) ET si la clé du fournisseur est configurée.
+// L'opt-in est posé ICI, et seulement sur la voie TEXTE, parce que ce service
+// sait réellement les appeler depuis #217 (lib/docie-extraction.js branche sur
+// document-parsing/bridge/openai-responses.js). Sans lui, l'identifiant d'un
+// modèle externe partirait à DocIE, qui ne le connaît pas.
+//
+// Volontairement ABSENT de `defautSansChoix` et de `choisirPourAgent` :
+//   - un modèle externe ne doit JAMAIS devenir le défaut d'une pièce (il n'est
+//     proposé que sur choix explicite de l'utilisateur, le texte du document
+//     quittant la plateforme) ;
+//   - la voie agent enverrait le document lui-même, pas son texte : le
+//     fournisseur ne déclare d'ailleurs que la voie `texte` (catalogue.json).
+const EXTERNES = true;
+
 /** Offres lisibles par le navigateur, défaut d'abord (`voie` : Kbis, voie texte ou agent). */
 function offresPubliques(tache, { env = process.env, voie = null } = {}) {
   try {
-    return chargerCatalogue().modelesOfferts(tache, voieDe(tache, voie), { env }).map((o) => ({
+    const voieRetenue = voieDe(tache, voie);
+    return chargerCatalogue().modelesOfferts(tache, voieRetenue, { env, externes: voieRetenue === "texte" && EXTERNES }).map((o) => ({
       id: o.id,
       libelle: o.libelle,
       description: o.description,
       role: o.role,
+      // `experimental` (#194) : vrai pour les modèles externes de ce catalogue.
+      // Le navigateur le rend visible ; le libellé et la description du
+      // catalogue disent déjà « externe (hors ADBI) » et « tout est à relire ».
+      experimental: o.experimental === true,
       lignesMax: typeof o.limites.lignes_non_vides_max === "number" ? o.limites.lignes_non_vides_max : null,
     }));
   } catch (e) {
@@ -117,7 +137,8 @@ function offresPubliques(tache, { env = process.env, voie = null } = {}) {
 /** Vérification avant le document (route synchrone) : le modèle est-il configuré ? */
 function verifierDemande(tache, modele, { env = process.env } = {}) {
   try {
-    return chargerCatalogue().choisirModele(tache, voieDe(tache), { env, modele });
+    const voie = voieDe(tache);
+    return chargerCatalogue().choisirModele(tache, voie, { env, modele, externes: voie === "texte" && EXTERNES });
   } catch (e) {
     throw traduire(e);
   }
@@ -128,11 +149,16 @@ function choisirPourTexte(tache, modele, texte, { env = process.env } = {}) {
   try {
     const catalogue = chargerCatalogue();
     return catalogue.choisirModele(tache, voieDe(tache, "texte"), {
-      env, modele, document: { lignesNonVides: catalogue.compterLignesNonVides(texte) },
+      env, modele, externes: EXTERNES, document: { lignesNonVides: catalogue.compterLignesNonVides(texte) },
     });
   } catch (e) {
     throw traduire(e);
   }
+}
+
+/** Le modèle choisi est-il servi par un fournisseur EXTERNE (hors ADBI) ? */
+function estExterne(choisi) {
+  return Boolean(choisi && typeof choisi.fournisseur === "string" && choisi.fournisseur);
 }
 
 /**
@@ -219,6 +245,7 @@ module.exports = {
   offresPubliques,
   verifierDemande,
   choisirPourTexte,
+  estExterne,
   choisirPourAgent,
   defautSansChoix,
   compterLignesNonVides,

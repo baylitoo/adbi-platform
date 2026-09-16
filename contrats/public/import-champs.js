@@ -205,6 +205,9 @@ var CONTRATS_IMPORT_CHAMPS = (function () {
   };
   var MESSAGE_PARTIEL_INCONNU = "valeur peut-être perdue par l'extraction";
   var LIGNE_TRONCATURE = "Document peut-être tronqué (> 800 lignes) : la fin n'a peut-être pas été lue";
+  // Modèle externe (#194) : ni preuve ni confiance par champ, donc TOUT est à
+  // relire — et le texte du document est sorti de la plateforme.
+  var LIGNE_SANS_PREUVE = "Lu par un service externe (hors ADBI) : aucune preuve ni confiance par champ, tout le résultat est à relire";
 
   // Libellés du modal pour les 7 champs principaux (index.html, vérifié par les
   // tests) ; les 12 autres portent le leur dans CHAMPS_AUTRES.
@@ -290,6 +293,7 @@ var CONTRATS_IMPORT_CHAMPS = (function () {
       return "Résultat partiel — " + libellePartiel(p, piece) + " : " + messagePartiel(p.raison);
     });
     if (signaux.troncaturePossible) lignes.push(LIGNE_TRONCATURE);
+    if (signaux.sansPreuve) lignes.push(LIGNE_SANS_PREUVE);
     return lignes;
   }
 
@@ -303,7 +307,8 @@ var CONTRATS_IMPORT_CHAMPS = (function () {
     if (!signaux) return "";
     var noms = uniques(signaux.partiel.map(function (p) { return libellePartiel(p, piece); }));
     return (noms.length ? " — résultat partiel : " + noms.join(", ") : "") +
-      (signaux.troncaturePossible ? " — document peut-être tronqué (> 800 lignes)" : "");
+      (signaux.troncaturePossible ? " — document peut-être tronqué (> 800 lignes)" : "") +
+      (signaux.sansPreuve ? " — service externe : tout est à relire" : "");
   }
 
   // Libellés des champs du verdict de `piece` nommés dans `partiel`.
@@ -336,6 +341,7 @@ var CONTRATS_IMPORT_CHAMPS = (function () {
     MESSAGES_PARTIEL: MESSAGES_PARTIEL,
     MESSAGE_PARTIEL_INCONNU: MESSAGE_PARTIEL_INCONNU,
     LIGNE_TRONCATURE: LIGNE_TRONCATURE,
+    LIGNE_SANS_PREUVE: LIGNE_SANS_PREUVE,
     LIBELLES_PRINCIPAUX: LIBELLES_PRINCIPAUX,
     LIBELLES_PIECES: LIBELLES_PIECES,
     CHAMPS_VERDICT: CHAMPS_VERDICT,
