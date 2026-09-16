@@ -464,6 +464,22 @@ test("nom : la table des ligatures de ce portage est celle de la fixture partag�
   assert.equal(norm("CŒUR DEFENSE"), "COEUR DEFENSE");
   assert.equal(norm("Æ GROUPE"), "AE GROUPE");
   assert.equal(norm("ÉLECTRICITÉ"), "ELECTRICITE");
+  // Toute marque de catégorie Unicode M est retirée, pas seulement le bloc
+  // U+0300–U+036F des accents français (#179 B7). Une marque AU MILIEU d'un
+  // token tombait sinon dans [^A-Z0-9 ], devenait une espace et COUPAIT le
+  // token en deux : « AB<U+20D0>C » se normalisait en « AB C » ici et en
+  // « ABC » côté Python, d'où un `false` — le verdict BLOQUANT — sur un nom
+  // que le portage de référence acceptait. Même défaut que la ligature de
+  // #182, même correctif : ne pas couper un token légitime.
+  for (const marque of ["⃐", "҃", "᪰", "︠", "ٓ", "́"]) {
+    assert.equal(norm("AB" + marque + "C"), "ABC", "marque U+" + marque.codePointAt(0).toString(16));
+  }
+  // Mc (espaçante) et Me (englobante) ont une classe combinante NULLE : elles
+  // échappaient à `unicodedata.combining()` côté Python. La catégorie M les
+  // couvre des deux côtés, ce qui est précisément ce qui rend la règle commune.
+  for (const marque of ["ः", "⃝", "ั"]) {
+    assert.equal(norm("AB" + marque + "C"), "ABC", "marque U+" + marque.codePointAt(0).toString(16));
+  }
 });
 
 test("nom : les " + NOM.cas.length + " cas du jeu d'essai partagé (#179 B7)", () => {

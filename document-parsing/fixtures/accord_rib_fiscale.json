@@ -1,0 +1,57 @@
+{
+  "_description": "Jeu d'essai partage, TESTS SEULEMENT : « la meme extraction DocIE donne-t-elle la meme analyse selon le langage ? », pour les pieces RIB et attestation de regularite fiscale. Ces deux paires partagent deja les regles de date, de nombre et de nom, mais celles-ci ne couvrent que les AIDES : rien ne comparait la COUCHE DE MAPPING (choix des champs, avertissements, place des verdicts de controle). Avant ce fichier, seules quatre choses avaient une execution croisee reelle entre les deux langages -- urssaf, siren-siret, iban-bic et le catalogue -- puis `contract` (accord_contract.json).",
+  "_ports": [
+    "RIB      : document-parsing/mappings/rib_to_contrats.py::map_docie_rib_to_analysis  <->  contrats/lib/rib-mapping.js::mapRibResult",
+    "FISCALE  : document-parsing/mappings/fiscale_to_contrats.py::map_docie_fiscale_to_analysis  <->  contrats/lib/fiscale-mapping.js::mapFiscaleResult"
+  ],
+  "_lecture": "Lu par contrats/tests/accord-rib-fiscale.test.js, qui execute les deux ports sur la meme entree : le JS en direct, le Python par un sous-processus. Meme mecanique que urssaf-mapping.test.js et accord-contract.test.js. Aucun reseau, aucun appel DocIE.",
+  "_pourquoi_les_deux_entrees_different": "Comme pour `contract` (#179 ligne A12, asymetrie VOULUE) : le Python recoit l'ENVELOPPE brute -- il verifie lui-meme `schema_name` et lit `wrapper['value']` -- tandis que le JS recoit le resultat DEJA DESENVELOPPE par docie-bridge.js, plus `validation` a part. Chaque port est donc alimente comme en production ; reimplementer le desenveloppage dans le test mesurerait autre chose.",
+  "_pourquoi_une_egalite_stricte": "Les deux ports d'une meme piece produisent la MEME chose pour le MEME consommateur : la reponse de POST /api/document/analyze, dont contrats/public/app.js::analyzeChecklistDoc lit issuedDate, companyName et nameMatches. `analysis` doit donc etre identique cle pour cle et valeur pour valeur, verdicts de controle imbriques compris (`controleIbanBic` pour le RIB, `controleSirenSiret` et `controleDates` pour la fiscale).",
+  "_pourquoi_la_prose_est_comparee_ici": "MESURE, et c'est la difference avec accord_contract.json : sur ces six fixtures, les avertissements sont identiques MOT POUR MOT des deux cotes (5/5, 2/2, 4/4, 2/2). Aucune difference de prose n'est donc declaree ici -- en declarer une « par symetrie » avec la paire `contract` inscrirait une contre-verite dans le jeu d'essai. Si un portage se met un jour a reformuler un message, ce test doit le signaler, pas l'absoudre.",
+  "_aujourdhui": "Le mapping fiscale controle « date dans le futur », donc sa sortie depend du JOUR. Les deux ports acceptent `aujourdhui` / `aujourd'hui` en AAAA-MM-JJ et retombent sur la date LOCALE s'il est omis : sans le figer, ce test comparerait deux horloges et deviendrait instable a la premiere execution un autre jour. Il est donc fige ci-dessous, des deux cotes, a la meme valeur. Le RIB n'a aucun controle de date et ignore ce reglage.",
+  "_nom_attendu": "Chaque cas passe comme `expected_name` / `expectedName` la valeur que porte le document lui-meme (`account_holder` pour le RIB, `company_name` pour la fiscale), afin que la comparaison de nom soit REELLEMENT exercee (nameMatches vrai) plutot que court-circuitee par un nom absent. La fixture « illisible » n'en porte aucun : `expected_name` y vaut null et `nameMatches` doit valoir null des deux cotes -- « question non posee », jamais false (voir nom_docie.json).",
+  "_items": "`items` vaut [{id: <piece>}] pour que `matchedId` soit renseigne, comme le fait detectType() dans docanalyze.js.",
+  "jour_fige": "2026-09-16",
+  "regles": {
+    "analysis": "egalite stricte : memes cles, memes valeurs, verdicts imbriques compris",
+    "avertissements": "egalite stricte du nombre, de l'ordre ET du texte complet"
+  },
+  "cas": [
+    {
+      "piece": "rib",
+      "fichier": "rib_extraction_sample.json",
+      "cle_nom": "account_holder",
+      "preuve": "cas nominal, genere depuis les VRAIS modeles pydantic de DocIE (fixtures/generate_rib_sample.py). MESURE : 13 cles d'analysis identiques, aucun avertissement des deux cotes, IBAN et BIC valides."
+    },
+    {
+      "piece": "rib",
+      "fichier": "rib_extraction_sample_edge_cases.json",
+      "cle_nom": "account_holder",
+      "preuve": "MESURE : 13 cles identiques et 5 avertissements identiques mot pour mot. C'est le cas qui exerce le controle IBAN mod-97 et le format BIC -- la raison pour laquelle le RIB a le droit de passer par le modele le plus petit (#194)."
+    },
+    {
+      "piece": "rib",
+      "fichier": "rib_extraction_sample_unreadable.json",
+      "cle_nom": "account_holder",
+      "preuve": "document illisible : MESURE 13 cles identiques, 2 avertissements identiques, et `expected_name` null -> nameMatches null des deux cotes. Fige la branche « illisible », celle ou #179 ligne B1 avait trouve le portage Python en train de JETER des champs que le JS gardait."
+    },
+    {
+      "piece": "fiscale",
+      "fichier": "fiscale_extraction_sample.json",
+      "cle_nom": "company_name",
+      "preuve": "cas nominal de la piece la plus RECENTE (arrivee avec #215), donc la moins exercee et la plus susceptible de deriver. MESURE : 15 cles d'analysis identiques, aucun avertissement."
+    },
+    {
+      "piece": "fiscale",
+      "fichier": "fiscale_extraction_sample_edge_cases.json",
+      "cle_nom": "company_name",
+      "preuve": "MESURE : 15 cles identiques et 4 avertissements identiques mot pour mot. Exerce `controleDates` (ordre des dates et date dans le futur) a la date figee, plus le controle SIREN/SIRET."
+    },
+    {
+      "piece": "fiscale",
+      "fichier": "fiscale_extraction_sample_unreadable.json",
+      "cle_nom": "company_name",
+      "preuve": "document illisible : MESURE 15 cles identiques, 2 avertissements identiques, nameMatches null des deux cotes."
+    }
+  ]
+}

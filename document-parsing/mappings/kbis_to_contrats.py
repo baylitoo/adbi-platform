@@ -228,7 +228,7 @@ def _norm(s: Any) -> str:
         text = text.replace(ligature, remplacement)
     text = text.upper()
     text = unicodedata.normalize("NFD", text)
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = "".join(ch for ch in text if not unicodedata.category(ch).startswith("M"))
     text = _NON_ALNUM_SPACE_RE.sub(" ", text)
     text = _MULTI_SPACE_RE.sub(" ", text).strip()
     return text

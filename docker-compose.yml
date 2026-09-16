@@ -105,6 +105,17 @@ services:
       # « configuration » avant le moindre appel. Même piège que #164.
       DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
       DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-360}
+      # Modèles HORS ADBI (#194, #217), proposés dans le sélecteur UNIQUEMENT si
+      # OPENAI_API_KEY est renseignée — clé vide = comportement d'avant à
+      # l'octet près. Le texte du document quitte alors la plateforme : choix
+      # explicite de l'utilisateur, jamais un défaut ni un repli. Même piège que
+      # #164 : documentées dans contrats/.env.example, ces variables
+      # n'atteindraient jamais le conteneur sans ces lignes.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODELE_RAPIDE: ${OPENAI_MODELE_RAPIDE:-}
+      OPENAI_MODELE_RAISONNEMENT: ${OPENAI_MODELE_RAISONNEMENT:-}
+      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-}
       # Pré-remplissages DocIE simultanés (#196), à aligner sur le `n_parallel`
       # du modèle servi pour les contrats (#194). Vide -> défaut du service : 1
       # (NuExtract3). Variable racine dédiée (CONTRATS_...) : chaque service a

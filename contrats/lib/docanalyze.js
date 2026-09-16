@@ -26,7 +26,7 @@ const LIGATURES = [["Œ", "OE"], ["œ", "oe"], ["Æ", "AE"], ["æ", "ae"]];
 function norm(s) {
   let t = String(s || "");
   for (const [lig, rep] of LIGATURES) t = t.split(lig).join(rep);
-  return t.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+  return t.toUpperCase().normalize("NFD").replace(/\p{M}/gu, "")
     .replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 }
 

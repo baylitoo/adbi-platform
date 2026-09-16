@@ -80,8 +80,8 @@ const TEXTE_CONTRAT = [
 test("offres publiques : défaut d'abord, plafond de lignes, aucun identifiant réel", () => {
   const offres = choix.offresPubliques("contract", { env: MODELES_CONTRAT });
   assert.deepEqual(offres, [
-    { id: "nuextract3", libelle: "NuExtract3", description: "Précis mais lent — plusieurs minutes", role: "defaut", lignesMax: null },
-    { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "alternative", lignesMax: 800 },
+    { id: "nuextract3", libelle: "NuExtract3", description: "Précis mais lent — plusieurs minutes", role: "defaut", experimental: false, lignesMax: null },
+    { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "alternative", experimental: false, lignesMax: 800 },
   ]);
   assert.ok(!JSON.stringify(offres).includes("store:"));
   assert.deepEqual(choix.offresPubliques("urssaf", { env: MODELES_URSSAF }).map((o) => [o.id, o.role]),
@@ -129,13 +129,25 @@ test("GET /api/modeles : rien de configuré ou flag coupé -> liste vide ; confi
   }
 });
 
-test("GET /api/modeles?tache=contract : octet pour octet, le drapeau `experimental` du catalogue (CV) ne sort pas ici", async () => {
+// `experimental` sort désormais de cette route, comme il sort déjà de celles
+// d'one-pager (lib/choix-modele.js) et de cv-parser (choix_modele.py) : c'est
+// le seul signal LISIBLE PAR MACHINE qu'une offre est un modèle externe, le
+// reste (« externe (hors ADBI) ») n'étant que de la prose de libellé. Il vaut
+// `false` pour les deux modèles DocIE du contrat — le drapeau du catalogue CV
+// ne « déteint » donc toujours pas ici, ce que la fin du test vérifie.
+//
+// Sans OPENAI_API_KEY, la sortie reste celle d'avant à la clé `experimental`
+// près : aucun modèle externe n'est proposé, aucun nom de fournisseur n'est
+// cité. C'est ce que garantit l'octet pour octet ci-dessous.
+test("GET /api/modeles?tache=contract : octet pour octet, aucun modèle externe sans clé", async () => {
   const srv = await demarrer({ env: { ...BASE, ...MODELES_CONTRAT } });
   try {
-    assert.equal(await (await srv.modeles("contract")).text(),
+    const rendu = await (await srv.modeles("contract")).text();
+    assert.equal(rendu,
       '{"tache":"contract","modeles":[' +
-      '{"id":"nuextract3","libelle":"NuExtract3","description":"Précis mais lent — plusieurs minutes","role":"defaut","lignesMax":null},' +
-      '{"id":"lfm25_2_6b","libelle":"LFM2.5 2.6B","description":"Rapide","role":"alternative","lignesMax":800}]}');
+      '{"id":"nuextract3","libelle":"NuExtract3","description":"Précis mais lent — plusieurs minutes","role":"defaut","experimental":false,"lignesMax":null},' +
+      '{"id":"lfm25_2_6b","libelle":"LFM2.5 2.6B","description":"Rapide","role":"alternative","experimental":false,"lignesMax":800}]}');
+    assert.ok(!/openai/i.test(rendu), "un modèle externe est proposé sans clé");
   } finally {
     await srv.fermer();
   }
