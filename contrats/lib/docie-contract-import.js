@@ -474,6 +474,17 @@ async function extraireParModele(buffer, mime, modele, env, deps) {
     kind: DOCIE_KIND,
     dynamicSchema: deps.dynamicSchema || require(SCHEMA_CONTRAT_PATH),
     modelProfile: choisi.identifiant,
+    // Langue du document (voir docie-bridge.js::extractText). Le pont n'a pas
+    // de défaut : « ce document est en français » est une connaissance métier,
+    // et c'est ICI qu'elle est vraie — un contrat de sous-traitance ADBI est
+    // rédigé en français. Sans ce champ, le prompt de DocIE lit « Language:
+    // unknown ».
+    //
+    // À ne PAS généraliser aux CV : leur langue n'est pas connue avant lecture,
+    // et annoncer « fr » sur un CV anglais serait une affirmation fausse au
+    // modèle là où « unknown » est vraie. cv-parser et one-pager s'abstiennent
+    // donc volontairement.
+    langue: "fr",
     env,
   };
   if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;

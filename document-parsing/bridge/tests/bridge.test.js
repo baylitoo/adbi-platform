@@ -260,8 +260,11 @@ test("text loopback HTTP contract: /v1/extract/text, x-api-key, no data-URI wrap
     assert.equal(payload.schema_mode, "dynamic");
     assert.deepEqual(payload.dynamic_schema, RESUME_SCHEMA);
     // No data-URI wrapper and nothing from the chat path: this endpoint reads
-    // none of it, and `ocr_blocks` is not sent for plain text.
-    for (const absent of ["messages", "model", "max_tokens", "parallel_extraction", "ocr_blocks"]) {
+    // none of it, and `ocr_blocks` is not sent for plain text. `language` is
+    // absent BY DEFAULT and c'est un choix : sans langue connue, DocIE lit
+    // « Language: unknown », ce qui est VRAI — annoncer une langue fausse ne
+    // l'est pas (voir extractText).
+    for (const absent of ["messages", "model", "max_tokens", "parallel_extraction", "ocr_blocks", "language"]) {
       assert.equal(Object.hasOwn(payload, absent), false, absent);
     }
     const codes = { 401: "auth", 413: "limits", 429: "rate_limit" };
@@ -277,6 +280,38 @@ test("text loopback HTTP contract: /v1/extract/text, x-api-key, no data-URI wrap
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+// ------------------------------------------- langue du document -----
+
+test("langue : envoyée telle quelle quand elle est fournie, jamais devinée, jamais sur la voie agent", async () => {
+  const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret", DOCIE_AGENT_RESUME: "adbi_agent_1" };
+  const envoyes = [];
+  const fetchImpl = async (url, options) => { envoyes.push(JSON.parse(options.body)); return new Response(JSON.stringify(textCases[1].body)); };
+  // Fournie : elle part VERBATIM — DocIE ne valide ni ne normalise rien
+  // (schemas/api.py:26), la valeur atteint la ligne du prompt et la fabrique OCR.
+  for (const [langue, attendu] of [["fr", "fr"], ["  fr  ", "fr"], ["fr-FR", "fr-FR"], ["EN", "EN"]]) {
+    await extractText("CV", { langue, env, fetchImpl });
+    assert.equal(envoyes.at(-1).language, attendu, JSON.stringify(langue));
+  }
+  // Absente : aucune clé. « Language: unknown » côté DocIE est une réponse
+  // honnête ; un défaut « fr » posé ici mentirait sur un document anglais.
+  await extractText("CV", { env, fetchImpl });
+  assert.equal(Object.hasOwn(envoyes.at(-1), "language"), false);
+  // Forme refusée AVANT le réseau : cette chaîne entre dans un prompt, et rien
+  // ne la filtre côté DocIE. Aucune liste de langues autorisées pour autant —
+  // le transport ne décide pas lesquelles existent.
+  const avant = envoyes.length;
+  for (const mauvais of ["", "   ", "f", "francais_long", "fr;DROP", "fr\nLanguage: en", 42, {}, "fr-"]) {
+    await assert.rejects(extractText("CV", { langue: mauvais, env, fetchImpl }),
+      error => error instanceof DocIEBridgeError && error.code === "input", JSON.stringify(mauvais));
+  }
+  assert.equal(envoyes.length, avant, "une langue mal formée ne doit jamais partir");
+  // Voie AGENT : le corps n'est pas lu pour la langue (agents/runtime.py:550 —
+  // elle vient de la SPEC de l'agent). Rien n'est donc ajouté ici.
+  await extractDocument(Buffer.from("pdf"), "application/pdf",
+    { env, fetchImpl: async (url, options) => { envoyes.push(JSON.parse(options.body)); return new Response(JSON.stringify(cases[2].body)); } });
+  assert.equal(Object.hasOwn(envoyes.at(-1), "language"), false);
 });
 
 // ------------------------------------------- blocs de la voie texte (#190) -----

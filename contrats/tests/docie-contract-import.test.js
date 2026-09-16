@@ -263,6 +263,11 @@ test("intégration réelle du bridge partagé, fixture RAW non déballée (fetch
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://docie.example.test/v1/agents/contract-agent-test/chat/completions");
   assert.equal(calls[0].body.model, "contract-agent-test");
+  // Voie agent : aucune langue dans le corps, et ce n'est PAS un oubli. DocIE
+  // lit la langue de la SPEC de l'agent (agents/runtime.py:550), jamais de la
+  // requête : l'ajouter ici serait accepté puis ignoré en silence. La voie
+  // texte, elle, l'envoie (tests/choix-modele.test.js). Asymétrie voulue.
+  assert.equal(Object.hasOwn(calls[0].body, "language"), false);
   // Mêmes valeurs attendues que le cas nominal ci-dessus (NOMINAL_RESULT EST
   // la forme déballée de cette même fixture) — preuve que unwrap() produit
   // bien la forme que ce module suppose.

@@ -202,6 +202,20 @@ def per_call_agent(value):
     return agent
 
 
+# Code de langue envoyé à DocIE (voir extract_text). DocIE ne valide RIEN : la
+# valeur va telle quelle dans un prompt et dans la fabrique OCR. On borne donc
+# la FORME ici -- lettres ASCII, tiret admis (« fr », « fr-FR ») -- sans jamais
+# énumérer les langues valides : ce transport ne décide pas lesquelles existent.
+CODE_LANGUE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,4})?$")
+
+
+def code_langue(value):
+    code = value.strip() if isinstance(value, str) else ""
+    if not CODE_LANGUE.fullmatch(code):
+        fail("input", 'Invalid language code; use a form such as "fr" or "fr-FR".')
+    return code
+
+
 def per_call_model_profile(value):
     profile = value.strip() if isinstance(value, str) else ""
     if not profile or CONTROL_CHARACTERS.search(profile) or len(profile.encode("utf-8")) > 128:
@@ -682,7 +696,7 @@ def extract_document(content, mime_type, *, kind="resume", agent=None, env=None,
     return result
 
 
-def extract_text(text, *, kind="resume", dynamic_schema=None, model_profile=None, env=None, session=None):
+def extract_text(text, *, kind="resume", dynamic_schema=None, model_profile=None, langue=None, env=None, session=None):
     """Send already-readable text to POST /v1/extract/text. One call, no retry.
 
     For a source that HAS machine-readable text -- a .txt, a DOCX's paragraphs,
@@ -714,6 +728,27 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, model_profile=None
     Absent : comportement inchangé. `metadata["model"]` reste celui que la
     RÉPONSE rapporte (`model_profile`), pas celui demandé. Pas de liste de
     modèles autorisés ici : voir per_call_model_profile().
+
+    `langue` : code de langue du document, FACULTATIF et sans défaut ici. Omis,
+    le prompt de DocIE lit littéralement « Language: unknown »
+    (llm/prompts.py:223). Fourni, la valeur part VERBATIM : rien ne la valide ni
+    ne la normalise côté DocIE (`language: str | None`, schemas/api.py:26), et
+    elle atteint DEUX endroits -- la ligne du prompt, et la fabrique de backend
+    OCR (`get_ocr_backend(name, language=...)`, ocr/factory.py:32).
+
+    Aucun défaut dans ce transport, et c'est délibéré : « ce document est en
+    français » est une connaissance MÉTIER, que le pont n'a pas. Le consommateur
+    qui sait la langue l'envoie ; celui qui ne la sait pas s'abstient. Pour un CV
+    de langue inconnue, « Language: fr. » est une AFFIRMATION FAUSSE là où
+    « unknown » est vraie -- et sur un déploiement PaddleOCR un code non
+    supporté fait ÉCHOUER l'extraction (ocr/factory.py:41-42), alors que
+    liteparse n'en fait qu'un mauvais indice et que tesseract l'ignore.
+
+    Validé ici parce que DocIE ne valide rien : cette chaîne entre dans un
+    prompt. Forme seulement, jamais une liste de langues autorisées.
+
+    Volontairement ABSENT de la voie agent : ce corps-là ne lit pas `language`,
+    le runtime ne le prend que sur la SPEC de l'agent (agents/runtime.py:550).
     """
     env = os.environ if env is None else env
     if kind not in SCHEMAS:
@@ -733,6 +768,8 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, model_profile=None
             fail("input", "dynamic_schema describes another document type.")
         payload["schema_mode"] = "dynamic"
         payload["dynamic_schema"] = dynamic_schema
+    if langue is not None:
+        payload["language"] = code_langue(langue)
     if model_profile is not None:
         profile = per_call_model_profile(model_profile)
     else:

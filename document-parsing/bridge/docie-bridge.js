@@ -183,6 +183,19 @@ function perCallAgent(value) {
   if (!AGENT_NAME.test(agent)) fail("input", "Invalid per-call DocIE agent name.");
   return agent;
 }
+// Code de langue envoyé à DocIE (voir extractText). DocIE ne valide RIEN : la
+// valeur va telle quelle dans un prompt et dans la fabrique OCR. On borne donc
+// la FORME ici — lettres ASCII, tiret admis (« fr », « fr-FR »), 2 à 8
+// caractères — sans jamais énumérer les langues valides : ce transport ne
+// décide pas lesquelles existent, et un code exotique mais bien formé doit
+// pouvoir passer. Refus en `input`, comme ses voisins par appel.
+const CODE_LANGUE = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,4})?$/;
+function codeLangue(value) {
+  const code = typeof value === "string" ? value.trim() : "";
+  if (!CODE_LANGUE.test(code)) fail("input", "Invalid language code; use a form such as \"fr\" or \"fr-FR\".");
+  return code;
+}
+
 function perCallModelProfile(value) {
   const profile = typeof value === "string" ? value.trim() : "";
   if (!profile || /[\u0000-\u001f\u007f]/.test(profile) || Buffer.byteLength(profile, "utf8") > 128) {
@@ -606,8 +619,34 @@ async function extractDocument(content, mimeType, { kind = "resume", agent: agen
  * Absent : comportement inchangé. `metadata.model` reste celui que la RÉPONSE
  * rapporte (`model_profile`), pas celui demandé. Pas de liste de modèles
  * autorisés ici : voir perCallModelProfile().
+ *
+ * `langue` : code de langue du document, FACULTATIF et sans défaut ici. Omis,
+ * le prompt de DocIE lit littéralement « Language: unknown »
+ * (llm/prompts.py:223). Fourni, la valeur part VERBATIM : rien ne la valide ni
+ * ne la normalise côté DocIE (`language: str | None`, schemas/api.py:26, aucun
+ * validateur), et elle atteint DEUX endroits — la ligne du prompt, et la
+ * fabrique de backend OCR (`get_ocr_backend(name, language=...)`,
+ * ocr/factory.py:32).
+ *
+ * Aucun défaut dans ce transport, et c'est délibéré : « ce document est en
+ * français » est une connaissance MÉTIER, que le pont n'a pas. Le consommateur
+ * qui sait la langue l'envoie (les pièces d'affaires françaises) ; celui qui ne
+ * la sait pas s'abstient. Pour un CV de langue inconnue, « Language: fr. » est
+ * une AFFIRMATION FAUSSE adressée au modèle là où « unknown » est vraie — et
+ * c'est le second endroit qui peut faire mal : sur un déploiement PaddleOCR,
+ * `PaddleOCRBackend(lang=...)` lève sur un code non supporté et fait ÉCHOUER
+ * l'extraction (ocr/factory.py:41-42). Sur liteparse (le défaut) un code faux
+ * n'est qu'un mauvais indice d'OCR ; tesseract l'ignore entièrement.
+ *
+ * Validé ici parce que DocIE ne valide rien : cette chaîne entre dans un
+ * prompt. Forme seulement, jamais une liste de langues autorisées — le pont ne
+ * décide pas quelles langues existent.
+ *
+ * Volontairement ABSENT de la voie agent : ce corps-là ne lit pas `language`,
+ * le runtime ne le prend que sur la SPEC de l'agent (agents/runtime.py:550,
+ * 594, 639). L'y ajouter serait ignoré en silence.
  */
-async function extractText(text, { kind = "resume", dynamicSchema = null, modelProfile = null, env = process.env, fetchImpl = fetch } = {}) {
+async function extractText(text, { kind = "resume", dynamicSchema = null, modelProfile = null, langue = null, env = process.env, fetchImpl = fetch } = {}) {
   if (!Object.hasOwn(SCHEMAS, kind)) fail("configuration", "Unsupported document kind.");
   const { base, key, timeout } = connection(env);
   const schema = SCHEMAS[kind];
@@ -620,6 +659,7 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, modelP
     payload.schema_mode = "dynamic";
     payload.dynamic_schema = dynamicSchema;
   }
+  if (langue != null) payload.language = codeLangue(langue);
   const profile = modelProfile != null ? perCallModelProfile(modelProfile) : (env.DOCIE_MODEL_PROFILE || "").trim();
   if (profile) payload.model_profile = profile;
   // `x-api-key`, not `Authorization: Bearer`: that is the header every recorded
