@@ -115,6 +115,111 @@ test("modeleServi : rapproché avec ou sans store:, sinon nom brut, null si non 
   assert.equal(cat.modeleServi("kbis", "agent", { env: { DOCIE_AGENT_KBIS_NUEXTRACT3: "k3" }, metadata: { agent: "k3", model: "x" } }).id, "nuextract3");
 });
 
+// ---------------------------------------------------------------------------
+// Modèles externes OpenAI (#194) : alternatives explicites, jamais par défaut.
+// ---------------------------------------------------------------------------
+const CLE = "sk-test-secret-catalogue";
+const TACHES_EXTERNES = ["contract", "fiscale", "kbis", "rib", "urssaf"];
+const ENV_DOCIE_COMPLET = {
+  DOCIE_MODELE_NUEXTRACT3: "store:n3", DOCIE_MODELE_LFM25_2_6B: "store:l26", DOCIE_MODELE_LFM25_350M: "store:l350",
+  DOCIE_AGENT_RESUME_LFM25_2_6B: "a_l", DOCIE_AGENT_RESUME_NUEXTRACT3: "a_n", DOCIE_AGENT_KBIS_NUEXTRACT3: "k3",
+  ADBI_LLM_MODELE_LFM25_2_6B: "lfm",
+};
+
+function toutesLesOffres(env, options = {}) {
+  const sortie = {};
+  for (const tache of Object.keys(cat.chargerCatalogue().taches)) {
+    for (const voie of ["texte", "agent", "chat"]) sortie[tache + "/" + voie] = cat.modelesOfferts(tache, voie, { env, ...options });
+  }
+  return JSON.stringify(sortie);
+}
+
+test("externes : OpenAI rapide puis raisonnement, APRÈS défaut et alternative, sur les 5 documents métier en voie texte", () => {
+  for (const tache of TACHES_EXTERNES) {
+    const offres = cat.modelesOfferts(tache, "texte", { env: { ...ENV_DOCIE_COMPLET, OPENAI_API_KEY: CLE }, externes: true });
+    assert.deepEqual(offres.map((o) => o.role), ["defaut", "alternative", "externe", "externe"], tache);
+    const [rapide, raisonnement] = offres.slice(2);
+    assert.deepEqual([rapide.id, rapide.identifiant, rapide.mode, rapide.fournisseur, rapide.variable],
+      ["openai_rapide", "rapide", "rapide", "openai", "OPENAI_API_KEY"]);
+    assert.deepEqual([raisonnement.id, raisonnement.identifiant, raisonnement.mode], ["openai_raisonnement", "raisonnement", "raisonnement"]);
+    assert.match(rapide.libelle, /externe \(hors ADBI\)/);
+    assert.match(rapide.description, /quitte ADBI/);
+    assert.equal(rapide.experimental, true);
+    // La clé seule suffit : aucun modèle DocIE configuré, les externes restent proposés.
+    assert.deepEqual(ids(cat.modelesOfferts(tache, "texte", { env: { OPENAI_API_KEY: CLE }, externes: true })), ["openai_rapide", "openai_raisonnement"]);
+  }
+});
+
+test("externes : offerts si et seulement si OPENAI_API_KEY est non vide", () => {
+  for (const env of [{}, { OPENAI_API_KEY: "" }, { OPENAI_API_KEY: "   " }, { OPENAI_API_KEY: undefined }, { OPENAI_BASE_URL: "https://eu.api.openai.com" }]) {
+    for (const tache of TACHES_EXTERNES) assert.deepEqual(cat.modelesOfferts(tache, "texte", { env, externes: true }), [], JSON.stringify(env));
+  }
+  assert.throws(() => cat.choisirModele("rib", "texte", { env: {}, modele: "openai_rapide", externes: true }), (e) => e.code === "modele_non_propose");
+  assert.equal(cat.choisirModele("rib", "texte", { env: { OPENAI_API_KEY: CLE }, modele: "openai_raisonnement", externes: true }).identifiant, "raisonnement");
+});
+
+test("sans clé, ou sans l'option `externes` : sortie des chargeurs identique octet pour octet", () => {
+  for (const env of [{}, ENV_DOCIE_COMPLET]) {
+    const reference = toutesLesOffres(env);
+    assert.equal(toutesLesOffres(env, { externes: true }), reference);
+    assert.equal(toutesLesOffres({ ...env, OPENAI_API_KEY: "" }, { externes: true }), reference);
+    // Clé posée, consommateur pas encore câblé (sans l'option) : rien ne change pour lui.
+    assert.equal(toutesLesOffres({ ...env, OPENAI_API_KEY: CLE }), reference);
+  }
+  assert.throws(() => cat.choisirModele("rib", "texte", { env: { OPENAI_API_KEY: CLE }, modele: "openai_rapide" }), (e) => e.code === "modele_non_propose");
+});
+
+test("CV (et toute autre tâche ou voie) : jamais d'offre OpenAI, même avec la clé et l'option", () => {
+  const env = { ...ENV_DOCIE_COMPLET, OPENAI_API_KEY: CLE };
+  const c = cat.chargerCatalogue();
+  for (const tache of Object.keys(c.taches)) {
+    for (const voie of ["texte", "agent", "chat"]) {
+      const externes = cat.modelesOfferts(tache, voie, { env, externes: true }).filter((o) => o.role === "externe" || o.id.startsWith("openai"));
+      assert.equal(externes.length, voie === "texte" && TACHES_EXTERNES.includes(tache) ? 2 : 0, tache + "/" + voie);
+    }
+  }
+  assert.ok(!Object.hasOwn(c.taches.resume.voies.texte, "externes"));
+  assert.ok(!Object.hasOwn(c.taches.resume.voies.agent, "externes"));
+  assert.throws(() => cat.choisirModele("resume", "texte", { env, modele: "openai_rapide", externes: true }), (e) => e.code === "modele_non_propose");
+});
+
+test("externes : la liste ne porte jamais la clé, l'URL ni le nom de modèle du fournisseur", () => {
+  const env = { OPENAI_API_KEY: CLE, OPENAI_BASE_URL: "https://eu.api.openai.com", OPENAI_MODELE_RAPIDE: "gpt-4.1-mini" };
+  const texte = JSON.stringify(TACHES_EXTERNES.map((t) => cat.modelesOfferts(t, "texte", { env, externes: true })));
+  for (const secret of [CLE, "api.openai.com", "gpt-4.1-mini"]) assert.ok(!texte.includes(secret), secret);
+});
+
+test("externes : un modèle externe mal placé en défaut ou alternative n'est jamais proposé ; un modèle DocIE sous `externes` non plus", () => {
+  const faux = JSON.parse(fs.readFileSync(cat.CHEMIN_CATALOGUE, "utf8"));
+  faux.taches.rib.voies.texte.defaut = { modele: "openai_rapide" };
+  faux.taches.rib.voies.texte.alternative = { modele: "openai_raisonnement" };
+  faux.taches.rib.voies.texte.externes = [{ modele: "lfm25_350m" }];
+  const env = { OPENAI_API_KEY: CLE, DOCIE_MODELE_OPENAI_RAPIDE: "store:x", DOCIE_MODELE_OPENAI_RAISONNEMENT: "store:z", DOCIE_MODELE_LFM25_350M: "store:y" };
+  assert.deepEqual(cat.modelesOfferts("rib", "texte", { env, catalogue: faux, externes: true }), []);
+});
+
+test("externes : modes du catalogue = modes du transport (document-parsing/bridge/openai-responses.js)", () => {
+  const { MODES } = require("../../bridge/openai-responses");
+  const c = cat.chargerCatalogue();
+  const externes = Object.values(c.modeles).filter((m) => m.fournisseur);
+  assert.deepEqual(externes.map((m) => m.mode).sort(), Object.keys(MODES).sort());
+  for (const m of externes) assert.ok(Object.hasOwn(c.fournisseurs, m.fournisseur));
+});
+
+test("modeleServi : OpenAI rapproché par fournisseur + mode, modèle servi rapporté tel quel ; jamais confondu avec DocIE", () => {
+  const env = { OPENAI_API_KEY: CLE, DOCIE_MODELE_LFM25_2_6B: "rapide" };
+  assert.deepEqual(cat.modeleServi("rib", "texte", { env, metadata: { fournisseur: "openai", mode: "raisonnement", model: "gpt-5-nano-2025-08-07" } }),
+    { id: "openai_raisonnement", libelle: "OpenAI raisonnement — externe (hors ADBI)", identifiant: "gpt-5-nano-2025-08-07" });
+  // Sans clé : nom brut, jamais le libellé d'un modèle non configuré.
+  assert.deepEqual(cat.modeleServi("rib", "texte", { env: {}, metadata: { fournisseur: "openai", mode: "rapide", model: "gpt-4.1-nano-2025-04-14" } }),
+    { id: null, libelle: "gpt-4.1-nano-2025-04-14", identifiant: "gpt-4.1-nano-2025-04-14" });
+  // Un modèle DocIE dont l'identifiant serait « rapide » ne répond pas pour OpenAI, et inversement.
+  assert.equal(cat.modeleServi("rib", "texte", { env, metadata: { fournisseur: "openai", mode: "rapide", model: "rapide" } }).id, "openai_rapide");
+  assert.equal(cat.modeleServi("rib", "texte", { env, metadata: { model: "rapide" } }).id, "lfm25_2_6b");
+  assert.equal(cat.modeleServi("resume", "texte", { env, metadata: { fournisseur: "openai", mode: "rapide", model: "gpt-4.1-nano" } }).id, null);
+  assert.equal(cat.modeleServi("rib", "texte", { env, metadata: { fournisseur: "openai", mode: "rapide", model: null } }), null);
+});
+
 test("lignes non vides : cas de la fixture partagée", () => {
   for (const c of FIXTURE.cas) assert.equal(cat.compterLignesNonVides(c.texte), c.lignes, c.nom);
 });

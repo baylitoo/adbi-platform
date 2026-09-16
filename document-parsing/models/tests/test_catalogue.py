@@ -57,7 +57,14 @@ class TableRetenue(unittest.TestCase):
                 self.assertEqual((v.get("alternative") or {}).get("modele"), alternative, f"{tache}/{voie}")
 
     def test_seulement_les_trois_modeles_retenus(self):
-        self.assertEqual(set(self.c["modeles"]), {"lfm25_2_6b", "nuextract3", "lfm25_350m"})
+        docie = {m for m, d in self.c["modeles"].items() if not d.get("fournisseur")}
+        self.assertEqual(docie, {"lfm25_2_6b", "nuextract3", "lfm25_350m"})
+        # Plus les deux modes OpenAI, externes (#194) — jamais défaut ni alternative.
+        externes = {m: (d["fournisseur"], d["mode"]) for m, d in self.c["modeles"].items() if d.get("fournisseur")}
+        self.assertEqual(externes, {"openai_rapide": ("openai", "rapide"), "openai_raisonnement": ("openai", "raisonnement")})
+        for m in externes:
+            self.assertEqual(self.c["modeles"][m]["etiquettes"], ["extraction"])
+            self.assertIn("externe (hors ADBI)", self.c["modeles"][m]["libelle"])
         self.assertEqual(self.c["modeles"]["lfm25_2_6b"]["etiquettes"], ["extraction", "chat"])
         self.assertEqual(self.c["modeles"]["nuextract3"]["etiquettes"], ["extraction"])
         self.assertEqual(self.c["modeles"]["lfm25_350m"]["etiquettes"], ["extraction"])
@@ -179,6 +186,72 @@ class Chargeur(unittest.TestCase):
         self.assertEqual(agent["id"], "nuextract3")
 
 
+CLE = "sk-test-secret-catalogue"
+TACHES_EXTERNES = ("contract", "fiscale", "kbis", "rib", "urssaf")
+ENV_DOCIE_COMPLET = {
+    "DOCIE_MODELE_NUEXTRACT3": "store:n3", "DOCIE_MODELE_LFM25_2_6B": "store:l26", "DOCIE_MODELE_LFM25_350M": "store:l350",
+    "DOCIE_AGENT_RESUME_LFM25_2_6B": "a_l", "DOCIE_AGENT_RESUME_NUEXTRACT3": "a_n", "DOCIE_AGENT_KBIS_NUEXTRACT3": "k3",
+    "ADBI_LLM_MODELE_LFM25_2_6B": "lfm",
+}
+
+
+def toutes_les_offres(env, **options):
+    c = cat.charger_catalogue()
+    return json.dumps({f"{t}/{v}": cat.modeles_offerts(t, v, env=env, **options)
+                       for t in c["taches"] for v in ("texte", "agent", "chat")}, ensure_ascii=False)
+
+
+class Externes(unittest.TestCase):
+    """Modèles externes OpenAI (#194) : alternatives explicites, jamais par défaut."""
+
+    def test_table_des_externes(self):
+        c = cat.charger_catalogue()
+        for tache, t in c["taches"].items():
+            for voie, v in t["voies"].items():
+                attendu = [("openai_rapide", True), ("openai_raisonnement", True)] if (voie == "texte" and tache in TACHES_EXTERNES) else []
+                self.assertEqual([(e["modele"], e.get("experimental")) for e in v.get("externes") or []], attendu, f"{tache}/{voie}")
+        self.assertEqual(c["fournisseurs"], {"openai": {"variable": "OPENAI_API_KEY", "voies": ["texte"]}})
+
+    def test_offerts_apres_docie_si_et_seulement_si_cle(self):
+        for tache in TACHES_EXTERNES:
+            offres = cat.modeles_offerts(tache, "texte", env={**ENV_DOCIE_COMPLET, "OPENAI_API_KEY": CLE}, externes=True)
+            self.assertEqual([o["role"] for o in offres], ["defaut", "alternative", "externe", "externe"], tache)
+            self.assertEqual([(o["id"], o["identifiant"], o["variable"]) for o in offres[2:]],
+                             [("openai_rapide", "rapide", "OPENAI_API_KEY"), ("openai_raisonnement", "raisonnement", "OPENAI_API_KEY")])
+            for env in ({}, {"OPENAI_API_KEY": ""}, {"OPENAI_API_KEY": "  "}):
+                self.assertEqual(cat.modeles_offerts(tache, "texte", env=env, externes=True), [], f"{tache} {env}")
+
+    def test_sans_cle_ou_sans_option_sortie_inchangee(self):
+        for env in ({}, ENV_DOCIE_COMPLET):
+            reference = toutes_les_offres(env)
+            self.assertEqual(toutes_les_offres(env, externes=True), reference)
+            self.assertEqual(toutes_les_offres({**env, "OPENAI_API_KEY": ""}, externes=True), reference)
+            self.assertEqual(toutes_les_offres({**env, "OPENAI_API_KEY": CLE}), reference)
+
+    def test_cv_jamais(self):
+        env = {**ENV_DOCIE_COMPLET, "OPENAI_API_KEY": CLE}
+        for voie in ("texte", "agent"):
+            self.assertFalse([o for o in cat.modeles_offerts("resume", voie, env=env, externes=True) if o["id"].startswith("openai")])
+        with self.assertRaises(cat.CatalogueError) as e:
+            cat.choisir_modele("resume", "texte", "openai_rapide", env=env, externes=True)
+        self.assertEqual(e.exception.code, "modele_non_propose")
+
+    def test_ni_cle_ni_url_dans_la_liste(self):
+        env = {"OPENAI_API_KEY": CLE, "OPENAI_BASE_URL": "https://eu.api.openai.com"}
+        texte = json.dumps([cat.modeles_offerts(t, "texte", env=env, externes=True) for t in TACHES_EXTERNES])
+        self.assertNotIn(CLE, texte)
+        self.assertNotIn("api.openai.com", texte)
+
+    def test_modele_servi_externe(self):
+        env = {"OPENAI_API_KEY": CLE, "DOCIE_MODELE_LFM25_2_6B": "rapide"}
+        meta = {"fournisseur": "openai", "mode": "raisonnement", "model": "gpt-5-nano-2025-08-07"}
+        self.assertEqual(cat.modele_servi("rib", "texte", meta, env=env),
+                         {"id": "openai_raisonnement", "libelle": "OpenAI raisonnement — externe (hors ADBI)",
+                          "identifiant": "gpt-5-nano-2025-08-07"})
+        self.assertEqual(cat.modele_servi("rib", "texte", meta, env={})["id"], None)
+        self.assertEqual(cat.modele_servi("rib", "texte", {"model": "rapide"}, env=env)["id"], "lfm25_2_6b")
+
+
 class LignesNonVides(unittest.TestCase):
     def test_blancs_de_la_fixture_exactement_ceux_de_cpython(self):
         blancs = {chr(i) for i in range(0x110000) if chr(i).isspace()}
@@ -210,13 +283,19 @@ class PariteNode(unittest.TestCase):
             ("rapprochement", "chat", {"ADBI_LLM_MODELE_LFM25_2_6B": "lfm2.5-2.6b", "ADBI_LLM_MODELE_NUEXTRACT3": "n"}, None),
             ("resume", "texte", {"DOCIE_MODELE_LFM25_2_6B": "store:l", "DOCIE_MODELE_NUEXTRACT3": "store:n"}, {"lignes_non_vides": 800}),
             ("resume", "agent", {"DOCIE_AGENT_RESUME_LFM25_2_6B": "a_l", "DOCIE_AGENT_RESUME_NUEXTRACT3": "a_n"}, {"pages": 8}),
+            # Externes OpenAI (#194) : avec et sans l'option, avec et sans cl\u00e9, CV compris.
+            ("rib", "texte", {**ENV_CONTRAT, "OPENAI_API_KEY": "sk-x"}, None, True),
+            ("rib", "texte", {**ENV_CONTRAT, "OPENAI_API_KEY": "sk-x"}, None, False),
+            ("contract", "texte", {**ENV_CONTRAT, "OPENAI_API_KEY": "  "}, {"lignes_non_vides": 801}, True),
+            ("resume", "texte", {"DOCIE_MODELE_LFM25_2_6B": "store:l", "OPENAI_API_KEY": "sk-x"}, None, True),
+            ("kbis", "agent", {"DOCIE_AGENT_KBIS_NUEXTRACT3": "k3", "OPENAI_API_KEY": "sk-x"}, None, True),
         ]
         textes = [c["texte"] for c in FIXTURE["cas"]] + ["x\n" * 801, "\ufeff\n\u00a0\n\x1f"]
         script = r"""
 const cat = require(process.argv[1]);
 const entree = JSON.parse(require("fs").readFileSync(0, "utf8"));
-const offres = entree.scenarios.map(([t, v, env, doc]) =>
-  cat.modelesOfferts(t, v, { env, document: doc && { lignesNonVides: doc.lignes_non_vides, pages: doc.pages } })
+const offres = entree.scenarios.map(([t, v, env, doc, externes]) =>
+  cat.modelesOfferts(t, v, { env, externes: externes === true, document: doc && { lignesNonVides: doc.lignes_non_vides, pages: doc.pages } })
      .map((o) => [o.id, o.role, o.identifiant, o.variable, o.experimental]));
 process.stdout.write(JSON.stringify({ offres, lignes: entree.textes.map(cat.compterLignesNonVides) }));
 """
@@ -225,7 +304,8 @@ process.stdout.write(JSON.stringify({ offres, lignes: entree.textes.map(cat.comp
                                 capture_output=True, text=True, encoding="utf-8", check=True)
         js = json.loads(sortie.stdout)
         py_offres = [[[o["id"], o["role"], o["identifiant"], o["variable"], o["experimental"]]
-                      for o in cat.modeles_offerts(t, v, env=env, document=doc)] for t, v, env, doc in scenarios]
+                      for o in cat.modeles_offerts(t, v, env=env, document=doc, externes=(reste or [False])[0] is True)]
+                     for t, v, env, doc, *reste in scenarios]
         self.assertEqual(js["offres"], py_offres)
         self.assertEqual(js["lignes"], [cat.compter_lignes_non_vides(t) for t in textes])
 
