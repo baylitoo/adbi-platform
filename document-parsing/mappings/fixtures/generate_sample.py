@@ -22,7 +22,9 @@ A la place : ce script importe les VRAIS modeles pydantic de DocIE
 (docie_bench.schemas.dynamic.DynamicTemplateBuilder,
 docie_bench.schemas.common.*) depuis un checkout local de small-doc-ie-bench,
 construit le meme modele dynamique que le serveur construirait pour le
-schema "contract" de register_and_test.py, l'instancie avec des valeurs
+schema "contract" -- LU dans document-parsing/schemas/contract.schema.json,
+que test_contract_to_contrats.py tient egal a SCHEMAS["contract"] de
+register_and_test.py -- l'instancie avec des valeurs
 plausibles, puis appelle `.model_dump(mode="json")` -- exactement l'appel
 que docie_bench/inngest/functions.py::_run_extraction fait sur la vraie
 ExtractionResponse avant de la publier (TOPIC_RESULT) / la stocker
@@ -55,33 +57,31 @@ import json
 import sys
 from pathlib import Path
 
-CONTRACT_SPEC = {
-    # Doit rester identique a SCHEMAS["contract"] dans
-    # document-parsing/scripts/register_and_test.py (PR #46) -- c'est le
-    # schema reellement enregistre cote DocIE.
-    "document_type": "contract",
-    "fields": [
-        {"name": "numero_contrat", "type": "string"},
-        {"name": "date_redaction", "type": "date"},
-        {"name": "lieu_redaction", "type": "string"},
-        {"name": "st_nom", "type": "string"},
-        {"name": "st_adresse", "type": "string"},
-        {"name": "st_siren", "type": "string"},
-        {"name": "st_siret", "type": "string"},
-        {"name": "st_representant", "type": "string"},
-        {"name": "st_forme_juridique", "type": "string"},
-        {"name": "st_qualite", "type": "string"},
-        {"name": "consultant_nom", "type": "string"},
-        {"name": "consultant_fonction", "type": "string"},
-        {"name": "client_final", "type": "string"},
-        {"name": "nature_travaux", "type": "string"},
-        {"name": "lieu_execution", "type": "string"},
-        {"name": "date_debut", "type": "date"},
-        {"name": "date_fin", "type": "date"},
-        {"name": "tjm", "type": "money", "description": "TJM en euros HT / jour"},
-        {"name": "delai_paiement", "type": "number", "description": "Delai de paiement en jours"},
-    ],
-}
+ICI = Path(__file__).resolve().parent
+
+# Le schema est LU, il n'est plus recopie ici.
+#
+# Il l'etait : une copie du schema enregistre, a resynchroniser A LA MAIN, dont
+# la seule protection etait le commentaire « Doit rester identique a
+# SCHEMAS["contract"] » -- et qu'AUCUN test ne comparait a quoi que ce soit.
+# Deux definitions qui derivent en silence, c'est la trappe #164.
+#
+# `document-parsing/schemas/contract.schema.json` est deja tenu egal a
+# SCHEMAS["contract"] par test_contract_to_contrats.py::
+# test_identique_au_schema_enregistre_et_aux_fixtures. Lire ce fichier
+# raccroche donc ce generateur a une definition DEJA gardee, au lieu d'en
+# entretenir une quatrieme. C'est la forme qu'ont deja generate_rib_sample.py,
+# generate_cni_sample.py, generate_fiscale_sample.py et
+# generate_urssaf_sample.py : ce fichier et generate_kbis_sample.py etaient les
+# deux seuls a recopier leur schema.
+#
+# Verifie AVANT de retirer la copie : DynamicSchemaSpec(**ancien CONTRACT_SPEC)
+# et DynamicSchemaSpec(**contract.schema.json) se normalisent au meme modele
+# (19 champs, egaux champ par champ). La copie etait redondante, pas
+# divergente -- ce correctif supprime un risque, il ne repare pas un ecart.
+CONTRACT_SPEC = json.loads(
+    (ICI.parents[1] / "schemas" / "contract.schema.json").read_text(encoding="utf-8")
+)
 
 HAPPY_PATH_VALUES = {
     "numero_contrat": {"value": "01-06-2026", "evidence_ids": ["e1"], "confidence": 0.94},
