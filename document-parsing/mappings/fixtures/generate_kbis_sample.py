@@ -36,8 +36,9 @@ A la place : ce script importe les VRAIS modeles pydantic de DocIE
 (docie_bench.schemas.dynamic.DynamicTemplateBuilder,
 docie_bench.schemas.common.*) depuis un checkout local de small-doc-ie-bench,
 construit le meme modele dynamique que le serveur construirait pour le
-schema "kbis" de register_and_test.py (KBIS_SPEC ci-dessous, copie exacte de
-SCHEMAS["kbis"]), l'instancie avec des valeurs plausibles, puis appelle
+schema "kbis" -- LU dans document-parsing/schemas/kbis.schema.json, que
+test_kbis_to_contrats.py tient egal a SCHEMAS["kbis"] de register_and_test.py
+-- l'instancie avec des valeurs plausibles, puis appelle
 `.model_dump(mode="json")` -- exactement l'appel que
 docie_bench/inngest/functions.py::_run_extraction fait sur la vraie
 ExtractionResponse. Le JSON obtenu a donc la forme EXACTE que produirait un
@@ -45,8 +46,9 @@ serveur DocIE reel pour ce schema -- seules les valeurs de champs sont
 fabriquees, pas la structure d'encapsulation.
 
 Checkout source utilise pour generer les fixtures committees (2026-09-05) :
-C:\\Users\\ougue\\Documents\\ADBI_WORK\\small-doc-ie-bench\\small-doc-ie-bench
-(branche locale "docs/server-integration-contract", HEAD a dce1a5d).
+un clone local de small-doc-ie-bench, branche "docs/server-integration-contract",
+HEAD a dce1a5d. Le CHEMIN depend du poste et n'a pas sa place ici : il se passe
+en argument (voir Usage plus bas).
 Verifie explicitement : `git diff 6e30bc6 dce1a5d -- src/docie_bench/schemas/
 common.py src/docie_bench/schemas/dynamic.py` ne renvoie AUCUNE difference
 -- c'est le meme commit de reference que celui documente dans
@@ -68,34 +70,34 @@ import json
 import sys
 from pathlib import Path
 
-KBIS_SPEC = {
-    # Doit rester identique a SCHEMAS["kbis"] dans
-    # document-parsing/scripts/register_and_test.py (branche
-    # document-parsing-docie-live-test, PR #46) -- c'est le schema
-    # reellement enregistre cote DocIE.
-    "document_type": "kbis",
-    "fields": [
-        {"name": "company_name", "type": "string",
-         "description": "Denomination sociale de la societe, sans la forme juridique"},
-        {"name": "siren", "type": "string",
-         "description": "Numero SIREN a 9 chiffres de l'entreprise, chiffres seuls"},
-        {"name": "siret_siege", "type": "string",
-         "description": "Numero SIRET a 14 chiffres de l'etablissement SIEGE (SIREN + NIC), pas celui d'un autre etablissement, chiffres seuls"},
-        {"name": "legal_form", "type": "string",
-         "description": "Forme juridique (SAS, SARL, SA...), pas la denomination sociale"},
-        {"name": "share_capital", "type": "money"},
-        {"name": "registration_date", "type": "date"},
-        {"name": "issued_date", "type": "date", "description": "Date d'edition/delivrance du Kbis"},
-        {"name": "rcs_number", "type": "string",
-         "description": "Numero d'immatriculation au RCS avec sa ville de greffe, recopie tel qu'imprime"},
-        {"name": "registered_address", "type": "string",
-         "description": "Adresse du siege social, pas celle d'un etablissement secondaire ni du greffe"},
-        {"name": "activity_code", "type": "string",
-         "description": "Code d'activite APE/NAF (4 chiffres et 1 lettre), pas son libelle"},
-        {"name": "legal_representative", "type": "string",
-         "description": "Nom du representant legal (president, gerant...), pas un commissaire aux comptes ni un administrateur"},
-    ],
-}
+ICI = Path(__file__).resolve().parent
+
+# Le schema est LU, il n'est plus recopie ici.
+#
+# Il l'etait : une copie du schema enregistre, a resynchroniser A LA MAIN, dont
+# la seule protection etait le commentaire « Doit rester identique a
+# SCHEMAS["kbis"] » -- et qu'AUCUN test ne comparait a quoi que ce soit. Deux
+# definitions qui derivent en silence, c'est la trappe #164. #248 vient d'en
+# faire la demonstration : les descriptions ont du etre ajoutees ICI *et* dans
+# le .schema.json *et* dans register_and_test.py, a la main, sans filet.
+#
+# `document-parsing/schemas/kbis.schema.json` est deja tenu egal a
+# SCHEMAS["kbis"] par test_kbis_to_contrats.py::
+# test_identique_au_schema_enregistre_et_a_la_fixture (qui l'egale AUSSI au
+# `dynamic_schema` de la fixture nominale). Lire ce fichier raccroche donc ce
+# generateur a une definition DEJA gardee deux fois, au lieu d'en entretenir
+# une quatrieme. C'est la forme qu'ont deja generate_rib_sample.py,
+# generate_cni_sample.py, generate_fiscale_sample.py et
+# generate_urssaf_sample.py ; generate_sample.py (contract) l'a adoptee en
+# #250. Ce fichier etait le dernier a recopier son schema.
+#
+# Verifie AVANT de retirer la copie : DynamicSchemaSpec(**ancien KBIS_SPEC) et
+# DynamicSchemaSpec(**kbis.schema.json) se normalisent au meme modele
+# (11 champs, 9 decrits, egaux champ par champ). La copie etait redondante,
+# pas divergente -- ce correctif supprime un risque, il ne repare pas un ecart.
+KBIS_SPEC = json.loads(
+    (ICI.parents[1] / "schemas" / "kbis.schema.json").read_text(encoding="utf-8")
+)
 
 HAPPY_PATH_VALUES = {
     "company_name": {"value": "SUND INDUSTRY SYSTEM", "evidence_ids": ["e1"], "confidence": 0.97},
