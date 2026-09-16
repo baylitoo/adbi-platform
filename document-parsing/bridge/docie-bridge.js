@@ -144,8 +144,14 @@ const MIME_TYPES = new Set(["application/pdf", "image/png", "image/jpeg"]);
 // ranks fields within one extraction; it is not a threshold input.
 const ENVELOPE_MARKERS = ["confidence", "evidence_ids", "model_confidence", "model_logprob"];
 
-// `eta_seconds` : seul le code `loading` le renseigne (délai annoncé par DocIE,
-// nombre fini >= 0) ; null partout ailleurs. Même nom que côté Python.
+// `eta_seconds` : renseigné par `loading` (délai annoncé par DocIE dans
+// `detail.eta_seconds`) et par `rate_limit` (en-tête `Retry-After`, quand DocIE
+// l'émet) ; null partout ailleurs. Nombre fini >= 0. Même nom que côté Python.
+//
+// Les deux ne disent pas la même chose : `loading` annonce une estimation de
+// chargement, `rate_limit` la LONGUEUR de la fenêtre de quota, qui ne décroît
+// pas quand la fenêtre se vide. Un consommateur qui l'affiche doit le dire
+// comme un ordre de grandeur, pas comme un compte à rebours.
 class DocIEBridgeError extends Error {
   constructor(code, message, status = null, etaSeconds = null) {
     super(message); this.name = "DocIEBridgeError"; this.code = code; this.status = status; this.eta_seconds = etaSeconds;
@@ -266,6 +272,24 @@ function configuration(kind, env, agentOverride = null) {
 
 function envelope(value) { return object(value) && Object.hasOwn(value, "value") && ENVELOPE_MARKERS.some(key => Object.hasOwn(value, key)); }
 function number(value) { return typeof value === "number" && Number.isFinite(value); }
+
+// En-tête `Retry-After` -> secondes entières non négatives, sinon null.
+//
+// L'en-tête est une CHAÎNE quand il est là, absent sinon. La RFC autorise aussi
+// une date HTTP ; DocIE n'en émet pas, et deviner un fuseau serait pire que ne
+// rien dire — donc seules les secondes sont lues, tout le reste vaut null et
+// laisse le message vague en place.
+//
+// `[0-9]` et non `\d` : côté Python `\d` et `str.isdigit()` acceptent aussi les
+// chiffres arabes-indiens, pas JS (#179 ligne A15). Les deux portages doivent
+// refuser « ٣٠ » de la même façon.
+function entierPositif(valeur) {
+  if (typeof valeur !== "string") return null;
+  const texte = valeur.trim();
+  if (!/^[0-9]+$/.test(texte)) return null;
+  const n = Number(texte);
+  return Number.isSafeInteger(n) ? n : null;
+}
 
 function unwrap(value) {
   if (Array.isArray(value)) return value.map(unwrap);
@@ -634,10 +658,27 @@ async function postJson(endpoint, headers, payload, key, timeout, fetchImpl, { l
       // upstream one for the only limit we cannot measure before sending.
       const mapped = ({ 401: "auth", 403: "auth", 413: "limits", 429: "rate_limit" })[response.status];
       if (mapped) {
+        // `Retry-After` sur 429 : DocIE l'émet sur le quota par fenêtre et sur
+        // le blocage d'IP après échecs d'authentification, PAS sur la limite de
+        // concurrence du locataire — mesuré chez eux (security.py:178,188-194,
+        // 223-225). Absent, illisible ou négatif : on garde le message vague,
+        // qui reste donc la règle et non l'exception.
+        //
+        // La valeur est la LONGUEUR de la fenêtre, pas un délai calculé : elle
+        // ne décroît pas à mesure que la fenêtre se vide. On la transporte telle
+        // quelle, sans promettre une précision qu'elle n'a pas.
+        //
+        // Lue sur l'en-tête, jamais sur le corps : celui-ci est annulé juste
+        // au-dessous, et un corps amont ne sert ici qu'à classer, jamais à
+        // informer (une clé réfléchie ne doit pas ressortir).
+        //
+        // Secondes uniquement. La RFC autorise aussi une date HTTP ; DocIE
+        // n'en émet pas, et deviner un fuseau serait pire que ne rien dire.
+        const retry = response.status === 429 ? entierPositif(response.headers?.get?.("retry-after")) : null;
         await response.body?.cancel();
         fail(mapped, response.status === 413
           ? "DocIE refused the document as beyond its configured limits (size, OCR blocks or pages)."
-          : "DocIE request failed (HTTP " + response.status + ").", response.status);
+          : "DocIE request failed (HTTP " + response.status + ").", response.status, retry);
       }
       const text = await readErrorText(response, key);
       // `loading` : voie texte seulement (voir loadingDetail). Un 202, ou un

@@ -185,7 +185,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(session.post.call_count, 3)
 
     def test_http_contract_and_sanitized_failures_no_retries(self):
-        state = {"status": 200, "calls": []}
+        state = {"status": 200, "calls": [], "retry_after": None}
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args):
@@ -196,6 +196,12 @@ class BridgeTests(unittest.TestCase):
                 state["calls"].append((self.path, self.headers.get("Authorization"), body))
                 self.send_response(state["status"])
                 self.send_header("Content-Type", "application/json")
+                # `Retry-After` seulement sur 429, et seulement quand le test le
+                # demande : DocIE l'emet sur le quota par fenetre et le blocage
+                # d'IP, PAS sur la limite de concurrence du locataire (mesure
+                # chez eux, security.py:178). Les deux cas sont couverts ici.
+                if state["status"] == 429 and state["retry_after"] is not None:
+                    self.send_header("Retry-After", state["retry_after"])
                 self.end_headers()
                 self.wfile.write(json.dumps(CASES[0]["body"] if state["status"] == 200 else {"error": "test-secret"}).encode())
 
@@ -227,7 +233,37 @@ class BridgeTests(unittest.TestCase):
                 self.assertEqual(raised.exception.status, status)
                 self.assertEqual(raised.exception.code, codes.get(status, "upstream"))
                 self.assertNotIn("test-secret", str(raised.exception))
+                # Sans en-tete, AUCUN code ne porte d'eta : c'est le repli, et il
+                # doit rester la regle -- la limite de concurrence du locataire
+                # arrive ainsi (429 sans `Retry-After`, security.py:178).
+                self.assertIsNone(raised.exception.eta_seconds, status)
                 self.assertEqual(len(state["calls"]), before + 1)
+
+            # 429 AVEC `Retry-After` : la valeur remonte dans `eta_seconds`,
+            # comme `loading` le fait depuis `detail.eta_seconds`. C'est une
+            # LONGUEUR de fenetre, pas un compte a rebours -- le pont la
+            # transporte, il ne l'interprete pas.
+            #
+            # Les chiffres arabes-indiens (« ٣٠ ») ne sont PAS testes ici, et
+            # c'est mesure : un en-tete HTTP est du latin-1, donc send_header le
+            # refuse, la connexion tombe et le pont rend `network` -- pas
+            # `rate_limit`. La valeur ne peut donc jamais arriver par cette voie.
+            # Le motif `[0-9]` (et non `\d` ni str.isdigit(), qui les acceptent
+            # cote Python) reste la bonne defense, mais elle se verifie sur
+            # entier_positif() directement, pas par un aller-retour HTTP.
+            state["status"] = 429
+            for entete, attendu in (("30", 30), (" 30 ", 30), ("0", 0),
+                                    ("-5", None), ("1.5", None), ("abc", None), ("", None),
+                                    ("Wed, 21 Oct 2015 07:28:00 GMT", None)):
+                state["retry_after"] = entete
+                with self.subTest(retry_after=entete), self.assertRaises(DocIEBridgeError) as raised:
+                    extract_document(b"pdf", "application/pdf", env=env)
+                self.assertEqual(raised.exception.code, "rate_limit")
+                self.assertEqual(raised.exception.eta_seconds, attendu)
+                # Le message reste constant : l'en-tete renseigne l'eta, jamais
+                # le texte.
+                self.assertNotIn("test-secret", str(raised.exception))
+            state["retry_after"] = None
         finally:
             server.shutdown()
             server.server_close()
