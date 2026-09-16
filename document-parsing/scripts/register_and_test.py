@@ -143,18 +143,33 @@ SCHEMAS = {
     "kbis": {
         "document_type": "kbis",
         "fields": [
-            {"name": "company_name", "type": "string", "description": None, "fields": []},
-            {"name": "siren", "type": "string", "description": None, "fields": []},
-            {"name": "siret_siege", "type": "string", "description": None, "fields": []},
-            {"name": "legal_form", "type": "string", "description": None, "fields": []},
+            # Descriptions des champs `string` : elles ne partent que sur les
+            # profils qui les rendent (openai_responses.py::_description ->
+            # text.format json_schema). Les `date` et `money` n'en portent pas
+            # ici, ils recoivent deja CONSIGNE_DATE / CONSIGNE_MONTANT par TYPE
+            # -- en ajouter une ferait doublon dans le meme champ.
+            {"name": "company_name", "type": "string",
+             "description": "Denomination sociale de la societe, sans la forme juridique", "fields": []},
+            {"name": "siren", "type": "string",
+             "description": "Numero SIREN a 9 chiffres de l'entreprise, chiffres seuls", "fields": []},
+            {"name": "siret_siege", "type": "string",
+             "description": "Numero SIRET a 14 chiffres de l'etablissement SIEGE (SIREN + NIC), pas celui d'un autre etablissement, chiffres seuls",
+             "fields": []},
+            {"name": "legal_form", "type": "string",
+             "description": "Forme juridique (SAS, SARL, SA...), pas la denomination sociale", "fields": []},
             {"name": "share_capital", "type": "money", "description": None, "fields": []},
             {"name": "registration_date", "type": "date", "description": None, "fields": []},
             {"name": "issued_date", "type": "date",
              "description": "Date d'edition/delivrance du Kbis", "fields": []},
-            {"name": "rcs_number", "type": "string", "description": None, "fields": []},
-            {"name": "registered_address", "type": "string", "description": None, "fields": []},
-            {"name": "activity_code", "type": "string", "description": None, "fields": []},
-            {"name": "legal_representative", "type": "string", "description": None, "fields": []},
+            {"name": "rcs_number", "type": "string",
+             "description": "Numero d'immatriculation au RCS avec sa ville de greffe, recopie tel qu'imprime", "fields": []},
+            {"name": "registered_address", "type": "string",
+             "description": "Adresse du siege social, pas celle d'un etablissement secondaire ni du greffe", "fields": []},
+            {"name": "activity_code", "type": "string",
+             "description": "Code d'activite APE/NAF (4 chiffres et 1 lettre), pas son libelle", "fields": []},
+            {"name": "legal_representative", "type": "string",
+             "description": "Nom du representant legal (president, gerant...), pas un commissaire aux comptes ni un administrateur",
+             "fields": []},
         ],
     },
     # NOTE (found running this script for real, first attempt failed with
