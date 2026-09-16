@@ -652,5 +652,48 @@ class TestSirenSiretPartage(unittest.TestCase):
         self.assertTrue(any("clé de contrôle invalide" in i for i in a["issues"]))
 
 
+class TestSchemaVoieTexte(unittest.TestCase):
+    """document-parsing/schemas/kbis.schema.json (#194, voie texte du Kbis).
+
+    Exactement le schema enregistre pour l'agent (register_and_test.py
+    SCHEMAS["kbis"]) et celui de la fixture generee depuis les vrais modeles
+    DocIE : les deux voies lisent la meme definition, donc le meme mapping
+    s'applique. Contraintes DynamicSchemaSpec de #170 verifiees hors ligne.
+    """
+
+    SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "kbis.schema.json"
+    TYPES = {"string", "date", "number", "money", "object", "list"}
+    NOM_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+    RESERVES = {"document_type", "extraction_notes"}
+
+    @classmethod
+    def setUpClass(cls):
+        with open(cls.SCHEMA_PATH, encoding="utf-8") as fh:
+            cls.schema = json.load(fh)
+
+    def test_identique_au_schema_enregistre_et_a_la_fixture(self):
+        sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+        import register_and_test  # noqa: E402
+
+        self.assertEqual(register_and_test.SCHEMAS["kbis"], self.schema)
+        with open(Path(__file__).parent / "fixtures" / "kbis_extraction_sample.json", encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["dynamic_schema"], self.schema)
+
+    def test_champs_mappes_exactement(self):
+        noms = [c["name"] for c in self.schema["fields"]]
+        self.assertEqual(set(MAPPED_FIELDS) | {"company_name", "issued_date", "share_capital"}, set(noms))
+        self.assertEqual(len(noms), len(set(noms)))
+
+    def test_conforme_a_dynamic_schema_spec(self):
+        self.assertTrue(self.NOM_RE.fullmatch(self.schema["document_type"]))
+        for champ in self.schema["fields"]:
+            with self.subTest(champ=champ["name"]):
+                self.assertEqual(["name", "type", "description", "fields"], list(champ))
+                self.assertTrue(self.NOM_RE.fullmatch(champ["name"]))
+                self.assertNotIn(champ["name"], self.RESERVES)
+                self.assertIn(champ["type"], self.TYPES)
+                self.assertEqual([], champ["fields"], "scalaire (money compris) : pas de sous-champs")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

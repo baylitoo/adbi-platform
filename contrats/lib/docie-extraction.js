@@ -14,6 +14,10 @@
 //             Le document part en data URI et les backends OCR de DocIE le
 //             lisent. L'agent résout son schéma PAR NOM, donc un schéma
 //             enregistré au préalable dans le Studio DocIE.
+//             Kbis « choisi par type d'entrée » (#194, PIECES_PAR_TYPE) : dès
+//             qu'un modèle du catalogue est en jeu, un PDF à couche texte
+//             complète part sur la voie TEXTE (kbis.schema.json), une photo ou
+//             un scan sur la voie agent. Rien de configuré : agent d'avant.
 //   urssaf -> voie TEXTE (extractText, POST /v1/extract/text)
 //   rib       La DÉFINITION du schéma voyage dans le corps de la requête
 //             (`dynamic_schema`, document-parsing/schemas/<pièce>.schema.json).
@@ -73,12 +77,26 @@ const BRIDGE_PATH = path.join(__dirname, "..", "..", "document-parsing", "bridge
 const SCHEMAS_DIR = path.join(__dirname, "..", "..", "document-parsing", "schemas");
 const SCHEMA_URSSAF_PATH = path.join(SCHEMAS_DIR, "urssaf.schema.json");
 const SCHEMA_RIB_PATH = path.join(SCHEMAS_DIR, "rib.schema.json");
+// Mêmes 11 champs, même ordre, mêmes descriptions que le schéma `kbis` enregistré
+// pour l'agent (document-parsing/scripts/register_and_test.py::SCHEMAS["kbis"]) :
+// les deux voies lisent la même définition, donc le même mapping s'applique.
+const SCHEMA_KBIS_PATH = path.join(SCHEMAS_DIR, "kbis.schema.json");
 
 // Pièces de la voie TEXTE : schéma envoyé dans le corps, mapping du résultat.
+// Le Kbis y figure pour sa voie texte : la réponse plate de /v1/extract/text,
+// déballée par le bridge, a la même forme que le `result` de l'agent, et passe
+// par le même mapKbisResult (controleSirenSiret, issues, clés enrichies).
 const PIECES_TEXTE = {
   urssaf: { schemaPath: SCHEMA_URSSAF_PATH, mapper: mapUrssafResult },
   rib: { schemaPath: SCHEMA_RIB_PATH, mapper: mapRibResult },
+  kbis: { schemaPath: SCHEMA_KBIS_PATH, mapper: mapKbisResult },
 };
+
+// Pièces dont la voie se décide sur le fichier reçu (#194, Kbis : PDF à couche
+// texte -> LFM2.5 2.6B en voie texte ; photo ou scan -> NuExtract3 en vision).
+// VOIES garde pour elles la voie d'avant le catalogue ("agent"), celle qui
+// s'applique tant qu'aucun modèle de la voie texte n'est configuré.
+const PIECES_PAR_TYPE = Object.freeze({ kbis: true });
 
 function isEnabled(env = process.env) {
   return String((env || {}).DOCIE_EXTRACTION_ENABLED || "").trim().toLowerCase() === "true";
@@ -219,29 +237,41 @@ async function lireCoucheTexte(buffer) {
   }
 }
 
-// Le document reçu peut-il alimenter la voie texte ? Renvoie {ok, texte} ou
-// {ok:false, raison} — la raison est reprise telle quelle dans l'avertissement
-// rendu à l'utilisateur, pour que le repli soit diagnosticable.
-async function coucheTexteUtilisable(buffer, mime) {
+const MIMES_IMAGE = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+// Même verdict que coucheTexteUtilisable, plus le nombre de pages quand il est
+// connu (`pages` : 1 pour une image, celui du PDF lu, null sinon) — la limite de
+// la vision (8 pages, catalogue) se vérifie sur ce nombre, sans seconde lecture.
+async function lireDocument(buffer, mime) {
   if (mime !== "application/pdf") {
-    return { ok: false, raison: "le document n'est pas un PDF (image : pas de couche texte)" };
+    return { ok: false, raison: "le document n'est pas un PDF (image : pas de couche texte)", pages: MIMES_IMAGE.has(mime) ? 1 : null };
   }
   let lecture;
   try {
     lecture = await lireCoucheTexte(buffer);
   } catch (e) {
-    return { ok: false, raison: "PDF illisible ou protégé" };
+    return { ok: false, raison: "PDF illisible ou protégé", pages: null };
   }
-  if (!lecture.pages.length) return { ok: false, raison: "PDF sans page lisible" };
+  const pages = lecture.pages.length;
+  if (!pages) return { ok: false, raison: "PDF sans page lisible", pages: null };
   const muettes = lecture.pages.filter((p) => !String(p.text || "").trim());
   if (muettes.length) {
     return {
       ok: false,
       raison: "PDF contenant une page sans texte (page " + (muettes[0].num ?? "?") + ") : scan, OCR requis",
+      pages,
     };
   }
-  if (!lecture.texte.trim()) return { ok: false, raison: "PDF sans texte exploitable : scan, OCR requis" };
-  return { ok: true, texte: lecture.texte };
+  if (!lecture.texte.trim()) return { ok: false, raison: "PDF sans texte exploitable : scan, OCR requis", pages };
+  return { ok: true, texte: lecture.texte, pages };
+}
+
+// Le document reçu peut-il alimenter la voie texte ? Renvoie {ok, texte} ou
+// {ok:false, raison} — la raison est reprise telle quelle dans l'avertissement
+// rendu à l'utilisateur, pour que le repli soit diagnosticable.
+async function coucheTexteUtilisable(buffer, mime) {
+  const { pages, ...verdict } = await lireDocument(buffer, mime);
+  return verdict;
 }
 
 function chargerSchema(kind) {
@@ -281,25 +311,84 @@ async function extractViaTexte(kind, { dataBase64, mimeType, items, expectedName
   const mime = sniffMime(mimeType, buffer);
   const verdict = await coucheTexteUtilisable(buffer, mime);
   if (!verdict.ok) return { analysis: null, raisonRepli: verdict.raison };
+  const analysis = await extraireTexteLu(kind, verdict.texte, { items, expectedName, modele }, deps);
+  return { analysis, raisonRepli: null };
+}
+
+// Extraction d'un texte DÉJÀ lu et jugé complet (voir coucheTexteUtilisable).
+// `profilSansChoix` : identifiant du modèle par défaut quand aucun modèle n'a
+// été choisi (Kbis, #194) ; aucune clé `modele` n'est alors ajoutée — la réponse
+// garde la forme « sans choix », repli local compris.
+async function extraireTexteLu(kind, texte, { items, expectedName, modele = null, profilSansChoix = null } = {}, deps = {}) {
+  const env = deps.env || process.env;
   const { extractText } = deps.extractText ? deps : loadBridge();
   const options = { kind, dynamicSchema: (deps.dynamicSchema || chargerSchema(kind)), env };
   // Modèle choisi (#194) : vérifié sur le texte lu, envoyé tel quel, jamais
   // remplacé. Seules les pièces à sélecteur (lib/choix-modele.js::TACHES) en
   // acceptent un ; pour les autres, un `modele` reçu est refusé, nommé.
-  const choisi = modele !== null ? choixModele.choisirPourTexte(kind, modele, verdict.texte, { env }) : null;
+  const choisi = modele !== null ? choixModele.choisirPourTexte(kind, modele, texte, { env }) : null;
   if (choisi) options.modelProfile = choisi.identifiant;
+  else if (profilSansChoix) options.modelProfile = profilSansChoix;
   if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;
-  const response = await extractText(verdict.texte, options);
+  const response = await extractText(texte, options);
   const analysis = mapTexteDocieResult(kind, response, { items, expectedName });
   if (choisi) {
-    analysis.modele = choixModele.modeleServiPublic(kind, response.metadata, { env });
+    analysis.modele = choixModele.modeleServiPublic(kind, response.metadata, { env, voie: "texte" });
     // RIB lu par l'alternative du catalogue (LFM2.5 350M) : admise seulement
     // derrière le contrôle IBAN/BIC. Le drapeau dit au navigateur qu'un IBAN ou
     // un BIC non « valide » fait de cette lecture un échec (⛔), pas une alerte.
     // Absent sinon : la réponse du modèle par défaut reste celle de #209.
     if (choixModele.exigeControleIbanBic(kind, choisi, analysis.modele, { env })) analysis.controleIbanBicExige = true;
   }
-  return { analysis, raisonRepli: null };
+  return analysis;
+}
+
+// ---------------------------------------------------------------------------
+// Kbis « choisi par type d'entrée » (#194). La voie se décide ICI, sur le
+// fichier reçu, avec la règle de la voie texte (coucheTexteUtilisable) — jamais
+// sur ce que le navigateur suppose :
+//
+//   fichier                           | sans `modele`                         | `modele` choisi
+//   ----------------------------------|---------------------------------------|---------------------------------
+//   aucun modèle texte par défaut     | agent DOCIE_AGENT_KBIS, sans même     | (voir lignes suivantes)
+//   configuré (DOCIE_MODELE_LFM25_2_6B)| lire la couche texte : comme avant    |
+//   PDF à couche texte complète       | voie texte, modèle par défaut du      | voie texte, CE modèle (800 lignes
+//                                     | catalogue (au-delà de sa limite :     | au plus pour LFM2.5), sinon
+//                                     | agent d'avant)                        | `modele_non_propose` / `limite`
+//   photo, scan, page muette,         | agent DOCIE_AGENT_KBIS, comme avant   | vision DOCIE_AGENT_KBIS_<MODELE>
+//   PDF illisible                     |                                       | (8 pages au plus -> `limite`) ;
+//                                     |                                       | modèle de la seule voie texte -> `scan`
+//
+// Échec : sans `modele`, repli local d'avant (analyzeDocument) ; avec, erreur
+// nommée, jamais d'autre modèle ni d'analyse locale.
+// ---------------------------------------------------------------------------
+async function extractParType(kind, body = {}, modele = null, deps = {}) {
+  const { dataBase64, mimeType, items, expectedName } = body;
+  if (!dataBase64) throw new Error("Aucun fichier reçu.");
+  const env = deps.env || process.env;
+  // Rien de configuré pour la voie texte et aucun choix : chemin d'avant, octet
+  // pour octet (pas de lecture de la couche texte, agent DOCIE_AGENT_KBIS).
+  if (modele === null && !choixModele.defautSansChoix(kind, "texte", null, { env })) {
+    return extractViaDocie(body, deps);
+  }
+  const buffer = Buffer.from(dataBase64, "base64");
+  const mime = sniffMime(mimeType, buffer);
+  const lecture = await lireDocument(buffer, mime);
+  if (lecture.ok) {
+    if (modele !== null) return extraireTexteLu(kind, lecture.texte, { items, expectedName, modele }, deps);
+    const defaut = choixModele.defautSansChoix(kind, "texte", { lignesNonVides: choixModele.compterLignesNonVides(lecture.texte) }, { env });
+    if (defaut) return extraireTexteLu(kind, lecture.texte, { items, expectedName, profilSansChoix: defaut.identifiant }, deps);
+    return extractViaDocie(body, deps);
+  }
+  if (modele === null) return extractViaDocie(body, deps);
+  const choisi = choixModele.choisirPourAgent(kind, modele, { pages: lecture.pages }, { env });
+  const { extractDocument } = deps.extractDocument ? deps : loadBridge();
+  const options = { kind, agent: choisi.identifiant, env };
+  if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;
+  const response = await extractDocument(buffer, mime, options);
+  const analysis = mapDocieResult(response, { items, expectedName });
+  analysis.modele = choixModele.modeleServiPublic(kind, response.metadata, { env, voie: "agent" });
+  return analysis;
 }
 
 function extractUrssafViaTexte(body, deps) {
@@ -307,11 +396,14 @@ function extractUrssafViaTexte(body, deps) {
 }
 
 // Erreur présentable d'un modèle choisi (#194) : code nommé et message français
-// constant (table des tâches de pré-remplissage), jamais le texte amont.
+// constant (table des tâches de pré-remplissage), jamais le texte amont. Une
+// ErreurChoixModele garde le sien : constant, ou bâti sur les libellés du
+// catalogue (scan du Kbis qui nomme la lecture d'image, lib/choix-modele.js).
 function erreurModeleChoisi(error) {
   const { code, message } = mapperErreur(error);
   const texte = code === "context" ? "Document trop long pour le modèle d'extraction."
     : code === "interne" ? "Analyse impossible : erreur interne."
+    : error && error.name === "ErreurChoixModele" && typeof error.message === "string" ? error.message
     : message;
   const err = new Error(texte);
   err.code = code;
@@ -329,10 +421,13 @@ async function analyzeDocument(body = {}, deps = {}) {
   const env = deps.env || process.env;
   const voie = isEnabled(env) ? voiePour(body.items) : null;
   if (!voie) return analyzeLocal(body);
-  // Modèle choisi (#194, champ `modele`, voie texte seulement) : un échec
+  const piece = pieceDemandee(body.items);
+  const parType = Object.hasOwn(PIECES_PAR_TYPE, piece);
+  // Modèle choisi (#194, champ `modele`, voie texte et Kbis) : un échec
   // remonte nommé, sans analyse locale en repli. Sans `modele` : inchangé.
-  const modele = voie === "texte" ? choixModele.demandeModele(body) : null;
+  const modele = (voie === "texte" || parType) ? choixModele.demandeModele(body) : null;
   try {
+    if (parType) return await extractParType(piece, body, modele, deps);
     if (voie === "texte") {
       const { analysis, raisonRepli } = await extractViaTexte(pieceDemandee(body.items), { ...body, modele }, deps);
       if (analysis) return analysis;
@@ -368,7 +463,10 @@ module.exports = {
   extractViaDocie,
   extractViaTexte,
   extractUrssafViaTexte,
+  extractParType,
+  PIECES_PAR_TYPE,
   coucheTexteUtilisable,
+  lireDocument,
   mapDocieResult,
   mapTexteDocieResult,
   mapUrssafDocieResult,
