@@ -45,25 +45,25 @@
       {
         "name": "company_name",
         "type": "string",
-        "description": null,
+        "description": "Denomination sociale de la societe, sans la forme juridique",
         "fields": []
       },
       {
         "name": "siren",
         "type": "string",
-        "description": null,
+        "description": "Numero SIREN a 9 chiffres de l'entreprise, chiffres seuls",
         "fields": []
       },
       {
         "name": "siret_siege",
         "type": "string",
-        "description": null,
+        "description": "Numero SIRET a 14 chiffres de l'etablissement SIEGE (SIREN + NIC), pas celui d'un autre etablissement, chiffres seuls",
         "fields": []
       },
       {
         "name": "legal_form",
         "type": "string",
-        "description": null,
+        "description": "Forme juridique (SAS, SARL, SA...), pas la denomination sociale",
         "fields": []
       },
       {
@@ -87,25 +87,25 @@
       {
         "name": "rcs_number",
         "type": "string",
-        "description": null,
+        "description": "Numero d'immatriculation au RCS avec sa ville de greffe, recopie tel qu'imprime",
         "fields": []
       },
       {
         "name": "registered_address",
         "type": "string",
-        "description": null,
+        "description": "Adresse du siege social, pas celle d'un etablissement secondaire ni du greffe",
         "fields": []
       },
       {
         "name": "activity_code",
         "type": "string",
-        "description": null,
+        "description": "Code d'activite APE/NAF (4 chiffres et 1 lettre), pas son libelle",
         "fields": []
       },
       {
         "name": "legal_representative",
         "type": "string",
-        "description": null,
+        "description": "Nom du representant legal (president, gerant...), pas un commissaire aux comptes ni un administrateur",
         "fields": []
       }
     ]

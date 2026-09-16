@@ -56,6 +56,44 @@ class ConversionSchema(unittest.TestCase):
         self.assertEqual(contrat["date_debut"], {"type": ["string", "null"], "description": oa.CONSIGNE_DATE})
         self.assertEqual(contrat["numero_contrat"], {"type": ["string", "null"]})
 
+    def test_descriptions_kbis_arrivent_dans_la_charge(self):
+        """Les descriptions du Kbis atteignent reellement le modele.
+
+        Elles ne servent que sur les profils qui les rendent -- ce transport :
+        `_description` les recopie dans properties[...]["description"], et le
+        message systeme demande de les suivre. Sans cette mesure, leur valeur
+        reposerait sur une LECTURE du code ; un changement de cablage les
+        ferait disparaitre en silence, tous les tests restant verts.
+        """
+        kbis = oa.schema_openai(SCHEMAS["kbis.schema.json"])["schema"]["properties"]
+        self.assertEqual(kbis["company_name"], {
+            "type": ["string", "null"],
+            "description": "Denomination sociale de la societe, sans la forme juridique"})
+        self.assertEqual(kbis["activity_code"], {
+            "type": ["string", "null"],
+            "description": "Code d'activite APE/NAF (4 chiffres et 1 lettre), pas son libelle"})
+        # Les huit champs `string` en portent une, aucune vide.
+        chaines = [c["name"] for c in SCHEMAS["kbis.schema.json"]["fields"] if c["type"] == "string"]
+        self.assertEqual(len(chaines), 8)
+        for nom in chaines:
+            with self.subTest(champ=nom):
+                self.assertTrue((kbis[nom].get("description") or "").strip(), nom)
+
+    def test_kbis_description_propre_et_consigne_de_type(self):
+        """Un champ portant les DEUX rend les deux, joints par « — »."""
+        kbis = oa.schema_openai(SCHEMAS["kbis.schema.json"])["schema"]["properties"]
+        self.assertEqual(kbis["issued_date"], {
+            "type": ["string", "null"],
+            "description": "Date d'edition/delivrance du Kbis — " + oa.CONSIGNE_DATE})
+        # Pourquoi aucune prose n'a ete ajoutee sur les `date` et les `money` :
+        # ils recoivent deja leur consigne par TYPE, en ajouter une ferait
+        # doublon dans le meme champ.
+        self.assertEqual(kbis["registration_date"],
+                         {"type": ["string", "null"], "description": oa.CONSIGNE_DATE})
+        self.assertNotIn("description", kbis["share_capital"])
+        self.assertEqual(kbis["share_capital"]["properties"]["amount"]["description"],
+                         oa.CONSIGNE_MONTANT)
+
     def test_schema_invalide_refuse(self):
         for cas in (None, {}, {"document_type": "x", "fields": []},
                     {"document_type": "x", "fields": [{"name": "a", "type": "boolean"}]},

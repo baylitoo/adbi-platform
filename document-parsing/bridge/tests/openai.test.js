@@ -83,6 +83,43 @@ test("conversion : money -> {amount, currency} nullables, date sans motif, list 
   assert.deepEqual(oa.schemaOpenAI({ document_type: "x", fields: [{ name: "tags", type: "list", fields: [] }] }).schema.properties.tags.items, { type: "string" });
 });
 
+// Miroir exact du test Python homonyme : `test_parite_node` compare les deux
+// sorties, mais rien n'asserterait le CONTENU des descriptions sans ceci.
+test("conversion : les descriptions du Kbis arrivent dans la charge, et se composent avec la consigne de type", () => {
+  const brut = Object.fromEntries(SCHEMAS)["kbis.schema.json"];
+  const kbis = oa.schemaOpenAI(brut).schema;
+
+  assert.deepEqual(kbis.properties.company_name, {
+    type: ["string", "null"],
+    description: "Denomination sociale de la societe, sans la forme juridique",
+  });
+  assert.deepEqual(kbis.properties.activity_code, {
+    type: ["string", "null"],
+    description: "Code d'activite APE/NAF (4 chiffres et 1 lettre), pas son libelle",
+  });
+
+  // Les huit champs `string` en portent une, aucune vide.
+  const chaines = brut.fields.filter((c) => c.type === "string").map((c) => c.name);
+  assert.equal(chaines.length, 8);
+  for (const nom of chaines) {
+    assert.ok((kbis.properties[nom].description || "").trim(), nom);
+  }
+
+  // Description propre + consigne de type, jointes par « — ».
+  assert.deepEqual(kbis.properties.issued_date, {
+    type: ["string", "null"],
+    description: "Date d'edition/delivrance du Kbis — " + oa.CONSIGNE_DATE,
+  });
+  // Pourquoi aucune prose sur les `date` et les `money` : la consigne de TYPE
+  // y est deja, en ajouter une ferait doublon dans le meme champ.
+  assert.deepEqual(kbis.properties.registration_date, {
+    type: ["string", "null"],
+    description: oa.CONSIGNE_DATE,
+  });
+  assert.ok(!("description" in kbis.properties.share_capital));
+  assert.equal(kbis.properties.share_capital.properties.amount.description, oa.CONSIGNE_MONTANT);
+});
+
 test("conversion : schéma invalide refusé (type inconnu, nom invalide, doublon, objet vide, document_type)", () => {
   const cas = [
     null, {}, { document_type: "Contrat!", fields: [{ name: "a", type: "string" }] },
