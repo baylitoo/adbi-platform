@@ -83,11 +83,34 @@ possède pas de schéma métier. Il n'est pas optionnel en pratique pour un sch�
 `adbi_resume` doit voyager avec sa définition —, mais son absence n'est pas
 refusée : les noms intégrés existent.
 
-`ocr_blocks` n'est **pas** envoyé. DocIE découpe le texte lui-même et, pour du
-texte brut, nous n'avons rien de mieux à proposer que son propre découpage ; le
-chemin DOCX de cv-parser envoie du texte sans lui depuis son écriture. Il
-deviendra un argument optionnel transmis tel quel le jour où un appelant
-démontrera de meilleures frontières (les paragraphes d'un DOCX, par exemple).
+`ocr_blocks` est **facultatif**. Absent — le cas de tout appelant écrit avant
+cette option, dont le chemin DOCX de cv-parser — DocIE découpe le texte
+lui-même, un bloc par ligne non vide, et pour du texte brut il n'y a rien de
+mieux à proposer. Fourni, il **remplace** ce découpage : `extract/service.py`
+fait `blocks = ocr_blocks if ocr_blocks is not None else text_to_blocks(text)`,
+donc `text` n'est plus ni redécoupé ni ancré, ce sont **nos** blocs qui
+alimentent le prompt et l'ancrage, et **nos `id` qui reviennent verbatim dans
+`evidence_ids`**. Les plafonds comptent alors nos blocs : un document dont le
+texte fait 2 000 lignes non vides tient en quelques centaines de blocs de
+paragraphes et cesse d'être tronqué par le plafond de 800. `text` part quand
+même — DocIE en tire le `document_hash` quand l'appelant n'en fournit pas.
+
+Deux conséquences que le pont traite localement plutôt que de les laisser
+revenir en 413 ou en 422, parce que DocIE ne met `extra="forbid"` ni sur
+`ExtractTextRequest` ni sur `OCRBlock` (une clé inconnue y est **silencieusement
+ignorée**) : les six clés acceptées sont `id`, `text`, `page`, `bbox`, `source`,
+`confidence`, et une liste **vide** est refusée ici — `[] is not None`, donc
+DocIE n'y voit pas un repli sur `text` mais une extraction sans aucun bloc,
+rendue en HTTP 200. Le reste des refus (blocs blancs qui consomment une place du
+prompt sans rien ancrer, ids dupliqués, page < 1, plafonds de 1 000 blocs /
+20 000 caractères par bloc / 1 000 000 au total) est figé cas par cas, avec sa
+preuve, dans `document-parsing/fixtures/blocs_ocr_docie.json`.
+
+Le pont ne **fabrique** aucun bloc : les frontières dépendent du document, donc
+du consommateur (les paragraphes d'un DOCX, les pages d'une couche texte de
+PDF). Il valide leur forme. `metadata.blocs_fournis` dit laquelle des deux
+lectures s'applique à `blocs_texte` : une **prédiction** du découpage de DocIE
+sans blocs, un **constat** du nombre envoyé avec.
 
 L'ancrage fonctionne **à l'identique** sur cette voie : le service découpe le
 texte lui-même, donc chaque feuille revient en `{value, confidence,

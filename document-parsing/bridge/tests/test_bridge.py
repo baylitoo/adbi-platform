@@ -12,12 +12,14 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from docie_bridge import (extract_document, extract_text, file_payload, parse_response, parse_text_response,
-                          compter_blocs_texte, DOCIE_BLOCS_TEXTE_MAX, reconnaitre_avertissement, resultat_partiel,
-                          RAISONS_PARTIEL, DocIEBridgeError)
+                          compter_blocs_texte, DOCIE_BLOCS_TEXTE_MAX, valider_blocs_ocr, DOCIE_BLOCS_OCR_MAX,
+                          DOCIE_BLOC_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitre_avertissement,
+                          resultat_partiel, RAISONS_PARTIEL, MAX_TEXT_BYTES, DocIEBridgeError)
 
 # Jeux d'essai partagés avec bridge.test.js, lus par les TESTS seulement.
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 BLOCS_TEXTE = json.loads((FIXTURES / "blocs_texte_docie.json").read_text(encoding="utf-8"))
+BLOCS_OCR = json.loads((FIXTURES / "blocs_ocr_docie.json").read_text(encoding="utf-8"))
 AVERTISSEMENTS = json.loads((FIXTURES / "avertissements_docie.json").read_text(encoding="utf-8"))
 CASES = json.loads(Path(__file__).with_name("contract.json").read_text(encoding="utf-8"))
 TEXT_CASES = json.loads(Path(__file__).with_name("contract_text.json").read_text(encoding="utf-8"))
@@ -372,6 +374,85 @@ class TextBlocksTests(unittest.TestCase):
         agent_session, _ = fake_session(lambda url, payload: CASES[2]["body"])
         metadata = extract_document(b"pdf", "application/pdf", env=env, session=agent_session)["metadata"]
         self.assertEqual((metadata["blocs_texte"], metadata["troncature_possible"]), (None, None))
+
+
+class OcrBlocksTests(unittest.TestCase):
+    """Blocs fournis par l'appelant : ils remplacent le découpage de DocIE."""
+
+    def test_shared_fixture_accepted_and_refused_shapes_and_sent_copy(self):
+        # Le jeu d'essai et le code nomment les mêmes clés et les mêmes sources :
+        # une clé ajoutée d'un côté sans l'autre casse ici, pas en production.
+        self.assertEqual(set(BLOC_CLES), set(BLOCS_OCR["cles_bloc"]))
+        self.assertEqual(set(BLOC_SOURCES), set(BLOCS_OCR["sources_valides"]))
+        for case in BLOCS_OCR["cas"]:
+            with self.subTest(case=case["nom"], preuve=case["preuve"]):
+                if not case["valide"]:
+                    with self.assertRaises(DocIEBridgeError) as raised:
+                        valider_blocs_ocr(case["blocs"])
+                    self.assertEqual(raised.exception.code, "input")
+                    continue
+                propres, _ = valider_blocs_ocr(case["blocs"])
+                self.assertEqual(len(propres), case["blocs_comptes"])
+                # Copie et non passe-plat : mêmes clés que l'appelant, jamais d'autres.
+                for propre, fourni in zip(propres, case["blocs"]):
+                    self.assertEqual(set(propre), set(fourni))
+                    self.assertEqual(propre, fourni)
+
+    def test_caps_are_docie_s_and_characters_are_code_points(self):
+        self.assertEqual(DOCIE_BLOCS_OCR_MAX, BLOCS_OCR["limites"]["blocs_max"])
+        self.assertEqual(DOCIE_BLOC_CARACTERES_MAX, BLOCS_OCR["limites"]["caracteres_par_bloc_max"])
+        for case in BLOCS_OCR["cas_plafonds"]:
+            with self.subTest(case=case["nom"], preuve=case["preuve"]):
+                if case.get("nombre") is not None:
+                    blocs = [{"id": "b" + str(i), "text": "x"} for i in range(case["nombre"])]
+                elif case.get("caracteres") is not None:
+                    blocs = [{"id": "b0", "text": "x" * case["caracteres"]}]
+                else:
+                    blocs = [{"id": "b0", "text": case["texte_repete"] * case["repetitions"]}]
+                if case["valide"]:
+                    self.assertEqual(len(valider_blocs_ocr(blocs)[0]), len(blocs))
+                else:
+                    with self.assertRaises(DocIEBridgeError) as raised:
+                        valider_blocs_ocr(blocs)
+                    self.assertEqual(raised.exception.code, "input")
+
+    def test_extract_text_sends_blocks_verbatim_keeps_text_and_counts_blocks(self):
+        env = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "test-secret",
+               "DOCIE_AGENT_RESUME": "adbi_agent_1"}
+        session, sent = fake_session(lambda url, payload: TEXT_CASES[1]["body"])
+        # 1 200 lignes non vides, regroupées en 300 blocs de paragraphes : sans
+        # blocs le compteur annonce une troncature possible, avec eux non.
+        texte = "\n".join("ligne " + str(i) for i in range(1200))
+        sans = extract_text(texte, env=env, session=session)["metadata"]
+        self.assertEqual((sans["blocs_texte"], sans["troncature_possible"], sans["blocs_fournis"]), (1200, True, False))
+        self.assertNotIn("ocr_blocks", sent[-1][1])
+        blocs = [{"id": "p" + str(i % 10 + 1) + "b" + str(i), "text": "paragraphe " + str(i),
+                  "page": i % 10 + 1, "source": "manual"} for i in range(300)]
+        avec = extract_text(texte, ocr_blocks=blocs, env=env, session=session)["metadata"]
+        self.assertEqual((avec["blocs_texte"], avec["troncature_possible"], avec["blocs_fournis"]), (300, False, True))
+        # `text` part quand même (document_hash stable), les blocs tels quels.
+        self.assertEqual(sent[-1][1]["text"], texte)
+        self.assertEqual(sent[-1][1]["ocr_blocks"], blocs)
+        # Appel direct du parseur : ni texte ni blocs, donc « inconnu ».
+        self.assertIsNone(parse_text_response(TEXT_CASES[1]["body"], "adbi_resume")["metadata"]["blocs_fournis"])
+        # Voie agent : l'OCR distant fait les blocs, et `ocr_blocks` n'existe
+        # même pas dans ce corps — None comme ses deux voisins, jamais absent.
+        agent_session, _ = fake_session(lambda url, payload: CASES[2]["body"])
+        agent = extract_document(b"pdf", "application/pdf", env=env, session=agent_session)["metadata"]
+        self.assertIsNone(agent["blocs_fournis"])
+
+    def test_text_and_blocks_are_bounded_together(self):
+        env = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "test-secret"}
+        session, _ = fake_session(lambda url, payload: TEXT_CASES[1]["body"])
+        # Un texte pile au plafond passe seul ; le moindre bloc en plus fait un
+        # corps au-dessus, et c'est le corps qui part. Les blocs, eux, restent
+        # valides un par un (< 20 000 caractères) : sans la borne commune, rien
+        # ne verrait ce dépassement avant le refus de DocIE.
+        texte = "x" * MAX_TEXT_BYTES
+        with self.assertRaises(DocIEBridgeError) as raised:
+            extract_text(texte, ocr_blocks=[{"id": "b0", "text": "paragraphe"}], env=env, session=session)
+        self.assertEqual(raised.exception.code, "input")
+        self.assertIn("together", str(raised.exception))
 
 
 class PartialResultTests(unittest.TestCase):

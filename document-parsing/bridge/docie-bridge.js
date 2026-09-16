@@ -87,6 +87,25 @@ const CONTEXT_OVERFLOW = /exceeds the available context size|exceed_context_size
 // Règle figée par document-parsing/fixtures/blocs_texte_docie.json (tests seuls).
 const DOCIE_BLOCS_TEXTE_MAX = 800;
 const SEPARATEURS_LIGNE_PYTHON = /\r\n|[\n\v\f\r\x1c\x1d\x1e\x85\u2028\u2029]/;
+// Blocs fournis par l'appelant (voie texte). Quand `ocr_blocks` voyage, DocIE ne
+// d\u00e9coupe plus rien : `extract/service.py:357` fait
+// `blocks = ocr_blocks if ocr_blocks is not None else text_to_blocks(text or "")`.
+// Ce sont donc NOS blocs qui sont compt\u00e9s, mis dans le prompt et ancr\u00e9s, et nos
+// `id` qui reviennent verbatim dans `evidence_ids` \u2014 un document dont le texte
+// fait 2 000 lignes non vides tient en 300 blocs de paragraphes et cesse d'\u00eatre
+// tronqu\u00e9. Les plafonds ci-dessous sont ceux d'`api.py::validate_text_request`,
+// qui r\u00e9pond 413 : les v\u00e9rifier ici, c'est refuser avant l'aller-retour.
+// Lecture du code DocIE (origin/dev-agents-milestone, pointe c8c010e) par la
+// session DocIE le 2026-09-16 ; aucun appel distant depuis ce d\u00e9p\u00f4t.
+const DOCIE_BLOCS_OCR_MAX = 1000;
+const DOCIE_BLOC_CARACTERES_MAX = 20000;
+const DOCIE_TEXTE_CARACTERES_MAX = 1000000;
+// `OCRBlock` (schemas/common.py:16-24) n'a PAS `extra="forbid"` : une cl\u00e9
+// inconnue \u2014 `pages` pour `page` \u2014 y serait silencieusement ignor\u00e9e et
+// l'appelant croirait avoir pagin\u00e9. D'o\u00f9 une liste blanche et un refus nomm\u00e9.
+const BLOC_CLES = new Set(["id", "text", "page", "bbox", "source", "confidence"]);
+const BLOC_SOURCES = new Set(["pdf_text", "pdf_inspector", "tesseract", "paddleocr", "manual", "unknown"]);
+const BBOX_CLES = ["x0", "y0", "x1", "y1"];
 const LIGNE_BLANCHE_PYTHON = /^[\t\n\v\f\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
 const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf", rib: "rib" };
 // What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
@@ -276,6 +295,91 @@ function compterBlocsTexte(text) {
   return blocs;
 }
 
+// Points de code, jamais `String.prototype.length` : DocIE compte `len(b.text)`
+// en Python, donc en points de code. Sur un texte à caractères astraux (emoji,
+// CJK rare), `.length` compte double et ferait refuser ici un bloc que DocIE
+// accepte. Figé par blocs_ocr_docie.json (cas `caracteres_comptes_en_points_de_code`).
+function pointsDeCode(text) {
+  let total = 0;
+  for (const _ of text) total++;
+  return total;
+}
+
+/**
+ * Valide les `ocr_blocks` de l'appelant et rend la copie exacte à envoyer.
+ *
+ * Le pont reste un transport : il ne FABRIQUE aucun bloc (découper un DOCX ou
+ * une couche texte de PDF demande de connaître le document, ce qui appartient au
+ * consommateur), il vérifie la forme et les plafonds pour que l'échec soit local
+ * et nommé plutôt qu'un 413 ou un 422 après l'appel.
+ *
+ * Copie plutôt que passe-plat : seules les six clés du modèle DocIE partent, ce
+ * qui garantit qu'aucune donnée voisine de l'appelant ne fuit dans la requête.
+ *
+ * Règle figée par document-parsing/fixtures/blocs_ocr_docie.json (tests seuls),
+ * où chaque refus porte sa `preuve` — fichier:ligne côté DocIE, ou [J] quand
+ * c'est notre jugement et non une contrainte de leur côté.
+ */
+function validerBlocsOcr(blocs) {
+  if (!Array.isArray(blocs)) fail("input", "ocr_blocks must be an array of OCR blocks.");
+  // `[]` n'est PAS un repli sur `text` : `[] is not None`, donc DocIE extrait de
+  // rien et répond 200 avec un résultat vide (extract/service.py:357).
+  if (!blocs.length) fail("input", "ocr_blocks must not be empty: DocIE then extracts from no block at all instead of falling back to the text.");
+  if (blocs.length > DOCIE_BLOCS_OCR_MAX) {
+    fail("input", "ocr_blocks holds " + blocs.length + " blocks, beyond DocIE's " + DOCIE_BLOCS_OCR_MAX + " per document.");
+  }
+  const vus = new Set();
+  const propres = [];
+  let caracteres = 0, octets = 0;
+  for (const [index, bloc] of blocs.entries()) {
+    const ou = " (ocr_blocks[" + index + "])";
+    if (!object(bloc)) fail("input", "Each OCR block must be an object" + ou + ".");
+    for (const cle of Object.keys(bloc)) {
+      if (!BLOC_CLES.has(cle)) fail("input", "Unknown OCR block key \"" + cle + "\"" + ou + "; DocIE would drop it silently.");
+    }
+    if (typeof bloc.id !== "string" || !bloc.id) fail("input", "Each OCR block needs a non-empty string id" + ou + "; it comes back verbatim in evidence_ids.");
+    if (vus.has(bloc.id)) fail("input", "Duplicate OCR block id \"" + bloc.id + "\"" + ou + "; an evidence id must name exactly one block.");
+    vus.add(bloc.id);
+    if (typeof bloc.text !== "string") fail("input", "Each OCR block needs a string text" + ou + ".");
+    // Blanc au sens de `str.strip()` de Python, pas de `trim()` : DocIE écarte un
+    // bloc blanc du prompt (llm/prompts.py:139) APRÈS que la tranche des 800
+    // premiers l'a compté (`blocks[:max_blocks]`), donc il coûte une place et
+    // n'ancre rien. Le refuser garde `blocs_texte` égal aux blocs utiles.
+    if (LIGNE_BLANCHE_PYTHON.test(bloc.text)) fail("input", "Blank OCR block text" + ou + "; DocIE drops it from the prompt after it has taken one of its " + DOCIE_BLOCS_TEXTE_MAX + " slots.");
+    const taille = pointsDeCode(bloc.text);
+    if (taille > DOCIE_BLOC_CARACTERES_MAX) fail("input", "OCR block text of " + taille + " characters" + ou + ", beyond DocIE's " + DOCIE_BLOC_CARACTERES_MAX + ".");
+    caracteres += taille;
+    octets += Buffer.byteLength(bloc.text, "utf8");
+    const propre = { id: bloc.id, text: bloc.text };
+    if (Object.hasOwn(bloc, "page")) {
+      // DocIE accepte n'importe quel entier ; une page < 1 ne désigne aucune
+      // page et rendrait impossible le filtrage des evidence_ids par page.
+      if (!Number.isInteger(bloc.page) || bloc.page < 1) fail("input", "OCR block page must be an integer >= 1" + ou + ".");
+      propre.page = bloc.page;
+    }
+    if (Object.hasOwn(bloc, "source")) {
+      if (!BLOC_SOURCES.has(bloc.source)) fail("input", "Unknown OCR block source" + ou + "; DocIE accepts " + [...BLOC_SOURCES].join(", ") + ".");
+      propre.source = bloc.source;
+    }
+    if (Object.hasOwn(bloc, "confidence")) {
+      if (!number(bloc.confidence) || bloc.confidence < 0 || bloc.confidence > 1) fail("input", "OCR block confidence must be a number between 0 and 1" + ou + ".");
+      propre.confidence = bloc.confidence;
+    }
+    if (Object.hasOwn(bloc, "bbox")) {
+      const boite = bloc.bbox;
+      if (!object(boite) || Object.keys(boite).length !== BBOX_CLES.length || !BBOX_CLES.every(cle => number(boite[cle]))) {
+        fail("input", "OCR block bbox must carry the four finite numbers x0, y0, x1, y1" + ou + ".");
+      }
+      propre.bbox = { x0: boite.x0, y0: boite.y0, x1: boite.x1, y1: boite.y1 };
+    }
+    propres.push(propre);
+  }
+  if (caracteres > DOCIE_TEXTE_CARACTERES_MAX) {
+    fail("input", "ocr_blocks total " + caracteres + " characters, beyond DocIE's " + DOCIE_TEXTE_CARACTERES_MAX + ".");
+  }
+  return { blocs: propres, octets };
+}
+
 // Résultat partiel (#194, « échouer bruyamment »). DocIE ne signale une valeur
 // perdue que par des AVERTISSEMENTS, avec `validation.valid` toujours vrai :
 // sans ce relevé, une extraction partielle ressemble à une extraction complète.
@@ -377,12 +481,13 @@ function parseResponse(body, expectedSchema, agent) {
   if (validation != null && !object(validation)) fail("response", "Invalid DocIE validation metadata.");
   const confidence = reportedFieldConfidence(meta);
   const unwrapped = unwrap(result);
-  // `blocs_texte` / `troncature_possible` : null sur cette voie, « non
+  // `blocs_texte` / `troncature_possible` / `blocs_fournis` : null sur cette voie, « non
   // mesurable » et non « non tronqué » — c'est l'OCR distant qui fait les blocs.
   const metadata = { request_id: body.id ?? null, agent, model: body.model ?? null,
     validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
     prompt_profile: promptProfile(meta), partiel: resultatPartiel(validation, unwrapped),
-    blocs_texte: null, troncature_possible: null, schema_reported: reported.some(item => item != null) };
+    blocs_texte: null, troncature_possible: null, blocs_fournis: null,
+    schema_reported: reported.some(item => item != null) };
   for (const name of ["queue_wait_ms", "latency_ms", "generation_ms"]) {
     const value = Object.hasOwn(meta, name) ? meta[name] : (Object.hasOwn(extracted, name) ? extracted[name] : body[name]);
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) metadata[name] = value;
@@ -440,12 +545,14 @@ function parseTextResponse(body, expectedSchema) {
   if (validation != null && !object(validation)) fail("response", "Invalid DocIE validation metadata.");
   const confidence = reportedFieldConfidence(body);
   const unwrapped = unwrap(result);
-  // `blocs_texte` / `troncature_possible` : le texte envoyé n'est pas dans la
-  // réponse ; extractText() les renseigne, un appel direct les laisse à null.
+  // `blocs_texte` / `troncature_possible` / `blocs_fournis` : ni le texte ni les
+  // blocs envoyés ne sont dans la réponse ; extractText() les renseigne, un
+  // appel direct les laisse à null (« inconnu », jamais « aucun bloc fourni »).
   const metadata = { request_id: body.request_id ?? null, agent: null, model: body.model_profile ?? null,
     validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
     prompt_profile: null, partiel: resultatPartiel(validation, unwrapped),
-    blocs_texte: null, troncature_possible: null, schema_reported: reported.some(item => item != null) };
+    blocs_texte: null, troncature_possible: null, blocs_fournis: null,
+    schema_reported: reported.some(item => item != null) };
   for (const name of ["queue_wait_ms", "latency_ms", "generation_ms"]) {
     const value = body[name];
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) metadata[name] = value;
@@ -595,10 +702,22 @@ async function extractDocument(content, mimeType, { kind = "resume", agent: agen
  * definition in the request — but omitting it is allowed for the built-in names
  * rather than refused on an assumption about someone's deployment.
  *
- * `ocr_blocks` is deliberately absent. DocIE splits the text itself, and for
- * plain text there is nothing better to offer; cv-parser's DOCX path has sent
- * text without it since it was written. It becomes an optional argument passed
- * straight through the day a caller can prove better segmentation.
+ * `ocrBlocks` : blocs de l'appelant, facultatifs. Absents, DocIE découpe `text`
+ * lui-même, une ligne non vide par bloc, et il n'y a rien de mieux à proposer
+ * pour du texte brut. Fournis, ils REMPLACENT ce découpage : `text` n'est plus
+ * ni redécoupé ni ancré (extract/service.py:357), les plafonds comptent NOS
+ * blocs, et nos `id` reviennent tels quels dans `evidence_ids`. C'est ce qui
+ * rend leur envoi utile là où l'appelant connaît de vraies frontières — les
+ * paragraphes d'un DOCX, les pages d'une couche texte de PDF : un document de
+ * 2 000 lignes non vides tient alors en quelques centaines de blocs et cesse
+ * d'être tronqué en silence par le plafond de 800.
+ *
+ * `text` part quand même : DocIE ne le redécoupe pas, mais il en tire le
+ * `document_hash` quand l'appelant n'en fournit pas — l'envoyer garde ce hachage
+ * stable d'une extraction à l'autre.
+ *
+ * Le pont ne FABRIQUE pas de blocs : les frontières dépendent du document, donc
+ * du consommateur. Il valide leur forme et les plafonds (validerBlocsOcr).
  *
  * `modelProfile` (#194) : modèle choisi pour CET appel (`store:<nom>` de
  * préférence, seule forme qui déclenche le chargement à la demande → code
@@ -607,7 +726,7 @@ async function extractDocument(content, mimeType, { kind = "resume", agent: agen
  * rapporte (`model_profile`), pas celui demandé. Pas de liste de modèles
  * autorisés ici : voir perCallModelProfile().
  */
-async function extractText(text, { kind = "resume", dynamicSchema = null, modelProfile = null, env = process.env, fetchImpl = fetch } = {}) {
+async function extractText(text, { kind = "resume", dynamicSchema = null, ocrBlocks = null, modelProfile = null, env = process.env, fetchImpl = fetch } = {}) {
   if (!Object.hasOwn(SCHEMAS, kind)) fail("configuration", "Unsupported document kind.");
   const { base, key, timeout } = connection(env);
   const schema = SCHEMAS[kind];
@@ -620,25 +739,45 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, modelP
     payload.schema_mode = "dynamic";
     payload.dynamic_schema = dynamicSchema;
   }
+  // Blocs fournis : le même plafond d'octets borne le corps entier. `text` et
+  // les blocs voyagent ensemble, donc la seule borne honnête porte sur leur
+  // somme — sans quoi un texte de 20 Mio doublé par ses blocs ferait un corps de
+  // 40 Mio, refusé par DocIE après coup alors que c'est mesurable ici.
+  let blocs, blocsFournis = false;
+  if (ocrBlocks != null) {
+    const valides = validerBlocsOcr(ocrBlocks);
+    if (Buffer.byteLength(text, "utf8") + valides.octets > MAX_TEXT_BYTES) {
+      fail("input", "Text and ocr_blocks together must stay under " + MAX_TEXT_BYTES + " bytes.");
+    }
+    payload.ocr_blocks = valides.blocs;
+    blocs = valides.blocs.length;
+    blocsFournis = true;
+  } else {
+    blocs = compterBlocsTexte(text);
+  }
   const profile = modelProfile != null ? perCallModelProfile(modelProfile) : (env.DOCIE_MODEL_PROFILE || "").trim();
   if (profile) payload.model_profile = profile;
   // `x-api-key`, not `Authorization: Bearer`: that is the header every recorded
   // success on this endpoint used (cv-parser/docie_client.py, the response saved
   // by document-parsing/scripts/test_api.py). The chat path keeps its own
   // header, equally by measurement.
-  // Compté sur le texte exactement envoyé (#190). Fait de transport seulement :
+  // Compté sur ce qui est exactement envoyé (#190). Fait de transport seulement :
   // `troncature_possible` = au-delà de 800 blocs, un profil générique a PU
   // tronquer ; `false` est une garantie contre ce plafond-là (pas contre la
   // taille de contexte, dont le dépassement est bruyant : code `context`).
-  const blocs = compterBlocsTexte(text);
+  // Sans blocs fournis, `blocs_texte` PRÉDIT le découpage de DocIE ; avec eux,
+  // il le CONSTATE — c'est le nombre de blocs partis, et `blocs_fournis` dit
+  // laquelle des deux lectures s'applique.
   const { body, elapsed } = await postJson(base + "/v1/extract/text", { "x-api-key": key }, payload, key, timeout, fetchImpl, { loading: true });
   const result = parseTextResponse(body, schema);
   result.metadata.blocs_texte = blocs;
   result.metadata.troncature_possible = blocs > DOCIE_BLOCS_TEXTE_MAX;
+  result.metadata.blocs_fournis = blocsFournis;
   result.metadata.elapsed_ms = elapsed;
   return result;
 }
 
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload,
-  compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
+  compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
+  DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
   MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };

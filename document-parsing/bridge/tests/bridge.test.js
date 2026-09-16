@@ -7,9 +7,11 @@ const textCases = require("./contract_text.json");
 const errorCases = require("./contract_errors.json");
 // Jeu d'essai partagé avec test_bridge.py, lu par les TESTS seulement.
 const blocsTexte = require("../../fixtures/blocs_texte_docie.json");
+const blocsOcr = require("../../fixtures/blocs_ocr_docie.json");
 const avertissements = require("../../fixtures/avertissements_docie.json");
 const { extractDocument, extractText, parseResponse, parseTextResponse, filePayload, compterBlocsTexte,
-  DOCIE_BLOCS_TEXTE_MAX, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL, DocIEBridgeError } = require("../docie-bridge");
+  DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES,
+  reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL, MAX_TEXT_BYTES, DocIEBridgeError } = require("../docie-bridge");
 
 const RESUME_SCHEMA = { document_type: "adbi_resume", fields: [{ name: "name", type: "string" }] };
 
@@ -309,6 +311,82 @@ test("text blocks: extractText reports blocs_texte and troncature_possible (> 80
   const agent = await extractDocument(Buffer.from("pdf"), "application/pdf", { env,
     fetchImpl: async () => new Response(JSON.stringify(cases[2].body)) });
   assert.deepEqual([agent.metadata.blocs_texte, agent.metadata.troncature_possible], [null, null]);
+});
+
+// ------------------------------------------- blocs fournis par l'appelant -----
+
+test("ocr blocks: shared fixture, each accepted and each refused shape, with the sent copy holding nothing extra", () => {
+  // Le jeu d'essai et le code nomment les mêmes clés et les mêmes sources : une
+  // clé ajoutée d'un côté sans l'autre casse ici, pas en production.
+  assert.deepEqual([...BLOC_CLES].sort(), [...blocsOcr.cles_bloc].sort());
+  assert.deepEqual([...BLOC_SOURCES].sort(), [...blocsOcr.sources_valides].sort());
+  for (const c of blocsOcr.cas) {
+    const libelle = c.nom + " — " + c.preuve;
+    if (!c.valide) {
+      assert.throws(() => validerBlocsOcr(c.blocs), error => error.code === "input", libelle);
+      continue;
+    }
+    const { blocs } = validerBlocsOcr(c.blocs);
+    assert.equal(blocs.length, c.blocs_comptes, libelle);
+    // Copie et non passe-plat : mêmes clés que l'appelant, jamais d'autres.
+    for (const [index, bloc] of blocs.entries()) {
+      assert.deepEqual(Object.keys(bloc).sort(), Object.keys(c.blocs[index]).sort(), libelle);
+      assert.deepEqual(bloc, c.blocs[index], libelle);
+    }
+  }
+});
+
+test("ocr blocks: caps are DocIE's, and characters are code points — not UTF-16 units", () => {
+  assert.equal(DOCIE_BLOCS_OCR_MAX, blocsOcr.limites.blocs_max);
+  assert.equal(DOCIE_BLOC_CARACTERES_MAX, blocsOcr.limites.caracteres_par_bloc_max);
+  for (const c of blocsOcr.cas_plafonds) {
+    const libelle = c.nom + " — " + c.preuve;
+    let blocs;
+    if (c.nombre != null) blocs = Array.from({ length: c.nombre }, (_, i) => ({ id: "b" + i, text: "x" }));
+    else if (c.caracteres != null) blocs = [{ id: "b0", text: "x".repeat(c.caracteres) }];
+    else blocs = [{ id: "b0", text: c.texte_repete.repeat(c.repetitions) }];
+    if (c.valide) assert.equal(validerBlocsOcr(blocs).blocs.length, blocs.length, libelle);
+    else assert.throws(() => validerBlocsOcr(blocs), error => error.code === "input", libelle);
+  }
+});
+
+test("ocr blocks: extractText sends them verbatim, keeps the text, and counts blocks instead of lines", async () => {
+  const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret" };
+  const sent = [];
+  const fetchImpl = async (url, options) => { sent.push(JSON.parse(options.body)); return new Response(JSON.stringify(textCases[1].body)); };
+  // 1 200 lignes non vides, regroupées en 300 blocs de paragraphes : sans blocs
+  // le compteur annonce une troncature possible, avec eux il n'y en a plus.
+  const texte = Array.from({ length: 1200 }, (_, i) => "ligne " + i).join("\n");
+  const sansBlocs = await extractText(texte, { env, fetchImpl });
+  assert.deepEqual([sansBlocs.metadata.blocs_texte, sansBlocs.metadata.troncature_possible, sansBlocs.metadata.blocs_fournis],
+    [1200, true, false]);
+  assert.equal(Object.hasOwn(sent.at(-1), "ocr_blocks"), false);
+  const blocs = Array.from({ length: 300 }, (_, i) => ({ id: "p" + (i % 10 + 1) + "b" + i, text: "paragraphe " + i, page: i % 10 + 1, source: "manual" }));
+  const avecBlocs = await extractText(texte, { ocrBlocks: blocs, env, fetchImpl });
+  assert.deepEqual([avecBlocs.metadata.blocs_texte, avecBlocs.metadata.troncature_possible, avecBlocs.metadata.blocs_fournis],
+    [300, false, true]);
+  // `text` part quand même (document_hash stable) et les blocs partent tels quels.
+  assert.equal(sent.at(-1).text, texte);
+  assert.deepEqual(sent.at(-1).ocr_blocks, blocs);
+  // Appel direct du parseur : ni texte ni blocs, donc « inconnu » et non « aucun ».
+  assert.equal(parseTextResponse(textCases[1].body, "adbi_resume").metadata.blocs_fournis, null);
+  // Voie agent : l'OCR distant fait les blocs, et `ocr_blocks` n'existe même pas
+  // dans ce corps — null comme ses deux voisins, jamais une clé absente.
+  const agent = await extractDocument(Buffer.from("pdf"), "application/pdf",
+    { env: { ...env, DOCIE_AGENT_RESUME: "adbi_agent_1" }, fetchImpl: async () => new Response(JSON.stringify(cases[2].body)) });
+  assert.equal(agent.metadata.blocs_fournis, null);
+});
+
+test("ocr blocks: text and blocks are bounded together, not one at a time", async () => {
+  const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret" };
+  const fetchImpl = async () => new Response(JSON.stringify(textCases[1].body));
+  // Un texte pile au plafond passe seul ; le moindre bloc en plus fait un corps
+  // au-dessus, et c'est le corps qui part. Les blocs restent valides un par un
+  // (< 20 000 caractères) : sans la borne commune, rien ne verrait ce
+  // dépassement avant le refus de DocIE.
+  const texte = "x".repeat(MAX_TEXT_BYTES);
+  await assert.rejects(extractText(texte, { ocrBlocks: [{ id: "b0", text: "paragraphe" }], env, fetchImpl }),
+    error => error.code === "input" && /together/.test(error.message));
 });
 
 // ------------------------------------------- résultat partiel (#194) -----
