@@ -521,6 +521,40 @@ function variablesKbis() {
   return [...noms].sort();
 }
 
+// Même dérivation que variablesKbis(), mais pour TOUTES les tâches que contrats
+// sert réellement — `choix.TACHES`, pas une liste écrite ici : le jour où une
+// pièce s'ajoute (ou disparaît), ce garde-fou suit sans que personne y pense.
+//
+// Pourquoi ce test existe en plus de celui du Kbis : `DOCIE_AGENT_CONTRACT`
+// était transmis par les TROIS composes et documenté dans contrats/.env.example,
+// mais absent du .env.example RACINE — celui que docker lit pour les
+// substitutions `${...}`. Un déploiement monté depuis ce fichier partait donc
+// avec un agent vide, et le premier import de contrat SANS modèle choisi
+// échouait en `configuration` (voie agent, le pont exige DOCIE_AGENT_<TACHE>).
+// Le garde-fou du Kbis ne pouvait pas le voir : il ne regarde que `kbis`.
+//
+// `externes` (OpenAI, #217) est volontairement hors du parcours : ces modèles
+// n'ont pas de variable DOCIE_*, ils dépendent d'OPENAI_API_KEY.
+//
+// La CNI est hors portée tant qu'elle n'est pas dans `choix.TACHES` : le
+// catalogue la déclare déjà mais `DOCIE_AGENT_CNI_NUEXTRACT3` n'est provisionné
+// nulle part (signalé sur #221). L'exclusion vient donc de la réalité du
+// service, pas d'une exception écrite à la main.
+function variablesContrats() {
+  const cat = CATALOGUE.chargerCatalogue();
+  // Agents de base : exigés par le pont sur la voie agent, jamais dérivés du
+  // catalogue (qui ne connaît que les agents PAR MODÈLE).
+  const noms = new Set(["DOCIE_AGENT_KBIS", "DOCIE_AGENT_CONTRACT"]);
+  for (const tache of Object.keys(choix.TACHES)) {
+    for (const [voie, v] of Object.entries(cat.taches[tache].voies)) {
+      for (const role of ["defaut", "alternative"]) {
+        if (v[role]) noms.add(CATALOGUE.nomVariable(voie, tache, v[role].modele));
+      }
+    }
+  }
+  return [...noms].sort();
+}
+
 function blocService(texte, service) {
   const lignes = texte.split(/\r?\n/);
   const debut = lignes.findIndex((l) => l === "  " + service + ":");
@@ -528,6 +562,27 @@ function blocService(texte, service) {
   const fin = lignes.findIndex((l, i) => i > debut && /^ {0,2}\S/.test(l));
   return lignes.slice(debut, fin === -1 ? undefined : fin).join("\n");
 }
+
+test("compose et .env.example : chaque variable de CHAQUE pièce servie par contrats est transmise ET documentée (#164 en miroir)", () => {
+  const noms = variablesContrats();
+  // Figé comme la liste du Kbis : dériver du catalogue empêche l'oubli, épingler
+  // le résultat empêche qu'une dérivation muette réduise la couverture.
+  assert.deepEqual(noms, [
+    "DOCIE_AGENT_CONTRACT", "DOCIE_AGENT_KBIS", "DOCIE_AGENT_KBIS_NUEXTRACT3",
+    "DOCIE_MODELE_LFM25_2_6B", "DOCIE_MODELE_LFM25_350M", "DOCIE_MODELE_NUEXTRACT3",
+  ]);
+  for (const [fichier, service] of [["docker-compose.yml", "contrats"], ["docker-compose.local.yml", "contrats"], [path.join("contrats", "docker-compose.yml"), "adbi-contrats"]]) {
+    const bloc = blocService(fs.readFileSync(path.join(RACINE, fichier), "utf8"), service);
+    for (const nom of noms) assert.ok(bloc.includes("      " + nom + ": ${" + nom + ":-}"), fichier + " : " + nom);
+  }
+  // Les DEUX .env.example : celui de la racine est lu par docker pour les
+  // substitutions, celui de contrats/ documente le service seul. Une variable
+  // qui manque au premier donne une valeur vide dans le conteneur.
+  for (const fichier of [".env.example", path.join("contrats", ".env.example")]) {
+    const texte = fs.readFileSync(path.join(RACINE, fichier), "utf8");
+    for (const nom of noms) assert.match(texte, new RegExp("^" + nom + "=", "m"), fichier + " : " + nom);
+  }
+});
 
 test("compose et .env.example : chaque variable du Kbis (catalogue) est transmise au conteneur contrats et documentée", () => {
   const noms = variablesKbis();
