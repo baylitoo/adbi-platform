@@ -186,10 +186,13 @@ test("contrat + NuExtract3 choisi : voie texte (jamais l'agent), store: envoyé,
   assert.equal(appels[0].corps.schema_name, "contract");
   assert.equal(appels[0].corps.dynamic_schema.document_type, "contract");
   assert.ok(appels[0].corps.text.includes("CONVENTION DE SOUS-TRAITANCE"));
-  // Langue : c'est ICI qu'elle est connue. Le pont ne devine aucune langue, donc
-  // sans cette ligne DocIE lirait « Language: unknown » sur un contrat qui est
-  // français par construction. Épingle le câblage : sans elle, la valeur peut
-  // disparaître de docie-contract-import.js sans qu'un seul test rougisse.
+  // Langue : c'est ICI qu'elle est connue — le pont n'en devine aucune. Ce que
+  // ce test épingle est le CÂBLAGE, pas l'effet : `nuextract3`, le profil de ce
+  // cas, ne rend AUCUNE ligne « Language » (seuls les profils génériques le
+  // font, llm/prompts.py:223), donc la valeur ne change rien ici. Elle part
+  // quand même parce qu'elle est vraie et que le profil se choisit par appel.
+  // Sans cette assertion, `langue: "fr"` peut disparaître de
+  // docie-contract-import.js sans qu'un seul test rougisse.
   assert.equal(appels[0].corps.language, "fr");
   assert.deepEqual(res.modele, { id: "nuextract3", libelle: "NuExtract3" });
   assert.equal(res.requestId, "req-contrat-texte");
