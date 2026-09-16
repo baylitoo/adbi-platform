@@ -64,7 +64,19 @@
         {
           "name": "company",
           "type": "string",
-          "description": null,
+          "description": "Employeur qui salarie ou porte le consultant sur cette mission, pas le client final",
+          "fields": []
+        },
+        {
+          "name": "end_client",
+          "type": "string",
+          "description": "Client final chez qui la mission a ete realisee, quand le CV le nomme, distinct de l'employeur",
+          "fields": []
+        },
+        {
+          "name": "via",
+          "type": "string",
+          "description": "Societe intermediaire par laquelle la mission a ete realisee, quand le CV en nomme une, distincte du client final et de l'employeur",
           "fields": []
         },
         {

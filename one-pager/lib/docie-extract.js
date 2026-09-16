@@ -117,6 +117,8 @@ const CHAMPS_DOCIE = {
 const CHAMPS_MISSION = {
   title: "role",
   company: "company",
+  end_client: "end_client",
+  via: "via",
   start_date: "start_date",
   end_date: "end_date",
   location: "location",
@@ -279,8 +281,17 @@ function mapperExperience(brut, index) {
     role,
     mission: "",
     company,
-    end_client: company,
-    via: "",
+    // `end_client` recevait l'EMPLOYEUR (`end_client: company`) et `via` partait
+    // toujours vide : le schema n'avait aucun champ pour le client final ni pour
+    // l'intermediaire. Ces deux valeurs sont maintenant extraites par DocIE
+    // (adbi_resume, experience[].end_client / .via), donc on les LIT au lieu de
+    // les fabriquer. Vide quand le CV n'en nomme pas : les consommateurs ont
+    // deja leur repli (`end_client || company` dans onepager.js:405,
+    // matching.js:795), et un champ « Client final » pre-rempli avec le nom de
+    // l'employeur est pire que vide -- c'est une valeur fausse et plausible
+    // dans un ecran de relecture. On degrade, on ne fabrique pas.
+    end_client: texte(brut && brut.end_client),
+    via: texte(brut && brut.via),
     contract_type: "",
     location,
     start_date: start,
