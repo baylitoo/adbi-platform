@@ -376,6 +376,53 @@ class TestSchemaGuard(unittest.TestCase):
             map_docie_contract_to_sous_traitance(None)  # type: ignore[arg-type]
 
 
+class TestSchemaVoieTexte(unittest.TestCase):
+    """document-parsing/schemas/contract.schema.json : le schema que contrats
+    EXPEDIE reellement a DocIE.
+
+    Meme garde-fou que TestSchemaVoieTexte de test_kbis_to_contrats.py, applique
+    au contrat. Le Kbis etait epingle, le contrat ne l'etait par rien : ni ici
+    (aucune mention de register_and_test dans ce fichier avant ce test), ni cote
+    JS -- tests/choix-modele.test.js ne verifie que le `document_type` et les
+    NOMS de champs (couverture du mapping), pas l'egalite avec la reference.
+    Changer le `type` ou la `description` d'un champ derivait donc en silence.
+
+    Ce que ce fichier alimente : contrats/lib/docie-contract-import.js:52 le lit
+    et le passe en `dynamicSchema` (:475), et contrats/Dockerfile:41 copie tout
+    document-parsing/schemas/ dans l'image.
+
+    Les trois definitions sont identiques aujourd'hui : c'est un EPINGLAGE, pas
+    une reparation.
+
+    Cle lue explicitement (`SCHEMAS["contract"]`) et non par balayage du dossier
+    schemas/ : #221 y ajoute cni.schema.json, qui n'a aucune entree de
+    reference, et un test qui parcourt le dossier rougirait a sa fusion.
+    """
+
+    SCHEMA_PATH = Path(__file__).parent.parent / "schemas" / "contract.schema.json"
+
+    @classmethod
+    def setUpClass(cls):
+        with open(cls.SCHEMA_PATH, encoding="utf-8") as fh:
+            cls.schema = json.load(fh)
+
+    def test_identique_au_schema_enregistre_et_aux_fixtures(self):
+        sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+        import register_and_test  # noqa: E402
+
+        self.assertEqual(register_and_test.SCHEMAS["contract"], self.schema)
+        # Les deux fixtures portent leur `dynamic_schema`, toutes deux produites
+        # par le MEME generateur a partir de cette meme reference
+        # (fixtures/generate_sample.py::_build_envelope, appele deux fois par
+        # main()). Elles ne peuvent donc pas diverger l'une de l'autre : elles
+        # peuvent seulement se perimer ENSEMBLE si quelqu'un modifie le schema
+        # sans les regenerer. C'est precisement ce que cette assertion attrape,
+        # et c'est une panne distincte de la precedente.
+        for nom in ("contract_extraction_sample.json", "contract_extraction_sample_edge_cases.json"):
+            with self.subTest(fixture=nom):
+                self.assertEqual(_load_fixture(nom)["dynamic_schema"], self.schema)
+
+
 class TestSirenSiretPartage(unittest.TestCase):
     """#194 (liste retenue, « echouer bruyamment ») : le SIREN et le SIRET
     n'etaient controles qu'en format. Chaque cas de
