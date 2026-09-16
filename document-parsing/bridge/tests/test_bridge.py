@@ -152,7 +152,7 @@ class BridgeTests(unittest.TestCase):
         Les deux côtés de la borne : MAX tient, MAX+1 dépasserait et est refusé
         localement, avant tout appel.
         """
-        limit, maximum, agent = 26 * 1024 * 1024, 20446896, "a" * 128
+        limit, maximum, agent = 26 * 1024 * 1024, 20446920, "a" * 128
 
         def wire_size(payload):
             prepared = requests.models.PreparedRequest()
@@ -216,7 +216,9 @@ class BridgeTests(unittest.TestCase):
             path, auth, payload = state["calls"][0]
             self.assertEqual(path, "/v1/agents/adbi_agent_1/chat/completions")
             self.assertEqual(auth, "Bearer test-secret")
-            self.assertIs(payload["parallel_extraction"], True)
+            # Le drapeau n'est plus envoye (#251) — meme contrat que le port JS :
+            # l'assertion epingle son ABSENCE, pas sa disparition silencieuse.
+            self.assertNotIn("parallel_extraction", payload)
             self.assertIs(payload["stream"], False)
             self.assertEqual(payload["model"], "adbi_agent_1")
             self.assertEqual(payload["max_tokens"], 8192)

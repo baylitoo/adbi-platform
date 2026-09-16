@@ -38,7 +38,9 @@ y reste la seule possible.
 `extract_document(bytes, mime_type, kind="resume")` en Python et
 `extractDocument(buffer, mimeType, {kind: "resume"})` en Node envoient un seul POST
 à `/v1/agents/{agent}/chat/completions` avec `model={agent}`, document en data URI
-dans `image_url`, **`parallel_extraction: true` et `stream: false`**, en-tête
+dans `image_url`, **`stream: false`** (plus de `parallel_extraction` : voir
+#251 — sur un profil nommé de `models.yaml` il déclenchait une découpe
+exécutée en série, chaque groupe renvoyant le document entier), en-tête
 `Authorization: Bearer`.
 
 PDF et images PNG/JPEG sont acceptés, jusqu'à 20 446 896 octets bruts (~19,5 MiB :

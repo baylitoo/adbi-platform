@@ -51,17 +51,26 @@ import requests
 # de la voie agent. Or cette voie envoie le document en base64 (4*ceil(n/3)
 # octets) dans une enveloppe JSON. Enveloppe MESURÉE en construisant la charge
 # réelle, dans le pire cas autorisé ici (nom d'agent de 128 caractères,
-# max_tokens 65536, `application/pdf`) : 445 octets avec `requests` (séparateurs
-# ", " et ": "), 425 avec JSON.stringify côté Node. La plus grande des deux fixe
-# la borne commune aux deux portages : floor((26 MiB - 445) / 4) * 3 =
-# 20 446 896 octets bruts (~19,5 MiB ; 19,5 MiB pile dépasserait de 336
-# octets). Au-delà, DocIE refuserait en 413 un document déjà transmis.
+# max_tokens 65536, `application/pdf`) : 416 octets avec `requests` (séparateurs
+# ", " et ": "), 398 avec JSON.stringify côté Node. La plus grande des deux fixe
+# la borne commune aux deux portages : floor((26 MiB - 416) / 4) * 3 =
+# 20 446 920 octets bruts (~19,5 MiB). Au-delà, DocIE refuserait en 413 un
+# document déjà transmis.
+#
+# RE-MESURÉ en #251, et pas d'un cheveu : l'enveloppe valait 445 / 425 tant
+# qu'elle portait `parallel_extraction`. Ce drapeau retiré, elle perd 29 octets
+# (27 en JSON compact), donc la borne se resserre de 20 446 896 à 20 446 920.
+# La marge était d'UN octet -- test_bridge.py vérifie que MAX+1 dépasse
+# réellement la limite, et cette assertion tombait à 28 octets sous la limite
+# tant que la constante restait à 445. Toute modification de l'enveloppe doit
+# donc refaire cette mesure, pas ajuster le nombre jusqu'à ce que les tests
+# passent.
 #
 # La voie texte garde sa propre borne, inchangée : le texte n'y est pas encodé
 # en base64 (`{text, schema_name, ...}`), et le plafond de 1 000 000 caractères
 # de DocIE (défaut de déploiement, non vérifié ici) mord bien avant 20 MiB.
 DOCIE_MAX_REQUEST_BODY_BYTES = 26 * 1024 * 1024
-FILE_ENVELOPE_MAX_BYTES = 445
+FILE_ENVELOPE_MAX_BYTES = 416
 MAX_DOCUMENT_BYTES = (DOCIE_MAX_REQUEST_BODY_BYTES - FILE_ENVELOPE_MAX_BYTES) // 4 * 3
 MAX_TEXT_BYTES = 20 * 1024 * 1024
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
@@ -855,7 +864,18 @@ def file_payload(content, mime_type, agent, tokens):
     modification de l'enveloppe (texte d'instruction, nouveau champ) doit
     repasser sous FILE_ENVELOPE_MAX_BYTES, sinon ce test casse.
     """
-    return {"model": agent, "parallel_extraction": True, "stream": False, "max_tokens": tokens,
+    # `parallel_extraction` n'est plus envoye -- meme raison que le port JS,
+    # voir docie-bridge.js::filePayload pour le detail du mecanisme.
+    #
+    # En bref : sur un profil NOMME de models.yaml, slot_count vaut None, la
+    # decoupe naturelle s'applique, mais le fan-out passe par un Semaphore(1).
+    # Les groupes s'enchainent donc en serie, chacun renvoyant le document
+    # entier. adbi_resume porte six champs `list` : sept evaluations
+    # sequentielles du CV complet au lieu d'une. Les six schemas de contrats
+    # sont plats, le drapeau y etait sans effet.
+    #
+    # Ne pas l'envoyer rend la main au defaut de DocIE (pas de decoupe).
+    return {"model": agent, "stream": False, "max_tokens": tokens,
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": "Extract the document using your configured schema. Do not invent missing information."},
                 {"type": "image_url", "image_url": {"url": "data:" + mime_type + ";base64," + base64.b64encode(content).decode("ascii")}},

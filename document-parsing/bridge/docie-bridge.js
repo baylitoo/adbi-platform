@@ -40,17 +40,23 @@
 // de la voie agent. Or cette voie envoie le document en base64 (4*ceil(n/3)
 // octets) dans une enveloppe JSON. Enveloppe MESURÉE en construisant la charge
 // réelle, dans le pire cas autorisé ici (nom d'agent de 128 caractères,
-// max_tokens 65536, `application/pdf`) : 425 octets avec JSON.stringify, 445
+// max_tokens 65536, `application/pdf`) : 398 octets avec JSON.stringify, 416
 // avec `requests` côté Python (séparateurs ", " et ": "). La plus grande des deux
-// fixe la borne commune aux deux portages : floor((26 MiB - 445) / 4) * 3 =
-// 20 446 896 octets bruts (~19,5 MiB ; 19,5 MiB pile dépasserait de 336
-// octets). Au-delà, DocIE refuserait en 413 un document déjà transmis.
+// fixe la borne commune aux deux portages : floor((26 MiB - 416) / 4) * 3 =
+// 20 446 920 octets bruts (~19,5 MiB). Au-delà, DocIE refuserait en 413 un
+// document déjà transmis.
+//
+// RE-MESURÉ en #251 : l'enveloppe valait 425 / 445 tant qu'elle portait
+// `parallel_extraction`. Ce drapeau retiré, elle perd 27 octets (29 côté
+// `requests`), donc la borne passe de 20 446 896 à 20 446 920. La marge était
+// d'UN octet -- test_bridge.py vérifie que MAX+1 dépasse réellement la limite.
+// Toute modification de l'enveloppe doit refaire cette mesure.
 //
 // La voie texte garde sa propre borne, inchangée : le texte n'y est pas encodé
 // en base64 (`{text, schema_name, ...}`), et le plafond de 1 000 000 caractères
 // de DocIE (défaut de déploiement, non vérifié ici) mord bien avant 20 MiB.
 const DOCIE_MAX_REQUEST_BODY_BYTES = 26 * 1024 * 1024;
-const FILE_ENVELOPE_MAX_BYTES = 445;
+const FILE_ENVELOPE_MAX_BYTES = 416;
 const MAX_DOCUMENT_BYTES = Math.floor((DOCIE_MAX_REQUEST_BODY_BYTES - FILE_ENVELOPE_MAX_BYTES) / 4) * 3;
 const MAX_TEXT_BYTES = 20 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
@@ -746,7 +752,30 @@ async function postJson(endpoint, headers, payload, key, timeout, fetchImpl, { l
 // réellement envoyée : toute modification de l'enveloppe (texte d'instruction,
 // nouveau champ) doit repasser sous FILE_ENVELOPE_MAX_BYTES, sinon ce test casse.
 function filePayload(content, mimeType, agent, tokens) {
-  return { model: agent, parallel_extraction: true, stream: false, max_tokens: tokens,
+  // `parallel_extraction` n'est plus envoye. Il l'etait en dur, "au cas ou",
+  // et rien ici n'a jamais mesure qu'il aidait.
+  //
+  // Mecanisme, lu dans le code DocIE (extract/service.py) et confirme par la
+  // session qui tient ce depot : sur un profil NOMME de models.yaml,
+  // `deployment_slot_count` vaut None, donc `_split_schema_into_groups` recoit
+  // `max_groups=None` et produit la decoupe NATURELLE -- un groupe par champ
+  // `list`, plus un groupe de base. Mais le semaphore de fan-out est un
+  // Semaphore(1) : les groupes s'executent l'un APRES l'autre, chacun
+  // renvoyant le document ENTIER et payant sa propre evaluation de prompt.
+  // Ce depot l'avait deja note de son cote (fixtures/blocs_ocr_docie.json) :
+  // le decoupage ne porte QUE sur le schema aplati, chaque groupe recevant la
+  // liste de blocs entiere (`blocks=blocks`, jamais une tranche).
+  //
+  // Portee reelle : un seul de nos sept schemas porte des `list` --
+  // adbi_resume, et il en porte SIX. L'import de CV sur la voie agent devenait
+  // donc SEPT evaluations sequentielles du document complet au lieu d'une.
+  // Les six pieces de contrats sont plates : le drapeau y etait inerte.
+  //
+  // Ne rien envoyer rend la main au defaut de DocIE (extraction non decoupee),
+  // qui est precisement ce qu'on veut sur un profil nomme. Le remettre
+  // demanderait une condition qu'on ne peut pas evaluer d'ici (nombre de slots
+  // observes du deploiement) et une mesure que personne n'a faite.
+  return { model: agent, stream: false, max_tokens: tokens,
     messages: [{ role: "user", content: [
       { type: "text", text: "Extract the document using your configured schema. Do not invent missing information." },
       { type: "image_url", image_url: { url: "data:" + mimeType + ";base64," + content.toString("base64") } },

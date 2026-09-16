@@ -122,7 +122,7 @@ test("error bodies: context overflow named by its text, other failures unchanged
 // tiendrait encore ; la borne commune est fixée par l'enveloppe Python, plus
 // grosse — test_bridge.py vérifie que MAX+1 y dépasserait.
 test("file path: largest accepted document fits DocIE's 26 MiB request body, one byte more is refused locally", async () => {
-  const LIMIT = 26 * 1024 * 1024, MAX = 20446896;
+  const LIMIT = 26 * 1024 * 1024, MAX = 20446920;
   const agent = "a".repeat(128);
   const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret", DOCIE_AGENT_RESUME: agent, DOCIE_MAX_TOKENS: "65536" };
   const sent = [];
@@ -169,7 +169,11 @@ test("loopback HTTP contract and sanitized failures without retries", async () =
     const { url, auth, payload } = calls[0];
     assert.equal(url, "/v1/agents/adbi_agent_1/chat/completions");
     assert.equal(auth, "Bearer test-secret");
-    assert.equal(payload.parallel_extraction, true);
+    // Le drapeau n'est plus envoye (#251) : sur un profil nomme de models.yaml
+    // il declenche une decoupe qui s'execute EN SERIE, chaque groupe renvoyant
+    // le document entier. L'assertion garde son role -- epingler le contrat du
+    // fil -- mais epingle desormais son ABSENCE.
+    assert.equal(Object.hasOwn(payload, "parallel_extraction"), false);
     assert.equal(payload.stream, false);
     assert.equal(payload.model, "adbi_agent_1");
     assert.equal(payload.max_tokens, 8192);

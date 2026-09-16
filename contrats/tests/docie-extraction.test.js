@@ -291,7 +291,10 @@ test("intégration réelle du bridge partagé (fetchImpl mocké, aucun réseau)"
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://docie.example.test/v1/agents/kbis-agent-test/chat/completions");
   assert.equal(calls[0].body.model, "kbis-agent-test");
-  assert.equal(calls[0].body.parallel_extraction, true);
+  // #251 : le pont n'envoie plus `parallel_extraction`. Le Kbis est un schema
+  // PLAT, le drapeau y etait donc deja sans effet — cette ligne epingle le
+  // contrat du fil, pas un changement de comportement pour cette piece.
+  assert.equal(Object.hasOwn(calls[0].body, "parallel_extraction"), false);
   assert.equal(result.documentType, "Extrait Kbis");
   assert.equal(result.companyName, "ACME CONSEIL");
   assert.equal(result.issuedDate, "2024-03-15");
