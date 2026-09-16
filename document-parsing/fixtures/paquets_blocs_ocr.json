@@ -1,0 +1,148 @@
+{
+  "_description": "Jeu d'essai partage, TESTS SEULEMENT (aucun code de production ne le lit) : comment des lignes deja rendues (paragraphes d'un DOCX, lignes d'une couche texte de PDF) deviennent des `ocr_blocks`. Complete blocs_ocr_docie.json, qui dit ce que le transport ACCEPTE ; ici on dit ce que le fabricant PRODUIT.",
+  "_ports": [
+    "document-parsing/bridge/blocs_ocr.py::blocs_depuis_pages (Python)",
+    "document-parsing/bridge/blocs-ocr.js::blocsDepuisPages (JS)"
+  ],
+  "_regle_identifiant": "b{page}_{index}_{sha256('{page}:{index}:{texte}')[:12]}, index par page, 0-base. Meme forme que les identifiants fabriques par DocIE quand c'est lui qui decoupe (ocr/base.py:27) : les notres partent verbatim et reviennent tels quels dans evidence_ids. Les tests RECALCULENT cette formule plutot que de figer des empreintes, pour qu'une divergence de portage casse un test au lieu de se figer dans le fichier.",
+  "_regle_regroupement": "Regrouper COUTE de la precision d'ancrage : un evidence_id designe un bloc, donc un bloc de dix lignes est une preuve dix fois plus grossiere. On ne regroupe donc QUE lorsque le nombre de lignes depasse le plafond vise (800 par defaut, le plafond de prompt de DocIE, llm/prompts.py:134). En dessous, une ligne = un bloc.",
+  "_ce_que_le_regroupement_ne_coute_pas": "Verifie dans le code d'ancrage de DocIE (extract/grounding.py::_match_score, lignes 135-141) : une valeur presente TELLE QUELLE dans un bloc rend 1.0 par court-circuit de sous-chaine, sans aucun egard pour la longueur du bloc. Des blocs plus gros ne font donc PAS monter le nombre de champs marques « a verifier ». Le facteur `coverage` ne penalise que le cas inverse — un bloc PLUS COURT que la valeur cherchee, c'est-a-dire une valeur coupee entre plusieurs blocs fins. Cote prompt, seul un saut de ligne par bloc s'ajoute au texte (llm/prompts.py:134-148) : a texte egal, des blocs gros coutent marginalement MOINS de jetons, jamais plus. Aucune mesure de temps reel des deux formes n'existe de notre cote ni du leur.",
+  "_pourquoi_regrouper_repare_aussi_un_defaut": "Une fenetre de preuve couvre au plus 5 blocs consecutifs d'une meme page (extract/grounding.py::_Evidence.of). Une valeur etalee sur PLUS de 5 blocs fins ne peut donc jamais etre appariee entiere : elle revient sans preuve. Le regroupement supprime ce mode de defaillance en meme temps qu'il evite la troncature. Contrepartie a connaitre, qui ne se lit dans aucun chiffre : sur le chemin flou, un bloc long offre a `partial_ratio` plus d'endroits ou trouver une quasi-correspondance, donc une portee fausse mais ressemblante peut s'ancrer avec un bon score.",
+  "cas": [
+    {
+      "nom": "sous_le_plafond_une_ligne_un_bloc",
+      "pages": [
+        { "page": 1, "lignes": ["CONTRAT DE SOUS-TRAITANCE", "Article 1 - Objet"] },
+        { "page": 2, "lignes": ["Article 4.2 - Delai de paiement"] }
+      ],
+      "max": 800,
+      "blocs_attendus": [
+        { "page": 1, "index": 0, "text": "CONTRAT DE SOUS-TRAITANCE" },
+        { "page": 1, "index": 1, "text": "Article 1 - Objet" },
+        { "page": 2, "index": 0, "text": "Article 4.2 - Delai de paiement" }
+      ],
+      "groupees": false,
+      "preuve": "3 lignes pour un plafond de 800 : aucune raison de regrouper, l'ancrage reste au plus fin. L'index repart a 0 a chaque page, comme chez DocIE."
+    },
+    {
+      "nom": "lignes_blanches_ignorees",
+      "pages": [{ "page": 1, "lignes": ["Titre", "   ", "\t", "", "Corps"] }],
+      "max": 800,
+      "blocs_attendus": [
+        { "page": 1, "index": 0, "text": "Titre" },
+        { "page": 1, "index": 1, "text": "Corps" }
+      ],
+      "groupees": false,
+      "preuve": "une ligne blanche consommerait une des 800 places du prompt sans rien ancrer (llm/prompts.py:139 filtre APRES la tranche blocks[:800]) : elle est ecartee avant l'envoi"
+    },
+    {
+      "nom": "bom_seul_est_une_ligne",
+      "pages": [{ "page": 1, "lignes": ["Titre", "﻿", "Corps"] }],
+      "max": 800,
+      "blocs_attendus": [
+        { "page": 1, "index": 0, "text": "Titre" },
+        { "page": 1, "index": 1, "text": "﻿" },
+        { "page": 1, "index": 2, "text": "Corps" }
+      ],
+      "groupees": false,
+      "preuve": "\\uFEFF n'est pas un blanc pour str.isspace() : DocIE en ferait un bloc, donc nous aussi. Un portage JS qui filtrerait avec trim() l'effacerait et les deux portages divergeraient sur le meme document."
+    },
+    {
+      "nom": "page_sans_ligne_utile_ecartee",
+      "pages": [
+        { "page": 1, "lignes": ["Texte"] },
+        { "page": 2, "lignes": ["  ", ""] },
+        { "page": 3, "lignes": ["Suite"] }
+      ],
+      "max": 800,
+      "blocs_attendus": [
+        { "page": 1, "index": 0, "text": "Texte" },
+        { "page": 3, "index": 0, "text": "Suite" }
+      ],
+      "groupees": false,
+      "preuve": "une page vide (page de garde, page scannee sans couche texte) ne produit aucun bloc, et les numeros des autres pages ne sont pas renumerotes"
+    },
+    {
+      "nom": "regroupement_quand_le_plafond_mord",
+      "pages": [
+        { "page": 1, "lignes": ["l0", "l1", "l2", "l3", "l4", "l5"] },
+        { "page": 2, "lignes": ["l6", "l7", "l8", "l9"] }
+      ],
+      "max": 4,
+      "blocs_max_attendus": 4,
+      "groupees": true,
+      "texte_concatene": "l0\nl1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9",
+      "preuve": "10 lignes pour 4 blocs : le regroupement s'active, l'ordre de lecture est conserve mot pour mot, et aucun bloc ne melange deux pages"
+    },
+    {
+      "nom": "jamais_entre_deux_pages",
+      "pages": [
+        { "page": 1, "lignes": ["a", "b", "c"] },
+        { "page": 2, "lignes": ["d", "e", "f"] }
+      ],
+      "max": 2,
+      "blocs_max_attendus": 2,
+      "groupees": true,
+      "texte_concatene": "a\nb\nc\nd\ne\nf",
+      "preuve": "avec 2 blocs pour 2 pages, chaque page donne exactement un bloc : une page est une frontiere dure, parce qu'un bloc porte UN numero de page et qu'une fenetre de preuve ne franchit jamais une page (extract/grounding.py::_Evidence.of)"
+    },
+    {
+      "nom": "plus_de_pages_que_de_blocs_refuse",
+      "pages": [
+        { "page": 1, "lignes": ["a"] },
+        { "page": 2, "lignes": ["b"] },
+        { "page": 3, "lignes": ["c"] }
+      ],
+      "max": 2,
+      "erreur": "pack",
+      "preuve": "3 pages ne tiennent pas en 2 blocs sans qu'un bloc couvre deux pages : echec nomme plutot qu'un numero de page invente"
+    },
+    {
+      "nom": "aucune_ligne_utile_refuse",
+      "pages": [{ "page": 1, "lignes": ["", "   "] }],
+      "max": 800,
+      "erreur": "vide",
+      "preuve": "sans ligne utile il n'y a rien a envoyer ; une liste vide de blocs n'est PAS un repli sur `text` cote DocIE (extract/service.py:357), elle extrait de rien en HTTP 200"
+    },
+    {
+      "nom": "page_zero_refusee",
+      "pages": [{ "page": 0, "lignes": ["a"] }],
+      "max": 800,
+      "erreur": "page",
+      "preuve": "une page < 1 ne designe aucune page et casserait tout filtrage d'evidence_ids par page"
+    },
+    {
+      "nom": "ligne_non_textuelle_refusee",
+      "pages": [{ "page": 1, "lignes": ["a", 42] }],
+      "max": 800,
+      "erreur": "ligne",
+      "preuve": "le rendu est la responsabilite de l'appelant ; un non-texte ici est un defaut de son cote, pas une valeur a convertir en silence"
+    }
+  ],
+  "cas_volume": [
+    {
+      "nom": "mille_deux_cents_lignes_tiennent_en_huit_cents_blocs",
+      "lignes": 1200,
+      "pages": 1,
+      "max": 800,
+      "groupees": true,
+      "preuve": "le cas qui motive ce module : 1 200 lignes non vides depassent le plafond de prompt de 800 et seraient tronquees EN SILENCE (HTTP 200, aucun avertissement). Regroupees, elles passent entierement."
+    },
+    {
+      "nom": "huit_cents_lignes_ne_sont_pas_regroupees",
+      "lignes": 800,
+      "pages": 1,
+      "max": 800,
+      "groupees": false,
+      "preuve": "pile au plafond : le regroupement ne s'active pas, donc l'ancrage reste au plus fin. Le refus de DocIE est au-DELA de 800 (render_ocr_blocks garde blocks[:800])."
+    },
+    {
+      "nom": "cinq_mille_lignes_sur_dix_pages",
+      "lignes": 5000,
+      "pages": 10,
+      "max": 800,
+      "groupees": true,
+      "preuve": "cas realiste d'une couche texte de PDF, ou une ligne visuelle n'est pas un paragraphe : le regroupement doit tenir avec plusieurs pages, chacune gardant ses propres blocs"
+    }
+  ]
+}
