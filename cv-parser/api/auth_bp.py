@@ -86,23 +86,69 @@ def _oublier_echecs(ip: str, email: str) -> None:
         _echecs_login.pop(_cle_login(ip, email), None)
 
 
+def _schema_public() -> str:
+    """Le schéma que voit RÉELLEMENT le navigateur, derrière le proxy Coolify.
+
+    `request.is_secure` lit `wsgi.url_scheme`, qui vaut « http » pour toutes
+    les requêtes derrière un proxy qui termine le TLS (voir
+    docs/deploiement-coolify.md : Coolify pose Let's Encrypt par domaine et
+    parle au conteneur en clair sur le réseau interne). S'y fier seul
+    reviendrait à ne JAMAIS marquer le cookie `Secure` en déploiement,
+    c'est-à-dire à écrire une protection qui ne s'active jamais.
+
+    Pourquoi lire un en-tête fourni par le client ICI, alors que ce fichier
+    refuse explicitement `ProxyFix` / `X-Forwarded-For` plus haut (bloc anti
+    brute-force) : le modèle de menace est inverse, et c'est la seule raison.
+
+      - Falsifier `X-Forwarded-For` AFFAIBLIT la limite de tentatives —
+        l'attaquant se donne une IP apparente neuve à chaque essai. D'où le
+        refus, qui reste entier : rien ici ne touche à cette limite.
+      - Falsifier `X-Forwarded-Proto: https` ne peut que DURCIR le cookie. Le
+        navigateur cessera alors de le renvoyer en clair, au détriment du seul
+        falsificateur. Aucun gain pour un attaquant, donc aucune raison
+        d'exiger un proxy de confiance pour ce seul usage.
+
+    Pas de variable d'environnement non plus : une bascule qu'on oublie de
+    poser après le passage au TLS échoue en SILENCE (cookie non marqué, rien
+    à l'écran). Le schéma réel, lui, se corrige tout seul le jour du TLS.
+    """
+    # Une chaîne de proxys concatène : « https,http ». Le premier élément est
+    # celui vu par le client, les suivants sont les sauts internes.
+    annonce = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+    if annonce in ("http", "https"):
+        return annonce
+    return "https" if request.is_secure else "http"
+
+
 def _set_cookies(resp, access_token: str, refresh_token: str):
+    # `Secure` suit le schéma réel : absent en HTTP (sinon le navigateur ne
+    # renverrait plus le cookie et la connexion cesserait de fonctionner sur
+    # le déploiement actuel), posé dès que le TLS est en place.
+    secure = _schema_public() == "https"
     resp.set_cookie(
         "adbi_access", access_token,
-        httponly=True, samesite="Lax", max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        httponly=True, samesite="Lax", secure=secure,
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
     resp.set_cookie(
         "adbi_refresh", refresh_token,
-        httponly=True, samesite="Lax", max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+        httponly=True, samesite="Lax", secure=secure,
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400,
         path="/api/auth/refresh",
     )
     return resp
 
 
 def _clear_cookies(resp):
-    resp.delete_cookie("adbi_access",  path="/")
-    resp.delete_cookie("adbi_refresh", path="/api/auth/refresh")
+    # Mêmes attributs qu'à la pose : un cookie `Secure`/`SameSite` supprimé
+    # avec des attributs discordants n'est pas remplacé par le navigateur —
+    # la déconnexion laisserait le jeton en place.
+    secure = _schema_public() == "https"
+    resp.delete_cookie("adbi_access", path="/",
+                       httponly=True, samesite="Lax", secure=secure)
+    resp.delete_cookie("adbi_refresh", path="/api/auth/refresh",
+                       httponly=True, samesite="Lax", secure=secure)
     return resp
 
 
