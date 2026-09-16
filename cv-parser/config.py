@@ -19,6 +19,33 @@ JWT_ALGORITHM              = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60        # 1 heure
 REFRESH_TOKEN_EXPIRE_DAYS   = 7
 
+# ── Portee du cookie de session (issue #245, serie controle d'acces) ──────────
+#
+# VIDE = comportement actuel, a l'octet : le cookie reste "host-only", il n'est
+# renvoye qu'a cv-parser. C'est le defaut, et un deploiement qui ne pose jamais
+# cette variable ne doit rien voir changer.
+#
+# Posee (ex. "outils.adbi.fr") : le cookie devient valable pour les
+# sous-domaines de ce domaine, ce qui permet aux autres services ADBI de
+# VERIFIER le jeton emis ici -- cv-parser reste le seul emetteur d'identite.
+#
+# A ne jamais poser a un suffixe public ni au-dessus : le navigateur refuserait
+# le cookie. Sur les domaines Coolify actuels (*.sslip.io, absent de la Public
+# Suffix List) la valeur utile est "<ip-du-serveur>.sslip.io" -- mais le cookie y
+# est alors visible par tout hote servi sous ce suffixe. Voir #253 : la bascule
+# vers un vrai domaine referme exactement cette exposition, et ne coute que le
+# changement de CETTE variable.
+COOKIE_DOMAIN = os.environ.get("ADBI_COOKIE_DOMAIN", "").strip()
+
+# URL publique du hub (ADBI Factory), ex. "https://outils.adbi.fr".
+#
+# Sert UNIQUEMENT a valider le `next` de /login : sans liste blanche, un
+# parametre de redirection sur une page de connexion est une redirection
+# ouverte -- l'endroit le plus dangereux pour en avoir une, puisque la victime
+# vient justement d'y taper son mot de passe. Vide = aucun `next` n'est
+# accepte, on retombe sur "/".
+FACTORY_URL = os.environ.get("ADBI_FACTORY_URL", "").strip().rstrip("/")
+
 # ── Stockage ──────────────────────────────────────────────────────────────────
 # users.json/tokens.json/invites.json/adbi.db (SQLite)/cv_database.json ont
 # disparu avec la bascule PostgreSQL (issue #15, PR B) — voir core/pg.py,
