@@ -59,6 +59,17 @@ CHAMPS_CONTACT = {"email", "phone", "linkedin", "location"}
 # l'omettre laisserait un lieu douteux passer pour relu.
 CHAMPS_EXPERIENCE = {
     "company": "company",
+    # Seule entrée dont les deux noms diffèrent : le schéma dit `end_client`,
+    # la fiche dit `client` (matcher.py et les gabarits le lisent ainsi depuis
+    # toujours). La table est faite pour ça — relier un chemin DocIE à un
+    # chemin de fiche, pas exiger qu'ils portent le même mot.
+    #
+    # Le champ a bien un chemin de fiche : normalize_cv_data le conserve, et
+    # cv_detail.html en fait une case éditable `data-f="client"` marquable,
+    # comme `location`. L'omettre ici laisserait un client final douteux passer
+    # pour relu ; l'y mettre sans la case marquable ferait l'inverse (un
+    # avertissement sans rien de surligné, cf. `github` ci-dessus).
+    "end_client": "client",
     "title": "title",
     "location": "location",
     "start_date": "period",

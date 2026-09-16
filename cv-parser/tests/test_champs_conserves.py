@@ -461,6 +461,139 @@ class RevueDocieTests(unittest.TestCase):
         )
         self.assertEqual(revue["needs_review"], ["certifications[0].issuer"])
 
+    def test_le_doute_sur_le_client_final_designe_la_case_client(self):
+        """Seule entrée de la table dont le chemin CHANGE de nom.
+
+        DocIE doute de `experience[0].end_client` ; la case à surligner
+        s'appelle `client`, dans la fiche comme dans le gabarit. Un chemin non
+        traduit ne désignerait aucune case : l'écran annoncerait « 1 champ à
+        relire » sans rien marquer.
+        """
+        revue = revue_docie(
+            {"experience": [{"company": "DLA Conseil", "end_client": "Urssaf IDF",
+                             "start_date": "Mars 2022"}]},
+            {"validation": {}, "field_confidence": {"experience[0].end_client": 0.5}},
+        )
+        self.assertEqual(revue["needs_review"], ["experience[0].client"])
+        self.assertEqual(revue["warnings"], [])
+
+
+class ClientFinalTests(unittest.TestCase):
+    """#234 — le client final que DocIE rend et que la fiche jetait.
+
+    `adbi_resume` déclare `experience[].end_client` depuis #243 : cv-parser le
+    demandait donc déjà à DocIE, le recevait, et le jetait — `normalize_cv_data`
+    ne lisait que `client`, un nom qu'aucun schéma servi ne produit. Même panne
+    que `location` (#177 ligne 17), au même endroit et pour la même raison.
+
+    Le champ n'est pas décoratif : `core/matcher.py::_get_all_text` le verse
+    dans le rapprochement candidat/besoin, et les cinq sorties l'affichent.
+
+    Toutes les fixtures du dépôt sont antérieures au champ (`simple_docie.json`
+    n'a que company/title/dates/location/description/env_technique) : l'entrée
+    ci-dessous est donc SYNTHÉTIQUE et bâtie sur le schéma servi, clés verbatim.
+    Même discipline que `CERTIFICATION_SYNTHETIQUE`.
+    """
+
+    MISSION = {
+        "company": "DLA Conseil", "end_client": "Urssaf IDF", "via": "",
+        "title": "Développeur Full Stack", "start_date": "Mars 2022",
+        "end_date": "Aujourd'hui", "location": "Lyon",
+        "description": "Refonte du SI", "env_technique": "Python",
+    }
+
+    FICHE_SORTIES = {
+        "name": "Camille Béranger", "title": "Développeuse", "years_experience": 7,
+        "contact": {}, "skills": [], "languages": [], "education": [],
+        "certifications": [],
+        "experience": [{"company": "DLA Conseil", "client": "Urssaf IDF",
+                        "title": "Dev", "location": "Lyon",
+                        "period": "Mars 2022 – Aujourd'hui", "description": "A"}],
+    }
+
+    def _fiche(self, mission=None):
+        return APP["normalize_cv_data"](
+            {"experience": [dict(mission or self.MISSION)]})
+
+    def test_le_client_final_arrive_dans_la_fiche(self):
+        # Avant ce correctif : "" — `end_client` n'était jamais lu.
+        self.assertEqual(self._fiche()["experience"][0]["client"], "Urssaf IDF")
+
+    def test_l_employeur_n_est_pas_recopie_dans_le_client(self):
+        """Le défaut corrigé côté one-pager par #235 : `end_client: company`.
+
+        Un client final vide reste vide. Y recopier l'employeur donnerait une
+        valeur fausse et plausible dans une case intitulée « Client ».
+        """
+        fiche = self._fiche(dict(self.MISSION, end_client=""))
+        self.assertEqual(fiche["experience"][0]["client"], "")
+        self.assertEqual(fiche["experience"][0]["company"], "DLA Conseil")
+
+    def test_la_voie_locale_garde_la_priorite(self):
+        """`client` est la clé de la voie locale et des fiches déjà en base."""
+        fiche = self._fiche(dict(self.MISSION, client="Saisi à la main"))
+        self.assertEqual(fiche["experience"][0]["client"], "Saisi à la main")
+
+    def test_un_client_absent_ne_fabrique_rien(self):
+        fiche = APP["normalize_cv_data"](
+            {"experience": [{"company": "Numelia", "title": "Dev"}]})
+        self.assertEqual(fiche["experience"][0]["client"], "")
+
+    def test_il_survit_a_l_aller_retour_de_l_ecran(self):
+        """Le piège de cette ligne : un champ affiché mais effacé au premier
+        « Enregistrer ». `collectData` ramasse les missions par la boucle
+        générique [data-f], et la case `client` en est une."""
+        retenu = APP["_filtrer_champs_cv"]({"experience": self._fiche()["experience"]})
+        self.assertIsNone(APP["_plafonner_cv"](retenu))
+        self.assertEqual(retenu["experience"][0]["client"], "Urssaf IDF")
+        self.assertIn("card.querySelectorAll('[data-f][contenteditable]')",
+                      _corps_de_fonction_js("collectData"))
+
+    def test_la_case_client_est_marquable(self):
+        """Sans le liant `a-verifier`, un doute s'annoncerait sans rien surligner
+        — exactement ce que `docie_review` refuse pour `github`."""
+        html = _rendu("cv_detail.html", cv={
+            "id": "cv1", "name": "Camille", "contact": {},
+            "experience": [{"company": "DLA Conseil", "title": "Dev",
+                            "client": "Urssaf IDF"}],
+            "docie_review": {"needs_review": ["experience[0].client"],
+                             "warnings": []},
+        }, linked_cvs=[])
+        self.assertIn('a-verifier" contenteditable="true" data-f="client"', html)
+
+    def test_le_client_final_est_dans_les_quatre_sorties(self):
+        """Un champ conservé mais absent d'une seule sortie ferait une fiche qui
+        se contredit selon le format qu'on en tire."""
+        import fitz
+        from docx import Document
+        from export_dossier import en_pdf, en_word
+        for gabarit in ("adbi_cv.html", "company_cv.html"):
+            with self.subTest(sortie=gabarit):
+                self.assertIn("Urssaf IDF",
+                              _rendu(gabarit, cv=self.FICHE_SORTIES, pied="ADBI"))
+        flux = en_pdf(self.FICHE_SORTIES, ["Data"], ["Pilotage"])
+        with fitz.open(stream=flux.read(), filetype="pdf") as document:
+            self.assertIn("Urssaf IDF",
+                          "\n".join(page.get_text() for page in document))
+        document = Document(en_word(self.FICHE_SORTIES, ["Data"], ["Pilotage"]))
+        self.assertIn("Urssaf IDF", "\n".join(
+            [p.text for p in document.paragraphs]
+            + [c.text for t in document.tables for r in t.rows for c in r.cells]))
+
+    def test_il_entre_dans_le_rapprochement(self):
+        """Ce qui distingue ce champ d'un champ d'affichage : matcher.py le lit."""
+        from core.matcher import _get_all_text
+        self.assertIn("urssaf idf", _get_all_text(self._fiche()))
+
+    def test_meme_source_docie_que_one_pager(self):
+        """Les deux services lisent la MÊME clé DocIE. Seuls les noms de FICHE
+        diffèrent — `client` ici, `end_client` là-bas — parce que matcher.py,
+        les deux exports et les trois gabarits lisent `client` depuis toujours.
+        Renommer ici casserait le rapprochement pour aligner un mot."""
+        js = (Path(__file__).resolve().parents[2]
+              / "one-pager/lib/docie-extract.js").read_text(encoding="utf-8")
+        self.assertIn("end_client: texte(brut && brut.end_client),", js)
+
 
 if __name__ == "__main__":
     unittest.main()
