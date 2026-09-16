@@ -1,0 +1,64 @@
+{
+  "_description": "Jeu d'essai partage, TESTS SEULEMENT : « la meme extraction DocIE `contract` donne-t-elle le meme dossier selon le langage ? ». La paire `contract` partage deja les regles de nombre, de date et de nom (nombre_docie.json, date_docie.json, nom_docie.json), mais celles-ci ne couvrent que les AIDES. Rien ne comparait la COUCHE DE MAPPING elle-meme : choix des champs, emission des avertissements, miroir des controles bloquants, place du controle SIREN/SIRET. C'est precisement la ou l'inventaire #179 section A a mesure de vraies divergences -- A1 (le portage JS jetait les avertissements de validation de DocIE) et A2-A6 (regle de nombre) -- donc une regression y est attestee, pas hypothetique.",
+  "_ports": [
+    "document-parsing/mappings/contract_to_contrats.py::map_docie_contract_to_sous_traitance (reference Python, lit l'ENVELOPPE)",
+    "contrats/lib/docie-contract-import.js::mapContractResult (portage JS, lit le resultat DEJA DESENVELOPPE par le pont)"
+  ],
+  "_lecture": "Lu par contrats/tests/accord-contract.test.js, qui execute les deux ports sur la meme entree : le JS en direct, le Python par un sous-processus. Meme mecanique que l'execution croisee d'urssaf-mapping.test.js, siren-siret.test.js et iban-bic.test.js. Aucun reseau, aucun appel DocIE.",
+  "_pourquoi_les_deux_entrees_different": "#179 ligne A12, et c'est une asymetrie VOULUE qu'il ne faut pas unifier : Python lit l'enveloppe brute ({value, confidence, evidence_ids} par feuille) parce que son `_extract_scalar` fait `wrapper.get('value')`, tandis que le JS recoit le resultat deja desenveloppe par docie-bridge.js::unwrap(). Le test alimente donc chaque port avec CE QU'IL RECOIT EN PRODUCTION -- l'enveloppe telle quelle cote Python, la meme enveloppe passee par le VRAI pont cote JS. Reimplementer le desenveloppage dans le test mesurerait autre chose que la production.",
+  "_pourquoi_une_egalite_stricte_ici": "Contrairement a la paire `resume` (accord_resume.json), les deux ports de `contract` alimentent le MEME consommateur : POST /api/contracts/importer, dont les colonnes sont exactement contrats/lib/fields.js::sousTraitance. `values` doit donc etre IDENTIQUE des deux cotes, pas seulement correspondant -- toute difference serait un dossier different selon le service qui a importe le contrat.",
+  "_regles": {
+    "values": "egalite stricte des cles ET des valeurs",
+    "ok": "egalite stricte",
+    "errors": "egalite apres retrait des accents : les deux ports miroitent les memes controles de contrats/server.js, mais l'un ecrit « Le numero du contrat est requis. » et l'autre « Le numero... » accentue. MESURE : meme nombre, meme ordre, memes controles declenches.",
+    "avertissements_nombre_et_ordre": "egalite stricte du NOMBRE et de l'ORDRE",
+    "avertissements_champ": "egalite stricte du prefixe avant le premier « : » (le champ DocIE concerne, ou le canal : « DocIE extraction_notes », « DocIE validation.warnings »)",
+    "controle_siren_siret": "egalite stricte des statuts par numero"
+  },
+  "_surcharge": "Un cas synthetique ne recopie pas les 21 champs de l'enveloppe nominale : il declare `base` (un fichier de document-parsing/mappings/fixtures/) et `surcharge`. Regle appliquee A L'IDENTIQUE par les deux ports : les cles de `surcharge.result` remplacent celles de `result` (fusion de surface, une cle a la fois), et `surcharge.validation`, s'il est present, remplace `validation` en entier. Rien d'autre n'est modifie.",
+  "differences_produit": [
+    {
+      "quoi": "prose de l'avertissement « date non reconnue » et de l'avertissement de devise",
+      "preuve": "#179 ligne A13, MESURE sur contract_extraction_sample_edge_cases.json : Python ecrit « date non reconnue ('le 5 courant'), laissee vide -- a corriger manuellement » et « devise 'USD' != EUR -- contrats/lib/fields.js suppose... », le JS « date non reconnue (\"le 5 courant\"), laissée vide — à corriger manuellement » et « devise \"USD\" != EUR — fields.js suppose... ». Guillemets de `repr` contre guillemets JSON, tirets doubles contre cadratins, accents. Le CHAMP et l'ORDRE sont identiques ; seule la prose differe, et elle est affichee a un relecteur humain, pas analysee."
+    },
+    {
+      "quoi": "accents des deux erreurs bloquantes",
+      "preuve": "« Le numero du contrat est requis. » contre « Le numéro du contrat est requis. » : meme controle, meme declenchement, ecriture differente."
+    },
+    {
+      "quoi": "4 avertissements sur 6 sont, eux, IDENTIQUES mot pour mot",
+      "preuve": "MESURE : les messages SIREN/SIRET, les `extraction_notes` et les `validation.warnings` sont accentues et formates pareil des deux cotes. La difference de prose de #179 A13 ne concerne donc QUE les messages fabriques par les normaliseurs de date et de montant -- l'affirmer plus largement serait faux."
+    }
+  ],
+  "cas": [
+    {
+      "nom": "nominal",
+      "base": "contract_extraction_sample.json",
+      "preuve": "fixture generee depuis les VRAIS modeles pydantic de DocIE (voir fixtures/generate_sample.py). MESURE : 19 cles de `values` identiques, ok=true des deux cotes, 1 avertissement identique mot pour mot, SIREN et SIRET valides."
+    },
+    {
+      "nom": "cas_limites",
+      "base": "contract_extraction_sample_edge_cases.json",
+      "preuve": "MESURE : 19 cles identiques, ok=false des deux cotes avec le MEME controle declenche (numeroContrat manquant), 6 avertissements dans le meme ordre avec les memes champs, SIREN cle_invalide et SIRET absent des deux cotes. C'est le cas qui exerce les deux differences de prose declarees ci-dessus."
+    },
+    {
+      "nom": "validation_avec_avertissements_et_erreurs",
+      "base": "contract_extraction_sample.json",
+      "surcharge": {
+        "validation": { "valid": false, "errors": ["champ obligatoire manquant"], "warnings": ["low overall confidence"] }
+      },
+      "preuve": "Regression visee : #179 ligne A1, ou `extractContractValues` jetait `metadata.validation` que le pont avait pourtant rempli -- les doutes de DocIE sur sa propre extraction n'atteignaient jamais le relecteur cote JS. MESURE : les deux ports reportent desormais `DocIE validation.warnings` ET `DocIE validation.errors`. Noter que `ok` reste true : une validation negative de DocIE n'est pas un controle bloquant d'import."
+    },
+    {
+      "nom": "siren_siret_invalides",
+      "base": "contract_extraction_sample.json",
+      "surcharge": {
+        "result": {
+          "st_siren": { "value": "123456789", "evidence_ids": [], "confidence": 0.9 },
+          "st_siret": { "value": "12345678900000", "evidence_ids": [], "confidence": 0.9 }
+        }
+      },
+      "preuve": "MESURE : statut `cle_invalide` pour les deux numeros des deux cotes, avertissements ranges sous `st_siren` / `st_siret`, et `ok` reste true -- un numero invalide n'est PAS bloquant, la valeur lue reste proposee au relecteur. Fige aussi la PLACE du verdict : a cote de `values`, jamais dedans, parce que `values` doit rester exactement les colonnes de fields.js::sousTraitance."
+    }
+  ]
+}
