@@ -14,6 +14,16 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 
+// Verification des jetons ADBI (auth/auth-adbi.js, #247). Chemin relatif
+// volontaire, meme convention que le pont DocIE chez contrats : en checkout
+// monorepo ../auth est le vrai dossier partage ; dans l'image, le Dockerfile
+// le copie a la racine (/auth) et server.js vit dans /app -- meme profondeur
+// relative, donc le meme chemin resout dans les deux cas.
+//
+// Cette bibliotheque n'a AUCUNE dependance npm : factory garde les siennes a
+// zero, ce qui etait une propriete deliberee de ce service.
+const auth = require("../auth/auth-adbi");
+
 // ADBI_PORT permet de lancer une seconde instance a cote (test, depannage)
 // sans couper celle qui tourne deja.
 const PORT = Number(process.env.ADBI_PORT) || 4000;
@@ -454,9 +464,61 @@ function servirFichier(rep, chemin) {
   });
 }
 
+// URL publique du hub : sert de `next` a la page de connexion de cv-parser,
+// qui la valide contre sa PROPRE ADBI_FACTORY_URL (#254) avant de l'accepter.
+// Vide : on renvoie quand meme vers la connexion, sans retour automatique.
+const FACTORY_URL = (process.env.ADBI_FACTORY_URL || "").replace(/\/+$/, "");
+const PARSER_URL = (process.env.ADBI_PARSER_URL || "").replace(/\/+$/, "");
+
+// Chemins servis SANS session, et pourquoi chacun :
+//   /api/sante      -- sonde du conteneur (factory/Dockerfile). Un 401 y ferait
+//                      echouer le HEALTHCHECK et Coolify redemarrerait le hub
+//                      en boucle : l'exemption est la condition du garde.
+//   /adbi-theme.*   -- la charte, et /fonts/ ses polices. La page de connexion
+//   /fonts/            vers laquelle on redirige doit pouvoir s'afficher ; les
+//                      gater rendrait l'ecran d'erreur illisible.
+// Tout le reste est protege, y compris / et /api/modules.
+function cheminPublic(chemin) {
+  return chemin === "/api/sante"
+    || chemin === "/adbi-theme.css"
+    || chemin === "/adbi-theme.js"
+    || chemin.startsWith("/fonts/");
+}
+
+/** Renvoie true si la reponse a ete ecrite (visiteur refuse). */
+function refuserSiNonAuthentifie(req, rep, chemin) {
+  if (cheminPublic(chemin)) return false;
+  const decision = auth.garde(req, process.env);
+  if (decision.autorise) return false;
+
+  if (decision.api) {
+    // Une API repond en JSON : le navigateur ne doit pas recevoir du HTML de
+    // connexion la ou il attend des donnees.
+    return repondreJson(rep, 401, { erreur: "Non authentifie" }), true;
+  }
+  // Page : on renvoie vers la connexion de cv-parser, seul emetteur
+  // d'identite. `next` lui dit ou revenir -- il le VALIDE de son cote, on ne
+  // lui fait pas confiance sur parole.
+  const retour = FACTORY_URL ? "?next=" + encodeURIComponent(FACTORY_URL) : "";
+  const cible = PARSER_URL ? PARSER_URL + "/login" + retour : "/";
+  rep.writeHead(302, { Location: cible, "Cache-Control": "no-store" });
+  rep.end();
+  return true;
+}
+
 const serveur = http.createServer(async (req, rep) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const chemin = decodeURIComponent(url.pathname);
+
+  // Sonde du conteneur : avant le garde, et sans rien reveler de l'etat
+  // interne -- elle dit seulement que le processus repond.
+  if (chemin === "/api/sante" && req.method === "GET") {
+    return repondreJson(rep, 200, { ok: true });
+  }
+
+  // ── Controle d'acces (#245) ──
+  // ADBI_AUTH absent/off -> passage libre, comportement d'avant inchange.
+  if (refuserSiNonAuthentifie(req, rep, chemin)) return;
 
   // ── API ──
   if (chemin === "/api/modules" && req.method === "GET") {

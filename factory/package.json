@@ -4,7 +4,8 @@
   "description": "ADBI Factory - plateforme locale regroupant les outils internes ADBI (One pager, Generateur de contrats, Calculatrice TJM).",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js"
   },
   "author": "ADBI",
   "license": "UNLICENSED",
