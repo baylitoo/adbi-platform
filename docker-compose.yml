@@ -21,12 +21,28 @@ services:
           memory: 1g
 
   factory:
-    build: ./factory
+    # additional_contexts (Compose >= 2.17) : expose auth/ (bibliotheque de
+    # verification des jetons, #247) au Dockerfile via `COPY --from=auth`,
+    # sans la dupliquer dans factory/. Meme mecanisme que le pont DocIE chez
+    # contrats.
+    build:
+      context: ./factory
+      additional_contexts:
+        auth: ./auth
     environment:
       ADBI_ONEPAGER_URL: ${ADBI_ONEPAGER_URL:?Set the public OnePager HTTPS URL}
       ADBI_CONTRATS_URL: ${ADBI_CONTRATS_URL:?Set the public Contrats HTTPS URL}
       ADBI_COFFRE_URL: ${ADBI_COFFRE_URL:?Set the public Coffre HTTPS URL}
       ADBI_PARSER_URL: ${ADBI_PARSER_URL:?Set the public Parser HTTPS URL}
+      # Controle d'acces du hub (#245). ADBI_AUTH absent/off -> passage libre
+      # sous l'identite locale, comportement actuel inchange. Pose a "on", le
+      # hub exige une session emise par cv-parser et VERIFIEE ici avec le meme
+      # secret -- factory n'emet jamais de jeton.
+      ADBI_AUTH: ${ADBI_AUTH:-}
+      ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
+      # URL publique du hub : sert de `next` a la page de connexion de
+      # cv-parser, qui la valide contre sa propre ADBI_FACTORY_URL (#254).
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
       ADBI_LLM_BASE_URL: ${DOCIE_CHAT_BASE_URL:?Set the DocIE OpenAI-compatible base URL ending in /v1}
       ADBI_LLM_API_KEY: ${DOCIE_API_KEY:?Set the DocIE application access key}
       ADBI_LLM_MODELS: ${DOCIE_CHAT_MODEL:-lfm2.5-2.6b}
@@ -265,6 +281,19 @@ services:
       ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
       ADBI_SUPERUSER_EMAIL: ${ADBI_SUPERUSER_EMAIL:?ADBI_SUPERUSER_EMAIL est requis (voir .env.example) — jamais admin@adbi.fr en déploiement}
       ADBI_SUPERUSER_PASSWORD: ${ADBI_SUPERUSER_PASSWORD:?ADBI_SUPERUSER_PASSWORD est requis (voir .env.example) — jamais le défaut de développement en déploiement}
+      # Portée du cookie de session (#254). cv-parser ÉMET le cookie ; sans
+      # cette ligne, `config.py::COOKIE_DOMAIN` reste vide, `_portee_cookie()`
+      # rend {} et le cookie est « host-only » — les quatre services Node ne le
+      # reçoivent JAMAIS, donc le contrôle d'accès de #245 ne peut pas voir de
+      # session. Documentée dans .env.example, elle n'était transmise nulle
+      # part : piège #164, en silence, sur le chemin d'authentification.
+      ADBI_COOKIE_DOMAIN: ${ADBI_COOKIE_DOMAIN:-}
+      # URL publique du hub, lue par `config.py::FACTORY_URL` pour valider le
+      # `next` de /login par ORIGINE EXACTE (#254). Vide, `_retour_apres_
+      # connexion()` rend "/" : un utilisateur envoyé par le hub se connecte et
+      # reste chez cv-parser au lieu de repartir d'où il venait. factory a sa
+      # propre ligne (elle envoie ce `next`) ; celle-ci est pour qui le VALIDE.
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
       ADBI_LLM_BASE_URL: ${DOCIE_CHAT_BASE_URL:?Set the DocIE OpenAI-compatible base URL ending in /v1}
       ADBI_LLM_API_KEY: ${DOCIE_API_KEY:?Set the DocIE application access key}
       ADBI_LLM_MODEL: ${DOCIE_CHAT_MODEL:-lfm2.5-2.6b}
