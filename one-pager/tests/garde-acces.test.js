@@ -166,9 +166,13 @@ test("one-pager n'a PAS d'additional_contexts, et ne doit pas en avoir", () => {
     const iService = lignes.findIndex((l) => l.trimEnd() === "  one-pager:");
     assert.ok(iService >= 0, `service one-pager introuvable dans ${nom}`);
 
+    // Fin du bloc : le prochain service (indente de 2) OU une cle de premier
+    // niveau en colonne 0 (`volumes:`, en fin de fichier). Sans cette seconde
+    // condition, un service place en DERNIER verrait son bloc avaler tout ce
+    // qui suit -- juste sur les fichiers d'aujourd'hui, faux en general.
     let fin = lignes.length;
     for (let i = iService + 1; i < lignes.length; i++) {
-      if (/^ {2}\S/.test(lignes[i])) { fin = i; break; }
+      if (/^ {2}\S/.test(lignes[i]) || /^\S/.test(lignes[i])) { fin = i; break; }
     }
     const bloc = lignes.slice(iService, fin);
     assert.ok(bloc.some((l) => l.trim() === "context: ."),
@@ -185,9 +189,13 @@ test("les deux composes transmettent les variables d'auth", () => {
   for (const nom of ["docker-compose.yml", "docker-compose.local.yml"]) {
     const lignes = fs.readFileSync(path.join(racine, nom), "utf8").split(/\r?\n/);
     const iService = lignes.findIndex((l) => l.trimEnd() === "  one-pager:");
+    // Fin du bloc : le prochain service (indente de 2) OU une cle de premier
+    // niveau en colonne 0 (`volumes:`, en fin de fichier). Sans cette seconde
+    // condition, un service place en DERNIER verrait son bloc avaler tout ce
+    // qui suit -- juste sur les fichiers d'aujourd'hui, faux en general.
     let fin = lignes.length;
     for (let i = iService + 1; i < lignes.length; i++) {
-      if (/^ {2}\S/.test(lignes[i])) { fin = i; break; }
+      if (/^ {2}\S/.test(lignes[i]) || /^\S/.test(lignes[i])) { fin = i; break; }
     }
     const bloc = lignes.slice(iService, fin).join("\n");
     for (const v of ["ADBI_AUTH:", "ADBI_JWT_SECRET:", "ADBI_FACTORY_URL:"]) {
