@@ -14,7 +14,8 @@ d'offrir un chemin de bascule sûr et réversible. La normalisation, l'édition
 et les exports en aval (app.py::process_cv, normalize_cv_data, bilan_adbi,
 export_dossier.py) ne changent pas : seule l'étape d'extraction change.
 
-Le bridge n'accepte que PDF/PNG/JPEG/WebP (pas encore de contrat texte,
+Le bridge n'accepte que PDF/PNG/JPEG — WebP en a été retiré (#180, DocIE le
+refuse ; voir #241) et ne doit pas réapparaître ici (pas encore de contrat texte,
 voir document-parsing/bridge/README.md) : un .docx passe donc toujours par
 `docie_client.extract_resume`, même bascule activée — un seul appel réseau
 dans tous les cas, jamais un second essai via un autre transport après un
@@ -40,12 +41,21 @@ from docie_client import DocIEError
 # Schéma DocIE attendu pour un CV (voir document-parsing/bridge/docie_bridge.py::SCHEMAS).
 _EXPECTED_SCHEMA = "adbi_resume"
 
+# Ces types DOIVENT rester un sous-ensemble de l'allowlist du pont
+# (document-parsing/bridge/docie_bridge.py::MIME_TYPES) : un type déclaré ici
+# mais absent là-bas route le fichier vers une voie qui le refusera.
+#
+# `.webp` a été retiré (#241). Le pont l'a écarté en #180 parce que l'allowlist
+# de DocIE le refuse — chaque WebP payait un aller-retour réseau pour rien. Ce
+# miroir, lui, n'a pas suivi, et rien ne le signalait : aucun test ne comparait
+# les deux listes. Ne pas le remettre sans que `MIME_TYPES` l'accepte d'abord
+# (c'est la question ouverte de #181) ; tests/test_parite_extensions.py échoue
+# sinon.
 _MIME_BY_SUFFIX = {
     ".pdf": "application/pdf",
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
-    ".webp": "image/webp",
 }
 
 # Messages FR par code stable du bridge (document-parsing/bridge/docie_bridge.py).

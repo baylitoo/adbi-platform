@@ -37,8 +37,17 @@ from taches_upload import ErreurTache
 TACHE = "resume"
 CHEMIN_CHARGEUR = Path(__file__).resolve().parents[1] / "document-parsing" / "models" / "catalogue.py"
 
-# Extensions que le bridge reçoit en fichier (docie_bridge_extraction._MIME_BY_SUFFIX).
-_EXT_BRIDGE = (".pdf", ".png", ".jpg", ".jpeg", ".webp")
+# Extensions que le bridge reçoit en fichier. Miroir de
+# docie_bridge_extraction._MIME_BY_SUFFIX, dont les types doivent eux-mêmes
+# rester un sous-ensemble de l'allowlist du pont
+# (document-parsing/bridge/docie_bridge.py::MIME_TYPES) — c'est CETTE liste-là
+# qui fait autorité, pas celle-ci.
+#
+# `.webp` retiré (#241) : le pont l'a écarté en #180 (DocIE le refuse) et ce
+# miroir ne l'avait pas suivi, si bien que `voie_pour(".webp")` annonçait la
+# voie « agent » pour un format sans issue. tests/test_parite_extensions.py
+# épingle désormais les deux niveaux de miroir.
+_EXT_BRIDGE = (".pdf", ".png", ".jpg", ".jpeg")
 # Extensions que le client historique lit en texte en mode inline (docie_client.extract_resume).
 _EXT_TEXTE = (".pdf", ".docx")
 
