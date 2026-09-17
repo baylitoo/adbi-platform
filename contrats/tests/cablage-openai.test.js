@@ -64,11 +64,11 @@ const RESULTAT_URSSAF = {
   company_name: "SUND INDUSTRY SYSTEM", siren: "941091316", issued_date: "2026-09-01",
 };
 
-// Les pièces RÉELLEMENT câblées dans ce service (lib/choix-modele.js::TACHES).
-// `fiscale` n'en fait PAS partie : elle a un schéma et une paire de mapping
-// (#215) mais n'est ni dans VOIES ni dans PIECES_TEXTE de docie-extraction.js,
-// donc aucun sélecteur ne la propose. La lister ici ferait passer ce test pour
-// une couverture qu'il n'a pas.
+// Les pièces à SÉLECTEUR DE MODÈLE dans ce service (lib/choix-modele.js::TACHES).
+// `fiscale` n'en fait PAS partie, et c'est délibéré : depuis #215 elle est bien
+// dans VOIES et PIECES_TEXTE de docie-extraction.js (voie texte), mais aucun
+// sélecteur ne la propose — elle est lue par le profil DocIE par défaut. La
+// lister ici ferait passer ce test pour une couverture qu'il n'a pas.
 const PIECES = ["contract", "urssaf", "rib", "kbis"];
 
 // La voie reste IMPLICITE : seule le Kbis déclare plusieurs voies admises

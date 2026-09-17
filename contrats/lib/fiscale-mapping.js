@@ -8,7 +8,8 @@
 // en-tête : choix des sept champs, réserve « aucune attestation réelle lue »,
 // GAP_NOTES). Voie texte (#194 : LFM2.5-2.6B par défaut, LFM2.5-350M derrière
 // les contrôles de plausibilité de date). Le câblage dans
-// lib/docie-extraction.js n'est PAS fait ici (PR #214 en vol sur ce fichier).
+// lib/docie-extraction.js est fait depuis #215 (VOIES + PIECES_TEXTE) ; il
+// avait été différé le temps que la PR #214 quitte ce fichier.
 //
 // docieResult est le `result` DÉJÀ DÉBALLÉ par
 // document-parsing/bridge/docie-bridge.js::unwrap(), comme pour kbis, urssaf
