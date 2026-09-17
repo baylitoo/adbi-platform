@@ -37,6 +37,11 @@
 # --- COPY document-parsing/models/{catalogue.json,catalogue.js} ... (#194)
 !document-parsing/models/catalogue.json
 !document-parsing/models/catalogue.js
+# --- COPY auth/ /auth  (#245/#247 : verification des jetons de session)
+# Sans cette reintegration, le COPY du Dockerfile echoue sur « not found » et
+# le build casse — alors que TOUS les tests restent verts, puisqu'ils tournent
+# sur le checkout ou auth/ existe. Un test lit donc ce fichier.
+!auth
 
 # --- Dans one-pager/ : jamais dans l'image (a garder coherent avec
 #     one-pager/.dockerignore et one-pager/.gitignore).

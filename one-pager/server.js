@@ -4,9 +4,15 @@
  * Chaine complete : fichier -> ingestion -> segmentation -> extraction ->
  * cv_master (stocke, editable) -> reduction -> one-pager (PDF / PPTX / JSON).
  *
- * Outil mono-utilisateur lance en local : pas d'authentification, et une erreur
- * inattendue est journalisee sans couper le serveur (rester en ligne vaut mieux
- * qu'un « connexion refusee » en pleine saisie).
+ * Une erreur inattendue est journalisee sans couper le serveur (rester en ligne
+ * vaut mieux qu'un « connexion refusee » en pleine saisie).
+ *
+ * Ce commentaire affirmait « Outil mono-utilisateur lance en local : pas
+ * d'authentification ». C'etait vrai du poste de dev et FAUX en deploiement :
+ * le service est publie sur un domaine, avec des CV importes et des dossiers de
+ * competences derriere. Depuis #245 l'acces est controle — voir gardeAcces()
+ * plus bas. Un commentaire qui decrit une propriete de securite disparue est
+ * pire qu'un commentaire absent : il fait conclure que le sujet est traite.
  */
 
 const express = require("express");
@@ -20,6 +26,15 @@ const { monterImport } = require("./lib/import-routes");
 const { build, GABARIT, cheminBadge } = require("./lib/onepager");
 const { buildPptx, buildLivret } = require("./lib/render-pptx");
 const db = require("./lib/db.pg");
+
+// Verification des jetons ADBI (auth/auth-adbi.js, #247). Chemin relatif
+// volontaire : en checkout monorepo ../auth est le vrai dossier partage ; dans
+// l'image, le Dockerfile le copie a la racine (/auth) et server.js vit dans
+// /app -- meme profondeur relative, donc le meme chemin resout dans les deux
+// cas. Contrairement aux trois autres services, aucun `additional_contexts`
+// n'est necessaire : le contexte de build de one-pager EST deja la racine du
+// depot (voir one-pager/Dockerfile et les deux docker-compose).
+const auth = require("../auth/auth-adbi");
 
 const PORT = Number(process.env.PORT) || 4200;
 // DATABASE_URL est REQUISE (issue #16, PR B) : ce service ne sait plus parler
@@ -46,6 +61,12 @@ console.log(`[taches] ${MAX_EXTRACTIONS_SIMULTANEES} extraction(s) simultanée(s
 // loopback), meme si le HEALTHCHECK (execute dans le meme conteneur) semble
 // fonctionner.
 const HOTE = process.env.ADBI_HOTE || "127.0.0.1";
+// URL publique du hub. one-pager est affiche DANS une <iframe> du hub
+// (modules.docker.json : "type": "service"), donc un module non authentifie ne
+// redirige pas sur place : il renvoie le NIVEAU SUPERIEUR vers le hub, seul
+// capable de renouveler la session (auth-adbi.js, pageReconnexion). Vide : la
+// cible n'est pas fabricable, on repond 401 en clair.
+const FACTORY_URL = process.env.ADBI_FACTORY_URL || "";
 
 /**
  * Une erreur inattendue est journalisee sans couper le serveur : en pleine
@@ -78,6 +99,56 @@ function messageDemarrage(e) {
 
 const app = express();
 app.use(express.json({ limit: "25mb" }));
+
+// ---------- Controle d'acces du service (#245) ----------
+//
+// one-pager etait entierement public : quiconque atteignait son domaine pouvait
+// lister les CV importes, les consulter, en deposer, generer des dossiers de
+// competences et lancer des exports. Quatrieme et dernier service Node de la
+// serie (#256 factory, #258 coffre, #259 contrats).
+//
+// cv-parser reste le SEUL emetteur d'identite ; ici on ne fait que VERIFIER.
+//
+// Un seul chemin public : /api/sante, sonde du conteneur (Dockerfile). Un 401
+// y serait lu comme un echec et Coolify redemarrerait en boucle. Contrairement
+// a contrats, aucun rappel entrant a exempter : toutes les routes de ce service
+// sont sous /api/, il n'a pas d'equivalent du webhook de signature.
+//
+// Place APRES express.json et AVANT express.static :
+//   - avant le statique, sinon index.html et tout public/ partiraient sans
+//     session et le garde ne protegerait presque rien de ce qu'un visiteur voit ;
+//   - apres express.json, pour que le corps soit consomme avant le refus : un
+//     envoi de 25 Mo non authentifie recoit alors un 401 propre que le front
+//     sait lire, au lieu d'une connexion coupee en plein transfert.
+function cheminPublic(chemin) {
+  return chemin === "/api/sante";
+}
+
+function gardeAcces(req, res, next) {
+  if (cheminPublic(req.path)) return next();
+  const decision = auth.garde(req, process.env);
+  if (decision.autorise) return next();
+
+  if (decision.api) {
+    // Le front appelle tout par fetch() : du HTML la ou il attend du JSON
+    // casserait l'affichage au lieu de signaler la session expiree.
+    return res.status(401).json({ erreur: "Non authentifie" });
+  }
+  if (!FACTORY_URL) {
+    // Sans URL de hub, aucune cible de reconnexion fabricable : on le dit,
+    // plutot que de renvoyer vers une page absente de ce service.
+    return res.status(401).type("text/plain; charset=utf-8").send("Non authentifie");
+  }
+  // Page : one-pager est un module affiche en <iframe>. Rediriger sur place
+  // ferait un cadre mort a l'expiration du jeton (1 h) ; pageReconnexion()
+  // renvoie le niveau superieur vers le hub, qui sait renouveler la session.
+  return res
+    .status(401)
+    .type("text/html; charset=utf-8")
+    .send(auth.pageReconnexion(FACTORY_URL, "one-pager"));
+}
+
+app.use(gardeAcces);
 app.use(express.static(path.join(__dirname, "public")));
 
 // ------------------------------------------------------------- Santé ------
