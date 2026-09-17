@@ -14,7 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from docie_bridge import (extract_document, extract_text, file_payload, parse_response, parse_text_response,
                           compter_blocs_texte, DOCIE_BLOCS_TEXTE_MAX, valider_blocs_ocr, DOCIE_BLOCS_OCR_MAX,
                           DOCIE_BLOC_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitre_avertissement,
-                          resultat_partiel, RAISONS_PARTIEL, MAX_TEXT_BYTES, DocIEBridgeError)
+                          resultat_partiel, RAISONS_PARTIEL, MAX_TEXT_BYTES,
+                          DOCIE_TEXTE_CARACTERES_MAX, DocIEBridgeError)
 
 # Jeux d'essai partagés avec bridge.test.js, lus par les TESTS seulement.
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
@@ -175,13 +176,36 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "input")
         self.assertIn(str(maximum), str(raised.exception))
         self.assertEqual(session.post.call_count, 1)
-        # La voie texte garde sa borne propre (pas de base64) : 20 MiB d'UTF-8.
+        # La voie texte est bornée en CARACTÈRES, pas en octets : DocIE compare
+        # `len(payload.text)` à `max_text_chars` (api.py:343) et répond 413.
+        #
+        # Ce test envoyait auparavant 20 MiB de « a » en affirmant que ça
+        # PASSAIT. C'était faux contre un vrai DocIE -- vingt millions de
+        # caractères, vingt fois son plafond. L'assertion n'encodait pas
+        # seulement une borne locale, mais une croyance fausse sur son contrat.
+        #
+        # MAX_TEXT_BYTES (20 MiB) devient de ce fait INJOIGNABLE seul :
+        # 1 000 000 de points de code font au plus 3,8 MiB en UTF-8.
         response.iter_content.return_value = [json.dumps(TEXT_CASES[1]["body"]).encode()]
-        extract_text("a" * (maximum + 1), env=env, session=session)
-        extract_text("a" * (20 * 1024 * 1024), env=env, session=session)
+        extract_text("a" * DOCIE_TEXTE_CARACTERES_MAX, env=env, session=session)
         with self.assertRaises(DocIEBridgeError) as raised:
-            extract_text("a" * (20 * 1024 * 1024 + 1), env=env, session=session)
+            extract_text("a" * (DOCIE_TEXTE_CARACTERES_MAX + 1), env=env, session=session)
         self.assertEqual(raised.exception.code, "input")
+        # Le message porte le COMPTE réel : sans ça, n'importe quel texte trop
+        # long satisfait l'assertion et la constante n'est pas épinglée (prouvé
+        # par mutation -- revenir au vecteur 20 MiB laissait la suite verte).
+        self.assertIn(str(DOCIE_TEXTE_CARACTERES_MAX + 1), str(raised.exception))
+        # Un caractère hors BMP compte UNE fois (`len()` sur une str) : le
+        # portage JS doit compter pareil, d'où sa fonction dédiée.
+        #
+        # `// 2 + 1`, pas `// 2` : à exactement la moitié du plafond, le texte
+        # fait 1 000 000 d'unités UTF-16 et, la comparaison étant STRICTE, un
+        # comptage en `.length` côté JS passerait aussi. Un de plus, et les deux
+        # comptages divergent -- c'est ce qui rend ce cas discriminant.
+        extract_text("🙂" * (DOCIE_TEXTE_CARACTERES_MAX // 2 + 1), env=env, session=session)
+        # Trois envois : le document, le texte au plafond, celui d'emoji. Le
+        # texte trop long ne part JAMAIS -- c'est tout l'intérêt d'un refus
+        # local plutôt qu'un 413 de DocIE.
         self.assertEqual(session.post.call_count, 3)
 
     def test_http_contract_and_sanitized_failures_no_retries(self):
@@ -479,18 +503,32 @@ class OcrBlocksTests(unittest.TestCase):
         agent = extract_document(b"pdf", "application/pdf", env=env, session=agent_session)["metadata"]
         self.assertIsNone(agent["blocs_fournis"])
 
-    def test_text_and_blocks_are_bounded_together(self):
+    def test_plafond_caracteres_mord_avant_la_borne_octets_devenue_injoignable(self):
+        """La borne commune en OCTETS n'est plus atteignable -- le dire, pas la maquiller.
+
+            `text`      <= 1 000 000 points de code -> au plus 3,8 MiB en UTF-8
+            somme blocs <= 1 000 000 points de code -> au plus 3,8 MiB
+            total       <= 7,6 MiB                  <  MAX_TEXT_BYTES (20 MiB)
+
+        Elle est CONSERVÉE (deux comparaisons, et elle resterait juste si un
+        plafond de caractères changeait) mais ne peut plus se déclencher seule.
+        Ne pas la « réparer » en abaissant MAX_TEXT_BYTES : ce serait inventer
+        une contrainte que DocIE n'a pas.
+        """
         env = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "test-secret"}
         session, _ = fake_session(lambda url, payload: TEXT_CASES[1]["body"])
-        # Un texte pile au plafond passe seul ; le moindre bloc en plus fait un
-        # corps au-dessus, et c'est le corps qui part. Les blocs, eux, restent
-        # valides un par un (< 20 000 caractères) : sans la borne commune, rien
-        # ne verrait ce dépassement avant le refus de DocIE.
-        texte = "x" * MAX_TEXT_BYTES
+        texte = "x" * (DOCIE_TEXTE_CARACTERES_MAX + 1)
         with self.assertRaises(DocIEBridgeError) as raised:
             extract_text(texte, ocr_blocks=[{"id": "b0", "text": "paragraphe"}], env=env, session=session)
         self.assertEqual(raised.exception.code, "input")
-        self.assertIn("together", str(raised.exception))
+        self.assertIn(str(DOCIE_TEXTE_CARACTERES_MAX + 1), str(raised.exception))
+        # Les deux plafonds sont INDÉPENDANTS chez DocIE (api.py:343 pour
+        # `text`, api.py:350 pour la somme des blocs) : chacun sous son plafond
+        # passe, même si leur somme dépasse 1 000 000. Borner la somme ici
+        # refuserait localement ce que DocIE accepte.
+        presque_max = "y" * (DOCIE_TEXTE_CARACTERES_MAX - 1)
+        bloc_long = {"id": "b0", "text": "z" * DOCIE_BLOC_CARACTERES_MAX}
+        extract_text(presque_max, ocr_blocks=[bloc_long], env=env, session=session)
 
 
 class PartialResultTests(unittest.TestCase):
