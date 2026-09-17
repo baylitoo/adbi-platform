@@ -1,0 +1,34 @@
+{
+  "_description": "Forme de l'enveloppe DocIE (ExtractionResponse) que nos fixtures reproduisent. Règle partagée, lue par document-parsing/mappings/test_enveloppe_docie.py — jamais recopiée ailleurs.",
+
+  "_pourquoi_ce_fichier": "Issue #249. Ce dépôt n'avait AUCUN moyen de savoir que l'enveloppe DocIE avait bougé : l'écart s'est vu par hasard, en régénérant pour une autre raison. Les générateurs (mappings/fixtures/generate_*.py) construisent les fixtures DEPUIS les vrais modèles pydantic de DocIE, donc ils ne peuvent produire que la forme du commit épinglé — c'est exactement ce qui rend la dérive invisible. Ce fichier fige la forme attendue pour qu'une régénération PARTIELLE, ou une divergence entre deux fixtures, devienne rouge.",
+
+  "cles_enveloppe": [
+    "document_hash",
+    "dynamic_schema",
+    "latency_ms",
+    "model_profile",
+    "request_id",
+    "response_format_style",
+    "result",
+    "routing",
+    "schema_name",
+    "usage",
+    "validation"
+  ],
+
+  "_annotations_locales": "Les clés préfixées « _ » ne viennent PAS de DocIE : ce sont des annotations que nous ajoutons (cv_samples/results/simple_docie.json porte `_wall_s` et `_wall_s_note`). Le test les ignore, sans quoi il exigerait de DocIE des champs que nous avons inventés.",
+
+  "champs_absents_connus": {
+    "queue_wait_ms": "Ajouté à ExtractionResponse par DocIE en 6e99e94 (2026-09-08, « split extraction latency into queue-wait vs generation time »), APRÈS le commit sur lequel nos générateurs sont épinglés. Nos 18 fixtures ne le portent donc pas. Rien ne le consomme dans les mappings ; le pont, lui, le lit et ses propres tests l'exercent (bridge/tests/test_bridge.py, bridge.test.js).",
+    "parallel_groups": "Même fenêtre, même cause. L'issue #249 ne nommait que queue_wait_ms : ce second champ a été trouvé en interrogeant la session qui tient le dépôt DocIE."
+  },
+
+  "_ce_que_ce_fichier_ne_decide_pas": "PAS à quel commit DocIE ce dépôt s'aligne. C'est la question ouverte de #249 (option A régénérer, option B assumer le retard et corriger les docstrings), et elle revient au propriétaire du dépôt. Ce fichier ne fait que rendre l'état ACTUEL explicite et vérifiable. Le jour où les fixtures sont régénérées, ajouter les deux champs à `cles_enveloppe` et vider `champs_absents_connus`.",
+
+  "_pin_incoherent": "À signaler : ce dépôt épingle DEUX références DocIE différentes. Le pont cite `origin/dev-agents-milestone @ c8c010e` (bridge/docie-bridge.js:120, bridge/docie_bridge.py:141, fixtures/blocs_ocr_docie.json). Les générateurs de fixtures citent `dce1a5d` (mappings/fixtures/generate_kbis_sample.py:50), qui d'après la session DocIE vit sur `origin/docs/server-integration-contract` — pas sur la ligne déployée. Nos fixtures reproduisent donc l'enveloppe d'une branche qui ne tourne pas.",
+
+  "_aucun_marqueur_de_version": "DocIE ne publie aucun marqueur de version de cette enveloppe : ni champ dans la réponse, ni entrée de GET /v1/capabilities (vérifié par la session DocIE sur leur pointe). Il n'y a donc rien à épingler d'autre qu'un commit — d'où ce fichier, tenu à la main, plutôt qu'une vérification automatique contre le serveur.",
+
+  "_evolution_observee": "Sur ExtractionResponse, aucun champ n'a jamais été supprimé ni renommé chez DocIE : uniquement des ajouts et un élargissement de type. C'est une OBSERVATION de leur historique, pas une politique écrite — ne pas en faire une garantie. C'est ce qui justifie que nos deux portages du pont tolèrent les champs inconnus au lieu de les refuser."
+}
