@@ -9,6 +9,17 @@ FROM node:22-bookworm-slim
 WORKDIR /app
 COPY --chown=node:node . .
 
+# Bibliotheque de verification des jetons ADBI (auth/auth-adbi.js, #247),
+# partagee avec les autres services Node et donc HORS du contexte ./coffre :
+# elle arrive par `additional_contexts: auth` (voir docker-compose.yml), comme
+# le pont DocIE arrive chez contrats. Sans cette copie, le `require("../auth/
+# auth-adbi")` de server.js resout en checkout monorepo et PLANTE dans l'image
+# -- panne invisible aux tests, qui tournent sur le checkout.
+#
+# Aucune dependance npm ajoutee : la bibliotheque n'en a aucune, c'est ce qui
+# permet au coffre de garder les siennes a zero.
+COPY --from=auth --chown=node:node . /auth
+
 ENV NODE_ENV=production
 # Sans ca, server.js lie 127.0.0.1 (defaut poste de dev) : injoignable via le
 # port publie du conteneur malgre "-p 4300:4300" (voir server.js).

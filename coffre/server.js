@@ -1,10 +1,16 @@
 /*
- * ADBI Coffre — chiffrement local de documents.
+ * ADBI Coffre — chiffrement de documents.
  *
  * Chiffre et déchiffre des fichiers en AES-256-GCM, la clé étant dérivée du
- * mot de passe par scrypt. Tout se passe sur ce poste : le serveur n'écoute
- * qu'en local (127.0.0.1), n'écrit aucun fichier et ne conserve aucun mot de
- * passe — chaque requête est traitée en mémoire puis oubliée.
+ * mot de passe par scrypt. Le traitement se fait en mémoire : aucun fichier
+ * n'est écrit, aucun mot de passe n'est conservé.
+ *
+ * Ce commentaire affirmait « Tout se passe sur ce poste : le serveur n'écoute
+ * qu'en local (127.0.0.1) ». C'était vrai du poste de dev et FAUX en
+ * déploiement : le Dockerfile pose ADBI_HOTE=0.0.0.0 (voir HOTE plus bas, qui
+ * l'expliquait déjà quinze lignes plus loin) et le service est publié sur un
+ * domaine. La protection ne vient donc PAS de l'interface d'écoute : elle est
+ * explicite depuis #245 — voir refuserSiNonAuthentifie() plus bas.
  *
  * Aucune dépendance npm : uniquement les modules natifs de Node 18+. Pour un
  * outil de chiffrement c'est un choix délibéré, pas une coquetterie : aucune
@@ -18,6 +24,17 @@ const crypto = require("crypto");
 const vm = require("vm");
 const docx = require("./docx");
 
+// Verification des jetons ADBI (auth/auth-adbi.js, #247). Chemin relatif
+// volontaire, meme convention que factory : en checkout monorepo ../auth est le
+// vrai dossier partage ; dans l'image, le Dockerfile le copie a la racine
+// (/auth) tandis que server.js vit dans /app -- meme profondeur relative, donc
+// le meme chemin resout dans les deux cas.
+//
+// Cette bibliotheque n'a AUCUNE dependance npm : c'est ce qui permet au coffre
+// de garder les siennes a zero, propriete deliberee pour un outil de
+// chiffrement (voir l'en-tete de ce fichier).
+const auth = require("../auth/auth-adbi");
+
 const PORT = Number(process.env.ADBI_COFFRE_PORT) || 4300;
 // Local par defaut (poste de dev) ; le Dockerfile passe ADBI_HOTE=0.0.0.0 —
 // sans ca, "127.0.0.1" a l'interieur du conteneur n'est PAS atteignable via
@@ -27,6 +44,13 @@ const PORT = Number(process.env.ADBI_COFFRE_PORT) || 4300;
 const HOTE = process.env.ADBI_HOTE || "127.0.0.1";
 const RACINE = __dirname;
 const PUBLIC = path.join(RACINE, "public");
+// URL publique du hub. Le coffre est affiche DANS une <iframe> du hub
+// (modules.docker.json : "type": "service"), donc un module non authentifie ne
+// redirige pas sur place -- il renvoie le NIVEAU SUPERIEUR vers le hub, seul
+// capable de renouveler la session (auth-adbi.js, pageReconnexion). Vide : la
+// cible n'est pas fabricable, on repond alors 401 en clair plutot que de
+// renvoyer vers une page qui n'existe pas sur ce service.
+const FACTORY_URL = process.env.ADBI_FACTORY_URL || "";
 
 // Les détecteurs d'informations sensibles sont écrits UNE fois (public/) et
 // servent aux deux côtés : le navigateur pour les PDF, le serveur pour les
@@ -397,9 +421,13 @@ function lireCorps(req) {
 
 /**
  * En-têtes maison (X-Nom-Fichier, X-Cle) encodés par encodeURIComponent côté
- * navigateur : les en-têtes HTTP n'acceptent pas l'UTF-8 brut. Le mot de
- * passe ne transite que sur la boucle locale (127.0.0.1) et n'est jamais
- * journalisé ni conservé.
+ * navigateur : les en-têtes HTTP n'acceptent pas l'UTF-8 brut.
+ *
+ * Le mot de passe n'est jamais journalisé ni conservé — cette moitié-là reste
+ * vraie. En revanche « ne transite que sur la boucle locale (127.0.0.1) »,
+ * qui figurait ici, était faux dès qu'un domaine public est assigné (#245) :
+ * l'en-tête traverse le réseau. Ce qui le protège est le transport TLS et le
+ * contrôle d'accès ci-dessous, jamais l'interface d'écoute.
  */
 function lireEnteteEncode(req, nom) {
   const brut = req.headers[nom];
@@ -487,6 +515,56 @@ function servirFichier(rep, chemin) {
   });
 }
 
+// ── Controle d'acces (#245) ──────────────────────────────────────────────────
+//
+// Le coffre etait entierement public : quiconque atteignait son domaine pouvait
+// chiffrer, dechiffrer, lister les references et telecharger les documents
+// archives. cv-parser reste le SEUL emetteur d'identite de la plateforme ; ici
+// on ne fait que VERIFIER, avec le meme secret. Le coffre ne signe rien.
+//
+// Un seul chemin reste public :
+//   /api/sante -- sonde du conteneur (coffre/Dockerfile). Un 401 y serait lu
+//                 comme un echec et Coolify redemarrerait le coffre en boucle.
+//
+// Et un seul : contrairement a factory, aucune ressource statique n'a besoin
+// d'etre exemptee, parce que la page rendue a un visiteur non authentifie est
+// autonome (styles en ligne, aucune police, aucune feuille externe).
+function cheminPublic(chemin) {
+  return chemin === "/api/sante";
+}
+
+/** Renvoie true si la reponse a ete ecrite (visiteur refuse). */
+function refuserSiNonAuthentifie(req, rep, chemin) {
+  if (cheminPublic(chemin)) return false;
+  const decision = auth.garde(req, process.env);
+  if (decision.autorise) return false;
+
+  if (decision.api) {
+    // Une API repond en JSON : le front appelle tout par fetch(), il ne doit
+    // pas recevoir du HTML la ou il attend des donnees.
+    return repondreJson(rep, 401, { erreur: "Non authentifie" }), true;
+  }
+  if (!FACTORY_URL) {
+    // Sans URL de hub, aucune cible de reconnexion n'est fabricable : on le dit
+    // plutot que de renvoyer vers une page qui n'existe pas ici.
+    rep.writeHead(401, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-store",
+    });
+    rep.end("Non authentifie");
+    return true;
+  }
+  // Page : le coffre est un module affiche en <iframe>. Rediriger sur place
+  // ferait un cadre mort a l'expiration du jeton (1 h) ; pageReconnexion()
+  // renvoie le niveau superieur vers le hub, qui sait renouveler la session.
+  rep.writeHead(401, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  rep.end(auth.pageReconnexion(FACTORY_URL, "coffre"));
+  return true;
+}
+
 const serveur = http.createServer(async (req, rep) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const chemin = decodeURIComponent(url.pathname);
@@ -496,6 +574,10 @@ const serveur = http.createServer(async (req, rep) => {
     if (chemin === "/api/sante" && req.method === "GET") {
       return repondreJson(rep, 200, { etat: "pret", application: "adbi-coffre" });
     }
+
+    // Tout ce qui suit exige une session : les routes de chiffrement, les
+    // references, les documents archives ET les fichiers statiques.
+    if (refuserSiNonAuthentifie(req, rep, chemin)) return;
 
     if (chemin === "/api/chiffrer" && req.method === "POST") {
       // Sans X-Cle : mode « clé locale », aucun mot de passe à retenir.

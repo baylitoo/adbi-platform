@@ -4,7 +4,8 @@
   "description": "ADBI Coffre - chiffrement local de documents (AES-256-GCM, cle derivee par scrypt). Aucune dependance npm.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js"
   },
   "author": "ADBI",
   "license": "UNLICENSED",
