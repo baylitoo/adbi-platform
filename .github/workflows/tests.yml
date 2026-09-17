@@ -1,0 +1,105 @@
+# Suites d'essai de la plateforme, sur GitHub.
+#
+# Ce dépôt n'avait AUCUN CI : `.github/` ne contenait que le gabarit de PR,
+# `gh workflow list` était vide, et `gh pr checks` répondait « no checks
+# reported » sur chaque PR. Les suites ne tournaient donc que sur le poste de
+# celui qui pensait à les lancer — et rien ne le vérifiait à la fusion.
+#
+# Aucune base de données ni service n'est nécessaire : les six suites tournent
+# à sec (mesuré — cv-parser 486, contrats 412, document-parsing 333,
+# one-pager 131, coffre 19, factory 17). Pas de conteneur `services:` ici tant
+# que c'est vrai ; le jour où un test exige PostgreSQL, il faudra l'ajouter
+# explicitement plutôt que de le découvrir par un échec obscur.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# Lecture seule : ce workflow ne publie rien, ne commente rien, ne pousse rien.
+permissions:
+  contents: read
+
+# Une nouvelle poussée sur une PR annule la précédente : inutile de payer deux
+# fois la même vérification pendant qu'on itère.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: node / ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      # Un service rouge ne doit pas masquer l'état des trois autres.
+      fail-fast: false
+      matrix:
+        service: [coffre, factory, contrats, one-pager]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Même version que les Dockerfiles (node:22-bookworm-slim).
+          node-version: '22'
+
+      # `contrats` et `one-pager` ont un package-lock.json. `coffre` et
+      # `factory` n'ont AUCUNE dépendance npm — propriété délibérée, affirmée
+      # dans leurs en-têtes et dans leur package.json.
+      #
+      # if/else explicite, PAS `[ -f lock ] && npm ci || echo` : cette forme-là
+      # avale un échec réel de `npm ci` dans le `||` et rend un vert faux.
+      - name: Installer les dépendances
+        working-directory: ${{ matrix.service }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            echo "Aucune dépendance npm pour ${{ matrix.service }} (voulu)."
+          fi
+
+      # `--if-present` : sur master, `coffre` n'a pas encore de script `test`
+      # (il arrive avec la PR du contrôle d'accès). Sans ce drapeau, ce job
+      # échouerait sur un service parfaitement sain. Il redeviendra bruyant dès
+      # que le script existera.
+      - name: Lancer les tests
+        working-directory: ${{ matrix.service }}
+        run: npm test --if-present
+
+  python:
+    name: python / ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # pytest N'EST PAS dans requirements.txt (qui ne porte que l'exécution)
+          # — sans l'ajouter ici, l'étape échouerait sur « pytest: not found »,
+          # un rouge qui ne serait pas un vrai échec de test.
+          - service: cv-parser
+            install: pip install -r cv-parser/requirements.txt pytest
+            chemin: cv-parser/tests/
+          # document-parsing n'a pas de fichier de dépendances. Seul module
+          # tiers importé par ses 14 fichiers de test : `requests` (le reste
+          # est local, résolu par les `sys.path.insert` des tests eux-mêmes).
+          # Ses tests vivent à trois endroits (bridge/tests, mappings,
+          # models/tests), d'où la découverte depuis la racine du dossier.
+          - service: document-parsing
+            install: pip install requests pytest
+            chemin: document-parsing/
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Même version que le Dockerfile cv-parser (python:3.14-slim), et
+          # celle pour laquelle requirements.txt vérifie la disponibilité des
+          # roues abi3 (voir son commentaire sur pymupdf).
+          python-version: '3.14'
+
+      - name: Installer les dépendances
+        run: ${{ matrix.install }}
+
+      - name: Lancer les tests
+        run: python -m pytest ${{ matrix.chemin }} -q
