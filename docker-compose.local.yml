@@ -216,7 +216,16 @@ services:
           memory: 512m
 
   coffre:
-    build: ./coffre
+    # additional_contexts (Compose >= 2.17) : expose auth/ (bibliotheque de
+    # verification des jetons, #247) au Dockerfile via `COPY --from=auth`.
+    # SANS ce contexte, BuildKit cherche une image « auth » sur Docker Hub et
+    # le build echoue ici — alors que le compose racine, lui, fonctionne. Un
+    # service bati par DEUX fichiers doit declarer le contexte dans les deux ;
+    # le test coffre/tests/garde-acces.test.js les lit tous les deux.
+    build:
+      context: ./coffre
+      additional_contexts:
+        auth: ./auth
     container_name: adbi-coffre
     ports:
       - "4300:4300"
@@ -227,6 +236,15 @@ services:
       - ./coffre/data:/app/data
     environment:
       ADBI_COFFRE_PORT: 4300
+      # Controle d'acces du coffre (#245). Absent/off -> passage libre sous
+      # l'identite locale, comportement inchange. Pose a "on", le coffre exige
+      # une session emise par cv-parser et VERIFIEE ici — il n'en emet aucune.
+      ADBI_AUTH: ${ADBI_AUTH:-}
+      ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
+      # URL publique du hub (ici : http://localhost:4000 en general). Le coffre
+      # est affiche en <iframe> : un visiteur sans session y est renvoye au
+      # NIVEAU SUPERIEUR. Vide -> 401 en clair.
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
     restart: unless-stopped
     # Issue #138 : voir le commentaire sur `postgres` ci-dessus.
     deploy:

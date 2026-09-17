@@ -187,6 +187,46 @@ test("l'image embarque la bibliotheque partagee", () => {
     "le Dockerfile ne copie pas auth/ : require(\"../auth/auth-adbi\") plantera dans l'image");
 });
 
+test("LES DEUX composes exposent le contexte auth au coffre", () => {
+  /*
+   * Le test ci-dessus ne peut PAS voir ce trou, et il l'a laisse passer : le
+   * Dockerfile portait bien `COPY --from=auth`, mais seul le compose racine
+   * declarait le contexte. `docker compose -f docker-compose.local.yml up
+   * --build` echouait donc — BuildKit cherchant une image « auth » sur Docker
+   * Hub — sans qu'un seul test rougisse. Trouve en portant le meme garde sur
+   * contrats (#259), qui est bati par trois composes.
+   *
+   * Le coffre est bati par deux fichiers ; il n'a pas de compose propre.
+   */
+  const racine = path.join(__dirname, "..", "..");
+  const composes = [
+    path.join(racine, "docker-compose.yml"),
+    path.join(racine, "docker-compose.local.yml"),
+  ];
+
+  for (const fichier of composes) {
+    const lignes = fs.readFileSync(fichier, "utf8").split(/\r?\n/);
+    const iService = lignes.findIndex((l) => l.trimEnd() === "  coffre:");
+    assert.ok(iService >= 0, `service coffre introuvable dans ${path.basename(fichier)}`);
+
+    // Bloc du service : jusqu'au prochain service de meme niveau (2 espaces).
+    let fin = lignes.length;
+    for (let i = iService + 1; i < lignes.length; i++) {
+      if (/^ {2}\S/.test(lignes[i])) { fin = i; break; }
+    }
+    const bloc = lignes.slice(iService, fin);
+
+    const iContextes = bloc.findIndex((l) => l.trim() === "additional_contexts:");
+    assert.ok(iContextes >= 0,
+      `${path.basename(fichier)} : coffre n'a pas d'additional_contexts ` +
+      `(forme courte "build: ./coffre" ? le build echouera sur COPY --from=auth)`);
+
+    const aAuth = bloc.slice(iContextes + 1).some((l) => l.trim() === "auth: ./auth");
+    assert.ok(aAuth,
+      `${path.basename(fichier)} : contexte "auth: ./auth" absent pour coffre`);
+  }
+});
+
 // ── Decisions du garde ───────────────────────────────────────────────────────
 
 test("ADBI_AUTH absent : le coffre reste ouvert, comportement d'avant", () => {
