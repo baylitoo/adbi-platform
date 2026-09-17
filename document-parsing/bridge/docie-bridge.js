@@ -844,6 +844,23 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, ocrBlo
   const schema = SCHEMAS[kind];
   if (typeof text !== "string" || !text.trim()) fail("input", "Document text must not be empty.");
   if (Buffer.byteLength(text, "utf8") > MAX_TEXT_BYTES) fail("input", "Document must contain between 1 byte and 20 MiB.");
+  // DocIE borne `text` SEUL en caractères : `len(payload.text) >
+  // settings.max_text_chars` -> 413 « Text content exceeds configured limit »
+  // (api.py:343-344, premier contrôle de POST /v1/extract/text).
+  //
+  // Ce plafond est INDÉPENDANT de celui qui porte sur la somme des caractères
+  // des blocs (api.py:350) : 900 000 caractères de `text` ET 900 000 dans les
+  // blocs passent chez DocIE, chacun sous son propre plafond. Ne PAS borner
+  // leur somme ici — ce serait refuser localement ce que DocIE accepte. La
+  // borne commune en OCTETS plus bas est une autre règle, sur le corps.
+  //
+  // Points de code, comme pour les blocs (voir pointsDeCode) : DocIE compte
+  // `len()` sur une `str` Python. Comparaison STRICTE : 1 000 000 passe,
+  // 1 000 001 échoue.
+  const caracteresTexte = pointsDeCode(text);
+  if (caracteresTexte > DOCIE_TEXTE_CARACTERES_MAX) {
+    fail("input", "Document text of " + caracteresTexte + " characters, beyond DocIE's " + DOCIE_TEXTE_CARACTERES_MAX + ".");
+  }
   const payload = { text, schema_name: schema };
   if (dynamicSchema != null) {
     if (!object(dynamicSchema) || !Object.keys(dynamicSchema).length) fail("input", "dynamic_schema must be a non-empty schema object.");

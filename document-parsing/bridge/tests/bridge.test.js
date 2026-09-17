@@ -11,7 +11,8 @@ const blocsOcr = require("../../fixtures/blocs_ocr_docie.json");
 const avertissements = require("../../fixtures/avertissements_docie.json");
 const { extractDocument, extractText, parseResponse, parseTextResponse, filePayload, compterBlocsTexte,
   DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES,
-  reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL, MAX_TEXT_BYTES, DocIEBridgeError } = require("../docie-bridge");
+  reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL, MAX_TEXT_BYTES, DOCIE_TEXTE_CARACTERES_MAX,
+  DocIEBridgeError } = require("../docie-bridge");
 
 const RESUME_SCHEMA = { document_type: "adbi_resume", fields: [{ name: "name", type: "string" }] };
 
@@ -135,12 +136,39 @@ test("file path: largest accepted document fits DocIE's 26 MiB request body, one
   await assert.rejects(extractDocument(Buffer.alloc(MAX + 1), "application/pdf", { env, fetchImpl }),
     error => error.code === "input" && error.message.includes(String(MAX)));
   assert.equal(sent.length, 1);
-  // La voie texte garde sa borne propre (pas de base64) : 20 MiB d'UTF-8.
+  // La voie texte est bornée en CARACTÈRES, pas en octets : DocIE compare
+  // `len(payload.text)` à `max_text_chars` (api.py:343) et répond 413.
+  //
+  // Ce test envoyait auparavant 20 MiB de « a » en affirmant que ça PASSAIT.
+  // C'était faux contre un vrai DocIE — 20 millions de caractères, vingt fois
+  // son plafond : la requête partait pour revenir en 413. L'assertion
+  // n'encodait pas seulement une borne locale, mais une croyance fausse sur
+  // son contrat.
+  //
+  // La borne en octets (MAX_TEXT_BYTES, 20 MiB) devient de ce fait
+  // INJOIGNABLE sur cette voie : 1 000 000 de points de code font au plus
+  // 3,8 MiB en UTF-8. Elle est conservée — elle borne aussi `text` + blocs —
+  // mais elle ne peut plus se déclencher seule.
   const textSent = [];
   const textFetch = async (url, options) => { textSent.push(options.body.length); return new Response(JSON.stringify(textCases[1].body)); };
-  await extractText("a".repeat(MAX + 1), { env, fetchImpl: textFetch });
-  await extractText("a".repeat(20 * 1024 * 1024), { env, fetchImpl: textFetch });
-  await assert.rejects(extractText("a".repeat(20 * 1024 * 1024 + 1), { env, fetchImpl: textFetch }), error => error.code === "input");
+  await extractText("a".repeat(DOCIE_TEXTE_CARACTERES_MAX), { env, fetchImpl: textFetch });
+  // Le message porte le COMPTE réel : sans ça, n'importe quel texte trop long
+  // satisfait l'assertion et la constante n'est pas épinglée (prouvé par
+  // mutation — revenir au vecteur 20 MiB laissait la suite verte).
+  await assert.rejects(extractText("a".repeat(DOCIE_TEXTE_CARACTERES_MAX + 1), { env, fetchImpl: textFetch }),
+    error => error.code === "input" && error.message.includes(String(DOCIE_TEXTE_CARACTERES_MAX + 1)));
+  // Un caractère hors BMP compte UNE fois, comme `len()` en Python.
+  //
+  // `/2 + 1`, pas `/2` : à exactement la moitié du plafond, un texte d'emoji
+  // fait 1 000 000 d'unités UTF-16, et la comparaison étant STRICTE, un
+  // comptage en `.length` passerait lui aussi — le cas ne distinguerait rien.
+  // Prouvé par mutation : avec `/2`, remplacer pointsDeCode() par .length
+  // laissait la suite VERTE. Un de plus, et les deux comptages divergent :
+  //   points de code : 500 001        -> sous le plafond, PASSE
+  //   unités UTF-16  : 1 000 002      -> au-dessus, refuserait à tort
+  await extractText("🙂".repeat(DOCIE_TEXTE_CARACTERES_MAX / 2 + 1), { env, fetchImpl: textFetch });
+  // Deux envois : le texte au plafond et celui d'emoji. Le texte trop long ne
+  // part JAMAIS — c'est tout l'intérêt d'un refus local plutôt qu'un 413.
   assert.equal(textSent.length, 2);
 });
 
@@ -450,16 +478,37 @@ test("ocr blocks: extractText sends them verbatim, keeps the text, and counts bl
   assert.equal(agent.metadata.blocs_fournis, null);
 });
 
-test("ocr blocks: text and blocks are bounded together, not one at a time", async () => {
+test("ocr blocks: le plafond de CARACTÈRES mord avant la borne d'octets, qui est devenue injoignable", async () => {
   const env = { DOCIE_BASE_URL: "https://docie.example", DOCIE_API_KEY: "test-secret" };
   const fetchImpl = async () => new Response(JSON.stringify(textCases[1].body));
-  // Un texte pile au plafond passe seul ; le moindre bloc en plus fait un corps
-  // au-dessus, et c'est le corps qui part. Les blocs restent valides un par un
-  // (< 20 000 caractères) : sans la borne commune, rien ne verrait ce
-  // dépassement avant le refus de DocIE.
-  const texte = "x".repeat(MAX_TEXT_BYTES);
+  /*
+   * Ce test vérifiait la borne COMMUNE en octets (`text` + blocs > 20 MiB).
+   * Elle n'est plus atteignable, et il faut le dire plutôt que de réécrire
+   * l'assertion pour qu'elle passe :
+   *
+   *   `text`      <= 1 000 000 points de code -> au plus 3,8 MiB en UTF-8
+   *   somme blocs <= 1 000 000 points de code -> au plus 3,8 MiB
+   *   total       <= 7,6 MiB                  <  MAX_TEXT_BYTES (20 MiB)
+   *
+   * La borne en octets est CONSERVÉE (elle coûte deux comparaisons et resterait
+   * juste si un plafond de caractères changeait), mais elle ne peut plus se
+   * déclencher seule. Ne pas la « réparer » en abaissant MAX_TEXT_BYTES : ce
+   * serait inventer une contrainte que DocIE n'a pas.
+   *
+   * Ce que ce test épingle désormais : avec des blocs valides un par un, c'est
+   * le plafond de caractères de `text` qui refuse, localement et nommément,
+   * au lieu du 413 « Text content exceeds configured limit » de DocIE.
+   */
+  const texte = "x".repeat(DOCIE_TEXTE_CARACTERES_MAX + 1);
   await assert.rejects(extractText(texte, { ocrBlocks: [{ id: "b0", text: "paragraphe" }], env, fetchImpl }),
-    error => error.code === "input" && /together/.test(error.message));
+    error => error.code === "input" && error.message.includes(String(DOCIE_TEXTE_CARACTERES_MAX + 1)));
+  // Les deux plafonds sont INDÉPENDANTS chez DocIE (api.py:343 pour `text`,
+  // api.py:350 pour la somme des blocs) : chacun sous son plafond passe, même
+  // si leur somme dépasse 1 000 000. Borner la somme ici refuserait localement
+  // ce que DocIE accepte.
+  const presqueMax = "y".repeat(DOCIE_TEXTE_CARACTERES_MAX - 1);
+  const blocLong = { id: "b0", text: "z".repeat(DOCIE_BLOC_CARACTERES_MAX) };
+  await extractText(presqueMax, { ocrBlocks: [blocLong], env, fetchImpl });
 });
 
 // ------------------------------------------- résultat partiel (#194) -----

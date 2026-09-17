@@ -961,6 +961,22 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, m
         fail("input", "Document text must not be empty.")
     if len(text.encode("utf-8")) > MAX_TEXT_BYTES:
         fail("input", "Document must contain between 1 byte and 20 MiB.")
+    # DocIE borne `text` SEUL en caractères : `len(payload.text) >
+    # settings.max_text_chars` -> 413 « Text content exceeds configured limit »
+    # (api.py:343-344, premier contrôle de POST /v1/extract/text).
+    #
+    # Ce plafond est INDÉPENDANT de celui qui porte sur la somme des caractères
+    # des blocs (api.py:350) : 900 000 caractères de `text` ET 900 000 dans les
+    # blocs passent chez DocIE, chacun sous son propre plafond. Ne PAS borner
+    # leur somme ici -- ce serait refuser localement ce que DocIE accepte. La
+    # borne commune en OCTETS plus bas est une autre règle, sur le corps.
+    #
+    # `len()` sur une `str` compte les points de code : c'est exactement la
+    # règle de DocIE, et celle que le portage JS reproduit à la main.
+    # Comparaison STRICTE : 1 000 000 passe, 1 000 001 échoue.
+    if len(text) > DOCIE_TEXTE_CARACTERES_MAX:
+        fail("input", "Document text of " + str(len(text)) + " characters, beyond DocIE's "
+             + str(DOCIE_TEXTE_CARACTERES_MAX) + ".")
     payload = {"text": text, "schema_name": schema}
     if dynamic_schema is not None:
         if not isinstance(dynamic_schema, dict) or not dynamic_schema:
