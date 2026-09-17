@@ -188,10 +188,15 @@ test("LES TROIS composes exposent le contexte auth a contrats", () => {
     const iService = lignes.findIndex((l) => l.trimEnd() === `  ${service}:`);
     assert.ok(iService >= 0, `service ${service} introuvable dans ${path.basename(fichier)}`);
 
-    // Bloc du service : jusqu'au prochain service de meme niveau (2 espaces).
+    // Fin du bloc : le prochain service (indente de 2) OU une cle de premier
+    // niveau en colonne 0 (`volumes:`, en fin de fichier). Sans cette seconde
+    // condition, le bloc d'un service place en DERNIER avalerait la cle qui
+    // suit -- mesure sur cv-parser dans docker-compose.local.yml : l'ancien
+    // parcours s'arretait une ligne trop loin. Juste sur les fichiers
+    // d'aujourd'hui, faux en general.
     let fin = lignes.length;
     for (let i = iService + 1; i < lignes.length; i++) {
-      if (/^ {2}\S/.test(lignes[i])) { fin = i; break; }
+      if (/^ {2}\S/.test(lignes[i]) || /^\S/.test(lignes[i])) { fin = i; break; }
     }
     const bloc = lignes.slice(iService, fin);
     const iContextes = bloc.findIndex((l) => l.trim() === "additional_contexts:");
