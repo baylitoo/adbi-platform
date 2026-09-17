@@ -177,8 +177,9 @@ test("flag désactivé : RIB analysé localement, bridge jamais chargé", async 
 });
 
 test("extractViaTexte : pièce inconnue refusée, jamais d'analyse sans texte à envoyer", async () => {
-  // Le Kbis a désormais une voie texte (#194) : pièce sans voie texte = fiscale.
-  await assert.rejects(extractViaTexte("fiscale", { dataBase64: "AA==" }, { env: ENV }), /Pièce sans voie texte/);
+  // Le Kbis a désormais une voie texte (#194) et fiscale aussi (#215) : la
+  // pièce sans voie texte est la CNI, routée par la voie vision du catalogue.
+  await assert.rejects(extractViaTexte("cni", { dataBase64: "AA==" }, { env: ENV }), /Pièce sans voie texte/);
   const { analysis, raisonRepli } = await extractViaTexte("rib",
     { dataBase64: (await pdfScanne()).toString("base64"), mimeType: "application/pdf", items: ITEMS },
     { env: ENV, extractText: async () => { throw new Error("jamais"); } });

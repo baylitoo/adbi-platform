@@ -1,12 +1,13 @@
 "use strict";
 // Extraction DocIE (bridge partagé document-parsing/bridge/) pour les pièces
-// Kbis, URSSAF et RIB de la checklist Sous-traitance — issues #153 et #170.
+// Kbis, URSSAF, RIB et attestation de régularité fiscale de la checklist
+// Sous-traitance — issues #153, #170 et #215.
 // Derrière DOCIE_EXTRACTION_ENABLED (défaut absent/false) :
 // flag off => comportement inchangé, 100% lib/docanalyze.js local (pdf-parse
 // + tesseract.js, RGPD, aucun envoi externe). Les mappings de champs contrat,
 // la génération PDF/DOCX et la signature Yousign/Zoho ne sont pas touchés ici.
 //
-// TROIS pièces sont couvertes, par DEUX voies DocIE différentes — et ce n'est
+// QUATRE pièces sont couvertes, par DEUX voies DocIE différentes — et ce n'est
 // pas un détail d'implémentation, c'est ce qui décide si la pièce est
 // couvrable du tout :
 //
@@ -18,29 +19,52 @@
 //             qu'un modèle du catalogue est en jeu, un PDF à couche texte
 //             complète part sur la voie TEXTE (kbis.schema.json), une photo ou
 //             un scan sur la voie agent. Rien de configuré : agent d'avant.
-//   urssaf -> voie TEXTE (extractText, POST /v1/extract/text)
-//   rib       La DÉFINITION du schéma voyage dans le corps de la requête
-//             (`dynamic_schema`, document-parsing/schemas/<pièce>.schema.json).
-//             Rien n'a à être enregistré côté Studio.
+//   urssaf  -> voie TEXTE (extractText, POST /v1/extract/text)
+//   rib        La DÉFINITION du schéma voyage dans le corps de la requête
+//   fiscale    (`dynamic_schema`, document-parsing/schemas/<pièce>.schema.json).
+//              Rien n'a à être enregistré côté Studio.
 //
 // L'issue #170 tenait « créer le schéma dans le Studio » pour un préalable aux
 // six pièces non-Kbis. Ce n'est vrai que du premier mécanisme. Le second
 // n'exige aucune action côté DocIE ni aucun appel distant pour être mis en
 // place ; cv-parser l'emploie en mode `inline` depuis toujours.
 //
-// Les quatre pièces restantes (cni, fiscale, coordonnees, specifique)
-// restent analysées localement, flag ou pas : elles n'ont ni schéma ni
-// mapping. urssaf a été traitée en premier parce que c'est la seule dont une
-// valeur extraite pilote une vraie logique métier — lib/checklist.js la
-// déclare `dateField: true` / « À renouveler tous les 6 mois », et
+// Les trois pièces restantes (cni, coordonnees, specifique) restent analysées
+// localement, flag ou pas — mais PAS toutes pour la même raison, et l'ancienne
+// formule « elles n'ont ni schéma ni mapping » était fausse :
+//   - coordonnees, specifique : ni schéma ni mapping, en effet. Ce sont des
+//     champs de saisie de la checklist, pas des documents à lire.
+//   - cni : le schéma (cni.schema.json) et la paire de mapping
+//     (lib/cni-mapping.js, document-parsing/mappings/cni_to_contrats.py)
+//     EXISTENT. La pièce n'est pas routée ici parce que le catalogue
+//     (document-parsing/models/catalogue.json, tâche "cni") la donne par la
+//     voie VISION, avec pour prérequis le contrôle des chiffres de la MRZ —
+//     lib/mrz.js, qui est le consommateur actuel de ce mapping.
+//
+// urssaf a été traitée en premier parce que c'est la seule dont une valeur
+// extraite pilote une vraie logique métier — lib/checklist.js la déclare
+// `dateField: true` / « À renouveler tous les 6 mois », et
 // public/app.js::renderChecklistDocResult calcule PÉRIMÉ / bientôt périmé /
 // valable à partir de `issuedDate`. rib a suivi (#194) : son IBAN et son BIC
 // sont contrôlés (lib/iban-bic.js), condition posée pour y admettre un petit
 // modèle — un IBAN mal lu d'un caractère ressemble exactement à un IBAN juste.
 //
-// Mapping des champs : lib/kbis-mapping.js, lib/urssaf-mapping.js et
-// lib/rib-mapping.js, portages JS de
-// document-parsing/mappings/{kbis,urssaf,rib}_to_contrats.py.
+// fiscale ferme la voie texte (#215) : son schéma et sa paire de mapping
+// étaient écrits, testés des deux côtés et pourtant INATTEIGNABLES, le câblage
+// ayant été différé le temps que la PR #214 (depuis fusionnée) quitte ce
+// fichier. Aucun sélecteur de modèle ne lui est ajouté : elle reste hors de
+// lib/choix-modele.js::TACHES, donc lue par le profil DocIE par défaut.
+//
+// RÉSERVE à connaître : la checklist n'offre pas encore de bouton pour cette
+// pièce. Le bouton « Analyser le document (OCR) » est posé sous `dateField`
+// (public/app.js), or fiscale n'a pas de `dateField` — ce n'est pas un
+// document à renouveler tous les 6 mois. Elle n'est donc atteignable que par
+// POST /api/document/analyze, comme le RIB avant son propre bouton
+// (ajouterAnalyseRib).
+//
+// Mapping des champs : lib/kbis-mapping.js, lib/urssaf-mapping.js,
+// lib/rib-mapping.js et lib/fiscale-mapping.js, portages JS de
+// document-parsing/mappings/{kbis,urssaf,rib,fiscale}_to_contrats.py.
 
 const path = require("path");
 const { PDFParse } = require("pdf-parse");
@@ -48,6 +72,7 @@ const { analyzeDocumentLocal } = require("./docanalyze");
 const { mapKbisResult } = require("./kbis-mapping");
 const { mapUrssafResult } = require("./urssaf-mapping");
 const { mapRibResult } = require("./rib-mapping");
+const { mapFiscaleResult } = require("./fiscale-mapping");
 const choixModele = require("./choix-modele");
 const { mapperErreur } = require("./taches-extraction");
 
@@ -57,7 +82,7 @@ const DOCIE_KIND = "kbis";
 
 // Quelle voie DocIE pour quelle pièce de la checklist. Une pièce absente de
 // cette table n'est jamais envoyée, flag ou pas.
-const VOIES = { kbis: "agent", urssaf: "texte", rib: "texte" };
+const VOIES = { kbis: "agent", urssaf: "texte", rib: "texte", fiscale: "texte" };
 
 // Chemin relatif volontaire (et non un package npm local) : le bridge reste
 // une source partagée dans document-parsing/bridge/ (cf. son README, « ne pas
@@ -84,6 +109,7 @@ const OPENAI_PATH = path.join(__dirname, "..", "..", "document-parsing", "bridge
 const SCHEMAS_DIR = path.join(__dirname, "..", "..", "document-parsing", "schemas");
 const SCHEMA_URSSAF_PATH = path.join(SCHEMAS_DIR, "urssaf.schema.json");
 const SCHEMA_RIB_PATH = path.join(SCHEMAS_DIR, "rib.schema.json");
+const SCHEMA_FISCALE_PATH = path.join(SCHEMAS_DIR, "fiscale.schema.json");
 // Mêmes 11 champs, même ordre, mêmes descriptions que le schéma `kbis` enregistré
 // pour l'agent (document-parsing/scripts/register_and_test.py::SCHEMAS["kbis"]) :
 // les deux voies lisent la même définition, donc le même mapping s'applique.
@@ -96,6 +122,7 @@ const SCHEMA_KBIS_PATH = path.join(SCHEMAS_DIR, "kbis.schema.json");
 const PIECES_TEXTE = {
   urssaf: { schemaPath: SCHEMA_URSSAF_PATH, mapper: mapUrssafResult },
   rib: { schemaPath: SCHEMA_RIB_PATH, mapper: mapRibResult },
+  fiscale: { schemaPath: SCHEMA_FISCALE_PATH, mapper: mapFiscaleResult },
   kbis: { schemaPath: SCHEMA_KBIS_PATH, mapper: mapKbisResult },
 };
 

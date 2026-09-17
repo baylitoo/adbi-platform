@@ -73,11 +73,26 @@ deux voies différentes — voir `lib/docie-extraction.js`.
   sont contrôlés (`lib/iban-bic.js`) ; une valeur douteuse est conservée et
   signalée, jamais vidée.
 
-Les quatre autres pièces (CNI, attestation fiscale, coordonnées,
-informations spécifiques) restent toujours analysées localement, flag ou pas :
-elles n'ont ni schéma ni mapping à ce jour. Sur échec DocIE (config manquante,
-timeout, erreur), repli automatique sur l'analyse locale — sauf pour un modèle
-choisi (#194) : l'erreur nommée s'affiche, sans repli.
+- **Attestation de régularité fiscale** — voie texte, même mécanique
+  (`document-parsing/schemas/fiscale.schema.json`, #215) : dénomination, SIREN,
+  SIRET, service des impôts, date de délivrance et mention de régularité. Le
+  schéma et la paire de mapping existaient depuis #215 mais n'étaient reliés à
+  rien ; ce câblage les rend atteignables. Pas de sélecteur de modèle : la pièce
+  reste hors de `lib/choix-modele.js::TACHES` et est lue par le profil DocIE par
+  défaut. **La checklist n'offre pas encore de bouton d'analyse pour elle** — le
+  bouton OCR est posé sous `dateField`, or une attestation fiscale ne se
+  renouvelle pas tous les 6 mois et n'en a pas. Elle n'est donc atteignable que
+  par `POST /api/document/analyze`, comme le RIB avant son propre bouton.
+
+Les trois autres pièces restent toujours analysées localement, flag ou pas, et
+pas pour la même raison. Coordonnées et informations spécifiques n'ont ni schéma
+ni mapping : ce sont des champs de saisie, pas des documents. La **CNI**, elle,
+a bien un schéma (`cni.schema.json`) et une paire de mapping (`lib/cni-mapping.js`,
+`cni_to_contrats.py`) — elle n'est pas routée ici parce que le catalogue la donne
+par la voie **vision** (tâche `cni`), avec le contrôle des chiffres de la MRZ
+pour prérequis (`lib/mrz.js`). Sur échec DocIE (config manquante, timeout,
+erreur), repli automatique sur l'analyse locale — sauf pour un modèle choisi
+(#194) : l'erreur nommée s'affiche, sans repli.
 
 Même flag, autre usage : le pré-remplissage de l'import de contrat depuis un
 PDF (`POST /api/contracts/importer/extraire`, bouton « Pré-remplir depuis le

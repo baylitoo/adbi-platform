@@ -11,9 +11,9 @@ Piece : « L'attestation de regularite fiscale » (contrats/lib/checklist.js,
 Art. 12). Voie texte (#194, liste retenue : LFM2.5-2.6B par defaut,
 LFM2.5-350M en alternative derriere nos controles de plausibilite de date).
 Le schema voyage dans le corps de la requete (`dynamic_schema` sur
-POST /v1/extract/text) : aucun enregistrement Studio. Le cablage dans
-contrats/lib/docie-extraction.js n'est PAS fait ici (PR #214 en vol sur ce
-fichier) ; ce module ne depend de rien de ce cablage.
+POST /v1/extract/text) : aucun enregistrement Studio. Le cablage du portage JS
+dans contrats/lib/docie-extraction.js est fait depuis #215 ; ce module ne
+depend de rien de ce cablage.
 
 Schema DocIE "fiscale" -- sept champs, chacun la ou il se lit sur le document :
     company_name          string  (denomination, bloc d'identification)
