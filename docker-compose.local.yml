@@ -40,7 +40,16 @@ services:
           memory: 1g
 
   factory:
-    build: ./factory
+    # additional_contexts (Compose >= 2.17) : expose auth/ (bibliotheque de
+    # verification des jetons, #247) au Dockerfile via `COPY --from=auth`.
+    # SANS ce contexte, BuildKit cherche une image « auth » sur Docker Hub et
+    # le build echoue ici — alors que le compose racine, lui, fonctionne. Un
+    # service bati par DEUX fichiers doit declarer le contexte dans les deux ;
+    # le test factory/tests/garde-acces.test.js les lit tous les deux.
+    build:
+      context: ./factory
+      additional_contexts:
+        auth: ./auth
     container_name: adbi-factory
     ports:
       - "4000:4000"
@@ -58,6 +67,14 @@ services:
       ADBI_LLM_BASE_URL: ${ADBI_LLM_BASE_URL:-}
       ADBI_LLM_API_KEY: ${ADBI_LLM_API_KEY:-}
       ADBI_LLM_MODELS: ${ADBI_LLM_MODELS:-}
+      # Controle d'acces du hub (#245). Absent/off -> passage libre sous
+      # l'identite locale, comportement inchange. Pose a "on", le hub exige une
+      # session emise par cv-parser et VERIFIEE ici — il n'en emet aucune.
+      ADBI_AUTH: ${ADBI_AUTH:-}
+      ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
+      # URL publique du hub, `next` de la page de connexion de cv-parser, qui
+      # la valide contre sa propre ADBI_FACTORY_URL (#254). Ici : localhost:4000.
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
     depends_on:
       - contrats
       - one-pager
@@ -316,6 +333,14 @@ services:
       ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
       ADBI_SUPERUSER_EMAIL: ${ADBI_SUPERUSER_EMAIL:?ADBI_SUPERUSER_EMAIL est requis (voir .env.example) — jamais admin@adbi.fr en déploiement}
       ADBI_SUPERUSER_PASSWORD: ${ADBI_SUPERUSER_PASSWORD:?ADBI_SUPERUSER_PASSWORD est requis (voir .env.example) — jamais le défaut de développement en déploiement}
+      # Portée du cookie de session (#254) — voir docker-compose.yml pour le
+      # détail. Sans cette ligne le cookie reste « host-only » et les services
+      # Node ne voient aucune session. En local, laisser vide convient : tout
+      # est sur localhost, donc host-only suffit.
+      ADBI_COOKIE_DOMAIN: ${ADBI_COOKIE_DOMAIN:-}
+      # URL publique du hub, pour valider le `next` de /login par origine
+      # exacte (#254). Ici : http://localhost:4000 en général.
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
       ADBI_LLM_BASE_URL: ${ADBI_LLM_BASE_URL:-}
       ADBI_LLM_API_KEY: ${ADBI_LLM_API_KEY:-}
       ADBI_LLM_MODEL: ${ADBI_LLM_MODEL:-}
