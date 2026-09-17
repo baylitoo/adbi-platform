@@ -62,6 +62,9 @@ services:
         # Catalogue des modèles par action (#194), lu à l'exécution pour les
         # sélecteurs de modèle. Voir contrats/Dockerfile, étape 6.
         modeles: ./document-parsing/models
+        # Bibliothèque de vérification des jetons ADBI (#247), même piège :
+        # `COPY --from=auth` sans condition. Voir contrats/Dockerfile, étape 7.
+        auth: ./auth
     volumes:
       - contrats-data:/app/data
     depends_on:
@@ -71,6 +74,16 @@ services:
       PORT: 4100
       DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_contrats
       ADBI_CODE_PARAMETRES: ${ADBI_CODE_PARAMETRES:?ADBI_CODE_PARAMETRES est requis (voir .env.example) — jamais le défaut de développement en déploiement}
+      # Contrôle d'accès du SERVICE (#245), à ne pas confondre avec
+      # ADBI_CODE_PARAMETRES ci-dessus qui ne verrouille que l'écran Paramètres.
+      # ADBI_AUTH absent/off -> passage libre sous l'identité locale,
+      # comportement actuel inchangé. Posé à "on", contrats exige une session
+      # émise par cv-parser et VÉRIFIÉE ici — il n'émet jamais de jeton.
+      ADBI_AUTH: ${ADBI_AUTH:-}
+      ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
+      # URL publique du hub : contrats est affiché en <iframe>, un visiteur sans
+      # session y est renvoyé au NIVEAU SUPÉRIEUR. Vide -> 401 en clair.
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
       PAPPERS_API_KEY: ${PAPPERS_API_KEY:-}
       # Extraction Kbis et URSSAF via le bridge DocIE — désactivée par défaut
       # (comportement local pdf-parse/tesseract.js inchangé). Deux voies : Kbis

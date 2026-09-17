@@ -61,6 +61,18 @@ COPY --from=fixtures --chown=node:node date_mission.json /document-parsing/fixtu
 #    Les deux fichiers seulement : tests/ n'a rien a faire dans l'image.
 COPY --from=modeles --chown=node:node catalogue.json catalogue.js /document-parsing/models/
 
+# 7) Bibliotheque de verification des jetons ADBI (auth/auth-adbi.js, #247),
+#    partagee avec les autres services Node et hors du contexte ./contrats :
+#    elle arrive par le contexte additionnel "auth" (voir LES TROIS
+#    docker-compose). Meme emplacement a la racine de l'image que le bridge
+#    ci-dessus, et pour la meme raison : server.js resout ../auth depuis /app,
+#    soit la meme profondeur relative qu'en checkout monorepo (contrats ->
+#    auth). Sans cette copie le service demarre... non : il PLANTE au
+#    demarrage, le require echouant. C'est une panne invisible aux tests, qui
+#    tournent sur le checkout ou ../auth existe pour de vrai.
+#    Aucune dependance npm ajoutee : la bibliotheque n'en a aucune.
+COPY --from=auth --chown=node:node . /auth
+
 # Les fichiers (referentiel, cle API, contrats generes) vivent dans
 # /app/data, monte comme volume pour persister hors du conteneur.
 # L'historique/signatures/corbeille/templates-perso vivent en PostgreSQL
