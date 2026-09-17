@@ -213,6 +213,13 @@ services:
     environment:
       PORT: 4200
       DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_one_pager
+      # Controle d'acces du service (#245). Absent/off -> passage libre sous
+      # l'identite locale, comportement inchange. Pose a "on", one-pager exige
+      # une session emise par cv-parser et VERIFIEE ici.
+      ADBI_AUTH: ${ADBI_AUTH:-}
+      ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
+      # URL publique du hub (ici : http://localhost:4000 en general).
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
       # Bascule progressive vers le bridge DocIE partage (issue #152) — voir
       # one-pager/.env.example. Desactive tant que ONEPAGER_DOCIE_EXTRACTION_ENABLED
       # n'est pas explicitement mis a "true" : aucun changement de comportement

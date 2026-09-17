@@ -55,6 +55,17 @@ COPY --chown=node:node document-parsing/models/catalogue.json \
      document-parsing/models/catalogue.js \
      /document-parsing/models/
 
+# Bibliotheque de verification des jetons ADBI (auth/auth-adbi.js, #247).
+# AUCUN `additional_contexts` ici, contrairement a factory, coffre et contrats :
+# le contexte de build de cette image EST deja la racine du depot (voir l'en-tete
+# et les deux docker-compose), donc auth/ est atteignable directement. server.js
+# le resout par ../auth depuis /app, soit la meme profondeur qu'en checkout.
+# Sans cette copie le conteneur PLANTE au demarrage, le require echouant --
+# panne invisible aux tests, qui tournent sur le checkout.
+# Le contexte est filtre par une LISTE BLANCHE (Dockerfile.dockerignore) : la
+# ligne `!auth` y est indispensable, sinon ce COPY echoue sur « not found ».
+COPY --chown=node:node auth/ /auth
+
 ENV NODE_ENV=production
 # Sans ca, server.js lie 127.0.0.1 (defaut poste de dev) : injoignable via le
 # port publie du conteneur malgre "-p 4200:4200" (voir server.js).
