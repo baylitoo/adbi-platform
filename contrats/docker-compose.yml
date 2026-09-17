@@ -35,6 +35,10 @@ services:
         fixtures: ../document-parsing/fixtures
         # Catalogue des modèles par action (#194), voir le Dockerfile, étape 6.
         modeles: ../document-parsing/models
+        # Bibliothèque de vérification des jetons ADBI (#247), voir le
+        # Dockerfile, étape 7. Lancé isolément depuis contrats/, le chemin est
+        # "../auth" — pas "./auth" comme dans les deux composes racine.
+        auth: ../auth
     image: adbi-contrats:latest
     container_name: adbi-contrats
     ports:
@@ -43,6 +47,15 @@ services:
       - ./data:/app/data     # referentiel, cle API et fichiers generes conserves sur la machine hote
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL est requise (connexion PostgreSQL, voir README.md)}
+      # Contrôle d'accès du SERVICE (#245). Ce fichier lance contrats SEUL, sans
+      # cv-parser : le secret n'est donc PAS exigé ici (`:-` et non `:?`), sinon
+      # un lancement isolé de développement, qui n'active jamais l'auth, se
+      # mettrait à échouer. La sécurité ne repose pas sur cette absence : le
+      # garde refuse tout si ADBI_AUTH=on sans secret (auth-adbi.js,
+      # raison "secret_absent"), il n'ouvre jamais par défaut.
+      ADBI_AUTH: ${ADBI_AUTH:-}
+      ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:-}
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
       # Extraction Kbis via le bridge DocIE — désactivée par défaut (comportement
       # local pdf-parse/tesseract.js inchangé). Voir lib/docie-extraction.js.
       DOCIE_EXTRACTION_ENABLED: ${DOCIE_EXTRACTION_ENABLED:-false}

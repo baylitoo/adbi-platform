@@ -61,6 +61,20 @@ const GENERES_DIR = path.join(__dirname, "data", "contrats-generes");
 // (outil local mono-utilisateur : rester en ligne vaut mieux que « connexion refusée »).
 process.on("uncaughtException", (e) => console.error("[erreur non gérée]", e && e.message ? e.message : e));
 process.on("unhandledRejection", (e) => console.error("[promesse rejetée]", e && e.message ? e.message : e));
+// Verification des jetons ADBI (auth/auth-adbi.js, #247). Chemin relatif
+// volontaire, meme convention que le bridge DocIE de ce service : en checkout
+// monorepo ../auth est le vrai dossier partage ; dans l'image, le Dockerfile le
+// copie a la racine (/auth) et server.js vit dans /app -- meme profondeur
+// relative, donc le meme chemin resout dans les deux cas.
+const auth = require("../auth/auth-adbi");
+
+// URL publique du hub. contrats est affiche DANS une <iframe> du hub
+// (modules.docker.json : "type": "service"), donc un module non authentifie ne
+// redirige pas sur place : il renvoie le NIVEAU SUPERIEUR vers le hub, seul
+// capable de renouveler la session (auth-adbi.js, pageReconnexion). Vide : la
+// cible n'est pas fabricable, on repond 401 en clair.
+const FACTORY_URL = process.env.ADBI_FACTORY_URL || "";
+
 const app = express();
 // rawBody conservé : indispensable pour vérifier la signature HMAC des webhooks
 // des fournisseurs de signature (l'authenticité se vérifie sur les octets bruts).
@@ -68,6 +82,63 @@ app.use(express.json({
   limit: "30mb",
   verify: (req, res, buf) => { req.rawBody = buf; },
 }));
+
+// ---------- Controle d'acces du service (#245) ----------
+//
+// contrats etait entierement public : seul l'ecran Parametres etait protege,
+// par exigerCodeParametres (plus bas). Ce garde-ci protege le SERVICE ;
+// exigerCodeParametres reste en place, plus etroit, sur les routes
+// d'administration. Les deux repondent a des questions differentes : l'un
+// « qui es-tu », l'autre « as-tu le code de cet ecran ». Aucun ne remplace
+// l'autre.
+//
+// cv-parser reste le SEUL emetteur d'identite ; ici on ne fait que VERIFIER.
+//
+// Deux chemins restent publics :
+//   /api/sante          sonde du conteneur (Dockerfile). Un 401 y serait lu
+//                       comme un echec : Coolify redemarrerait en boucle.
+//   /webhooks/signature rappel ENTRANT de Yousign/Zoho. Il ne porte aucune
+//                       session ADBI et n'en portera jamais ; il s'authentifie
+//                       par HMAC sur ses propres octets, avec le secret du
+//                       fournisseur. Le gater ne casserait rien bruyamment :
+//                       la synchronisation des signatures s'arreterait en
+//                       silence, ce qui est pire.
+//
+// Place APRES express.json et AVANT express.static :
+//   - avant le statique, sinon index.html et tout public/ partiraient sans
+//     session et le garde ne servirait a rien ;
+//   - apres express.json, pour que le corps soit consomme avant le refus. Un
+//     envoi de 30 Mo non authentifie recoit alors un 401 propre, que le front
+//     sait lire, au lieu d'une connexion coupee en plein transfert.
+function cheminPublic(chemin) {
+  return chemin === "/api/sante" || chemin === "/webhooks/signature";
+}
+
+function gardeAcces(req, res, next) {
+  if (cheminPublic(req.path)) return next();
+  const decision = auth.garde(req, process.env);
+  if (decision.autorise) return next();
+
+  if (decision.api) {
+    // Le front appelle tout par fetch() : du HTML la ou il attend du JSON
+    // casserait l'affichage au lieu de signaler la session expiree.
+    return res.status(401).json({ erreur: "Non authentifie" });
+  }
+  if (!FACTORY_URL) {
+    // Sans URL de hub, aucune cible de reconnexion fabricable : on le dit,
+    // plutot que de renvoyer vers une page absente de ce service.
+    return res.status(401).type("text/plain; charset=utf-8").send("Non authentifie");
+  }
+  // Page : contrats est un module affiche en <iframe>. Rediriger sur place
+  // ferait un cadre mort a l'expiration du jeton (1 h) ; pageReconnexion()
+  // renvoie le niveau superieur vers le hub, qui sait renouveler la session.
+  return res
+    .status(401)
+    .type("text/html; charset=utf-8")
+    .send(auth.pageReconnexion(FACTORY_URL, "contrats"));
+}
+
+app.use(gardeAcces);
 app.use(express.static(path.join(__dirname, "public")));
 
 // ---------- Santé ----------
