@@ -216,19 +216,109 @@ class RevueMetadataTests(unittest.TestCase):
         self.assertEqual(metadata["validation"], {"valid": True})
 
 
-class DocxDelegationTests(unittest.TestCase):
-    def test_docx_delegates_to_legacy_client_single_call(self):
+class VoieTexteTests(unittest.TestCase):
+    """Voie TEXTE du pont (#151).
+
+    Un document qui PORTE son texte n'a rien à faire sur la voie agent, et n'a
+    plus à sortir du pont par le client historique. Ce qui est vérifié ici est
+    le ROUTAGE et ce qui part dans le corps ; la lecture locale elle-même
+    (pypdf, rendu DOCX) reste couverte par les tests de docie_client, dont la
+    règle est IMPORTÉE par le module testé, pas recopiée.
+    """
+
+    def _pont(self):
+        pont = MagicMock()
+        pont.extract_text.return_value = {"schema_name": "adbi_resume", "result": {
+            "name": "Alice Dupont", "title": "Développeuse", "experience": [],
+            "education": [], "skills": [], "languages": [], "projects": [],
+            "certifications": [], "interests": []},
+            "metadata": {"request_id": "req-texte", "model": "lfm2.5-2.6b", "agent": None,
+                         "validation": {"valid": True, "errors": [], "warnings": []},
+                         "field_confidence": {"name": 0.4},
+                         "partiel": [{"champ": "name", "raison": "boucle"}],
+                         "blocs_texte": 12, "troncature_possible": False,
+                         "schema_reported": True}}
+        return pont
+
+    def _extraire(self, nom, texte, pont, **kwargs):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "cv.docx"
-            path.write_bytes(b"not-a-real-docx")
-            fake_legacy = Mock(return_value=({"name": "Bob"}, {"event_id": "e1", "model_profile": "m",
-                                                                  "validation": {}}))
-            with patch("docie_bridge_extraction.docie_client.extract_resume", fake_legacy):
-                with patch.dict(os.environ, BRIDGE_ENV):
-                    data, metadata = bridge_extraction.extract_resume(path)
-        fake_legacy.assert_called_once()
-        self.assertEqual(data["name"], "Bob")
-        self.assertEqual(metadata["transport"], "docie")
+            path = Path(directory) / nom
+            path.write_bytes(b"le contenu importe peu : texte_document est bouche")
+            with patch("docie_bridge_extraction.docie_client.texte_document",
+                       return_value=(texte, None)):
+                with patch("docie_bridge_extraction._load_bridge", return_value=pont):
+                    with patch.dict(os.environ, BRIDGE_ENV):
+                        return bridge_extraction.extract_resume(path, **kwargs)
+
+    def test_docx_part_par_le_pont_et_non_par_le_client_historique(self):
+        pont = self._pont()
+        legacy = Mock()
+        with patch("docie_bridge_extraction.docie_client.extract_resume", legacy):
+            data, metadata = self._extraire("cv.docx", "Alice Dupont\nDéveloppeuse", pont)
+        legacy.assert_not_called()
+        pont.extract_document.assert_not_called()
+        self.assertEqual(pont.extract_text.call_count, 1)
+        self.assertEqual(data["name"], "Alice Dupont")
+        self.assertEqual(metadata["transport"], "docie-bridge")
+        self.assertEqual(metadata["voie"], "texte")
+
+    def test_pdf_reste_sur_la_voie_agent_et_sa_couche_texte_n_est_meme_pas_lue(self):
+        """Volontaire, et pas un oubli. Le pont actif,
+        choix_modele.voie_pour(".pdf") rend "agent" : le sélecteur ne propose
+        que des modèles de cette voie et app.py a validé le Choix pour elle.
+        Router le PDF en texte ferait refuser un modèle vision-seul
+        (`modele_non_propose`) là où il fonctionnait. La lecture locale ne doit
+        donc même pas être tentée."""
+        pont = self._pont()
+        pont.extract_document.return_value = {"schema_name": "adbi_resume", "result": {
+            "name": "Bob", "title": "", "experience": [], "education": [], "skills": [],
+            "languages": [], "projects": [], "certifications": [], "interests": []},
+            "metadata": {"request_id": "req-agent", "agent": "adbi_agent_1"}}
+        lecture = Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "cv.pdf"
+            path.write_bytes(b"%PDF-fake")
+            with patch("docie_bridge_extraction.docie_client.texte_document", lecture):
+                with patch("docie_bridge_extraction._load_bridge", return_value=pont):
+                    with patch.dict(os.environ, BRIDGE_ENV):
+                        _, metadata = bridge_extraction.extract_resume(path)
+        lecture.assert_not_called()
+        pont.extract_text.assert_not_called()
+        self.assertEqual(pont.extract_document.call_count, 1)
+        self.assertEqual(metadata["voie"], "agent")
+
+    def test_le_schema_part_dans_le_corps_avec_le_bon_document_type(self):
+        """Le pont refuse un `dynamic_schema` dont le `document_type` n'est pas
+        celui du `kind` : un chemin de schéma copié d'une autre pièce
+        échouerait ici, et nulle part ailleurs."""
+        pont = self._pont()
+        self._extraire("cv.docx", "Alice", pont)
+        args, kwargs = pont.extract_text.call_args
+        self.assertEqual(args[0], "Alice")
+        self.assertEqual(kwargs["kind"], "resume")
+        self.assertEqual(kwargs["dynamic_schema"]["document_type"], "adbi_resume")
+
+    def test_signaux_de_revue_arrivent_par_la_voie_texte(self):
+        """Ce que le client historique ne rendait PAS : `field_confidence` et
+        `partiel`, que docie_review consomme pour marquer les champs à
+        vérifier. Sans eux, la revue n'avait rien à dire."""
+        pont = self._pont()
+        _, metadata = self._extraire("cv.docx", "Alice", pont)
+        self.assertEqual(metadata["field_confidence"], {"name": 0.4})
+        self.assertEqual(metadata["partiel"], [{"champ": "name", "raison": "boucle"}])
+        self.assertEqual(metadata["blocs_texte"], 12)
+        self.assertIs(metadata["troncature_possible"], False)
+
+    def test_modele_choisi_verifie_sur_le_texte_et_envoye_en_model_profile(self):
+        pont = self._pont()
+        choix = Mock()
+        choix.pour_texte.return_value = "store:lfm25_2_6b"
+        self._extraire("cv.docx", "Alice Dupont", pont, choix=choix)
+        choix.pour_texte.assert_called_once_with("Alice Dupont")
+        choix.pour_agent.assert_not_called()
+        _, kwargs = pont.extract_text.call_args
+        self.assertEqual(kwargs["model_profile"], "store:lfm25_2_6b")
+
 
 
 if __name__ == "__main__":
