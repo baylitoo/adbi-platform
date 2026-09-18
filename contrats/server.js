@@ -1270,6 +1270,9 @@ db.init()
     app.listen(PORT, HOTE, () => {
       console.log("\n  ADBI - Generateur de contrats");
       console.log("  -> http://" + HOTE + ":" + PORT + "\n");
+      // #245 : démarrer SANS contrôle d'accès ne doit pas être silencieux.
+      const avertissement = auth.avertissementAcces(process.env);
+      if (avertissement) console.log(avertissement);
     });
     // Rattrape tout webhook de signature dont le traitement avait échoué avant
     // cet arrêt/redémarrage, puis réessaie périodiquement (voir plus haut).

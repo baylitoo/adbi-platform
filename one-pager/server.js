@@ -603,6 +603,10 @@ db.init()
       console.log("");
       console.log("  One pager — prêt sur http://" + HOTE + ":" + PORT);
       console.log("  Base : PostgreSQL (DATABASE_URL)");
+      // #245 : démarrer SANS contrôle d'accès ne doit pas être silencieux. Le
+      // vivier contient des CV de candidats — des données personnelles.
+      const avertissement = auth.avertissementAcces(process.env);
+      if (avertissement) console.log(avertissement);
       console.log("");
     });
 
