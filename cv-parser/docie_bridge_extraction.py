@@ -14,13 +14,21 @@ d'offrir un chemin de bascule sûr et réversible. La normalisation, l'édition
 et les exports en aval (app.py::process_cv, normalize_cv_data, bilan_adbi,
 export_dossier.py) ne changent pas : seule l'étape d'extraction change.
 
-Le bridge n'accepte que PDF/PNG/JPEG — WebP en a été retiré (#180, DocIE le
-refuse ; voir #241) et ne doit pas réapparaître ici (pas encore de contrat texte,
-voir document-parsing/bridge/README.md) : un .docx passe donc toujours par
-`docie_client.extract_resume`, même bascule activée — un seul appel réseau
-dans tous les cas, jamais un second essai via un autre transport après un
-échec du bridge (le README du bridge est explicite : ne jamais rejouer
-aveuglément un travail DocIE potentiellement facturé).
+Le bridge sert les DEUX surfaces de DocIE, et la voie se choisit sur la
+structure que la source a réellement (règle #180) :
+
+  * voie AGENT — PDF, PNG et JPEG (`_MIME_BY_SUFFIX` ci-dessous). WebP en a été
+    retiré (#180 : l'allowlist de DocIE le refuse ; voir #241) et ne doit pas y
+    réapparaître sans que `MIME_TYPES` l'accepte d'abord — c'est la question
+    ouverte de #181 ;
+  * voie TEXTE — le .docx, qui porte déjà son texte (#151). Il passait
+    auparavant par `docie_client.extract_resume` même bascule activée, faute de
+    contrat texte côté pont ; ce contrat existe désormais
+    (document-parsing/bridge/tests/contract_text.json).
+
+Un seul appel réseau dans tous les cas, jamais un second essai via un autre
+transport après un échec du bridge (le README du bridge est explicite : ne
+jamais rejouer aveuglément un travail DocIE potentiellement facturé).
 
 Empaquetage Docker : l'image cv-parser copie document-parsing/bridge/
 docie_bridge.py à côté de ce fichier au moment du build (voir le Dockerfile,
