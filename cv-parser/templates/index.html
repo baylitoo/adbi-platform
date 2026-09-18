@@ -802,7 +802,13 @@ function deposer(liste) {
 function showParseSummary(data) {
   const s = data.parse_summary || {};
   const isDigital = s.mode === 'digital';
-  const isDocie = s.mode === 'docie';
+  // `parsing_mode` vaut "docie" (client historique) OU "docie-bridge" (pont
+  // partagé) : les deux sont une lecture DocIE, et l'étiquette doit le dire.
+  // Une égalité stricte à "docie" affichait « PDF scanné · OCR » pour un
+  // document lu en texte — le contraire de ce qui s'est passé. Le défaut est
+  // antérieur à #151 (la voie agent du pont rend déjà "docie-bridge") ; il
+  // n'était pas visible parce que le drapeau est éteint par défaut.
+  const isDocie = String(s.mode || '').startsWith('docie');
   document.getElementById('modePill').textContent  = isDocie ? '📄 Document analysé' : isDigital ? '📄 PDF digital' : '🔍 PDF scanné · OCR';
   document.getElementById('modePill').className    = 'mode-pill ' + (isDigital || isDocie ? 'digital' : 'scanned');
   document.getElementById('parseName').textContent = s.name || data.name || '';
