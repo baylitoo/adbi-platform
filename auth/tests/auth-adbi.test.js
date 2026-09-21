@@ -243,3 +243,36 @@ test("l'identifiant de module est echappe, pas interpole brut", () => {
   assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
   assert.match(html, /%3C|%22/, "l'identifiant est encode dans l'URL");
 });
+
+// ── avertissementAcces ───────────────────────────────────────────────────────
+//
+// Fonction PURE, donc testable sans demarrer de serveur : c'est la raison pour
+// laquelle elle REND la ligne au lieu de l'afficher (les tests de ce depot ne
+// require() jamais un server.js, qui ecoute des le chargement).
+
+test("service ouvert : une ligne d'alerte, meme libelle que cv-parser", () => {
+  const ligne = A.avertissementAcces({});
+  assert.match(ligne, /Authentification DÉSACTIVÉE/);
+  assert.match(ligne, /ADBI_AUTH != on/);
+  assert.match(ligne, /jamais a un deploiement expose|jamais à un déploiement exposé/);
+});
+
+test("service protege : rien a signaler, donc null", () => {
+  for (const valeur of ["on", "1", "true", "oui", "ON", " true "]) {
+    assert.equal(A.avertissementAcces({ ADBI_AUTH: valeur }), null, valeur);
+  }
+});
+
+test("toute autre valeur laisse le service OUVERT, et l'alerte le dit", () => {
+  // Meme jeu de valeurs que authActive : "yes" et "0" n'activent rien. Un
+  // operateur qui ecrit ADBI_AUTH=yes doit voir l'alerte, pas la croire posee.
+  for (const valeur of ["off", "", "yes", "non", "0", "true-ish"]) {
+    assert.ok(A.avertissementAcces({ ADBI_AUTH: valeur }), valeur);
+  }
+});
+
+test("env absent ou vide : ouvert, jamais une exception", () => {
+  assert.ok(A.avertissementAcces(undefined));
+  assert.ok(A.avertissementAcces(null));
+  assert.ok(A.avertissementAcces({}));
+});

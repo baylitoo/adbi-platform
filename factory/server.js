@@ -668,6 +668,9 @@ serveur.listen(PORT, HOTE, () => {
   console.log("  ADBI Factory — prêt sur http://" + HOTE + ":" + PORT);
   console.log("  Modules : " + MODULES.map((m) => m.nom).join(", "));
   console.log("  (Fermez cette fenêtre pour arrêter la plateforme.)");
+  // #245 : démarrer SANS contrôle d'accès ne doit pas être silencieux.
+  const avertissement = auth.avertissementAcces(process.env);
+  if (avertissement) console.log(avertissement);
   console.log("");
   prechaufferModules();
 });

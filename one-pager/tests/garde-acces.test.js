@@ -257,3 +257,12 @@ test("one-pager VERIFIE les jetons, il n'en emet aucun", () => {
   assert.match(SERVEUR, /require\("\.\.\/auth\/auth-adbi"\)/,
     "one-pager doit passer par la bibliotheque partagee");
 });
+
+test("one-pager dit au demarrage qu'il tourne sans controle d'acces", () => {
+  // #245 : un service qui demarre OUVERT ne doit pas etre silencieux — le
+  // vivier contient des CV de candidats, donc des donnees personnelles.
+  assert.match(SERVEUR, /avertissementAcces\(process\.env\)/,
+    "le service doit demander la ligne d'alerte a la bibliotheque partagee");
+  assert.match(SERVEUR, /console\.log\(avertissement\)/,
+    "et la journaliser au demarrage");
+});

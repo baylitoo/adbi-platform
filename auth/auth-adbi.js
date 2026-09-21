@@ -41,6 +41,28 @@ function authActive(env) {
   return brut === "on" || brut === "1" || brut === "true" || brut === "oui";
 }
 
+/**
+ * Ligne d'alerte quand le service démarre SANS contrôle d'accès, ou null.
+ *
+ * Même libellé que cv-parser/app.py:129 — un seul texte pour la plateforme,
+ * pas une deuxième formulation par service.
+ *
+ * RENDUE plutôt qu'affichée : une fonction pure se teste sans démarrer de
+ * serveur. Les tests de ce dépôt ne `require()` jamais un server.js, qui
+ * écoute dès le chargement (voir l'en-tête de factory/tests/garde-acces.test.js) ;
+ * c'est l'appelant qui journalise, dans son propre rappel `listen`.
+ *
+ * Pourquoi elle existe : `ADBI_AUTH` absent vaut « off », et les quatre
+ * services Node démarraient alors en annonçant « prêt » sans dire qu'ils
+ * étaient ouverts. Un déploiement qui oublie la variable ne doit pas être
+ * silencieux — c'est exactement ce que #245 a trouvé sur coffre.
+ */
+function avertissementAcces(env) {
+  if (authActive(env)) return null;
+  return "  [AUTH] ⚠ Authentification DÉSACTIVÉE (ADBI_AUTH != on) — "
+    + "à réserver au poste local, jamais à un déploiement exposé.";
+}
+
 /** `/api/...` -> réponse JSON ; tout le reste -> réponse HTML (core/auth.py:142). */
 function estApi(chemin) {
   return typeof chemin === "string" && chemin.startsWith("/api/");
@@ -191,6 +213,7 @@ function pageReconnexion(urlFactory, idModule) {
 module.exports = {
   UTILISATEUR_LOCAL,
   authActive,
+  avertissementAcces,
   estApi,
   verifierJetonAcces,
   jetonDeRequete,

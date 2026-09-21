@@ -271,3 +271,13 @@ test("le hub ne signe aucun jeton : il ne fait que verifier", () => {
   assert.match(SERVEUR, /require\("\.\.\/auth\/auth-adbi"\)/,
     "le hub doit passer par la bibliotheque partagee");
 });
+
+test("le hub dit au demarrage qu'il tourne sans controle d'acces", () => {
+  // #245 : un service qui demarre OUVERT ne doit pas etre silencieux. Le
+  // libelle vit dans auth-adbi.js (un seul texte pour la plateforme) ; ce qui
+  // est verifie ici, c'est que CE service le demande et le journalise.
+  assert.match(SERVEUR, /avertissementAcces\(process\.env\)/,
+    "le service doit demander la ligne d'alerte a la bibliotheque partagee");
+  assert.match(SERVEUR, /console\.log\(avertissement\)/,
+    "et la journaliser au demarrage");
+});

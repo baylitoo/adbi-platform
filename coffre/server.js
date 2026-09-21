@@ -831,5 +831,9 @@ serveur.listen(PORT, HOTE, () => {
   console.log("");
   console.log("  ADBI Coffre — prêt sur http://" + HOTE + ":" + PORT);
   console.log("  Chiffrement local : aucun fichier ni mot de passe n'est conservé.");
+  // #245 : démarrer SANS contrôle d'accès ne doit pas être silencieux — c'est
+  // précisément ce service qui a été trouvé public et sans garde.
+  const avertissement = auth.avertissementAcces(process.env);
+  if (avertissement) console.log(avertissement);
   console.log("");
 });
