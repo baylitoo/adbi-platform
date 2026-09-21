@@ -1628,7 +1628,8 @@ def process_cv(file_path, jeton=None, modele=None) -> dict:
     noter_progression(jeton, 93, "Finalisation de la fiche")
     cv_data = normalize_cv_data(raw_data)
     # `transport` reflète le chemin réellement emprunté (docie_bridge_extraction
-    # délègue les .docx à docie_client même bascule activée — voir son docstring).
+    # ne délègue plus au client historique que les suffixes qu'aucune voie du
+    # pont ne lit — voir son docstring).
     mode = metadata.get("transport", "docie")
     cv_data.update({
         "llm_parsed": True,
@@ -1643,7 +1644,11 @@ def process_cv(file_path, jeton=None, modele=None) -> dict:
     # Modèle réellement servi, lu dans la RÉPONSE (#194) : `model_profile` sur
     # la voie texte, agent appelé sur la voie agent — jamais le libellé du
     # modèle demandé à sa place. `demande` : le choix explicite, ou None.
-    voie = "agent" if mode == "docie-bridge" else "texte"
+    # Voie réellement empruntée (#151) : le pont sert désormais les DEUX (texte
+    # pour un DOCX ou un PDF à couche texte, agent pour un scan), donc elle ne
+    # se déduit plus du transport. Clé absente (client historique, pont
+    # antérieur à #151) : l'ancienne déduction, inchangée.
+    voie = metadata.get("voie") or ("agent" if mode == "docie-bridge" else "texte")
     cv_data["modele_extraction"] = {
         "voie": voie,
         "demande": modele or None,
