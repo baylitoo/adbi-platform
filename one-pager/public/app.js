@@ -124,7 +124,25 @@ function refleterChoixExterne() {
   const sel = $("#choix-modele");
   const avis = avisExterne();
   if (!sel || !avis) return;
-  avis.style.display = modelesExternes.has(sel.value) ? "" : "none";
+  const externeChoisi = modelesExternes.has(sel.value);
+  avis.style.display = externeChoisi ? "" : "none";
+
+  // Repli externe : propose seulement si un modele hors ADBI existe. Sans
+  // objet quand un modele externe est DEJA choisi — la case se desactive au
+  // lieu de laisser croire a un second appel.
+  const bloc = $("#repli-externe-bloc");
+  const repli = $("#repli-externe");
+  if (bloc) bloc.hidden = modelesExternes.size === 0;
+  if (repli) {
+    repli.disabled = externeChoisi;
+    if (externeChoisi) repli.checked = false;
+  }
+}
+
+/** La case « repli externe » est-elle cochee ET active ? */
+function repliExterneDemande() {
+  const repli = $("#repli-externe");
+  return Boolean(repli && repli.checked && !repli.disabled);
 }
 
 async function chargerModeles() {
@@ -238,7 +256,14 @@ async function analyser(file, item, modele = null) {
   const r = await fetch("/api/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filename: file.name, contentBase64, ...(modele ? { modele } : {}) }),
+    // `repliExterne` n'est transmis que s'il est demande : decoche, le corps de
+    // la requete est exactement celui d'avant (meme regle que `modele`).
+    body: JSON.stringify({
+      filename: file.name,
+      contentBase64,
+      ...(modele ? { modele } : {}),
+      ...(repliExterneDemande() ? { repliExterne: true } : {}),
+    }),
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error || "Import impossible.");

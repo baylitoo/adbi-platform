@@ -53,6 +53,18 @@
       <select id="choix-modele" aria-label="Modèle d'extraction" title="Modèle d'extraction utilisé pour ces CV"></select>
     </div>
     <div class="note" id="choix-modele-erreur" hidden></div>
+    <!-- Repli externe (#194) : affiche par app.js UNIQUEMENT si un modele hors
+         ADBI est propose (donc si la cle du fournisseur est configuree). Decoche
+         par defaut : le texte du CV ne quitte ADBI que sur un geste explicite,
+         et ce geste vaut consentement pour ce depot. -->
+    <div class="note" id="repli-externe-bloc" hidden>
+      <label>
+        <input type="checkbox" id="repli-externe">
+        Si DocIE échoue, réessayer avec le service externe (hors ADBI) : le
+        texte du CV sera alors envoyé à ce service. Un document sans couche
+        texte (scan) ne peut pas être secouru ainsi.
+      </label>
+    </div>
     <input type="file" id="fichier" accept=".pdf,.docx,.doc,.txt" multiple hidden>
     <div class="note">Tout reste sur ce poste : aucun envoi vers Internet.</div>
   </div>

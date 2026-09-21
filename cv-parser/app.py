@@ -1584,7 +1584,7 @@ def fichier_upload(identifiant: str, ext: str):
     return p if p.parent == UPLOAD_DIR.resolve() and p.is_file() else None
 
 
-def process_cv(file_path, jeton=None, modele=None) -> dict:
+def process_cv(file_path, jeton=None, modele=None, repli_externe=False) -> dict:
     """Document → DocIE (extraction/OCR) → format CV ADBI.
 
     Issue #151 : DOCIE_EXTRACTION_ENABLED bascule l'étape d'extraction vers
@@ -1607,6 +1607,8 @@ def process_cv(file_path, jeton=None, modele=None) -> dict:
     """
     import time
     import choix_modele
+    import docie_client
+    from docie_client import DocIEError
     from docie_bridge_extraction import docie_extraction_enabled
     from docie_bridge_extraction import extract_resume as extract_resume_bridge
     from docie_client import extract_resume as extract_resume_legacy
@@ -1620,11 +1622,31 @@ def process_cv(file_path, jeton=None, modele=None) -> dict:
         options["choix"] = choix
     bridge_active = docie_extraction_enabled()
     extract_resume = extract_resume_bridge if bridge_active else extract_resume_legacy
-    raw_data, metadata = extract_resume(
-        file_path,
-        progress=lambda detail: noter_progression(jeton, 55, "Analyse du CV", detail),
-        **options,
-    )
+
+    def progression(detail):
+        noter_progression(jeton, 55, "Analyse du CV", detail)
+
+    try:
+        raw_data, metadata = extract_resume(file_path, progress=progression, **options)
+    except DocIEError as exc:
+        # Repli externe : COCHÉ au dépôt, jamais un défaut. C'est là que le
+        # consentement a été donné — avant l'envoi, pour ce dépôt-là — car le
+        # texte du CV, donnée personnelle d'un candidat, va quitter ADBI.
+        #
+        # `repli_possible` refuse les causes qu'un second appel ne doit pas
+        # rejouer : `timeout` (DocIE peut encore tourner ET facturer) et `input`
+        # (le document lui-même est inutilisable). Le texte est relu LOCALEMENT,
+        # rien n'est redemandé au service qui vient d'échouer.
+        #
+        # Si ce second essai échoue à son tour, son erreur sort telle quelle :
+        # pas de troisième chemin, pas de fiche vide silencieuse.
+        if not repli_externe or not docie_client.repli_possible(exc):
+            raise
+        cause = getattr(exc, "code", None) or "inconnu"
+        print(f"[REPLI] DocIE a échoué ({cause}) — second essai chez le fournisseur externe")
+        raw_data, metadata = docie_client.repli_openai(file_path, progress=progression)
+        # Trace : la fiche dit APRÈS QUOI le repli a eu lieu, jamais en silence.
+        metadata = {**metadata, "repli_externe_apres": cause}
     noter_progression(jeton, 93, "Finalisation de la fiche")
     cv_data = normalize_cv_data(raw_data)
     # `transport` reflète le chemin réellement emprunté (docie_bridge_extraction
@@ -1636,7 +1658,10 @@ def process_cv(file_path, jeton=None, modele=None) -> dict:
         "docling_used": False,
         "parsing_mode": mode,
         "extraction": mode,
-        "llm_service": ("DocIE Bridge / " if mode == "docie-bridge" else "DocIE / ") + (metadata["model_profile"] or "défaut"),
+        # Un service EXTERNE n'est pas DocIE : le dire, sinon la fiche attribue à
+        # DocIE une lecture qu'il n'a pas faite (#194, modèles hors ADBI).
+        "llm_service": ({"docie-bridge": "DocIE Bridge / ", "openai": "Service externe (hors ADBI) / "}
+                        .get(mode, "DocIE / ")) + (metadata["model_profile"] or "défaut"),
         "docie_event_id": metadata["event_id"],
         "docie_validation": metadata["validation"],
         "_timing": {"total_s": round(time.perf_counter() - started, 3)},
@@ -2118,6 +2143,11 @@ def upload_cv():
     # Modèle explicitement choisi (#194, choix_modele.py) : champ présent et non
     # vide. Absent (sélecteur masqué, autre client) : comportement d'avant.
     modele = (request.form.get("modele") or "").strip() or None
+    # Repli externe explicitement coché au dépôt : si DocIE échoue, réessayer
+    # chez le fournisseur hors ADBI. Le texte du CV quitte alors la plateforme —
+    # d'où un consentement donné AVANT l'envoi, pour ce dépôt-là, et jamais un
+    # défaut. Absent (case décochée, autre client) : comportement d'avant.
+    repli_externe = (request.form.get("repli_externe") or "").strip().lower() in ("1", "on", "true", "oui")
 
     # ── Cache par empreinte : un fichier DÉJÀ analysé ne repasse pas par le
     # pipeline (doublons de candidats, re-dépôts) — sa fiche est reprise
@@ -2154,7 +2184,7 @@ def upload_cv():
     depot = {
         "file_id": file_id, "file_path": file_path, "filename": file.filename,
         "ext": ext, "empreinte": empreinte, "utilisateur": dict(get_current_user() or {}),
-        "modele": modele,
+        "modele": modele, "repli_externe": repli_externe,
     }
 
     if source_cache is not None:
@@ -2195,9 +2225,14 @@ def _analyser_depot(depot, jeton):
     catalogue, erreur DocIE nommée) sort tel quel et la tâche finit `echec`.
     Aucune fiche n'étant créée, le fichier déposé est retiré.
     """
+    # `repli_externe` n'est transmis que s'il est VRAI. Case décochée : l'appel à
+    # process_cv est celui d'avant, à l'octet — tests/test_choix_modele.py
+    # épingle ces appels (« process_cv appelé exactement comme avant »), et
+    # c'est la bonne exigence : une option non demandée ne doit rien changer.
+    options_repli = {"repli_externe": True} if depot.get("repli_externe") else {}
     if depot.get("modele"):
         try:
-            cv_data = process_cv(depot["file_path"], jeton=jeton, modele=depot["modele"])
+            cv_data = process_cv(depot["file_path"], jeton=jeton, modele=depot["modele"], **options_repli)
         except BaseException:
             depot["file_path"].unlink(missing_ok=True)
             raise
@@ -2205,7 +2240,7 @@ def _analyser_depot(depot, jeton):
 
     parse_warning = None
     try:
-        cv_data = process_cv(depot["file_path"], jeton=jeton)
+        cv_data = process_cv(depot["file_path"], jeton=jeton, **options_repli)
     except Exception as exc:
         traceback.print_exc()
         parse_warning = str(exc)

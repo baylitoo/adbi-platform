@@ -152,7 +152,11 @@ def _echouer_pont(exc):
     `return DocIEError(...)` rendrait ce garde-fou aveugle.
     """
     message = _ERROR_MESSAGES.get(exc.code, f"DocIE (bridge) : {exc}")
-    raise DocIEError(f"{message} [{exc.code}]") from exc
+    # Le code voyage aussi en VALEUR (docie_client.DocIEError.code), pas
+    # seulement dans la prose : le repli externe doit pouvoir décider sans
+    # relire une chaîne de caractères. `args[0]` reste la même f-string, donc la
+    # garde AST de tests/test_taches_upload.py voit ce raise comme avant.
+    raise DocIEError(f"{message} [{exc.code}]", exc.code) from exc
 
 
 def _adapter(bridge_result, voie):
