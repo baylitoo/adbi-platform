@@ -150,8 +150,12 @@ test("externes : OpenAI rapide puis raisonnement, APRÈS défaut et alternative,
     assert.match(rapide.libelle, /externe \(hors ADBI\)/);
     assert.match(rapide.description, /quitte ADBI/);
     assert.equal(rapide.experimental, true);
-    // La clé seule suffit : aucun modèle DocIE configuré, les externes restent proposés.
-    assert.deepEqual(ids(cat.modelesOfferts(tache, "texte", { env: { OPENAI_API_KEY: CLE }, externes: true })), ["openai_rapide", "openai_raisonnement"]);
+    // La clé seule NE suffit PAS : sans modèle ADBI configuré pour la voie,
+    // aucun externe n'est proposé. Sinon le premier de la liste serait celui que
+    // le navigateur présélectionne (aucune option ne porte `selected`, les
+    // interfaces ne le posant que sur `role === "defaut"`), et le document
+    // partirait chez le fournisseur PAR DÉFAUT, sans que personne ne l'ait choisi.
+    assert.deepEqual(cat.modelesOfferts(tache, "texte", { env: { OPENAI_API_KEY: CLE }, externes: true }), [], tache);
   }
 });
 
@@ -160,7 +164,12 @@ test("externes : offerts si et seulement si OPENAI_API_KEY est non vide", () => 
     for (const tache of TACHES_EXTERNES) assert.deepEqual(cat.modelesOfferts(tache, "texte", { env, externes: true }), [], JSON.stringify(env));
   }
   assert.throws(() => cat.choisirModele("rib", "texte", { env: {}, modele: "openai_rapide", externes: true }), (e) => e.code === "modele_non_propose");
-  assert.equal(cat.choisirModele("rib", "texte", { env: { OPENAI_API_KEY: CLE }, modele: "openai_raisonnement", externes: true }).identifiant, "raisonnement");
+  // Un externe reste choisissable QUAND il est proposé — donc avec au moins un
+  // modèle ADBI configuré pour la voie.
+  assert.equal(cat.choisirModele("rib", "texte", {
+    env: { OPENAI_API_KEY: CLE, DOCIE_MODELE_LFM25_2_6B: "store:l" },
+    modele: "openai_raisonnement", externes: true,
+  }).identifiant, "raisonnement");
 });
 
 test("sans clé, ou sans l'option `externes` : sortie des chargeurs identique octet pour octet", () => {
@@ -194,8 +203,14 @@ test("CV : offres OpenAI sur la voie TEXTE seulement ; toute autre tâche ou voi
 });
 
 test("externes : la liste ne porte jamais la clé, l'URL ni le nom de modèle du fournisseur", () => {
-  const env = { OPENAI_API_KEY: CLE, OPENAI_BASE_URL: "https://eu.api.openai.com", OPENAI_MODELE_RAPIDE: "gpt-4.1-mini" };
-  const texte = JSON.stringify(TACHES_EXTERNES.map((t) => cat.modelesOfferts(t, "texte", { env, externes: true })));
+  // Les modèles DocIE sont configurés EXPRÈS : sans eux, le garde-fou « jamais à
+  // leur place » rendrait les listes vides et les trois assertions passeraient
+  // À VIDE — vertes sans rien vérifier. La garde ci-dessous l'empêche.
+  const env = { OPENAI_API_KEY: CLE, OPENAI_BASE_URL: "https://eu.api.openai.com", OPENAI_MODELE_RAPIDE: "gpt-4.1-mini",
+    DOCIE_MODELE_LFM25_2_6B: "store:l", DOCIE_MODELE_NUEXTRACT3: "store:n", DOCIE_MODELE_LFM25_350M: "store:m" };
+  const listes = TACHES_EXTERNES.map((t) => cat.modelesOfferts(t, "texte", { env, externes: true }));
+  assert.ok(listes.every((l) => l.some((o) => o.role === "externe")), "aucun externe : ce test ne vérifierait rien");
+  const texte = JSON.stringify(listes);
   for (const secret of [CLE, "api.openai.com", "gpt-4.1-mini"]) assert.ok(!texte.includes(secret), secret);
 });
 

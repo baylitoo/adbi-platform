@@ -566,8 +566,14 @@
       <select class="sort-select" id="modeleSelect" style="width:100%;margin-top:8px"{% if modeles|length < 2 %} hidden{% endif %}
               data-formats="{{ (modeles_par_format or {})|tojson|forceescape }}"
               aria-label="Modèle d'extraction" title="Modèle d'extraction utilisé pour les prochains CV">
+        {# `loop.first` et non `role == 'defaut'` : la liste est déjà triée
+           défaut en tête (choix_modele.modeles_proposes), donc le premier EST le
+           défaut quand il existe. Mais une voie peut n'avoir que son
+           alternative configurée : aucune option ne portait alors `selected`,
+           et le navigateur présélectionnait quand même la première — un choix
+           implicite que personne n'avait fait. On le rend explicite. #}
         {% for m in modeles %}
-        <option value="{{ m.id }}"{% if m.role == 'defaut' %} selected{% endif %}{% if m.role == 'externe' %} data-externe="1"{% endif %}>{{ m.libelle }} — {% if m.experimental %}expérimental ({{ m.description }}){% else %}{{ m.description }}{% endif %}</option>
+        <option value="{{ m.id }}"{% if loop.first %} selected{% endif %}{% if m.role == 'externe' %} data-externe="1"{% endif %}>{{ m.libelle }} — {% if m.experimental %}expérimental ({{ m.description }}){% else %}{{ m.description }}{% endif %}</option>
         {% endfor %}
       </select>
       {# DONNÉES PERSONNELLES (#194) : un CV est la donnée d'un CANDIDAT, pas un

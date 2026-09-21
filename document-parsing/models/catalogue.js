@@ -149,7 +149,16 @@ function modelesConfigures(tache, voie, { env = process.env, catalogue = charger
   // Modèles HORS ADBI (#194), toujours après le défaut et l'alternative DocIE,
   // seulement si le consommateur les demande (`externes`) : un consommateur qui
   // ne sait pas les appeler enverrait leur identifiant à DocIE.
-  if (externes && Array.isArray(v.externes)) {
+  //
+  // Et SEULEMENT si au moins un modèle ADBI est configuré pour cette voie
+  // (`offres` ne contient encore que défaut/alternative). Sans ce garde-fou,
+  // une voie sans modèle DocIE ne proposait QUE des externes : le premier est
+  // celui que le navigateur présélectionne, et aucune option ne porte
+  // `selected` (les interfaces ne le posent que sur `role === "defaut"`), donc
+  // le document partait chez le fournisseur PAR DÉFAUT, sans choix. La prose de
+  // catalogue.json l'interdit — « jamais à leur place ni par défaut » — mais le
+  // code ne l'appliquait pas.
+  if (externes && offres.length && Array.isArray(v.externes)) {
     for (const entree of v.externes) {
       const offre = offreExterne(catalogue, t, entree, voie, env || {});
       if (offre) offres.push(offre);
