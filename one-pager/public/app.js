@@ -93,6 +93,40 @@ function libelleOptionModele(m) {
   return `${m.libelle} — ${m.experimental ? `expérimental (${m.description})` : m.description}`;
 }
 
+/* Identifiants des modeles HORS ADBI actuellement proposes (#194). */
+const modelesExternes = new Set();
+
+/*
+ * DONNEES PERSONNELLES (#194) : un CV est la donnee d'un CANDIDAT, pas un
+ * document d'entreprise. Un modele externe fait SORTIR son texte d'ADBI ;
+ * l'utilisateur doit le savoir AU MOMENT DU CHOIX, pas dans une note lue apres
+ * coup. Condition posee par le proprietaire pour ouvrir le CV aux modeles hors
+ * ADBI. L'avis est cree a cote du selecteur plutot que pose dans index.html :
+ * il n'a de sens que lorsqu'un modele externe est reellement propose.
+ */
+function avisExterne() {
+  let n = document.getElementById("choix-modele-externe");
+  if (n) return n;
+  const sel = $("#choix-modele");
+  if (!sel || !sel.parentNode) return null;
+  n = document.createElement("div");
+  n.id = "choix-modele-externe";
+  n.setAttribute("role", "status");
+  n.style.cssText = "margin-top:6px;color:#C2410C;font-size:12px;display:none";
+  n.textContent = "⚠ Service externe (hors ADBI) : le texte du CV — donnée "
+    + "personnelle du candidat — sera envoyé à ce service. Aucune preuve ni "
+    + "confiance par champ : tout le résultat est à relire.";
+  sel.parentNode.insertBefore(n, sel.nextSibling);
+  return n;
+}
+
+function refleterChoixExterne() {
+  const sel = $("#choix-modele");
+  const avis = avisExterne();
+  if (!sel || !avis) return;
+  avis.style.display = modelesExternes.has(sel.value) ? "" : "none";
+}
+
 async function chargerModeles() {
   let data;
   try {
@@ -106,6 +140,14 @@ async function chargerModeles() {
     $("#choix-modele").innerHTML = modeles.map((m) =>
       `<option value="${echapper(m.id)}"${m.role === "defaut" ? " selected" : ""}>${echapper(libelleOptionModele(m))}</option>`
     ).join("");
+    modelesExternes.clear();
+    for (const m of modeles) if (m.role === "externe") modelesExternes.add(m.id);
+    const sel = $("#choix-modele");
+    if (sel && !sel.dataset.avisExterneCable) {
+      sel.addEventListener("change", refleterChoixExterne);
+      sel.dataset.avisExterneCable = "1";
+    }
+    refleterChoixExterne();
   }
   $("#choix-modele-bloc").hidden = modeles.length < 2;
   if (data.erreur) {

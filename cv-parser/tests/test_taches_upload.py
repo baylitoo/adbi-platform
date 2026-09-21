@@ -463,6 +463,11 @@ class Erreurs(unittest.TestCase):
             ("docie_client.py", "DocIE : champ "),
             ("docie_bridge_extraction.py", "Document introuvable ou illisible : "),
             ("docie_bridge_extraction.py", ""),     # f"{message} [{exc.code}]" : cause bridge
+            # Transport externe (#194, modèle HORS ADBI choisi explicitement) :
+            # `message` vient d'une table FR FIXE (docie_client._MESSAGES_EXTERNE)
+            # et `code` est le code stable du transport. Le texte de l'exception
+            # amont n'y entre jamais — c'est précisément ce que ce test protège.
+            ("docie_client.py", "Service externe (hors ADBI) : "),
         }
         trouves = set()
         for nom in ("docie_client.py", "docie_bridge_extraction.py"):

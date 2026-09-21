@@ -537,9 +537,34 @@
               data-formats="{{ (modeles_par_format or {})|tojson|forceescape }}"
               aria-label="Modèle d'extraction" title="Modèle d'extraction utilisé pour les prochains CV">
         {% for m in modeles %}
-        <option value="{{ m.id }}"{% if m.role == 'defaut' %} selected{% endif %}>{{ m.libelle }} — {% if m.experimental %}expérimental ({{ m.description }}){% else %}{{ m.description }}{% endif %}</option>
+        <option value="{{ m.id }}"{% if m.role == 'defaut' %} selected{% endif %}{% if m.role == 'externe' %} data-externe="1"{% endif %}>{{ m.libelle }} — {% if m.experimental %}expérimental ({{ m.description }}){% else %}{{ m.description }}{% endif %}</option>
         {% endfor %}
       </select>
+      {# DONNÉES PERSONNELLES (#194) : un CV est la donnée d'un CANDIDAT, pas un
+         document d'entreprise. Un modèle externe fait SORTIR son texte d'ADBI ;
+         l'utilisateur doit le savoir AU MOMENT DU CHOIX, pas dans une note lue
+         après coup. Condition posée par le propriétaire pour ouvrir le CV aux
+         modèles hors ADBI. `display` et non l'attribut `hidden` : une règle CSS
+         sur .up-sub rendrait `hidden` sans effet. #}
+      <div id="modeleExterneAvis" class="up-sub" role="status"
+           style="margin-top:6px;color:#C2410C;display:none">
+        ⚠ Service externe (hors ADBI) : le texte du CV — donnée personnelle du
+        candidat — sera envoyé à ce service. Aucune preuve ni confiance par
+        champ : tout le résultat est à relire.
+      </div>
+      <script>
+        (function () {
+          var sel = document.getElementById('modeleSelect');
+          var avis = document.getElementById('modeleExterneAvis');
+          if (!sel || !avis) return;
+          function refleter() {
+            var o = sel.options[sel.selectedIndex];
+            avis.style.display = (o && o.getAttribute('data-externe') === '1') ? '' : 'none';
+          }
+          sel.addEventListener('change', refleter);
+          refleter();
+        })();
+      </script>
       {% endif %}
       {% if modeles_erreur %}<div class="up-sub" style="margin-top:6px">{{ modeles_erreur }}</div>{% endif %}
 

@@ -41,7 +41,7 @@
 const { ingest, isPdf, estTexteBrut, estDocx, texteDocx } = require("./ingest");
 const { segment } = require("./layout");
 const { extract } = require("./extract");
-const { extraireViaDocie, extraireTexteViaDocie } = require("./docie-extract");
+const { extraireViaDocie, extraireTexteViaDocie, extraireTexteViaOpenAI } = require("./docie-extract");
 
 class ImportError extends Error {
   constructor(status, message) {
@@ -149,7 +149,14 @@ async function importerAvecModele(buffer, filename, { env, fetchImpl, modele }) 
   } else {
     const texte = await source.texte();
     const offre = choix.choisir("texte", modele, { lignesNonVides: choix.compterLignesNonVides(texte) }, env);
-    master = await extraireTexteViaDocie(texte, filename, { ...options, modelProfile: offre.identifiant });
+    // Modele EXTERNE (#194) : le texte part chez le fournisseur, pas chez
+    // DocIE. `offre.identifiant` est alors le MODE du transport
+    // (`rapide` / `raisonnement`) et non un profil DocIE — le passer a
+    // extraireTexteViaDocie demanderait a DocIE un modele nomme « rapide ».
+    // Aucun repli ici non plus : cette fonction n'a deja aucun catch.
+    master = choix.estExterne(offre)
+      ? await extraireTexteViaOpenAI(texte, filename, { ...options, mode: offre.mode })
+      : await extraireTexteViaDocie(texte, filename, { ...options, modelProfile: offre.identifiant });
   }
   return noterModele(master, source.voie, modele, env);
 }

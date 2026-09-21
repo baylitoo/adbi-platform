@@ -3,6 +3,7 @@ import base64
 import json
 import math
 import os
+import sys
 import time
 from pathlib import Path
 from urllib.parse import quote, urlsplit
@@ -296,6 +297,89 @@ def message_chargement(corps):
     return "DocIE : modèle en cours de chargement, réessayez dans quelques instants."
 
 
+# Messages FR par code stable du transport externe
+# (document-parsing/bridge/openai_responses.py::fail). Le texte de l'exception
+# elle-même n'est JAMAIS recopié dans `erreur.message` : il peut porter un corps
+# de réponse amont, un chemin, voire la clé. Même arbitrage que
+# docie_bridge_extraction._ERROR_MESSAGES, pour la même raison.
+_MESSAGES_EXTERNE = {
+    "configuration": "service mal configuré côté serveur (clé ou URL).",
+    "input": "document refusé (texte vide, trop volumineux ou binaire).",
+    "auth": "accès refusé. Vérifiez OPENAI_API_KEY.",
+    "rate_limit": "limite de débit atteinte, réessayez plus tard.",
+    "limits": "document trop volumineux pour le service.",
+    "context": "document au-delà de la fenêtre de contexte du modèle.",
+    "refusal": "le modèle a refusé d'extraire ce document.",
+    "incomplete": "extraction non terminée par le service.",
+    "upstream": "erreur côté service externe.",
+    "timeout": "délai dépassé. Le traitement distant peut continuer et être facturé.",
+    "network": "service externe injoignable ou échec TLS.",
+    "response": "réponse invalide du service externe.",
+    "schema": "réponse hors du schéma demandé.",
+}
+
+
+def _charger_openai():
+    """Importe document-parsing/bridge/openai_responses.py à la demande.
+
+    Même paresse que docie_bridge_extraction._load_bridge : sans modèle externe
+    choisi, ce fichier n'a pas besoin d'exister. En conteneur, le Dockerfile le
+    copie à côté de celui-ci ; hors conteneur (tests, checkout), il est lu
+    depuis sa source unique.
+    """
+    try:
+        import openai_responses
+    except ImportError:
+        pont = Path(__file__).resolve().parents[1] / "document-parsing" / "bridge"
+        if str(pont) not in sys.path:
+            sys.path.insert(0, str(pont))
+        import openai_responses
+    return openai_responses
+
+
+def _extraire_par_openai(texte, mode_transport, schema, progress=None, session=None):
+    """Extraction par un fournisseur HORS ADBI (#194). Un appel, aucun repli.
+
+    Le texte du CV — donnée personnelle d'un CANDIDAT — quitte ADBI ici, et
+    seulement sur choix explicite d'un utilisateur averti (voir
+    choix_modele.EXTERNES et templates/index.html). Jamais de second essai par
+    un autre transport après un échec : rejouer un travail potentiellement
+    facturé est exactement ce que le README du pont interdit.
+
+    La réponse a la MÊME forme que celle de DocIE ({schema_name, result,
+    metadata}), donc `map_resume` s'applique sans adaptateur.
+    """
+    openai_responses = _charger_openai()
+    if progress:
+        progress("Envoi du texte au service externe (hors ADBI)")
+    try:
+        sortie = openai_responses.extraire_via_openai(
+            texte, mode=mode_transport, dynamic_schema=schema, session=session)
+    except Exception as exc:
+        code = getattr(exc, "code", None)
+        message = _MESSAGES_EXTERNE.get(code, "échec de l'extraction.")
+        raise DocIEError(f"Service externe (hors ADBI) : {message} [{code or 'inconnu'}]") from exc
+    data = map_resume(sortie, "adbi_resume")
+    meta = sortie.get("metadata") or {}
+    return data, {
+        "event_id": meta.get("request_id") or "",
+        "model_profile": meta.get("model") or "",
+        # Ni `validation` ni confiance par champ : le transport n'ancre rien et
+        # ne prétend pas le contraire. `sans_preuve` porte ce fait UNE fois, et
+        # docie_review s'en sert pour taire les deux avertissements DocIE, qui
+        # nommeraient sinon un service qui n'a pas participé.
+        "validation": None,
+        "schema_reported": meta.get("schema_reported"),
+        "sans_preuve": True,
+        "fournisseur": meta.get("fournisseur"),
+        "mode": meta.get("mode"),
+        "field_confidence": None,
+        "partiel": meta.get("partiel") or [],
+        "blocs_texte": None,
+        "troncature_possible": meta.get("troncature_possible"),
+    }
+
+
 def extract_resume(file_path, progress=None, *, session=None, choix=None):
     """`choix` (#194, choix_modele.Choix) : modèle explicitement choisi. Vérifié
     sur le texte réel (lignes non vides) juste avant l'appel, son identifiant
@@ -344,7 +428,15 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
         # Le catalogue n'a pas de voie studio : un choix n'y est jamais proposé.
         if mode != "inline":
             raise DocIEError("Choix du modèle impossible en mode studio : voie texte (inline) uniquement.")
-        payload["model_profile"] = choix.pour_texte(text)
+        identifiant = choix.pour_texte(text)
+        if choix.est_externe:
+            # Modèle HORS ADBI (#194) : le texte part chez le fournisseur, pas
+            # chez DocIE. `identifiant` est alors le MODE du transport
+            # (`rapide` / `raisonnement`) et non un profil DocIE — le poser dans
+            # `payload` demanderait à DocIE un modèle nommé « rapide ».
+            return _extraire_par_openai(text, choix.mode_externe, schema,
+                                        progress=progress, session=session)
+        payload["model_profile"] = identifiant
     headers = {}
     key = os.environ.get("DOCIE_API_KEY", "").strip()
     if key:

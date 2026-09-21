@@ -187,7 +187,12 @@ class Chargeur(unittest.TestCase):
 
 
 CLE = "sk-test-secret-catalogue"
-TACHES_EXTERNES = ("contract", "fiscale", "kbis", "rib", "urssaf")
+# `resume` (CV) y a rejoint les cinq documents métier : #194 l'en avait écarté
+# (« périmètre des données personnelles en attente du propriétaire »), le
+# propriétaire a tranché. Un CV reste la donnée d'un CANDIDAT et non d'une
+# entreprise : la contrepartie exigée est que l'utilisateur soit AVERTI, au
+# moment du choix, que le texte part chez un tiers — jamais par défaut.
+TACHES_EXTERNES = ("contract", "fiscale", "kbis", "resume", "rib", "urssaf")
 ENV_DOCIE_COMPLET = {
     "DOCIE_MODELE_NUEXTRACT3": "store:n3", "DOCIE_MODELE_LFM25_2_6B": "store:l26", "DOCIE_MODELE_LFM25_350M": "store:l350",
     "DOCIE_AGENT_RESUME_LFM25_2_6B": "a_l", "DOCIE_AGENT_RESUME_NUEXTRACT3": "a_n", "DOCIE_AGENT_KBIS_NUEXTRACT3": "k3",
@@ -228,12 +233,17 @@ class Externes(unittest.TestCase):
             self.assertEqual(toutes_les_offres({**env, "OPENAI_API_KEY": ""}, externes=True), reference)
             self.assertEqual(toutes_les_offres({**env, "OPENAI_API_KEY": CLE}), reference)
 
-    def test_cv_jamais(self):
+    def test_cv_voie_texte_seulement(self):
+        """Le CV est ouvert aux externes sur la voie TEXTE seulement : un scan
+        part en vision chez DocIE, et le fournisseur ne déclare que `texte`."""
         env = {**ENV_DOCIE_COMPLET, "OPENAI_API_KEY": CLE}
-        for voie in ("texte", "agent"):
-            self.assertFalse([o for o in cat.modeles_offerts("resume", voie, env=env, externes=True) if o["id"].startswith("openai")])
+        offres = cat.modeles_offerts("resume", "texte", env=env, externes=True)
+        self.assertEqual([o["id"] for o in offres][-2:], ["openai_rapide", "openai_raisonnement"])
+        self.assertFalse([o for o in cat.modeles_offerts("resume", "agent", env=env, externes=True) if o["id"].startswith("openai")])
+        self.assertEqual(cat.choisir_modele("resume", "texte", "openai_rapide", env=env, externes=True)["identifiant"], "rapide")
+        # Sans l'option `externes`, un consommateur pas encore câblé ne voit toujours rien.
         with self.assertRaises(cat.CatalogueError) as e:
-            cat.choisir_modele("resume", "texte", "openai_rapide", env=env, externes=True)
+            cat.choisir_modele("resume", "texte", "openai_rapide", env=env)
         self.assertEqual(e.exception.code, "modele_non_propose")
 
     def test_ni_cle_ni_url_dans_la_liste(self):

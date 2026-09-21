@@ -295,13 +295,24 @@ def revue_docie(data, metadata):
     if not est_rempli(data.get("title")) and titre_de_repli(data.get("experience")):
         warnings.append(AVERTISSEMENT_TITRE_DEDUIT)
 
+    # Modèle EXTERNE (#194, document-parsing/bridge/openai_responses.py) : le
+    # transport OpenAI ne rend NI `validation` NI `schema_reported` — non par
+    # défaillance, mais parce qu'il n'ancre rien et ne prétend pas le contraire.
+    # Les deux avertissements DocIE qui suivent nommeraient alors un service qui
+    # n'a PAS participé à cette extraction : un avertissement faux est pire
+    # qu'un avertissement absent. Le fait réel est dit une fois, et il est plus
+    # fort que les deux : rien n'est ancré, tout le résultat est à relire.
+    externe = metadata.get("sans_preuve") is True
+    if externe:
+        warnings.append("service_externe_sans_preuve")
+
     validation = metadata.get("validation")
     if validation is None:
         # `validation` accompagne toute extraction terminée (listes vides quand
         # tout va bien) : son absence n'est pas un succès, c'est une réponse
         # qu'on n'a pas pu vérifier. La taire serait présenter pour propre une
         # extraction dont personne n'a validé quoi que ce soit.
-        if metadata:
+        if metadata and not externe:
             warnings.append("docie_validation_absente")
     elif isinstance(validation, dict):
         if validation.get("valid") is False:
@@ -327,7 +338,7 @@ def revue_docie(data, metadata):
     # `is False` et non `not` : la clé ABSENTE (chemin historique
     # `docie_client` avant #173, bridge d'une version antérieure) ne signifie
     # pas « non nommé », elle signifie « pas dit » — aucune revue inventée.
-    if metadata.get("schema_reported") is False:
+    if not externe and metadata.get("schema_reported") is False:
         warnings.append("docie_schema_non_verifie")
 
     confiances = metadata.get("field_confidence")

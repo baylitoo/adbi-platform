@@ -215,6 +215,20 @@ services:
       # Le bridge refuse HTTP hors loopback par defaut ; derogation explicite
       # pour un reseau prive de confiance seulement (meme var que cv-parser).
       DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
+      # Modeles HORS ADBI (#194, #217) pour l'import de CV, proposes UNIQUEMENT
+      # si OPENAI_API_KEY est renseignee — cle vide = comportement d'avant a
+      # l'octet pres. Memes variables que contrats et cv-parser ; meme piege que
+      # #164 sans ces lignes.
+      #
+      # DONNEES PERSONNELLES : un CV est la donnee d'un CANDIDAT. #194 avait
+      # ecarte le CV pour cette raison ; le proprietaire a tranche, a la
+      # condition que l'utilisateur soit AVERTI au moment du choix que le texte
+      # part chez un tiers. Jamais un defaut, jamais un repli.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODELE_RAPIDE: ${OPENAI_MODELE_RAPIDE:-}
+      OPENAI_MODELE_RAISONNEMENT: ${OPENAI_MODELE_RAISONNEMENT:-}
+      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-}
       # Extractions DocIE simultanees (#196), a aligner sur le `n_parallel` du
       # modele servi pour les CV (#194). Vide -> defaut du service : 2
       # (LFM2.5-2.6B). Variable racine dediee (ONEPAGER_...), voir contrats.
@@ -307,6 +321,23 @@ services:
       # Le bridge refuse HTTP hors loopback par défaut (docie_bridge.py) ;
       # dérogation explicite pour un réseau privé de confiance seulement.
       DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
+      # Modèles HORS ADBI (#194, #217) pour l'extraction de CV, proposés dans le
+      # sélecteur UNIQUEMENT si OPENAI_API_KEY est renseignée — clé vide =
+      # comportement d'avant à l'octet près. Mêmes variables que contrats, même
+      # piège que #164 : documentées dans cv-parser/.env.example, elles
+      # n'atteindraient jamais le conteneur sans ces lignes.
+      #
+      # DONNÉES PERSONNELLES : un CV est la donnée d'un CANDIDAT, pas un
+      # document d'entreprise comme les cinq pièces de contrats. #194 avait
+      # écarté le CV pour cette raison ; le propriétaire a tranché, à la
+      # condition que l'utilisateur soit AVERTI au moment du choix que le texte
+      # part chez un tiers. Jamais un défaut, jamais un repli : le modèle
+      # externe n'est proposé qu'après le défaut et l'alternative DocIE.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODELE_RAPIDE: ${OPENAI_MODELE_RAPIDE:-}
+      OPENAI_MODELE_RAISONNEMENT: ${OPENAI_MODELE_RAISONNEMENT:-}
+      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-}
       ADBI_AUTH: "on"
       DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_cv_parser
       ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}

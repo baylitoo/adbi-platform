@@ -463,9 +463,18 @@ function mapperAdbiResume(data, metadata, doc) {
   experiences.forEach((e) => { if (!e.start_date) needs_review.push(`${e.id}.start_date`); });
 
   const meta = metadata && typeof metadata === "object" ? metadata : {};
+  // Modele EXTERNE (#194, document-parsing/bridge/openai-responses.js) : le
+  // transport OpenAI ne rend NI `validation` NI `schema_reported` — non par
+  // defaillance, mais parce qu'il n'ancre rien et ne pretend pas le contraire.
+  // Les deux avertissements DocIE qui suivent nommeraient alors un service qui
+  // n'a PAS participe a cette extraction : un avertissement faux est pire qu'un
+  // avertissement absent. Le fait reel est dit une fois, et il est plus fort
+  // que les deux : rien n'est ancre, tout le resultat est a relire.
+  const externe = meta.sans_preuve === true;
+  if (externe) warnings.push("service_externe_sans_preuve");
   const validation = meta.validation;
   if (validation && validation.valid === false) warnings.push("docie_validation_negative");
-  if (meta.schema_reported === false) warnings.push("docie_schema_non_verifie");
+  if (!externe && meta.schema_reported === false) warnings.push("docie_schema_non_verifie");
 
   // ── Ce dont DocIE lui-meme doute ──────────────────────────────────────────
   // Jusqu'ici seul `validation.valid === false` remontait : les avertissements
@@ -476,7 +485,7 @@ function mapperAdbiResume(data, metadata, doc) {
   // bien) : son absence n'est pas un succes, c'est une reponse qu'on n'a pas pu
   // verifier — on le signale au lieu de la passer sous silence.
   if (meta.validation === undefined || meta.validation === null) {
-    if (Object.keys(meta).length) warnings.push("docie_validation_absente");
+    if (Object.keys(meta).length && !externe) warnings.push("docie_validation_absente");
   } else {
     for (const [cle, prefixe] of [["errors", "docie_erreur"], ["warnings", "docie_avertissement"]]) {
       const entrees = Array.isArray(validation[cle]) ? validation[cle] : [];
@@ -611,9 +620,44 @@ async function extraireTexteViaDocie(texteSource, filename, { env = process.env,
   return mapperAdbiResume(result, metadata, { filename });
 }
 
+/**
+ * Extraction du texte par un fournisseur HORS ADBI (#194), au lieu de DocIE.
+ *
+ * Le texte du CV — donnee personnelle d'un CANDIDAT — quitte ADBI ici, et
+ * seulement sur choix explicite d'un utilisateur averti (voir lib/choix-modele.js
+ * et public/app.js). Un seul appel, aucun repli : importerAvecModele n'a deja
+ * aucun catch, et rejouer un travail potentiellement facture est exactement ce
+ * que le README du pont interdit.
+ *
+ * La reponse a la MEME forme que celle du bridge ({ result, metadata }), donc
+ * mapperAdbiResume s'applique sans adaptateur. `metadata.sans_preuve` dit que
+ * rien n'est ancre : tout le resultat est a relire, et les deux avertissements
+ * DocIE sont tus (ils nommeraient un service qui n'a pas participe).
+ *
+ * @param {string} texteSource  texte du document, deja decode
+ * @param {string} filename
+ * @param {{env?: object, fetchImpl?: Function, mode?: string, metadonnees?: Function}} [options]
+ *   `mode` : mode de transport du catalogue (`rapide` / `raisonnement`).
+ */
+async function extraireTexteViaOpenAI(texteSource, filename, { env = process.env, fetchImpl, mode, metadonnees = null } = {}) {
+  // Charge au meme moment et de la meme facon que le bridge : sans modele
+  // externe choisi, ce fichier n'a pas besoin d'exister.
+  // eslint-disable-next-line global-require
+  const { extraireViaOpenAI } = require("../../document-parsing/bridge/openai-responses");
+  const { result, metadata } = await extraireViaOpenAI(texteSource, {
+    mode,
+    dynamicSchema: chargerSchemaResume(),
+    env,
+    ...(fetchImpl ? { fetchImpl } : {}),
+  });
+  if (metadonnees) metadonnees(metadata);
+  return mapperAdbiResume(result, metadata, { filename });
+}
+
 module.exports = {
   extraireViaDocie,
   extraireTexteViaDocie,
+  extraireTexteViaOpenAI,
   mapperAdbiResume,
   decouperDescription,
   // Exportes pour le test d'accord avec cv-parser (fixture partagee).
