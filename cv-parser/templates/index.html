@@ -245,6 +245,33 @@
     }
     .sort-select:focus { border-color: var(--blue); }
 
+    /* Fallback — panneau repliable (#194). Aucun accordéon n'existait dans
+       cette application : <details> natif est sémantique, accessible au
+       clavier et s'ouvre sans JS. Tout vient des jetons, rien en dur. */
+    .fallback {
+      margin-top: 8px; text-align: left; background: var(--card);
+      border: 1.5px solid var(--border); border-radius: var(--r);
+    }
+    .fallback > summary {
+      cursor: pointer; padding: 7px 10px; list-style: none;
+      display: flex; align-items: center; gap: 6px;
+      font-size: 10px; font-weight: 800; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .6px;
+    }
+    .fallback > summary::-webkit-details-marker { display: none; }
+    .fallback > summary::before { content: "›"; font-size: 13px; line-height: 1; transition: transform .15s; }
+    .fallback[open] > summary::before { transform: rotate(90deg); }
+    .fallback > summary:hover { color: var(--blue); }
+    .fallback-corps { padding: 0 10px 9px; display: grid; gap: 7px; }
+    .fallback-choix {
+      display: flex; gap: 7px; align-items: flex-start; cursor: pointer;
+      font-size: 11px; color: var(--text); line-height: 1.45;
+    }
+    .fallback-choix input { margin: 1px 0 0; flex: none; accent-color: var(--blue); }
+    .fallback-choix small { display: block; color: var(--muted); }
+    .fallback-choix input:disabled ~ span { opacity: .5; cursor: not-allowed; }
+    .avis-externe { margin-top: 6px; color: var(--orange); }
+
     /* ── LIST VIEW ─────────────────────────────────────────────────────── */
     .cv-list { border: 1.5px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--card); }
     .cv-list-header {
@@ -546,43 +573,55 @@
          après coup. Condition posée par le propriétaire pour ouvrir le CV aux
          modèles hors ADBI. `display` et non l'attribut `hidden` : une règle CSS
          sur .up-sub rendrait `hidden` sans effet. #}
-      <div id="modeleExterneAvis" class="up-sub" role="status"
-           style="margin-top:6px;color:#C2410C;display:none">
+      <div id="modeleExterneAvis" class="up-sub avis-externe" role="status" style="display:none">
         ⚠ Service externe (hors ADBI) : le texte du CV — donnée personnelle du
         candidat — sera envoyé à ce service. Aucune preuve ni confiance par
         champ : tout le résultat est à relire.
       </div>
-      {# Repli externe : si DocIE échoue, réessayer chez le fournisseur hors
-         ADBI. Proposé UNIQUEMENT si un modèle externe existe (donc si la clé du
-         fournisseur est configurée) — sinon la case promettrait un secours
-         impossible. DÉCOCHÉE par défaut : le texte du CV ne quitte ADBI que sur
-         un geste explicite, et ce geste vaut consentement pour CE dépôt.
-         Sans objet quand un modèle externe est DÉJÀ choisi : la case se
-         désactive au lieu de laisser croire à un second appel. #}
+      {# Fallback — que faire si DocIE échoue. Replié par défaut, et le choix
+         par défaut à l'intérieur est « DocIE seul » : le texte du CV ne quitte
+         ADBI que sur un geste explicite, qui vaut consentement pour CE dépôt.
+         Deux choix NOMMÉS plutôt qu'une case à cocher : « réessayer avec le
+         service externe » se lisait comme si l'on choisissait OpenAI AVANT
+         DocIE. Proposé seulement si un modèle externe existe (clé configurée),
+         sinon le panneau promettrait un secours impossible. #}
       {% if modeles | selectattr('role', 'equalto', 'externe') | first %}
-      <label id="repliExterneBloc" class="up-sub" style="display:block;margin-top:6px">
-        <input type="checkbox" id="repliExterne" value="1">
-        Si DocIE échoue, réessayer avec le service externe (hors ADBI) : le
-        texte du CV sera alors envoyé à ce service. Un document sans couche
-        texte (scan) ne peut pas être secouru ainsi.
-      </label>
+      <details class="fallback" id="fallbackBloc">
+        <summary>Fallback</summary>
+        <div class="fallback-corps">
+          <label class="fallback-choix">
+            <input type="radio" name="fallback" value="" checked>
+            <span>DocIE seul
+              <small>Si DocIE échoue, l'import échoue — rien ne sort d'ADBI.</small></span>
+          </label>
+          <label class="fallback-choix">
+            <input type="radio" name="fallback" value="openai">
+            <span>DocIE, puis OpenAI si échec
+              <small>Le texte du CV sera alors envoyé au service externe (hors
+                ADBI). Un document sans couche texte (scan) ne peut pas être
+                secouru ainsi.</small></span>
+          </label>
+        </div>
+      </details>
       {% endif %}
       <script>
         (function () {
           var sel = document.getElementById('modeleSelect');
           var avis = document.getElementById('modeleExterneAvis');
-          var repli = document.getElementById('repliExterne');
+          var bloc = document.getElementById('fallbackBloc');
           if (!sel || !avis) return;
           function refleter() {
             var o = sel.options[sel.selectedIndex];
             var externe = !!(o && o.getAttribute('data-externe') === '1');
             avis.style.display = externe ? '' : 'none';
-            if (repli) {
-              // Modèle externe déjà choisi : le repli n'a plus d'objet — la
-              // lecture part déjà chez le fournisseur.
-              repli.disabled = externe;
-              if (externe) repli.checked = false;
-              if (repli.parentNode) repli.parentNode.style.opacity = externe ? '0.5' : '';
+            if (!bloc) return;
+            // Modèle externe déjà choisi : le fallback n'a plus d'objet — la
+            // lecture part déjà chez le fournisseur. On désactive au lieu de
+            // laisser croire à un second appel.
+            var choix = bloc.querySelectorAll('input[name="fallback"]');
+            for (var i = 0; i < choix.length; i++) {
+              choix[i].disabled = externe;
+              if (externe && choix[i].value === '') choix[i].checked = true;
             }
           }
           sel.addEventListener('change', refleter);
@@ -919,11 +958,11 @@ async function envoyerCv(file, discret, suivi, modele = modeleChoisi(file)) {
   if (!discret) ConvWidget.startLocal(file.name, jeton);   // en lot, la liste suffit
   const fd = new FormData(); fd.append('file', file); fd.append('jeton', jeton);
   if (modele) fd.append('modele', modele);
-  // Repli externe : transmis SEULEMENT s'il est coché et actif. Décoché, la
-  // requête est exactement celle d'avant — une option non demandée ne change
-  // rien (même règle que `modele`).
-  const repliCase = document.getElementById('repliExterne');
-  if (repliCase && repliCase.checked && !repliCase.disabled) fd.append('repli_externe', '1');
+  // Fallback : transmis SEULEMENT si « DocIE, puis OpenAI » est retenu. Sur le
+  // choix par défaut, la requête est exactement celle d'avant — une option non
+  // demandée ne change rien (même règle que `modele`).
+  const fb = document.querySelector('input[name="fallback"]:checked');
+  if (fb && fb.value === 'openai' && !fb.disabled) fd.append('repli_externe', '1');
   try {
     const r = await fetch('/api/upload', { method: 'POST', body: fd, credentials: 'include' });
     let data = await r.json();
