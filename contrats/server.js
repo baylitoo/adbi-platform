@@ -462,11 +462,19 @@ app.post("/api/search", async (req, res) => {
 
 // Analyse des pièces (Kbis/URSSAF...) — LOCALE par défaut (pdf-parse +
 // tesseract.js, sans LLM, sans envoi externe). Si DOCIE_EXTRACTION_ENABLED=true
-// ET pièce Kbis, URSSAF ou RIB (voir VOIES dans lib/docie-extraction.js) :
-// extraction via le bridge DocIE partagé (document-parsing/bridge/), avec
-// envoi externe au service DocIE configuré et repli automatique sur l'analyse
-// locale en cas d'échec. Les autres pièces (CNI, fiscale, coordonnées) restent
-// 100% locales quel que soit le flag.
+// ET pièce Kbis, URSSAF, RIB ou attestation de régularité fiscale (la table qui
+// fait foi est VOIES dans lib/docie-extraction.js) : extraction via le bridge
+// DocIE partagé (document-parsing/bridge/), avec envoi externe au service DocIE
+// configuré et repli automatique sur l'analyse locale en cas d'échec.
+//
+// Les trois pièces restantes ne partent jamais, flag ou pas, et pas pour la même
+// raison : coordonnées et informations spécifiques n'ont ni schéma ni mapping
+// (ce sont des champs de saisie, pas des documents), tandis que la CNI a les
+// deux mais relève de la voie VISION du catalogue (tâche `cni`, prérequis :
+// contrôle des chiffres de la MRZ, lib/mrz.js).
+//
+// L'attestation fiscale n'a pas encore de bouton dans la checklist (#269) :
+// elle n'est atteignable que par cette route.
 app.post("/api/document/analyze", async (req, res) => {
   try { res.json(await analyzeDocument(req.body || {})); }
   catch (e) { console.error(e); res.status(400).json({ error: e.message }); }
@@ -1270,6 +1278,9 @@ db.init()
     app.listen(PORT, HOTE, () => {
       console.log("\n  ADBI - Generateur de contrats");
       console.log("  -> http://" + HOTE + ":" + PORT + "\n");
+      // #245 : démarrer SANS contrôle d'accès ne doit pas être silencieux.
+      const avertissement = auth.avertissementAcces(process.env);
+      if (avertissement) console.log(avertissement);
     });
     // Rattrape tout webhook de signature dont le traitement avait échoué avant
     // cet arrêt/redémarrage, puis réessaie périodiquement (voir plus haut).

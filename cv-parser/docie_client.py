@@ -380,6 +380,38 @@ def _extraire_par_openai(texte, mode_transport, schema, progress=None, session=N
     }
 
 
+def texte_document(path):
+    """Texte local d'un PDF ou d'un DOCX, pour la voie TEXTE de DocIE.
+
+    Renvoie `(texte, raison)` :
+      * `(texte, None)` — le document porte sa couche texte, exploitable ;
+      * `(None, "page_sans_texte")` — au moins une page sans texte. Ce n'est
+        pas une erreur en soi, c'est un FAIT sur la source : à l'appelant d'en
+        décider. Le client historique refuse (mode inline, aucun OCR ici) ;
+        docie_bridge_extraction route vers la voie agent, qui OCRise.
+
+    Lève DocIEError pour ce qui est réellement illisible (PDF protégé, DOCX
+    invalide) et pour un suffixe qu'aucune voie texte ne sait lire.
+
+    Extrait d'extract_resume (#151) pour que les DEUX chemins d'extraction
+    lisent le même texte par la même règle : pypdf et le rendu DOCX restent
+    ici, rien n'est recopié dans docie_bridge_extraction.
+    """
+    suffixe = path.suffix.lower()
+    if suffixe == ".pdf":
+        from pypdf import PdfReader
+        try:
+            pages = [page.extract_text() or "" for page in PdfReader(path).pages]
+        except Exception:
+            raise DocIEError("PDF illisible ou protégé. Fournissez un PDF texte ou un DOCX.") from None
+        if any(not page.strip() for page in pages):
+            return None, "page_sans_texte"
+        return "\n".join(pages), None
+    if suffixe == ".docx":
+        return document_payload(path)["text"], None
+    raise DocIEError("Le mode inline accepte PDF texte et DOCX uniquement.")
+
+
 def extract_resume(file_path, progress=None, *, session=None, choix=None):
     """`choix` (#194, choix_modele.Choix) : modèle explicitement choisi. Vérifié
     sur le texte réel (lignes non vides) juste avant l'appel, son identifiant
@@ -399,27 +431,21 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
     mode = os.environ.get("DOCIE_EXTRACTION_MODE", "inline")
     if mode not in ("inline", "studio"):
         raise DocIEError("DOCIE_EXTRACTION_MODE doit être inline ou studio.")
-    payload = document_payload(path)
     if mode == "inline":
-        if path.suffix.lower() == ".pdf":
-            from pypdf import PdfReader
-            try:
-                pages = [page.extract_text() or "" for page in PdfReader(path).pages]
-            except Exception:
-                raise DocIEError("PDF illisible ou protégé. Fournissez un PDF texte ou un DOCX.") from None
-            if any(not page.strip() for page in pages):
-                raise DocIEError("PDF contenant une page sans texte : OCR requis (scan ou page vide).")
-            text = "\n".join(pages)
-        elif path.suffix.lower() == ".docx":
-            text = payload["text"]
-        else:
-            raise DocIEError("Le mode inline accepte PDF texte et DOCX uniquement.")
+        # Lecture locale par la règle PARTAGÉE (texte_document ci-dessus) :
+        # docie_bridge_extraction lit le même texte de la même façon. Le refus
+        # d'un PDF à page muette reste ICI, inchangé — c'est le mode inline qui
+        # n'a pas d'OCR, pas la lecture qui a échoué.
+        text, raison = texte_document(path)
+        if raison == "page_sans_texte":
+            raise DocIEError("PDF contenant une page sans texte : OCR requis (scan ou page vide).")
         if not text.strip():
             raise DocIEError("PDF sans texte : OCR requis. Le mode inline ne traite pas encore les scans.")
         schema = json.loads(Path(__file__).with_name("adbi_resume.schema.json").read_text(encoding="utf-8"))
         payload = {"text": text, "schema_mode": "dynamic", "schema_name": "adbi_resume",
                    "dynamic_schema": schema}
-    if mode == "studio":
+    else:
+        payload = document_payload(path)
         payload["dynamic_schema_name"] = os.environ.get("DOCIE_SCHEMA_NAME", "resume")
     for env, field in (("DOCIE_MODEL_PROFILE", "model_profile"), ("DOCIE_OCR_BACKEND", "ocr_backend")):
         if os.environ.get(env, "").strip() and (field != "ocr_backend" or mode == "studio"):

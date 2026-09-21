@@ -8,9 +8,10 @@ l'appliquer à cv-parser :
 
 - la VOIE d'un fichier suit la configuration existante, sans rien réaiguiller :
   bridge actif (DOCIE_EXTRACTION_ENABLED) et PDF -> voie `agent`
-  (docie_bridge_extraction) ; client historique en mode inline -> voie
-  `texte` (docie_client, PDF texte ou DOCX) ; mode studio -> aucune voie du
-  catalogue, donc aucun sélecteur ;
+  (docie_bridge_extraction) ; .docx -> voie `texte`, servie par le PONT depuis
+  #151 et par `docie_client` quand le pont est éteint ; bridge éteint, mode
+  inline -> voie `texte` (docie_client, PDF texte ou DOCX) ; mode studio ->
+  aucune voie du catalogue, donc aucun sélecteur ;
 - le sélecteur ne s'affiche que si PLUSIEURS modèles sont proposés : tant
   qu'aucune alternative n'est configurée, l'écran ne change pas ;
 - un choix EXPLICITE = un champ `modele` non vide reçu avec le dépôt ou la

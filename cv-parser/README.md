@@ -168,8 +168,12 @@ docker run -p 5000:5000 -v "$(pwd)/data:/app/data" \
 ```
 
 `ADBI_AUTH=on` n'est **pas** posé par défaut dans l'image — à fournir
-explicitement au lancement, pour ne jamais masquer un oubli (voir
-`factory/README.md`).
+explicitement au lancement, pour ne jamais masquer un oubli.
+
+⚠️ La poser ici ne protège que cv-parser. Depuis #245, factory, coffre,
+contrats et one-pager ont chacun leur propre garde et lisent chacun **leur**
+`ADBI_AUTH` : il faut la poser sur les cinq, avec le même `ADBI_JWT_SECRET`
+(voir `factory/README.md` et `docs/recette-post-deploiement.md`).
 
 Variables d'environnement : voir [`.env.example`](.env.example).
 # Déploiement DocIE inline

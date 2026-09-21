@@ -247,8 +247,9 @@ async function extractViaDocie({ dataBase64, mimeType, items, expectedName } = {
 }
 
 // ---------------------------------------------------------------------------
-// Voie TEXTE (urssaf, rib). Le choix de la voie se fait À L'EXÉCUTION sur le
-// document réellement reçu, JAMAIS en dur sur le type de pièce.
+// Voie TEXTE (urssaf, rib, fiscale — et le Kbis quand il est « choisi par type
+// d'entrée », #194). Le choix de la voie se fait À L'EXÉCUTION sur le document
+// réellement reçu, JAMAIS en dur sur le type de pièce.
 //
 // « Une attestation URSSAF (ou un RIB) est un PDF avec couche texte » est une
 // attente, pas une mesure : aucun document réel n'était disponible. Câbler

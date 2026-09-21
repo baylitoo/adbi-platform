@@ -469,5 +469,38 @@ class MarqueApresTriTests(unittest.TestCase):
         self.assertEqual(revue["needs_review"], ["education[1].title"])
 
 
+class EtiquetteTransportTests(unittest.TestCase):
+    """L'écran de dépôt doit reconnaître les DEUX transports DocIE.
+
+    `parsing_mode` vaut "docie" (client historique) ou "docie-bridge" (pont
+    partagé, docie_bridge_extraction). Les deux sont une lecture DocIE.
+
+    Lu dans la SOURCE et non rendu : la pastille est posée par le JavaScript
+    de templates/index.html (`showParseSummary`), que Jinja ne fait que
+    recopier — le rendre n'exécuterait rien. Même motif que
+    tests/test_taches_upload.py (lecture AST) et tests/test_parite_extensions.py
+    pour du code qu'un test ne peut pas exercer autrement.
+
+    Le défaut épinglé ici est ANTÉRIEUR au câblage du .docx : la voie agent du
+    pont rend déjà "docie-bridge", donc un PDF lu par le pont était déjà
+    étiqueté « PDF scanné · OCR ». Il ne se voyait pas parce que
+    DOCIE_EXTRACTION_ENABLED est éteint par défaut.
+    """
+
+    SOURCE = (Path(__file__).resolve().parents[1] / "templates" / "index.html").read_text(encoding="utf-8")
+
+    def test_les_deux_transports_docie_sont_reconnus(self):
+        self.assertNotIn("s.mode === 'docie'", self.SOURCE,
+                         "égalité stricte : « docie-bridge » ne serait pas reconnu")
+        self.assertIn("startsWith('docie')", self.SOURCE,
+                      "la pastille doit accepter docie ET docie-bridge")
+
+    def test_la_pastille_reste_pilotee_par_isDocie(self):
+        """Sans ça, corriger `isDocie` ne corrigerait plus rien : c'est lui qui
+        choisit le libellé ET la classe CSS."""
+        self.assertIn("isDocie ? '📄 Document analysé'", self.SOURCE)
+        self.assertIn("(isDigital || isDocie ? 'digital' : 'scanned')", self.SOURCE)
+
+
 if __name__ == "__main__":
     unittest.main()
