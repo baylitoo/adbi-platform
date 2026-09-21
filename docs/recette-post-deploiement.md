@@ -17,10 +17,21 @@ conteneurisé (`docker-compose.yml`, voir `docs/deploiement-coolify.md`).
       défaut de développement — le `docker-compose.yml` refuse normalement de
       démarrer sans elles (`${VAR:?...}`), mais vérifier qu'elles n'ont pas
       été copiées telles quelles depuis un autre environnement.
-- [ ] **`ADBI_AUTH=on` sur cv-parser** — obligatoire dès que le service n'est
-      plus derrière la Factory en localhost (c'est le cas dès qu'un domaine
-      public lui est assigné). Déjà posé en dur dans `docker-compose.yml`,
-      vérifier qu'il n'a pas été retiré/surchargé.
+- [ ] **`ADBI_AUTH=on` sur les CINQ services** — obligatoire dès qu'un domaine
+      public est assigné, c'est-à-dire toujours en déploiement. Depuis #245,
+      factory, coffre, contrats et one-pager ont chacun leur propre garde et
+      lisent chacun **leur** `ADBI_AUTH` ; seul cv-parser l'a posé en dur dans
+      `docker-compose.yml` (`ADBI_AUTH: "on"`). Les quatre autres reçoivent
+      `${ADBI_AUTH:-}`, qui vaut **off** quand la variable n'est pas définie :
+      la poser une fois au niveau du déploiement les couvre tous les cinq.
+      ⚠️ Ne pas s'arrêter à « cv-parser demande un mot de passe » : c'est
+      exactement l'état dans lequel les quatre autres restent ouverts.
+- [ ] **`ADBI_JWT_SECRET` identique sur les cinq** — cv-parser signe, les
+      quatre autres vérifient. Une valeur différente sur un service refuse
+      toute session sur CE service (jamais un passage libre, mais une panne).
+- [ ] **`ADBI_FACTORY_URL` posée** — sans elle, un module refusé répond un 401
+      nu au lieu de renvoyer vers la connexion du hub, et cv-parser abandonne
+      silencieusement le `next` après connexion (#254).
 - [ ] **PostgreSQL accessible** : `docker exec adbi-postgres pg_isready -U
       ${POSTGRES_USER}` répond `accepting connections` ; les 3 bases
       (`adbi_contrats`, `adbi_cv_parser`, `adbi_one_pager`) existent

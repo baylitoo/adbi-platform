@@ -93,14 +93,24 @@ Deux surfaces restent volontairement claires (documents destinés à
 l'impression) : `one-pager/public/onepager.css` et
 `cv-parser/templates/company_cv.html`.
 
-## Authentification du CV Parser
+## Contrôle d'accès de la plateforme
 
-**Désactivée en local** : l'application tourne en localhost et n'exige pas de
-mot de passe. Le code d'authentification est toujours en place, simplement
-court-circuité.
+**Désactivé en local** : sur un poste, rien n'exige de mot de passe et
+l'identité locale est endossée. Le code est toujours en place, simplement
+inactif.
 
-> ⚠️ **À réactiver avant toute exposition Internet** : variable
-> d'environnement `ADBI_AUTH=on` (lue dans `cv-parser/core/auth.py`).
+Depuis #245, ce n'est plus l'affaire du seul CV Parser : **les cinq services
+sont gardés**. cv-parser signe les jetons — il reste le seul émetteur
+d'identité — et le hub, le coffre, contrats et one-pager les **vérifient** via
+la bibliothèque partagée `auth/auth-adbi.js`. Le hub compris : il a son propre
+domaine public, donc sa propre garde.
+
+> ⚠️ **À activer avant toute exposition Internet** : `ADBI_AUTH=on` **sur les
+> cinq services**, avec le même `ADBI_JWT_SECRET` partout. Chaque service lit
+> sa propre `ADBI_AUTH` ; seul cv-parser l'a posée en dur dans
+> `docker-compose.yml`, les quatre autres reçoivent `${ADBI_AUTH:-}` — vide,
+> c'est-à-dire **off**. Depuis #273, un service qui démarre sans contrôle
+> d'accès l'écrit dans ses journaux.
 
 ## Voyant IA
 

@@ -301,11 +301,16 @@ un déploiement peut donc tourner sans jamais écrire de secret sur disque.
 
 | Service | Variables clé | Repli si absentes |
 |---|---|---|
-| contrats | `PAPPERS_API_KEY`, `INSEE_API_KEY`, `SMTP_*`, `YOUSIGN_*`, `ZOHO_*`, `ADBI_CODE_PARAMETRES` | `data/secrets.json` / `data/code-parametres.txt` (écran Paramètres) |
-| cv-parser | `ADBI_JWT_SECRET`, `ADBI_AUTH`, `ADBI_SUPERUSER_EMAIL`, `ADBI_SUPERUSER_PASSWORD` | `data/jwt_secret.txt` généré ; superuser par défaut `admin@adbi.fr` (dev uniquement) |
-| coffre | — (pas de clé API) | `data/cle-locale.bin`, générée au 1er lancement — **pas de repli possible, à sauvegarder** |
-| factory | `ADBI_PORT`, `ADBI_SANS_PRECHAUFFAGE` | valeurs par défaut (4000, préchauffage actif) |
-| one-pager | `PORT` | 4200 |
+| contrats | `ADBI_AUTH`, `ADBI_JWT_SECRET`, `ADBI_FACTORY_URL`, `PAPPERS_API_KEY`, `INSEE_API_KEY`, `SMTP_*`, `YOUSIGN_*`, `ZOHO_*`, `ADBI_CODE_PARAMETRES` | `data/secrets.json` / `data/code-parametres.txt` (écran Paramètres) |
+| cv-parser | `ADBI_JWT_SECRET`, `ADBI_AUTH`, `ADBI_FACTORY_URL`, `ADBI_SUPERUSER_EMAIL`, `ADBI_SUPERUSER_PASSWORD` | `data/jwt_secret.txt` généré ; superuser par défaut `admin@adbi.fr` (dev uniquement) |
+| coffre | `ADBI_AUTH`, `ADBI_JWT_SECRET`, `ADBI_FACTORY_URL` — (pas de clé API) | `data/cle-locale.bin`, générée au 1er lancement — **pas de repli possible, à sauvegarder** |
+| factory | `ADBI_AUTH`, `ADBI_JWT_SECRET`, `ADBI_FACTORY_URL`, `ADBI_PORT`, `ADBI_SANS_PRECHAUFFAGE` | valeurs par défaut (4000, préchauffage actif) |
+| one-pager | `ADBI_AUTH`, `ADBI_JWT_SECRET`, `ADBI_FACTORY_URL`, `PORT` | 4200 |
+
+Depuis #245, les **cinq** services sont gardés : cv-parser signe les jetons
+(seul émetteur d'identité), les quatre services Node les vérifient avec le même
+`ADBI_JWT_SECRET` via la bibliothèque partagée `auth/auth-adbi.js`. Chacun lit
+sa **propre** `ADBI_AUTH`.
 
 ### Injection des secrets sous Coolify
 
@@ -320,14 +325,17 @@ un déploiement peut donc tourner sans jamais écrire de secret sur disque.
   valeur réutilisée d'un autre environnement) et à poser **avant** le premier
   démarrage du service concerné — les valeurs par défaut du code ne doivent
   jamais atteindre un environnement exposé.
-- `ADBI_AUTH=on` est **obligatoire** dès que cv-parser n'est plus derrière la
-  Factory en localhost (voir factory/README.md).
+- `ADBI_AUTH=on` est **obligatoire sur les cinq services** dès qu'un domaine
+  public leur est assigné. Seul cv-parser l'a posé en dur dans
+  `docker-compose.yml` ; factory, coffre, contrats et one-pager reçoivent
+  `${ADBI_AUTH:-}`, qui vaut **off** si la variable n'est pas définie — les
+  quatre démarrent alors ouverts (ils le signalent au démarrage depuis #273).
 
 ### Avant toute exposition Internet (déploiement)
 1. **Reverse proxy HTTPS** devant chaque service.
 2. Tous les secrets ci-dessus posés par variable d'environnement (aucune
    valeur par défaut du code en production).
-3. `ADBI_AUTH=on` sur cv-parser.
+3. `ADBI_AUTH=on` sur les cinq services, et le même `ADBI_JWT_SECRET` partout.
 4. Sauvegardes régulières des volumes `data/` (fichiers générés/déposés —
    détail par service dans `docs/deploiement-coolify.md` § volumes) ET du
    volume `postgres-data` (Contrats et Parser y stockent déjà leurs
