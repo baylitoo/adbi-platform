@@ -145,10 +145,17 @@ def _is_api() -> bool:
 
 # ── Mode local sans authentification ──────────────────────────────────────────
 #
-# L'application tourne sur le poste (127.0.0.1) derrière ADBI Factory : on ne
-# demande pas de mot de passe. Les contrôles restent écrits et sont réactivés
-# en posant la variable d'environnement ADBI_AUTH=on — indispensable si
-# l'application est un jour servie ailleurs qu'en local.
+# ADBI_AUTH absent/off : aucun mot de passe demandé, l'identité locale
+# ci-dessous est endossée. C'était le mode du poste de développement, derrière
+# ADBI Factory, et c'est TOUJOURS le défaut de cette variable — mais ce n'est
+# plus une description du déploiement : docker-compose.yml pose
+# `ADBI_AUTH: "on"` EN DUR pour cv-parser (les quatre services Node, eux, lisent
+# la variable). L'authentification est donc active en déploiement, et ce mode
+# ne vaut que pour un lancement local sans compose.
+#
+# Ne pas relire cette section comme « ce service n'est pas exposé » : il l'est,
+# sur son propre domaine, et il est le SEUL émetteur de jetons de la plateforme
+# — les quatre services Node ne font que vérifier (auth/auth-adbi.js).
 
 AUTH_ACTIVE = os.environ.get("ADBI_AUTH", "off").strip().lower() in (
     "on", "1", "true", "oui",
