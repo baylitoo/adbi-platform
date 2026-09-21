@@ -112,7 +112,10 @@ function avisExterne() {
   n = document.createElement("div");
   n.id = "choix-modele-externe";
   n.setAttribute("role", "status");
-  n.style.cssText = "margin-top:6px;color:#C2410C;font-size:12px;display:none";
+  // Classe de la charte (styles.css) et non un style en dur : une couleur
+  // ecrite ici ne suivrait pas le theme sombre.
+  n.className = "avis-externe";
+  n.hidden = true;
   n.textContent = "⚠ Service externe (hors ADBI) : le texte du CV — donnée "
     + "personnelle du candidat — sera envoyé à ce service. Aucune preuve ni "
     + "confiance par champ : tout le résultat est à relire.";
@@ -125,24 +128,23 @@ function refleterChoixExterne() {
   const avis = avisExterne();
   if (!sel || !avis) return;
   const externeChoisi = modelesExternes.has(sel.value);
-  avis.style.display = externeChoisi ? "" : "none";
+  avis.hidden = !externeChoisi;
 
-  // Repli externe : propose seulement si un modele hors ADBI existe. Sans
-  // objet quand un modele externe est DEJA choisi — la case se desactive au
-  // lieu de laisser croire a un second appel.
-  const bloc = $("#repli-externe-bloc");
-  const repli = $("#repli-externe");
+  // Le panneau Fallback n'a de sens que si un modele hors ADBI existe. Sans
+  // objet quand un modele externe est DEJA choisi : on desactive les choix au
+  // lieu de laisser croire a un second appel, et on revient a « DocIE seul ».
+  const bloc = $("#fallback-bloc");
   if (bloc) bloc.hidden = modelesExternes.size === 0;
-  if (repli) {
-    repli.disabled = externeChoisi;
-    if (externeChoisi) repli.checked = false;
+  for (const choix of document.querySelectorAll('input[name="fallback"]')) {
+    choix.disabled = externeChoisi;
+    if (externeChoisi && choix.value === "") choix.checked = true;
   }
 }
 
-/** La case « repli externe » est-elle cochee ET active ? */
+/** « DocIE, puis OpenAI si echec » est-il retenu (et disponible) ? */
 function repliExterneDemande() {
-  const repli = $("#repli-externe");
-  return Boolean(repli && repli.checked && !repli.disabled);
+  const choisi = document.querySelector('input[name="fallback"]:checked');
+  return Boolean(choisi && choisi.value === "openai" && !choisi.disabled);
 }
 
 async function chargerModeles() {

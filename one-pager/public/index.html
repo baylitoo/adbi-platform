@@ -53,18 +53,31 @@
       <select id="choix-modele" aria-label="Modèle d'extraction" title="Modèle d'extraction utilisé pour ces CV"></select>
     </div>
     <div class="note" id="choix-modele-erreur" hidden></div>
-    <!-- Repli externe (#194) : affiche par app.js UNIQUEMENT si un modele hors
-         ADBI est propose (donc si la cle du fournisseur est configuree). Decoche
-         par defaut : le texte du CV ne quitte ADBI que sur un geste explicite,
-         et ce geste vaut consentement pour ce depot. -->
-    <div class="note" id="repli-externe-bloc" hidden>
-      <label>
-        <input type="checkbox" id="repli-externe">
-        Si DocIE échoue, réessayer avec le service externe (hors ADBI) : le
-        texte du CV sera alors envoyé à ce service. Un document sans couche
-        texte (scan) ne peut pas être secouru ainsi.
-      </label>
-    </div>
+    <!-- Fallback (#194) : que faire si DocIE echoue. Affiche par app.js
+         UNIQUEMENT si un modele hors ADBI est propose (cle configuree), sinon
+         le panneau promettrait un secours impossible. Replie par defaut, et le
+         choix par defaut a l'interieur est « DocIE seul » : le texte du CV ne
+         quitte ADBI que sur un geste explicite, qui vaut consentement pour ce
+         depot. Deux choix NOMMES plutot qu'une case a cocher — « reessayer avec
+         le service externe » se lisait comme si l'on choisissait OpenAI AVANT
+         DocIE. -->
+    <details class="fallback" id="fallback-bloc" hidden>
+      <summary>Fallback</summary>
+      <div class="fallback-corps">
+        <label class="fallback-choix">
+          <input type="radio" name="fallback" value="" checked>
+          <span>DocIE seul
+            <small>Si DocIE échoue, on retombe sur l'analyse locale — rien ne sort d'ADBI.</small></span>
+        </label>
+        <label class="fallback-choix">
+          <input type="radio" name="fallback" value="openai">
+          <span>DocIE, puis OpenAI si échec
+            <small>Le texte du CV sera alors envoyé au service externe (hors
+              ADBI). Un document sans couche texte (scan) ne peut pas être
+              secouru ainsi.</small></span>
+        </label>
+      </div>
+    </details>
     <input type="file" id="fichier" accept=".pdf,.docx,.doc,.txt" multiple hidden>
     <div class="note">Tout reste sur ce poste : aucun envoi vers Internet.</div>
   </div>
