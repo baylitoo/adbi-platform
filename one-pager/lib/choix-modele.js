@@ -27,6 +27,21 @@
 
 const TACHE = "resume";
 
+/*
+ * Modeles HORS ADBI (#194) : le catalogue ne les propose que si le consommateur
+ * les demande (option `externes`) ET que la cle du fournisseur est renseignee.
+ * Voie TEXTE uniquement — le fournisseur ne declare que `texte`
+ * (catalogue.json), et la voie agent enverrait le document LUI-MEME, pas son
+ * texte, donc un scan entier plutot que ce que nous en avons lu.
+ *
+ * DONNEES PERSONNELLES : un CV est la donnee d'un CANDIDAT, pas un document
+ * d'entreprise comme les cinq pieces de contrats. #194 avait ecarte le CV pour
+ * cette raison (« en attente du proprietaire ») ; le proprietaire a tranche, a
+ * la condition que l'utilisateur soit AVERTI, au moment du choix, que le texte
+ * part chez un tiers — voir public/app.js. Jamais un defaut, jamais un repli.
+ */
+const EXTERNES = true;
+
 function chargerCatalogue() {
   // eslint-disable-next-line global-require
   return require("../../document-parsing/models/catalogue");
@@ -47,7 +62,9 @@ function offresParVoie(env = process.env) {
   if (!docieActif(env)) return { texte: [], agent: [] };
   const catalogue = chargerCatalogue();
   const offres = {};
-  for (const voie of ["texte", "agent"]) offres[voie] = catalogue.modelesOfferts(TACHE, voie, { env }).map((o) => o.id);
+  for (const voie of ["texte", "agent"]) {
+    offres[voie] = catalogue.modelesOfferts(TACHE, voie, { env, externes: voie === "texte" && EXTERNES }).map((o) => o.id);
+  }
   return offres;
 }
 
@@ -59,7 +76,7 @@ function modelesProposes(env = process.env) {
   // Voies des formats acceptes, reunies : le format du prochain fichier n'est
   // pas connu ; un modele configure sur une seule voie est verifie a l'envoi.
   for (const voie of ["texte", "agent"]) {
-    for (const o of catalogue.modelesOfferts(TACHE, voie, { env })) {
+    for (const o of catalogue.modelesOfferts(TACHE, voie, { env, externes: voie === "texte" && EXTERNES })) {
       if (!vus.has(o.id)) {
         vus.set(o.id, { id: o.id, libelle: o.libelle, description: o.description, role: o.role, experimental: o.experimental === true });
       }
@@ -76,7 +93,9 @@ function modelesProposes(env = process.env) {
 function choisir(voie, modele, document, env = process.env) {
   const catalogue = chargerCatalogue();
   const illisible = voie === "agent" && document.pages == null;
-  const offre = catalogue.choisirModele(TACHE, voie, { env, modele, document: illisible ? null : document });
+  const offre = catalogue.choisirModele(TACHE, voie, {
+    env, modele, document: illisible ? null : document, externes: voie === "texte" && EXTERNES,
+  });
   if (illisible && typeof offre.limites.pages_max === "number") {
     // Une limite non verifiable n'est pas une limite respectee.
     throw new catalogue.CatalogueError("limite",
@@ -120,4 +139,15 @@ function modeleServi(voie, metadata, env = process.env) {
   return servi ? { id: servi.id, libelle: servi.libelle } : null;
 }
 
-module.exports = { modelesProposes, offresParVoie, choisir, compterLignesNonVides, compterPages, modeleServi, chargerCatalogue, TACHE };
+/**
+ * Le modele choisi est-il servi par un fournisseur HORS ADBI ?
+ *
+ * Quand c'est vrai, `offre.identifiant` est le MODE du transport
+ * (`rapide` / `raisonnement`) et non un profil DocIE : l'envoyer a
+ * extraireTexteViaDocie demanderait a DocIE un modele nomme « rapide ».
+ */
+function estExterne(offre) {
+  return Boolean(offre && typeof offre.fournisseur === "string" && offre.fournisseur);
+}
+
+module.exports = { modelesProposes, offresParVoie, choisir, estExterne, compterLignesNonVides, compterPages, modeleServi, chargerCatalogue, TACHE };

@@ -38,6 +38,20 @@ from taches_upload import ErreurTache
 TACHE = "resume"
 CHEMIN_CHARGEUR = Path(__file__).resolve().parents[1] / "document-parsing" / "models" / "catalogue.py"
 
+# Modèles HORS ADBI (#194) : le catalogue ne les propose que si le consommateur
+# les demande (option `externes`) ET que la clé du fournisseur est renseignée.
+# Voie TEXTE uniquement — le fournisseur ne déclare que `texte`
+# (catalogue.json), et la voie agent enverrait le document LUI-MÊME, pas son
+# texte, donc un scan entier plutôt que ce que nous en avons lu.
+#
+# DONNÉES PERSONNELLES : un CV est la donnée d'un CANDIDAT, pas un document
+# d'entreprise comme les cinq pièces de contrats. #194 avait écarté le CV pour
+# cette raison (« en attente du propriétaire ») ; le propriétaire a tranché, à
+# la condition que l'utilisateur soit AVERTI, au moment du choix, que le texte
+# part chez un tiers — voir templates/index.html. Jamais un défaut, jamais un
+# repli : l'externe n'est proposé qu'APRÈS le défaut et l'alternative DocIE.
+EXTERNES = True
+
 # Extensions que le bridge reçoit en fichier. Miroir de
 # docie_bridge_extraction._MIME_BY_SUFFIX, dont les types doivent eux-mêmes
 # rester un sous-ensemble de l'allowlist du pont
@@ -94,7 +108,7 @@ def modeles_proposes(ext=None):
     catalogue = charger()
     vus = {}
     for voie in voies:
-        for offre in catalogue.modeles_offerts(TACHE, voie):
+        for offre in catalogue.modeles_offerts(TACHE, voie, externes=(voie == "texte" and EXTERNES)):
             vus.setdefault(offre["id"], {"id": offre["id"], "libelle": offre["libelle"],
                                          "description": offre["description"], "role": offre["role"],
                                          "experimental": offre.get("experimental") is True})
@@ -114,7 +128,7 @@ def offres_par_format():
             offres[ext] = []
             continue
         catalogue = catalogue or charger()
-        offres[ext] = [o["id"] for o in catalogue.modeles_offerts(TACHE, voie)]
+        offres[ext] = [o["id"] for o in catalogue.modeles_offerts(TACHE, voie, externes=(voie == "texte" and EXTERNES))]
     return offres
 
 
@@ -133,10 +147,28 @@ class Choix:
     def _choisir(self, voie, document):
         catalogue = charger()
         try:
-            self.offre = catalogue.choisir_modele(TACHE, voie, self.modele, document=document)
+            self.offre = catalogue.choisir_modele(TACHE, voie, self.modele, document=document,
+                                                  externes=(voie == "texte" and EXTERNES))
         except catalogue.CatalogueError as exc:
             raise ErreurTache(str(exc), code=exc.code) from None
         return self.offre["identifiant"]
+
+    @property
+    def est_externe(self):
+        """Le modèle choisi est-il servi par un fournisseur HORS ADBI ?
+
+        Vrai seulement APRÈS `pour_texte`/`pour_agent`/`verifier` : c'est l'offre
+        retenue qui porte le fournisseur, jamais l'identifiant reçu du
+        navigateur. Quand c'est vrai, `identifiant` est le MODE du transport
+        (`rapide` / `raisonnement`) et non un profil DocIE : l'envoyer à DocIE
+        lui demanderait un modèle nommé « rapide ».
+        """
+        return bool(self.offre and self.offre.get("fournisseur"))
+
+    @property
+    def mode_externe(self):
+        """Mode de transport du fournisseur, ou None hors modèle externe."""
+        return (self.offre or {}).get("mode") if self.est_externe else None
 
     def verifier(self, ext):
         """Avant tout travail : le modèle est-il proposé pour la voie de ce fichier ?"""

@@ -63,12 +63,19 @@ function monterImport(app, { importerCv, db, gestionnaire, choixModele = null })
    * (lib/import-pipeline.js). Absent ou vide : import exactement comme avant.
    */
   app.post("/api/import", (req, res) => {
-    const { filename, contentBase64, modele } = req.body || {};
+    const { filename, contentBase64, modele, repliExterne } = req.body || {};
     if (!contentBase64) return res.status(400).json({ error: "Aucun fichier reçu." });
     if (modele != null && typeof modele !== "string") {
       return res.status(400).json({ error: "Modèle invalide." });
     }
+    if (repliExterne != null && typeof repliExterne !== "boolean") {
+      return res.status(400).json({ error: "Repli externe invalide." });
+    }
     const choisi = modele ? modele.trim() : "";
+    // Repli externe coche au depot : si DocIE echoue, reessayer chez le
+    // fournisseur HORS ADBI. Le texte du CV quitte alors la plateforme, d'ou un
+    // consentement donne AVANT l'envoi, pour ce depot-la. Jamais un defaut.
+    const repli = repliExterne === true;
 
     const buffer = Buffer.from(contentBase64, "base64");
     if (buffer.length > TAILLE_MAX) {
@@ -84,8 +91,13 @@ function monterImport(app, { importerCv, db, gestionnaire, choixModele = null })
         // texte pour un depot texte — voir issues #152 et #180)
         // et gere elle-meme le repli local en cas d'echec DocIE (jamais pour un
         // modele choisi, #194).
-        const master = choisi
-          ? await importerCv(buffer, filename, { modele: choisi })
+        // Options transmises SEULEMENT si elles sont demandees : sans choix ni
+        // repli, importerCv est appele exactement comme avant.
+        const options = {};
+        if (choisi) options.modele = choisi;
+        if (repli) options.repliExterne = true;
+        const master = Object.keys(options).length
+          ? await importerCv(buffer, filename, options)
           : await importerCv(buffer, filename);
         const hash = crypto.createHash("sha256").update(buffer).digest("hex");
         const existant = await db.findByHash(hash);

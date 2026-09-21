@@ -119,7 +119,12 @@ test("modeleServi : rapproché avec ou sans store:, sinon nom brut, null si non 
 // Modèles externes OpenAI (#194) : alternatives explicites, jamais par défaut.
 // ---------------------------------------------------------------------------
 const CLE = "sk-test-secret-catalogue";
-const TACHES_EXTERNES = ["contract", "fiscale", "kbis", "rib", "urssaf"];
+// `resume` (CV) y a rejoint les cinq documents métier : #194 l'en avait écarté
+// (« périmètre des données personnelles en attente du propriétaire »), le
+// propriétaire a tranché. Un CV reste la donnée d'un CANDIDAT et non d'une
+// entreprise : la contrepartie exigée est que l'utilisateur soit AVERTI, au
+// moment du choix, que le texte part chez un tiers — jamais par défaut.
+const TACHES_EXTERNES = ["contract", "fiscale", "kbis", "resume", "rib", "urssaf"];
 const ENV_DOCIE_COMPLET = {
   DOCIE_MODELE_NUEXTRACT3: "store:n3", DOCIE_MODELE_LFM25_2_6B: "store:l26", DOCIE_MODELE_LFM25_350M: "store:l350",
   DOCIE_AGENT_RESUME_LFM25_2_6B: "a_l", DOCIE_AGENT_RESUME_NUEXTRACT3: "a_n", DOCIE_AGENT_KBIS_NUEXTRACT3: "k3",
@@ -134,7 +139,7 @@ function toutesLesOffres(env, options = {}) {
   return JSON.stringify(sortie);
 }
 
-test("externes : OpenAI rapide puis raisonnement, APRÈS défaut et alternative, sur les 5 documents métier en voie texte", () => {
+test("externes : OpenAI rapide puis raisonnement, APRÈS défaut et alternative, sur les 6 tâches ouvertes en voie texte", () => {
   for (const tache of TACHES_EXTERNES) {
     const offres = cat.modelesOfferts(tache, "texte", { env: { ...ENV_DOCIE_COMPLET, OPENAI_API_KEY: CLE }, externes: true });
     assert.deepEqual(offres.map((o) => o.role), ["defaut", "alternative", "externe", "externe"], tache);
@@ -169,7 +174,7 @@ test("sans clé, ou sans l'option `externes` : sortie des chargeurs identique oc
   assert.throws(() => cat.choisirModele("rib", "texte", { env: { OPENAI_API_KEY: CLE }, modele: "openai_rapide" }), (e) => e.code === "modele_non_propose");
 });
 
-test("CV (et toute autre tâche ou voie) : jamais d'offre OpenAI, même avec la clé et l'option", () => {
+test("CV : offres OpenAI sur la voie TEXTE seulement ; toute autre tâche ou voie, jamais", () => {
   const env = { ...ENV_DOCIE_COMPLET, OPENAI_API_KEY: CLE };
   const c = cat.chargerCatalogue();
   for (const tache of Object.keys(c.taches)) {
@@ -178,9 +183,14 @@ test("CV (et toute autre tâche ou voie) : jamais d'offre OpenAI, même avec la 
       assert.equal(externes.length, voie === "texte" && TACHES_EXTERNES.includes(tache) ? 2 : 0, tache + "/" + voie);
     }
   }
-  assert.ok(!Object.hasOwn(c.taches.resume.voies.texte, "externes"));
+  // Le CV est ouvert sur la voie TEXTE seulement : un scan part en vision chez
+  // DocIE, et le fournisseur ne déclare que `texte` (catalogue.json).
+  assert.deepEqual(ids(cat.modelesOfferts("resume", "texte", { env, externes: true })).slice(-2),
+    ["openai_rapide", "openai_raisonnement"]);
   assert.ok(!Object.hasOwn(c.taches.resume.voies.agent, "externes"));
-  assert.throws(() => cat.choisirModele("resume", "texte", { env, modele: "openai_rapide", externes: true }), (e) => e.code === "modele_non_propose");
+  assert.equal(cat.choisirModele("resume", "texte", { env, modele: "openai_rapide", externes: true }).identifiant, "rapide");
+  // Sans l'option `externes`, un consommateur pas encore câblé ne voit toujours rien.
+  assert.throws(() => cat.choisirModele("resume", "texte", { env, modele: "openai_rapide" }), (e) => e.code === "modele_non_propose");
 });
 
 test("externes : la liste ne porte jamais la clé, l'URL ni le nom de modèle du fournisseur", () => {
@@ -216,7 +226,9 @@ test("modeleServi : OpenAI rapproché par fournisseur + mode, modèle servi rapp
   // Un modèle DocIE dont l'identifiant serait « rapide » ne répond pas pour OpenAI, et inversement.
   assert.equal(cat.modeleServi("rib", "texte", { env, metadata: { fournisseur: "openai", mode: "rapide", model: "rapide" } }).id, "openai_rapide");
   assert.equal(cat.modeleServi("rib", "texte", { env, metadata: { model: "rapide" } }).id, "lfm25_2_6b");
-  assert.equal(cat.modeleServi("resume", "texte", { env, metadata: { fournisseur: "openai", mode: "rapide", model: "gpt-4.1-nano" } }).id, null);
+  // Le CV est désormais ouvert aux externes : la réponse OpenAI s'y rapproche
+  // comme ailleurs, au lieu de retomber sur le nom brut.
+  assert.equal(cat.modeleServi("resume", "texte", { env, metadata: { fournisseur: "openai", mode: "rapide", model: "gpt-4.1-nano" } }).id, "openai_rapide");
   assert.equal(cat.modeleServi("rib", "texte", { env, metadata: { fournisseur: "openai", mode: "rapide", model: null } }), null);
 });
 

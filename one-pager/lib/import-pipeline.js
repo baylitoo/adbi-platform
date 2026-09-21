@@ -41,7 +41,7 @@
 const { ingest, isPdf, estTexteBrut, estDocx, texteDocx } = require("./ingest");
 const { segment } = require("./layout");
 const { extract } = require("./extract");
-const { extraireViaDocie, extraireTexteViaDocie } = require("./docie-extract");
+const { extraireViaDocie, extraireTexteViaDocie, extraireTexteViaOpenAI } = require("./docie-extract");
 
 class ImportError extends Error {
   constructor(status, message) {
@@ -149,19 +149,39 @@ async function importerAvecModele(buffer, filename, { env, fetchImpl, modele }) 
   } else {
     const texte = await source.texte();
     const offre = choix.choisir("texte", modele, { lignesNonVides: choix.compterLignesNonVides(texte) }, env);
-    master = await extraireTexteViaDocie(texte, filename, { ...options, modelProfile: offre.identifiant });
+    // Modele EXTERNE (#194) : le texte part chez le fournisseur, pas chez
+    // DocIE. `offre.identifiant` est alors le MODE du transport
+    // (`rapide` / `raisonnement`) et non un profil DocIE — le passer a
+    // extraireTexteViaDocie demanderait a DocIE un modele nomme « rapide ».
+    // Aucun repli ici non plus : cette fonction n'a deja aucun catch.
+    master = choix.estExterne(offre)
+      ? await extraireTexteViaOpenAI(texte, filename, { ...options, mode: offre.mode })
+      : await extraireTexteViaDocie(texte, filename, { ...options, modelProfile: offre.identifiant });
   }
   return noterModele(master, source.voie, modele, env);
 }
 
+/*
+ * Codes d'echec qu'un repli externe ne doit JAMAIS rejouer — meme liste que
+ * cv-parser (docie_client._CODES_SANS_REPLI), pour les memes raisons :
+ *   - `timeout` : DocIE peut encore etre en train de traiter le document ET de
+ *     le facturer. Relancer ailleurs paie deux fois le meme travail, ce que le
+ *     README du pont interdit explicitement ;
+ *   - `input` : le document lui-meme est inutilisable ; le fournisseur externe
+ *     le refuserait pour la meme raison, au prix d'un aller-retour de plus.
+ */
+const CODES_SANS_REPLI = new Set(["timeout", "input"]);
+
 /**
  * @param {Buffer} buffer
  * @param {string} filename
- * @param {{env?: object, fetchImpl?: Function, modele?: string}} [options]
+ * @param {{env?: object, fetchImpl?: Function, modele?: string, repliExterne?: boolean}} [options]
  *   `modele` : identifiant du catalogue explicitement choisi (#194).
+ *   `repliExterne` : case cochee au depot — si DocIE echoue, reessayer chez le
+ *   fournisseur HORS ADBI plutot que de retomber sur l'analyse locale.
  * @returns {Promise<object>} cv_master
  */
-async function importerCv(buffer, filename, { env = process.env, fetchImpl, modele = null } = {}) {
+async function importerCv(buffer, filename, { env = process.env, fetchImpl, modele = null, repliExterne = false } = {}) {
   if (modele) return importerAvecModele(buffer, filename, { env, fetchImpl, modele });
   const source = docieActif(env) ? sourceDocie(buffer, filename) : null;
   const voie = source ? voieDocie(buffer, filename) : null;
@@ -172,9 +192,33 @@ async function importerCv(buffer, filename, { env = process.env, fetchImpl, mode
     } catch (e) {
       const code = (e && e.code) || "error";
       console.warn(`[docie:repli_local] ${code} — ${(e && e.message) || e}`);
+      // Repli EXTERNE, coche au depot : le consentement a ete donne AVANT
+      // l'envoi, pour ce depot-la, car le texte du CV — donnee personnelle d'un
+      // candidat — va quitter ADBI. Deux conditions, non negociables :
+      //   - voie TEXTE : sur un scan (voie agent) il n'y a AUCUN texte a
+      //     envoyer. Le repli y est sans objet, et on garde l'analyse locale en
+      //     le disant, plutot que de transformer en echec un import qui marche ;
+      //   - cause rejouable : voir CODES_SANS_REPLI.
+      if (repliExterne && source.voie === "texte" && !CODES_SANS_REPLI.has(code)) {
+        const texte = await source.texte();
+        // Si CE second essai echoue, son erreur sort telle quelle : pas de
+        // troisieme chemin, pas d'analyse locale en silence.
+        const externe = await extraireTexteViaOpenAI(texte, filename, { env, fetchImpl, mode: "rapide" });
+        externe.source.extraction_method = `repli_externe:${code}`;
+        externe.quality.warnings.push(`docie_indisponible_repli_externe:${code}`);
+        return externe;
+      }
       const local = await extractionLocale(buffer, filename);
       local.source.extraction_method = `local_fallback:${code}`;
       local.quality.warnings.push(`docie_indisponible_repli_local:${code}`);
+      // Case cochee mais repli impossible : le DIRE. Sans cela, l'utilisateur
+      // croit que son CV est parti chez le fournisseur alors qu'il n'en est
+      // rien — ou l'inverse, ce qui serait pire.
+      if (repliExterne) {
+        local.quality.warnings.push(source.voie === "texte"
+          ? `repli_externe_impossible:${code}`
+          : "repli_externe_impossible:sans_texte");
+      }
       return local;
     }
     return noterModele(master, source.voie, null, env);

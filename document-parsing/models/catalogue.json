@@ -59,7 +59,11 @@
       "voies": {
         "texte": {
           "defaut": { "modele": "lfm25_2_6b", "condition": "Non proposé au-delà de 800 lignes non vides (#190)." },
-          "alternative": { "modele": "nuextract3", "experimental": true, "prerequis": "Après la PR DocIE #522 (JSON invalide sur listes imbriquées avant elle) ; expérimental tant qu'aucun CV riche en listes n'a été lu en réel depuis." }
+          "alternative": { "modele": "nuextract3", "experimental": true, "prerequis": "Après la PR DocIE #522 (JSON invalide sur listes imbriquées avant elle) ; expérimental tant qu'aucun CV riche en listes n'a été lu en réel depuis." },
+          "externes": [
+            { "modele": "openai_rapide", "experimental": true, "prerequis": "DONNÉES PERSONNELLES : un CV est la donnée d'un candidat, pas un document d'entreprise. Le texte quitte ADBI ; l'utilisateur doit en être averti au moment du choix." },
+            { "modele": "openai_raisonnement", "experimental": true, "prerequis": "DONNÉES PERSONNELLES : un CV est la donnée d'un candidat, pas un document d'entreprise. Le texte quitte ADBI ; l'utilisateur doit en être averti au moment du choix." }
+          ]
         },
         "agent": {
           "defaut": { "modele": "lfm25_2_6b", "condition": "Agent OCR, pour les scans seulement." },

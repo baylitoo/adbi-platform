@@ -537,9 +537,58 @@
               data-formats="{{ (modeles_par_format or {})|tojson|forceescape }}"
               aria-label="Modèle d'extraction" title="Modèle d'extraction utilisé pour les prochains CV">
         {% for m in modeles %}
-        <option value="{{ m.id }}"{% if m.role == 'defaut' %} selected{% endif %}>{{ m.libelle }} — {% if m.experimental %}expérimental ({{ m.description }}){% else %}{{ m.description }}{% endif %}</option>
+        <option value="{{ m.id }}"{% if m.role == 'defaut' %} selected{% endif %}{% if m.role == 'externe' %} data-externe="1"{% endif %}>{{ m.libelle }} — {% if m.experimental %}expérimental ({{ m.description }}){% else %}{{ m.description }}{% endif %}</option>
         {% endfor %}
       </select>
+      {# DONNÉES PERSONNELLES (#194) : un CV est la donnée d'un CANDIDAT, pas un
+         document d'entreprise. Un modèle externe fait SORTIR son texte d'ADBI ;
+         l'utilisateur doit le savoir AU MOMENT DU CHOIX, pas dans une note lue
+         après coup. Condition posée par le propriétaire pour ouvrir le CV aux
+         modèles hors ADBI. `display` et non l'attribut `hidden` : une règle CSS
+         sur .up-sub rendrait `hidden` sans effet. #}
+      <div id="modeleExterneAvis" class="up-sub" role="status"
+           style="margin-top:6px;color:#C2410C;display:none">
+        ⚠ Service externe (hors ADBI) : le texte du CV — donnée personnelle du
+        candidat — sera envoyé à ce service. Aucune preuve ni confiance par
+        champ : tout le résultat est à relire.
+      </div>
+      {# Repli externe : si DocIE échoue, réessayer chez le fournisseur hors
+         ADBI. Proposé UNIQUEMENT si un modèle externe existe (donc si la clé du
+         fournisseur est configurée) — sinon la case promettrait un secours
+         impossible. DÉCOCHÉE par défaut : le texte du CV ne quitte ADBI que sur
+         un geste explicite, et ce geste vaut consentement pour CE dépôt.
+         Sans objet quand un modèle externe est DÉJÀ choisi : la case se
+         désactive au lieu de laisser croire à un second appel. #}
+      {% if modeles | selectattr('role', 'equalto', 'externe') | first %}
+      <label id="repliExterneBloc" class="up-sub" style="display:block;margin-top:6px">
+        <input type="checkbox" id="repliExterne" value="1">
+        Si DocIE échoue, réessayer avec le service externe (hors ADBI) : le
+        texte du CV sera alors envoyé à ce service. Un document sans couche
+        texte (scan) ne peut pas être secouru ainsi.
+      </label>
+      {% endif %}
+      <script>
+        (function () {
+          var sel = document.getElementById('modeleSelect');
+          var avis = document.getElementById('modeleExterneAvis');
+          var repli = document.getElementById('repliExterne');
+          if (!sel || !avis) return;
+          function refleter() {
+            var o = sel.options[sel.selectedIndex];
+            var externe = !!(o && o.getAttribute('data-externe') === '1');
+            avis.style.display = externe ? '' : 'none';
+            if (repli) {
+              // Modèle externe déjà choisi : le repli n'a plus d'objet — la
+              // lecture part déjà chez le fournisseur.
+              repli.disabled = externe;
+              if (externe) repli.checked = false;
+              if (repli.parentNode) repli.parentNode.style.opacity = externe ? '0.5' : '';
+            }
+          }
+          sel.addEventListener('change', refleter);
+          refleter();
+        })();
+      </script>
       {% endif %}
       {% if modeles_erreur %}<div class="up-sub" style="margin-top:6px">{{ modeles_erreur }}</div>{% endif %}
 
@@ -870,6 +919,11 @@ async function envoyerCv(file, discret, suivi, modele = modeleChoisi(file)) {
   if (!discret) ConvWidget.startLocal(file.name, jeton);   // en lot, la liste suffit
   const fd = new FormData(); fd.append('file', file); fd.append('jeton', jeton);
   if (modele) fd.append('modele', modele);
+  // Repli externe : transmis SEULEMENT s'il est coché et actif. Décoché, la
+  // requête est exactement celle d'avant — une option non demandée ne change
+  // rien (même règle que `modele`).
+  const repliCase = document.getElementById('repliExterne');
+  if (repliCase && repliCase.checked && !repliCase.disabled) fd.append('repli_externe', '1');
   try {
     const r = await fetch('/api/upload', { method: 'POST', body: fd, credentials: 'include' });
     let data = await r.json();

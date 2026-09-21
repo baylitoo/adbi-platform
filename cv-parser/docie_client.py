@@ -3,6 +3,7 @@ import base64
 import json
 import math
 import os
+import sys
 import time
 from pathlib import Path
 from urllib.parse import quote, urlsplit
@@ -13,7 +14,22 @@ import requests
 
 
 class DocIEError(RuntimeError):
-    pass
+    """Échec d'extraction, tel qu'il est montré à l'utilisateur.
+
+    `code` : code STABLE de la cause quand on le connaît (codes du pont
+    partagé : timeout, network, upstream…), None sinon. Il était jusqu'ici
+    seulement interpolé dans le message ; le relire depuis de la prose pour
+    décider d'un repli serait fragile. Le repli externe s'en sert pour NE PAS
+    rejouer un travail qui peut encore tourner et être facturé (`timeout`).
+
+    Reste une simple valeur portée par l'exception : les `raise DocIEError(...)`
+    restent des appels directs, ce que la garde AST de
+    tests/test_taches_upload.py exige pour continuer à les voir.
+    """
+
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code
 
 
 # ── Texte d'un .docx pour /v1/extract/text ────────────────────────────────────
@@ -296,6 +312,107 @@ def message_chargement(corps):
     return "DocIE : modèle en cours de chargement, réessayez dans quelques instants."
 
 
+# Codes d'échec DocIE qu'un repli externe ne doit JAMAIS rejouer.
+#
+# `timeout` : DocIE peut encore être en train de traiter le document — et de le
+# facturer. Relancer ailleurs paie deux fois le même travail ; c'est exactement
+# ce que le README du pont interdit (« ne jamais rejouer aveuglément un travail
+# DocIE potentiellement facturé »).
+# `input` : le document lui-même est inutilisable (vide, trop gros, binaire).
+# Le fournisseur externe le refuserait pour la même raison : un second appel ne
+# ferait que coûter un aller-retour de plus.
+_CODES_SANS_REPLI = frozenset({"timeout", "input"})
+
+# Messages FR par code stable du transport externe
+# (document-parsing/bridge/openai_responses.py::fail). Le texte de l'exception
+# elle-même n'est JAMAIS recopié dans `erreur.message` : il peut porter un corps
+# de réponse amont, un chemin, voire la clé. Même arbitrage que
+# docie_bridge_extraction._ERROR_MESSAGES, pour la même raison.
+_MESSAGES_EXTERNE = {
+    "configuration": "service mal configuré côté serveur (clé ou URL).",
+    "input": "document refusé (texte vide, trop volumineux ou binaire).",
+    "auth": "accès refusé. Vérifiez OPENAI_API_KEY.",
+    "rate_limit": "limite de débit atteinte, réessayez plus tard.",
+    "limits": "document trop volumineux pour le service.",
+    "context": "document au-delà de la fenêtre de contexte du modèle.",
+    "refusal": "le modèle a refusé d'extraire ce document.",
+    "incomplete": "extraction non terminée par le service.",
+    "upstream": "erreur côté service externe.",
+    "timeout": "délai dépassé. Le traitement distant peut continuer et être facturé.",
+    "network": "service externe injoignable ou échec TLS.",
+    "response": "réponse invalide du service externe.",
+    "schema": "réponse hors du schéma demandé.",
+}
+
+
+def _charger_openai():
+    """Importe document-parsing/bridge/openai_responses.py à la demande.
+
+    Même paresse que docie_bridge_extraction._load_bridge : sans modèle externe
+    choisi, ce fichier n'a pas besoin d'exister. En conteneur, le Dockerfile le
+    copie à côté de celui-ci ; hors conteneur (tests, checkout), il est lu
+    depuis sa source unique.
+    """
+    try:
+        import openai_responses
+    except ImportError:
+        pont = Path(__file__).resolve().parents[1] / "document-parsing" / "bridge"
+        if str(pont) not in sys.path:
+            sys.path.insert(0, str(pont))
+        import openai_responses
+    return openai_responses
+
+
+def _extraire_par_openai(texte, mode_transport, schema, progress=None, session=None):
+    """Extraction par un fournisseur HORS ADBI (#194). Un appel, aucun repli.
+
+    Le texte du CV — donnée personnelle d'un CANDIDAT — quitte ADBI ici, et
+    seulement sur choix explicite d'un utilisateur averti (voir
+    choix_modele.EXTERNES et templates/index.html). Jamais de second essai par
+    un autre transport après un échec : rejouer un travail potentiellement
+    facturé est exactement ce que le README du pont interdit.
+
+    La réponse a la MÊME forme que celle de DocIE ({schema_name, result,
+    metadata}), donc `map_resume` s'applique sans adaptateur.
+    """
+    openai_responses = _charger_openai()
+    if progress:
+        progress("Envoi du texte au service externe (hors ADBI)")
+    try:
+        sortie = openai_responses.extraire_via_openai(
+            texte, mode=mode_transport, dynamic_schema=schema, session=session)
+    except Exception as exc:
+        code = getattr(exc, "code", None)
+        message = _MESSAGES_EXTERNE.get(code, "échec de l'extraction.")
+        raise DocIEError(f"Service externe (hors ADBI) : {message} [{code or 'inconnu'}]") from exc
+    data = map_resume(sortie, "adbi_resume")
+    meta = sortie.get("metadata") or {}
+    return data, {
+        # `transport` et `voie` : sans eux, app.py::process_cv retombait sur son
+        # défaut "docie" et étiquetait la fiche « DocIE / gpt-4.1-nano » — une
+        # lecture EXTERNE attribuée à DocIE, qui n'y était pour rien. Même
+        # famille de fausse attribution que les avertissements DocIE tus par
+        # `sans_preuve`, un étage plus haut.
+        "transport": "openai",
+        "voie": "texte",
+        "event_id": meta.get("request_id") or "",
+        "model_profile": meta.get("model") or "",
+        # Ni `validation` ni confiance par champ : le transport n'ancre rien et
+        # ne prétend pas le contraire. `sans_preuve` porte ce fait UNE fois, et
+        # docie_review s'en sert pour taire les deux avertissements DocIE, qui
+        # nommeraient sinon un service qui n'a pas participé.
+        "validation": None,
+        "schema_reported": meta.get("schema_reported"),
+        "sans_preuve": True,
+        "fournisseur": meta.get("fournisseur"),
+        "mode": meta.get("mode"),
+        "field_confidence": None,
+        "partiel": meta.get("partiel") or [],
+        "blocs_texte": None,
+        "troncature_possible": meta.get("troncature_possible"),
+    }
+
+
 def texte_document(path):
     """Texte local d'un PDF ou d'un DOCX, pour la voie TEXTE de DocIE.
 
@@ -326,6 +443,41 @@ def texte_document(path):
     if suffixe == ".docx":
         return document_payload(path)["text"], None
     raise DocIEError("Le mode inline accepte PDF texte et DOCX uniquement.")
+
+
+def repli_possible(exc):
+    """Un échec DocIE autorise-t-il un second essai chez un fournisseur externe ?
+
+    Faux pour les codes de `_CODES_SANS_REPLI`. Un échec sans code connu
+    (client historique, cause locale) est réputé rejouable : il n'a, lui, rien
+    laissé tourner à distance.
+    """
+    return getattr(exc, "code", None) not in _CODES_SANS_REPLI
+
+
+def repli_openai(file_path, mode_transport="rapide", progress=None, session=None):
+    """Second essai EXPLICITE chez un fournisseur externe, après un échec DocIE.
+
+    N'est appelé que si l'utilisateur a coché le repli au dépôt : le texte du CV
+    — donnée personnelle d'un CANDIDAT — quitte ADBI ici, et ce consentement est
+    donné AVANT l'envoi, pour ce dépôt-là.
+
+    Le texte est relu LOCALEMENT (`texte_document`, même règle que la voie texte
+    de DocIE) : rien n'est redemandé au service qui vient d'échouer, et le PDF
+    lui-même ne part jamais — seul son texte déjà extrait ici part.
+
+    Un document sans couche texte (scan) ne peut pas être secouru : il n'y a
+    rien à envoyer. L'échec le dit au lieu de laisser croire que le repli a été
+    tenté.
+    """
+    path = Path(file_path)
+    texte, raison = texte_document(path)
+    if raison == "page_sans_texte" or not (texte or "").strip():
+        raise DocIEError(
+            "Repli externe impossible : ce document n'a pas de couche texte "
+            "(scan ou page muette), il n'y a rien à envoyer.", "sans_texte")
+    schema = json.loads(Path(__file__).with_name("adbi_resume.schema.json").read_text(encoding="utf-8"))
+    return _extraire_par_openai(texte, mode_transport, schema, progress=progress, session=session)
 
 
 def extract_resume(file_path, progress=None, *, session=None, choix=None):
@@ -370,7 +522,15 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
         # Le catalogue n'a pas de voie studio : un choix n'y est jamais proposé.
         if mode != "inline":
             raise DocIEError("Choix du modèle impossible en mode studio : voie texte (inline) uniquement.")
-        payload["model_profile"] = choix.pour_texte(text)
+        identifiant = choix.pour_texte(text)
+        if choix.est_externe:
+            # Modèle HORS ADBI (#194) : le texte part chez le fournisseur, pas
+            # chez DocIE. `identifiant` est alors le MODE du transport
+            # (`rapide` / `raisonnement`) et non un profil DocIE — le poser dans
+            # `payload` demanderait à DocIE un modèle nommé « rapide ».
+            return _extraire_par_openai(text, choix.mode_externe, schema,
+                                        progress=progress, session=session)
+        payload["model_profile"] = identifiant
     headers = {}
     key = os.environ.get("DOCIE_API_KEY", "").strip()
     if key:
@@ -382,7 +542,7 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
     def call(method, route, **kwargs):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise DocIEError("DocIE : délai d'extraction dépassé. Le traitement distant peut continuer.")
+            raise DocIEError("DocIE : délai d'extraction dépassé. Le traitement distant peut continuer.", "timeout")
         try:
             response = session.request(method, base + route, headers=headers,
                                        timeout=(min(10, remaining), remaining if mode == "inline" else min(30, remaining)), allow_redirects=False, **kwargs)
@@ -449,7 +609,7 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
                 progress("Extraction et reconnaissance de texte dans DocIE")
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise DocIEError("DocIE : délai d'extraction dépassé. Le traitement distant peut continuer.")
+                raise DocIEError("DocIE : délai d'extraction dépassé. Le traitement distant peut continuer.", "timeout")
             time.sleep(min(2, remaining))
     finally:
         if owned:
