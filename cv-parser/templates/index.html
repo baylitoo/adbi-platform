@@ -270,7 +270,10 @@
     .fallback-choix input { margin: 1px 0 0; flex: none; accent-color: var(--blue); }
     .fallback-choix small { display: block; color: var(--muted); }
     .fallback-choix input:disabled ~ span { opacity: .5; cursor: not-allowed; }
-    .avis-externe { margin-top: 6px; color: var(--orange); }
+    /* Taille explicite : ce bloc vit HORS de .upload-zone, donc la règle
+       `.upload-zone .up-sub` (descendante) ne l'atteint jamais. Sans taille ici
+       il héritait de celle de la page et s'affichait en énorme. */
+    .avis-externe { margin-top: 6px; font-size: 11px; line-height: 1.45; color: var(--orange); }
 
     /* ── LIST VIEW ─────────────────────────────────────────────────────── */
     .cv-list { border: 1.5px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--card); }
@@ -571,9 +574,14 @@
          document d'entreprise. Un modèle externe fait SORTIR son texte d'ADBI ;
          l'utilisateur doit le savoir AU MOMENT DU CHOIX, pas dans une note lue
          après coup. Condition posée par le propriétaire pour ouvrir le CV aux
-         modèles hors ADBI. `display` et non l'attribut `hidden` : une règle CSS
-         sur .up-sub rendrait `hidden` sans effet. #}
-      <div id="modeleExterneAvis" class="up-sub avis-externe" role="status" style="display:none">
+         modèles hors ADBI.
+
+         La classe `.up-sub` a été retirée : elle est définie en DESCENDANT
+         (`.upload-zone .up-sub`) et ce bloc est hors de la zone de dépôt, donc
+         elle ne s'appliquait pas — le texte héritait de la taille de la page.
+         `.avis-externe` porte désormais sa propre taille, et l'attribut
+         `hidden` suffit (aucune règle ne pose `display` sur cette classe). #}
+      <div id="modeleExterneAvis" class="avis-externe" role="status" hidden>
         ⚠ Service externe (hors ADBI) : le texte du CV — donnée personnelle du
         candidat — sera envoyé à ce service. Aucune preuve ni confiance par
         champ : tout le résultat est à relire.
@@ -613,11 +621,15 @@
           function refleter() {
             var o = sel.options[sel.selectedIndex];
             var externe = !!(o && o.getAttribute('data-externe') === '1');
-            avis.style.display = externe ? '' : 'none';
+            avis.hidden = !externe;
             if (!bloc) return;
             // Modèle externe déjà choisi : le fallback n'a plus d'objet — la
-            // lecture part déjà chez le fournisseur. On désactive au lieu de
-            // laisser croire à un second appel.
+            // lecture part DÉJÀ chez le fournisseur. On MASQUE le panneau au
+            // lieu de l'afficher grisé : un bloc ouvert et entièrement
+            // désactivé, juste sous l'alerte, n'était que du bruit. Les choix
+            // restent désactivés par sécurité — un champ masqué mais actif
+            // partirait quand même avec le formulaire.
+            bloc.hidden = externe;
             var choix = bloc.querySelectorAll('input[name="fallback"]');
             for (var i = 0; i < choix.length; i++) {
               choix[i].disabled = externe;
