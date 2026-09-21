@@ -134,7 +134,10 @@ function refleterChoixExterne() {
   // objet quand un modele externe est DEJA choisi : on desactive les choix au
   // lieu de laisser croire a un second appel, et on revient a « DocIE seul ».
   const bloc = $("#fallback-bloc");
-  if (bloc) bloc.hidden = modelesExternes.size === 0;
+  // Masque quand aucun modele externe n'est propose, ET quand un modele externe
+  // est DEJA choisi : le fallback n'a alors plus d'objet, et un panneau grise
+  // juste sous l'alerte n'etait que du bruit.
+  if (bloc) bloc.hidden = modelesExternes.size === 0 || externeChoisi;
   for (const choix of document.querySelectorAll('input[name="fallback"]')) {
     choix.disabled = externeChoisi;
     if (externeChoisi && choix.value === "") choix.checked = true;
