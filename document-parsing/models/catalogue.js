@@ -112,7 +112,14 @@ function tacheDuCatalogue(catalogue, tache) {
  * `experimental` : vrai seulement si l'entrée de la tâche le déclare (le même
  * modèle peut être éprouvé sur une tâche et expérimental sur une autre).
  */
-function modelesConfigures(tache, voie, { env = process.env, catalogue = chargerCatalogue(), externes = false } = {}) {
+// `store:<nom>` si le modèle est prêt sur le store (voies texte/chat), sinon "".
+function identifiantStore(voie, modele, store) {
+  const nom = modele.store;
+  if (voie === "agent" || store == null || typeof nom !== "string" || !new Set(store).has(nom)) return "";
+  return "store:" + nom;
+}
+
+function modelesConfigures(tache, voie, { env = process.env, catalogue = chargerCatalogue(), externes = false, store = null } = {}) {
   const t = tacheDuCatalogue(catalogue, tache);
   const v = Object.hasOwn(t.voies, String(voie)) ? t.voies[voie] : null;
   if (!v) return [];
@@ -126,7 +133,7 @@ function modelesConfigures(tache, voie, { env = process.env, catalogue = charger
     // n'est jamais un défaut ni l'alternative DocIE, même mal placé.
     if (!modele || !modele.etiquettes.includes(t.usage) || modele.fournisseur) continue;
     const variable = nomVariable(voie, tache, entree.modele, { catalogue });
-    const brut = String((env || {})[variable] ?? "").trim();
+    const brut = String((env || {})[variable] ?? "").trim() || identifiantStore(voie, modele, store);
     if (!brut) continue;
     if (!identifiantValide(voie, brut)) {
       throw new CatalogueError("configuration", `Identifiant mal formé dans ${variable}.`, { variable });
@@ -224,8 +231,8 @@ function refusParLimite(modeleId, voie, document, { catalogue = chargerCatalogue
 }
 
 /** Modèles proposés pour (tache, voie) et, s'il est connu, ce document. Défaut d'abord. */
-function modelesOfferts(tache, voie, { env = process.env, document = null, catalogue = chargerCatalogue(), externes = false } = {}) {
-  return modelesConfigures(tache, voie, { env, catalogue, externes })
+function modelesOfferts(tache, voie, { env = process.env, document = null, catalogue = chargerCatalogue(), externes = false, store = null } = {}) {
+  return modelesConfigures(tache, voie, { env, catalogue, externes, store })
     .filter((o) => !refusParLimite(o.id, voie, document, { catalogue }));
 }
 
@@ -234,9 +241,9 @@ function modelesOfferts(tache, voie, { env = process.env, document = null, catal
  * Jamais de substitution : non configuré ou inconnu -> `modele_non_propose` ;
  * limite dépassée -> `limite` (message nommant la limite).
  */
-function choisirModele(tache, voie, { env = process.env, document = null, modele, catalogue = chargerCatalogue(), externes = false } = {}) {
+function choisirModele(tache, voie, { env = process.env, document = null, modele, catalogue = chargerCatalogue(), externes = false, store = null } = {}) {
   const t = tacheDuCatalogue(catalogue, tache);
-  const offre = modelesConfigures(tache, voie, { env, catalogue, externes }).find((o) => o.id === modele);
+  const offre = modelesConfigures(tache, voie, { env, catalogue, externes, store }).find((o) => o.id === modele);
   if (!offre) {
     // L'identifiant demandé vient du navigateur : recopié seulement s'il est
     // un identifiant du catalogue.
@@ -252,6 +259,25 @@ function choisirModele(tache, voie, { env = process.env, document = null, modele
 }
 
 /**
+ * Modèles du store utilisables en chat : ceux du catalogue étiquetés `chat`
+ * d'abord, puis les découverts (aptes, hors catalogue). `releve` : entrées
+ * projetées du store (pont `storeUtilisable`) ; un modèle du catalogue sans
+ * étiquette `chat` n'est jamais proposé, même apte.
+ */
+function modelesChat(releve, { catalogue = chargerCatalogue() } = {}) {
+  const parStore = new Map(Object.entries(catalogue.modeles).filter(([, m]) => typeof m.store === "string").map(([id, m]) => [m.store, { id, m }]));
+  const prets = new Map((Array.isArray(releve) ? releve : []).filter((e) => e && typeof e.nom === "string" && e.utilisable !== false).map((e) => [e.nom, e]));
+  const offres = [];
+  for (const [nom, { id, m }] of parStore) {
+    if (prets.has(nom) && m.etiquettes.includes("chat")) offres.push({ id, libelle: m.libelle, identifiant: "store:" + nom, decouvert: false });
+  }
+  for (const nom of [...prets.keys()].sort()) {
+    if (!parStore.has(nom) && prets.get(nom).chat === true) offres.push({ id: null, libelle: nom, identifiant: "store:" + nom, decouvert: true });
+  }
+  return offres;
+}
+
+/**
  * Le modèle qui a RÉELLEMENT servi, lu dans les métadonnées du bridge :
  * `metadata.model` (voie texte : `model_profile` de la réponse) ou
  * `metadata.agent` (voie agent). Rapproché des identifiants configurés, avec
@@ -259,7 +285,7 @@ function choisirModele(tache, voie, { env = process.env, document = null, modele
  * libellé du modèle demandé à la place de ce que DocIE a répondu.
  * -> { id, libelle, identifiant } ou null si rien n'est rapporté.
  */
-function modeleServi(tache, voie, { env = process.env, metadata = {}, catalogue = chargerCatalogue() } = {}) {
+function modeleServi(tache, voie, { env = process.env, metadata = {}, catalogue = chargerCatalogue(), store = null } = {}) {
   const brut = voie === "agent" ? (metadata || {}).agent : (metadata || {}).model;
   if (typeof brut !== "string" || !brut.trim()) return null;
   if ((metadata || {}).fournisseur != null) {
@@ -273,7 +299,7 @@ function modeleServi(tache, voie, { env = process.env, metadata = {}, catalogue 
     return { id: null, libelle: brut, identifiant: brut };
   }
   const nu = (s) => s.trim().replace(/^store:/, "");
-  for (const o of modelesConfigures(tache, voie, { env, catalogue })) {
+  for (const o of modelesConfigures(tache, voie, { env, catalogue, store })) {
     if (nu(o.identifiant) === nu(brut)) return { id: o.id, libelle: o.libelle, identifiant: brut };
   }
   return { id: null, libelle: brut, identifiant: brut };
@@ -286,6 +312,7 @@ module.exports = {
   choisirModele,
   refusParLimite,
   modeleServi,
+  modelesChat,
   compterLignesNonVides,
   nomVariable,
   CatalogueError,

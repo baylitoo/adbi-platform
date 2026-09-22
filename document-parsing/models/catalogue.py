@@ -105,13 +105,23 @@ def _offre_externe(catalogue: dict, t: dict, entree: dict, voie: str, env: Mappi
     }
 
 
+def identifiant_store(voie: str, modele: dict, store) -> str:
+    """``store:<nom>`` si le modèle est prêt sur le store (voies texte/chat), sinon ``""``."""
+    nom = modele.get("store")
+    if voie == "agent" or store is None or not isinstance(nom, str) or nom not in set(store):
+        return ""
+    return "store:" + nom
+
+
 def modeles_configures(tache: str, voie: str, env: Mapping[str, str] | None = None,
-                       catalogue: dict | None = None, externes: bool = False) -> list[dict]:
+                       catalogue: dict | None = None, externes: bool = False, store=None) -> list[dict]:
     """Modèles configurés pour (tache, voie), défaut d'abord, sans regarder le document.
 
     ``experimental`` : vrai seulement si l'entrée de la tâche le déclare.
     ``externes`` : le consommateur sait appeler un modèle hors ADBI ; sans cette
     option, aucune offre externe, même avec la clé (sortie inchangée).
+    ``store`` : noms des modèles prêts sur le store DocIE ; sans variable, un
+    modèle dont le ``store`` y figure est proposé sous ``store:<nom>``.
     """
     catalogue = catalogue or charger_catalogue()
     env = os.environ if env is None else env
@@ -129,7 +139,7 @@ def modeles_configures(tache: str, voie: str, env: Mapping[str, str] | None = No
         if not modele or t["usage"] not in modele["etiquettes"] or modele.get("fournisseur"):
             continue
         variable = nom_variable(voie, tache, entree["modele"], catalogue)
-        brut = str(env.get(variable) or "").strip()
+        brut = str(env.get(variable) or "").strip() or identifiant_store(voie, modele, store)
         if not brut:
             continue
         if not _identifiant_valide(voie, brut):
@@ -192,20 +202,20 @@ def refus_par_limite(modele_id: str, voie: str, document: Mapping[str, int] | No
 
 def modeles_offerts(tache: str, voie: str, env: Mapping[str, str] | None = None,
                     document: Mapping[str, int] | None = None, catalogue: dict | None = None,
-                    externes: bool = False) -> list[dict]:
+                    externes: bool = False, store=None) -> list[dict]:
     """Modèles proposés pour (tache, voie) et, s'il est connu, ce document. Défaut d'abord."""
     catalogue = catalogue or charger_catalogue()
-    return [o for o in modeles_configures(tache, voie, env, catalogue, externes)
+    return [o for o in modeles_configures(tache, voie, env, catalogue, externes, store)
             if refus_par_limite(o["id"], voie, document, catalogue) is None]
 
 
 def choisir_modele(tache: str, voie: str, modele: str, env: Mapping[str, str] | None = None,
                    document: Mapping[str, int] | None = None, catalogue: dict | None = None,
-                   externes: bool = False) -> dict:
+                   externes: bool = False, store=None) -> dict:
     """Le modèle demandé, vérifié sur le document réel. Jamais de substitution."""
     catalogue = catalogue or charger_catalogue()
     t = _tache(catalogue, tache)
-    offre = next((o for o in modeles_configures(tache, voie, env, catalogue, externes) if o["id"] == modele), None)
+    offre = next((o for o in modeles_configures(tache, voie, env, catalogue, externes, store) if o["id"] == modele), None)
     if offre is None:
         # Un modèle externe refusé n'est pas nommé : message d'avant, sans clé.
         connu = catalogue["modeles"].get(modele) if isinstance(modele, str) else None
@@ -217,8 +227,27 @@ def choisir_modele(tache: str, voie: str, modele: str, env: Mapping[str, str] | 
     return offre
 
 
+def modeles_chat(releve, catalogue: dict | None = None) -> list[dict]:
+    """Modèles du store utilisables en chat : ceux du catalogue étiquetés ``chat`` d'abord, puis les découverts (aptes, hors catalogue).
+
+    ``releve`` : entrées projetées du store (pont ``store_utilisable``) ; un modèle
+    du catalogue sans étiquette ``chat`` n'est jamais proposé, même apte.
+    """
+    catalogue = catalogue or charger_catalogue()
+    par_store = {m["store"]: (mid, m) for mid, m in catalogue["modeles"].items() if isinstance(m.get("store"), str)}
+    prets = {e["nom"]: e for e in releve if isinstance(e, dict) and isinstance(e.get("nom"), str) and e.get("utilisable", True)}
+    offres = []
+    for nom, (mid, m) in par_store.items():
+        if nom in prets and "chat" in m["etiquettes"]:
+            offres.append({"id": mid, "libelle": m["libelle"], "identifiant": "store:" + nom, "decouvert": False})
+    for nom in sorted(prets):
+        if nom not in par_store and prets[nom].get("chat") is True:
+            offres.append({"id": None, "libelle": nom, "identifiant": "store:" + nom, "decouvert": True})
+    return offres
+
+
 def modele_servi(tache: str, voie: str, metadata: Mapping[str, Any] | None,
-                 env: Mapping[str, str] | None = None, catalogue: dict | None = None) -> dict | None:
+                 env: Mapping[str, str] | None = None, catalogue: dict | None = None, store=None) -> dict | None:
     """Le modèle qui a réellement servi (``metadata.model`` voie texte, ``metadata.agent`` voie agent).
 
     Rapproché des identifiants configurés, avec ou sans ``store:`` ; sans
@@ -240,7 +269,7 @@ def modele_servi(tache: str, voie: str, metadata: Mapping[str, Any] | None,
         s = s.strip()
         return s[len("store:"):] if s.startswith("store:") else s
 
-    for o in modeles_configures(tache, voie, env, catalogue):
+    for o in modeles_configures(tache, voie, env, catalogue, store=store):
         if nu(o["identifiant"]) == nu(brut):
             return {"id": o["id"], "libelle": o["libelle"], "identifiant": brut}
     return {"id": None, "libelle": brut, "identifiant": brut}

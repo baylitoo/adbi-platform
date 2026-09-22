@@ -396,6 +396,29 @@ function chargerPontDocie() {
   return null;
 }
 
+function chargerCatalogueModeles() {
+  const nodePath = require("node:path");
+  for (const chemin of ["/document-parsing/models/catalogue.js", nodePath.join(__dirname, "..", "document-parsing", "models", "catalogue.js")]) {
+    try { return require(chemin); } catch {}
+  }
+  return null;
+}
+
+// Chaîne de chat : modèles prêts du store DocIE (catalogue `chat` puis découverts), sinon ADBI_LLM_MODELS.
+async function modelesChaineLlm() {
+  const pont = chargerPontDocie();
+  const catalogue = chargerCatalogueModeles();
+  if (pont && catalogue && (process.env.DOCIE_BASE_URL || "").trim()) {
+    try {
+      const offres = catalogue.modelesChat(await pont.storeUtilisable({ env: process.env }));
+      if (offres.length) return offres.map((o) => o.identifiant);
+    } catch (e) {
+      console.error("[llm] store DocIE illisible : " + e.message);
+    }
+  }
+  return LLM_MODELES;
+}
+
 async function listerModelesDocie() {
   const pont = chargerPontDocie();
   if (!pont) return { configure: false, erreur: "Pont DocIE absent de cette image.", modeles: [] };
@@ -601,9 +624,10 @@ const serveur = http.createServer(async (req, rep) => {
   }
 
   if (chemin === "/api/llm/chaine" && req.method === "GET") {
+    const modeles = await modelesChaineLlm();
     return repondreJson(rep, 200, {
-      configure: !!LLM_BASE_URL && LLM_MODELES.length > 0,
-      modeles: LLM_MODELES,
+      configure: !!LLM_BASE_URL && modeles.length > 0,
+      modeles,
     });
   }
 
@@ -622,12 +646,13 @@ const serveur = http.createServer(async (req, rep) => {
       // writeHead exige un entier, on ne relaie donc que notre propre 413.
       return repondreJson(rep, err.code === 413 ? 413 : 400, { ok: false, erreur: err.message });
     }
-    const modele = (corps.modele || LLM_MODELES[0] || "").trim();
+    const chaine = await modelesChaineLlm();
+    const modele = (corps.modele || chaine[0] || "").trim();
     if (!modele) return repondreJson(rep, 200, { ok: false, erreur: "Aucun modèle à tester." });
-    // N'accepte que la chaîne configurée (ADBI_LLM_MODELS) : la route est
-    // publique, sans ce filtre elle relaierait un modèle arbitraire choisi
-    // par l'appelant vers la passerelle.
-    if (!LLM_MODELES.includes(modele)) {
+    // N'accepte que la chaîne proposée (store DocIE ou ADBI_LLM_MODELS) : la
+    // route est publique, sans ce filtre elle relaierait un modèle arbitraire
+    // choisi par l'appelant vers la passerelle.
+    if (!chaine.includes(modele)) {
       return repondreJson(rep, 200, { ok: false, modele, erreur: "Modèle non configuré." });
     }
     try {

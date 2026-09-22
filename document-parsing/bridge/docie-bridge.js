@@ -950,6 +950,8 @@ function projeterStore(entree) {
   const endpoint = placement.endpoint;
   const chaine = (v) => (typeof v === "string" ? v : null);
   const nombre = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const drapeau = (cle) => entree[cle] === true;
+  // Aptitudes par exclusion (contrat DocIE) : embedding/reranker ne répondent jamais en chat ni en extraction.
   return {
     nom: chaine(entree.name),
     famille: chaine(entree.family),
@@ -958,18 +960,46 @@ function projeterStore(entree) {
     utilisable: etat === "ready" && typeof endpoint === "string" && endpoint.length > 0,
     tokens_par_seconde: nombre(placement.tokens_per_second),
     slots: Number.isInteger(placement.slot_count) ? placement.slot_count : null,
+    chat: !drapeau("embedding") && !drapeau("reranker") && !drapeau("analyzer"),
+    extraction: !drapeau("embedding") && !drapeau("reranker") && (!drapeau("analyzer") || drapeau("structured_extraction")),
+    vision: drapeau("vision"),
   };
 }
 
 // GET /v1/serving/store : ce qui EST déployé, et s'il est prêt (placement.state "ready" + endpoint).
-async function listStore({ env = process.env, fetchImpl = fetch } = {}) {
-  const { base, key, timeout } = connection(env);
-  const body = await getJson(base + "/v1/serving/store", { "x-api-key": key }, key, Math.min(timeout, 30), fetchImpl);
+async function listStore({ env = process.env, fetchImpl = fetch, timeout = null } = {}) {
+  const { base, key, timeout: delai } = connection(env);
+  const body = await getJson(base + "/v1/serving/store", { "x-api-key": key }, key, Math.min(delai, timeout || 30), fetchImpl);
   if (!Array.isArray(body)) fail("response", "DocIE returned an invalid store listing.");
   return body.filter(object).map(projeterStore);
 }
 
+const STORE_CACHE_MS = 5 * 60 * 1000;
+const STORE_TIMEOUT_S = 5;
+const storeCache = { quand: null, modeles: [] };
+
+// Modèles prêts du store (cache 5 min par processus) ; DocIE injoignable ou non configuré : dernier relevé, sinon [].
+async function storeUtilisable({ env = process.env, fetchImpl = fetch, maintenant = Date.now() } = {}) {
+  if (storeCache.quand !== null && maintenant - storeCache.quand < STORE_CACHE_MS) return storeCache.modeles.slice();
+  if (!String(env.DOCIE_BASE_URL || "").trim()) return storeCache.modeles.slice();
+  try {
+    const modeles = (await listStore({ env, fetchImpl, timeout: STORE_TIMEOUT_S })).filter((m) => m.utilisable);
+    Object.assign(storeCache, { quand: maintenant, modeles });
+  } catch (e) {
+    if (!(e instanceof DocIEBridgeError)) throw e;
+    console.error("[docie-bridge] store DocIE non relu (" + e.code + ") : dernier relevé conservé");
+    storeCache.quand = maintenant;
+  }
+  return storeCache.modeles.slice();
+}
+
+// Dernier relevé sans appel réseau : pour les chargeurs synchrones, après un storeUtilisable() en amont.
+function storeUtilisableConnu() {
+  return storeCache.modeles.slice();
+}
+
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload, listStore, projeterStore,
+  storeUtilisable, storeUtilisableConnu,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
   DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
   MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };

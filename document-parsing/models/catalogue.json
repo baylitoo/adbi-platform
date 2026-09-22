@@ -3,6 +3,7 @@
     "Catalogue des modèles proposés par action (#194, « Liste retenue (2026-09-15) »).",
     "Une seule liste : chaque modèle porte ses étiquettes (extraction et/ou chat) ; une tâche d'un usage ne propose jamais un modèle sans l'étiquette de cet usage.",
     "Le dépôt porte les rôles, les libellés et les conditions ; les identifiants réels viennent de l'environnement de déploiement (motifs sous `variables`). Un modèle sans identifiant configuré pour une voie n'est pas proposé sur cette voie.",
+    "`store` d'un modèle : son nom sur le store DocIE (GET /v1/serving/store). Voies texte et chat : sans variable d'environnement, un modèle est proposé dès que son `store` figure dans le relevé des modèles prêts passé aux chargeurs (option `store`), sous l'identifiant `store:<nom>`. La variable, si posée, l'emporte. Voie agent : variable seule, le store ne liste pas les agents.",
     "Aucun identifiant configuré pour une tâche et une voie : le consommateur garde son comportement d'avant le catalogue (DOCIE_MODEL_PROFILE, DOCIE_AGENT_<TYPE>).",
     "`limites` d'un modèle : évaluées par les chargeurs (catalogue.js, catalogue.py) sur le document réel, pour toutes les tâches. `prerequis` : condition de déploiement ou de contrôle côté ADBI, lue par un humain, jamais évaluée ici.",
     "`experimental: true` sur une entrée de tâche : le modèle y est proposé mais signalé « expérimental » dans les sélecteurs (aucune lecture réelle réussie sur ce type de document) ; exposé par les deux chargeurs, jamais évalué ici.",
@@ -22,18 +23,21 @@
     "lfm25_2_6b": {
       "libelle": "LFM2.5 2.6B",
       "description": "Rapide",
+      "store": "lfm2.5-2.6b",
       "etiquettes": ["extraction", "chat"],
       "limites": { "texte": { "lignes_non_vides_max": 800 } }
     },
     "nuextract3": {
       "libelle": "NuExtract3",
       "description": "Précis mais lent — plusieurs minutes",
+      "store": "nuextract3",
       "etiquettes": ["extraction"],
       "limites": { "agent": { "pages_max": 8 } }
     },
     "lfm25_350m": {
       "libelle": "LFM2.5 350M",
       "description": "Très rapide — documents simples",
+      "store": "lfm2.5-350m",
       "etiquettes": ["extraction"],
       "limites": { "texte": { "lignes_non_vides_max": 800 } }
     },

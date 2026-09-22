@@ -26,9 +26,21 @@ const path = require("path");
 // la même profondeur relative dans l'image Docker (Dockerfile, étape 6).
 const CHEMIN_CATALOGUE = path.join(__dirname, "..", "..", "document-parsing", "models", "catalogue.js");
 
+const CHEMIN_PONT = path.join(__dirname, "..", "..", "document-parsing", "bridge", "docie-bridge.js");
+
 // require() paresseux : un service sans DocIE ne dépend jamais du fichier.
 function chargerCatalogue() {
   return require(CHEMIN_CATALOGUE);
+}
+
+// Noms des modèles prêts sur le store DocIE, dernier relevé du pont ; pont absent : [].
+function storePret() {
+  try { return require(CHEMIN_PONT).storeUtilisableConnu().map((m) => m.nom).filter(Boolean); } catch { return []; }
+}
+
+// Relit le store (cache 5 min du pont) avant un rendu de sélecteur ou une vérification.
+async function rafraichirStore(env = process.env) {
+  try { await require(CHEMIN_PONT).storeUtilisable({ env }); } catch { /* relevé précédent conservé */ }
 }
 
 // Tâches de ce service qui ont un sélecteur, et leur voie DocIE par défaut (#194 :
@@ -118,7 +130,7 @@ const EXTERNES = true;
 function offresPubliques(tache, { env = process.env, voie = null } = {}) {
   try {
     const voieRetenue = voieDe(tache, voie);
-    return chargerCatalogue().modelesOfferts(tache, voieRetenue, { env, externes: voieRetenue === "texte" && EXTERNES }).map((o) => ({
+    return chargerCatalogue().modelesOfferts(tache, voieRetenue, { env, externes: voieRetenue === "texte" && EXTERNES, store: storePret() }).map((o) => ({
       id: o.id,
       libelle: o.libelle,
       description: o.description,
@@ -138,7 +150,7 @@ function offresPubliques(tache, { env = process.env, voie = null } = {}) {
 function verifierDemande(tache, modele, { env = process.env } = {}) {
   try {
     const voie = voieDe(tache);
-    return chargerCatalogue().choisirModele(tache, voie, { env, modele, externes: voie === "texte" && EXTERNES });
+    return chargerCatalogue().choisirModele(tache, voie, { env, modele, externes: voie === "texte" && EXTERNES, store: storePret() });
   } catch (e) {
     throw traduire(e);
   }
@@ -149,7 +161,7 @@ function choisirPourTexte(tache, modele, texte, { env = process.env } = {}) {
   try {
     const catalogue = chargerCatalogue();
     return catalogue.choisirModele(tache, voieDe(tache, "texte"), {
-      env, modele, externes: EXTERNES, document: { lignesNonVides: catalogue.compterLignesNonVides(texte) },
+      env, modele, externes: EXTERNES, document: { lignesNonVides: catalogue.compterLignesNonVides(texte) }, store: storePret(),
     });
   } catch (e) {
     throw traduire(e);
@@ -177,9 +189,10 @@ function choisirPourAgent(tache, modele, { pages = null } = {}, { env = process.
     const catalogue = chargerCatalogue();
     const voie = voieDe(tache, "agent");
     const document = typeof pages === "number" ? { pages } : null;
-    const surAgent = catalogue.modelesConfigures(tache, voie, { env }).some((o) => o.id === modele);
+    const store = storePret();
+    const surAgent = catalogue.modelesConfigures(tache, voie, { env, store }).some((o) => o.id === modele);
     if (!surAgent && voiesDe(tache).includes("texte")
-        && catalogue.modelesConfigures(tache, "texte", { env }).some((o) => o.id === modele)) {
+        && catalogue.modelesConfigures(tache, "texte", { env, store }).some((o) => o.id === modele)) {
       // Lecture d'image configurée ET admise pour ce fichier (8 pages au plus) :
       // le message la nomme. Aucune : saisie manuelle, message constant.
       const vision = catalogue.modelesOfferts(tache, voie, { env, document });
@@ -198,7 +211,7 @@ function choisirPourAgent(tache, modele, { pages = null } = {}, { env = process.
  */
 function defautSansChoix(tache, voie, document = null, { env = process.env } = {}) {
   try {
-    return chargerCatalogue().modelesOfferts(tache, voieDe(tache, voie), { env, document })
+    return chargerCatalogue().modelesOfferts(tache, voieDe(tache, voie), { env, document, store: storePret() })
       .find((o) => o.role === "defaut") || null;
   } catch (e) {
     throw traduire(e);
@@ -217,7 +230,7 @@ function compterLignesNonVides(texte) {
  * le nom rapporté par DocIE.
  */
 function modeleServiPublic(tache, metadata, { env = process.env, voie = null } = {}) {
-  const servi = chargerCatalogue().modeleServi(tache, voieDe(tache, voie), { env, metadata });
+  const servi = chargerCatalogue().modeleServi(tache, voieDe(tache, voie), { env, metadata, store: storePret() });
   return servi ? { id: servi.id, libelle: servi.libelle } : null;
 }
 
@@ -251,5 +264,7 @@ module.exports = {
   compterLignesNonVides,
   modeleServiPublic,
   exigeControleIbanBic,
+  rafraichirStore,
+  storePret,
   CHEMIN_CATALOGUE,
 };

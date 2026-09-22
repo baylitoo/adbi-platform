@@ -22,6 +22,8 @@ COPY --chown=node:node modules.docker.json modules.json
 COPY --from=auth --chown=node:node . /auth
 # Pont DocIE partage (additional_contexts: bridge) : le hub liste le store DocIE.
 COPY --from=bridge --chown=node:node . /document-parsing/bridge
+# Catalogue des modeles (additional_contexts: modeles) : la chaine de chat suit le store.
+COPY --from=modeles --chown=node:node . /document-parsing/models
 
 ENV NODE_ENV=production
 # Sans ca, server.js lie 127.0.0.1 (defaut poste de dev) : injoignable via le
