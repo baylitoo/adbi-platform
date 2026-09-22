@@ -56,7 +56,7 @@ function monterPreremplissage(app, {
    * Le resultat de la tache est exactement l'ancienne reponse synchrone :
    * { requestId, values, warnings, errors, ok }. Rien n'est ecrit en base.
    */
-  app.post("/api/contracts/importer/extraire", (req, res) => {
+  app.post("/api/contracts/importer/extraire", async (req, res) => {
     const { mimeType, dataBase64 } = req.body || {};
     if (!isEnabled(env)) {
       return res.status(400).json({ error: MESSAGES_SERVICE.disabled, code: "disabled" });
@@ -89,6 +89,7 @@ function monterPreremplissage(app, {
     let modele;
     try {
       modele = choixModele.demandeModele(req.body);
+      if (modele !== null) await choixModele.rafraichirStore(env);
       if (modele !== null) choixModele.verifierDemande("contract", modele, { env });
     } catch (e) {
       if (e && e.name === "ErreurChoixModele") return res.status(400).json({ error: e.message, code: e.code });
@@ -150,7 +151,7 @@ function monterPreremplissage(app, {
    * aucun selecteur et n'envoie aucun `modele`, soit exactement le comportement
    * d'avant.
    */
-  app.get("/api/modeles", (req, res) => {
+  app.get("/api/modeles", async (req, res) => {
     const tache = String((req.query && req.query.tache) || "");
     if (!Object.hasOwn(choixModele.TACHES, tache)) {
       return res.status(400).json({ error: "Tâche sans sélecteur de modèle.", code: "tache" });
@@ -162,6 +163,7 @@ function monterPreremplissage(app, {
     const entete = voie !== null ? { tache, voie } : { tache };
     if (!isEnabled(env)) return res.json({ ...entete, modeles: [] });
     try {
+      await choixModele.rafraichirStore(env);
       res.json({ ...entete, modeles: choixModele.offresPubliques(tache, { env, voie }) });
     } catch (e) {
       journal("[modeles]", e);

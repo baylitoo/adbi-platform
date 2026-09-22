@@ -276,26 +276,18 @@ def test_llm():
 # réponse. Un service en panne, à court de quota ou dont la clé a expiré est
 # simplement sauté, sans que l'analyse échoue.
 
-def _masquer(cle: str) -> str:
-    """Une clé ne repart jamais entière vers le navigateur."""
-    if not cle:
-        return ""
-    return f"{cle[:6]}…{cle[-4:]}" if len(cle) > 14 else "…"
-
-
 @settings_bp.route("/api/settings/llm/chaine", methods=["GET"])
 @require_superuser
 def get_llm_chaine():
+    """Ordre et activation des modèles de chat ; ni URL ni clé : elles ne quittent jamais le serveur."""
     entrees = llm_cascade.charger_chaine()
     return jsonify({
         "personnalisee": llm_cascade.CHAINE_FICHIER.exists(),
         "entrees": [{
-            "actif":  e.get("actif", True),
-            "nom":    e.get("nom", ""),
-            "url":    e.get("url", ""),
-            "modele": e.get("modele", ""),
-            "cle_masquee": _masquer(e.get("cle", "")),
-            "a_une_cle":   bool(e.get("cle")),
+            "actif":     e.get("actif", True),
+            "nom":       e.get("nom", ""),
+            "modele":    e.get("modele", ""),
+            "decouvert": bool(e.get("decouvert")),
         } for e in entrees],
     })
 
@@ -303,29 +295,15 @@ def get_llm_chaine():
 @settings_bp.route("/api/settings/llm/chaine", methods=["PUT"])
 @require_superuser
 def put_llm_chaine():
-    """
-    Remplace la chaîne complète : ordre, activation, ajouts et suppressions.
-
-    Une entrée dont la clé n'est pas renvoyée (le navigateur n'a reçu qu'un
-    masque) conserve la clé déjà enregistrée : modifier l'ordre ne doit pas
-    effacer les clés au passage.
-    """
+    """Remplace l'ordre et l'activation ; un modèle qui n'est pas proposé par la passerelle est refusé."""
     data = request.json or {}
     recues = data.get("entrees")
-    if not isinstance(recues, list):
+    if not isinstance(recues, list) or not all(isinstance(e, dict) for e in recues):
         return jsonify({"error": "Liste d'entrées attendue"}), 400
-
-    anciennes = {(e.get("url"), e.get("modele")): e.get("cle", "")
-                 for e in llm_cascade.charger_chaine()}
-
-    fusionnees = []
-    for e in recues:
-        cle = (e.get("cle") or "").strip()
-        if not cle:
-            cle = anciennes.get((e.get("url"), e.get("modele")), "")
-        fusionnees.append({**e, "cle": cle})
-
-    entrees = llm_cascade.enregistrer_chaine(fusionnees)
+    try:
+        entrees = llm_cascade.enregistrer_chaine(recues)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     return jsonify({"success": True, "nombre": len(entrees)})
 
 
@@ -339,7 +317,7 @@ def reset_llm_chaine():
 @settings_bp.route("/api/settings/docie/modeles", methods=["GET"])
 @require_superuser
 def get_docie_modeles():
-    """Modèles du store DocIE, lus en direct : de quoi remplir DOCIE_MODELE_* sans deviner."""
+    """Modèles du store DocIE, lus en direct : ce que les sélecteurs et la chaîne proposent maintenant."""
     import docie_client
     try:
         return jsonify({"modeles": docie_client.lister_modeles_store()})

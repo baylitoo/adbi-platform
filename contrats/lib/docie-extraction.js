@@ -360,6 +360,7 @@ async function extractViaTexte(kind, { dataBase64, mimeType, items, expectedName
   const mime = sniffMime(mimeType, buffer);
   const verdict = await coucheTexteUtilisable(buffer, mime);
   if (!verdict.ok) return { analysis: null, raisonRepli: verdict.raison };
+  if (modele !== null) await choixModele.rafraichirStore(env);
   const analysis = await extraireTexteLu(kind, verdict.texte, { items, expectedName, modele }, deps);
   return { analysis, raisonRepli: null };
 }
@@ -429,6 +430,7 @@ async function extractParType(kind, body = {}, modele = null, deps = {}) {
   const { dataBase64, mimeType, items, expectedName } = body;
   if (!dataBase64) throw new Error("Aucun fichier reçu.");
   const env = deps.env || process.env;
+  await choixModele.rafraichirStore(env);
   // Rien de configuré pour la voie texte et aucun choix : chemin d'avant, octet
   // pour octet (pas de lecture de la couche texte, agent DOCIE_AGENT_KBIS).
   if (modele === null && !choixModele.defautSansChoix(kind, "texte", null, { env })) {

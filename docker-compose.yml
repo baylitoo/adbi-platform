@@ -30,6 +30,7 @@ services:
       additional_contexts:
         auth: ./auth
         bridge: ./document-parsing/bridge
+        modeles: ./document-parsing/models
     environment:
       # Liste du store DocIE dans le voyant IA du hub (pont partage, GET /v1/serving/store).
       DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
