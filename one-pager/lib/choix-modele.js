@@ -47,6 +47,21 @@ function chargerCatalogue() {
   return require("../../document-parsing/models/catalogue");
 }
 
+function chargerPont() {
+  // eslint-disable-next-line global-require
+  return require("../../document-parsing/bridge/docie-bridge");
+}
+
+// Noms des modeles prets sur le store DocIE, dernier releve du pont ; pont absent : [].
+function storePret() {
+  try { return chargerPont().storeUtilisableConnu().map((m) => m.nom).filter(Boolean); } catch { return []; }
+}
+
+// Relit le store (cache 5 min du pont) avant un rendu de selecteur ou une verification.
+async function rafraichirStore(env = process.env) {
+  try { await chargerPont().storeUtilisable({ env }); } catch { /* releve precedent conserve */ }
+}
+
 function docieActif(env) {
   // eslint-disable-next-line global-require
   return require("./import-pipeline").docieActif(env);
@@ -61,9 +76,10 @@ function docieActif(env) {
 function offresParVoie(env = process.env) {
   if (!docieActif(env)) return { texte: [], agent: [] };
   const catalogue = chargerCatalogue();
+  const store = storePret();
   const offres = {};
   for (const voie of ["texte", "agent"]) {
-    offres[voie] = catalogue.modelesOfferts(TACHE, voie, { env, externes: voie === "texte" && EXTERNES }).map((o) => o.id);
+    offres[voie] = catalogue.modelesOfferts(TACHE, voie, { env, externes: voie === "texte" && EXTERNES, store }).map((o) => o.id);
   }
   return offres;
 }
@@ -72,11 +88,12 @@ function offresParVoie(env = process.env) {
 function modelesProposes(env = process.env) {
   if (!docieActif(env)) return [];
   const catalogue = chargerCatalogue();
+  const store = storePret();
   const vus = new Map();
   // Voies des formats acceptes, reunies : le format du prochain fichier n'est
   // pas connu ; un modele configure sur une seule voie est verifie a l'envoi.
   for (const voie of ["texte", "agent"]) {
-    for (const o of catalogue.modelesOfferts(TACHE, voie, { env, externes: voie === "texte" && EXTERNES })) {
+    for (const o of catalogue.modelesOfferts(TACHE, voie, { env, externes: voie === "texte" && EXTERNES, store })) {
       if (!vus.has(o.id)) {
         vus.set(o.id, { id: o.id, libelle: o.libelle, description: o.description, role: o.role, experimental: o.experimental === true });
       }
@@ -94,7 +111,7 @@ function choisir(voie, modele, document, env = process.env) {
   const catalogue = chargerCatalogue();
   const illisible = voie === "agent" && document.pages == null;
   const offre = catalogue.choisirModele(TACHE, voie, {
-    env, modele, document: illisible ? null : document, externes: voie === "texte" && EXTERNES,
+    env, modele, document: illisible ? null : document, externes: voie === "texte" && EXTERNES, store: storePret(),
   });
   if (illisible && typeof offre.limites.pages_max === "number") {
     // Une limite non verifiable n'est pas une limite respectee.
@@ -131,7 +148,7 @@ async function compterPages(buffer) {
 function modeleServi(voie, metadata, env = process.env) {
   let servi;
   try {
-    servi = chargerCatalogue().modeleServi(TACHE, voie, { env, metadata });
+    servi = chargerCatalogue().modeleServi(TACHE, voie, { env, metadata, store: storePret() });
   } catch {
     const brut = voie === "agent" ? (metadata || {}).agent : (metadata || {}).model;
     servi = typeof brut === "string" && brut.trim() ? { id: null, libelle: brut } : null;
@@ -150,4 +167,4 @@ function estExterne(offre) {
   return Boolean(offre && typeof offre.fournisseur === "string" && offre.fournisseur);
 }
 
-module.exports = { modelesProposes, offresParVoie, choisir, estExterne, compterLignesNonVides, compterPages, modeleServi, chargerCatalogue, TACHE };
+module.exports = { modelesProposes, offresParVoie, choisir, estExterne, compterLignesNonVides, compterPages, modeleServi, chargerCatalogue, rafraichirStore, storePret, TACHE };

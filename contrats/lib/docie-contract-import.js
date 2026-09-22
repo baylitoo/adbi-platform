@@ -465,6 +465,7 @@ async function extractContractValues(body = {}, deps = {}) {
 // lignes non vides sur le texte réellement envoyé. `modele` du résultat : le
 // modèle que DocIE dit avoir servi (metadata.model), pas celui demandé.
 async function extraireParModele(buffer, mime, modele, env, deps) {
+  await choixModele.rafraichirStore(env);
   choixModele.verifierDemande(DOCIE_KIND, modele, { env });
   const lecture = await (deps.coucheTexteUtilisable || coucheTexteUtilisable)(buffer, mime);
   if (!lecture.ok) throw new choixModele.ErreurChoixModele("scan");

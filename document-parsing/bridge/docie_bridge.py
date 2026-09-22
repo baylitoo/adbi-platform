@@ -23,6 +23,7 @@ import json
 import math
 import os
 import re
+import sys
 import time
 from urllib.parse import urlsplit
 
@@ -938,6 +939,10 @@ def projeter_store(entree):
     def chaine(valeur):
         return valeur if isinstance(valeur, str) else None
 
+    def drapeau(cle):
+        return entree.get(cle) is True
+
+    # Aptitudes par exclusion (contrat DocIE) : embedding/reranker ne répondent jamais en chat ni en extraction.
     return {
         "nom": chaine(entree.get("name")),
         "famille": chaine(entree.get("family")),
@@ -946,17 +951,43 @@ def projeter_store(entree):
         "utilisable": etat == "ready" and isinstance(endpoint, str) and bool(endpoint),
         "tokens_par_seconde": debit if isinstance(debit, (int, float)) and not isinstance(debit, bool) and math.isfinite(debit) else None,
         "slots": slots if isinstance(slots, int) and not isinstance(slots, bool) else None,
+        "chat": not drapeau("embedding") and not drapeau("reranker") and not drapeau("analyzer"),
+        "extraction": not drapeau("embedding") and not drapeau("reranker") and (not drapeau("analyzer") or drapeau("structured_extraction")),
+        "vision": drapeau("vision"),
     }
 
 
-def list_store(*, env=None, session=None):
+def list_store(*, env=None, session=None, timeout=None):
     """GET /v1/serving/store : ce qui EST déployé, et s'il est prêt (placement.state "ready" + endpoint)."""
     env = os.environ if env is None else env
-    base, key, timeout = connection(env)
-    body = get_json(base + "/v1/serving/store", {"x-api-key": key}, key, min(timeout, 30), session)
+    base, key, delai = connection(env)
+    body = get_json(base + "/v1/serving/store", {"x-api-key": key}, key, min(delai, timeout or 30), session)
     if not isinstance(body, list):
         fail("response", "DocIE returned an invalid store listing.")
     return [projeter_store(e) for e in body if isinstance(e, dict)]
+
+
+STORE_CACHE_S = 300
+STORE_TIMEOUT_S = 5
+_store_cache = {"quand": None, "modeles": []}
+
+
+def store_utilisable(*, env=None, session=None, maintenant=None):
+    """Modèles prêts du store (cache 5 min par processus) ; DocIE injoignable ou non configuré : dernier relevé, sinon []."""
+    env = os.environ if env is None else env
+    maintenant = time.monotonic() if maintenant is None else maintenant
+    if _store_cache["quand"] is not None and maintenant - _store_cache["quand"] < STORE_CACHE_S:
+        return list(_store_cache["modeles"])
+    if not str(env.get("DOCIE_BASE_URL") or "").strip():
+        return list(_store_cache["modeles"])
+    try:
+        modeles = [m for m in list_store(env=env, session=session, timeout=STORE_TIMEOUT_S) if m["utilisable"]]
+    except DocIEBridgeError as exc:
+        print("[docie_bridge] store DocIE non relu (%s) : dernier relevé conservé" % exc.code, file=sys.stderr)
+        _store_cache["quand"] = maintenant
+        return list(_store_cache["modeles"])
+    _store_cache.update(quand=maintenant, modeles=modeles)
+    return list(modeles)
 
 
 def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, model_profile=None, langue=None, env=None, session=None):

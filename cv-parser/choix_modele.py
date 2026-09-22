@@ -80,6 +80,15 @@ def charger():
     return _catalogue
 
 
+def store_pret():
+    """Noms des modèles prêts sur le store DocIE (relevé du pont, cache 5 min) ; pont absent ou muet : []."""
+    try:
+        from docie_bridge_extraction import _load_bridge
+        return [m["nom"] for m in _load_bridge().store_utilisable() if m.get("nom")]
+    except Exception:
+        return []
+
+
 def voie_pour(ext):
     """Voie DocIE que prendra un fichier de cette extension, ou None."""
     ext = str(ext or "").lower()
@@ -106,9 +115,10 @@ def modeles_proposes(ext=None):
     if not voies:
         return []
     catalogue = charger()
+    store = store_pret()
     vus = {}
     for voie in voies:
-        for offre in catalogue.modeles_offerts(TACHE, voie, externes=(voie == "texte" and EXTERNES)):
+        for offre in catalogue.modeles_offerts(TACHE, voie, externes=(voie == "texte" and EXTERNES), store=store):
             vus.setdefault(offre["id"], {"id": offre["id"], "libelle": offre["libelle"],
                                          "description": offre["description"], "role": offre["role"],
                                          "experimental": offre.get("experimental") is True})
@@ -121,6 +131,7 @@ def offres_par_format():
     qu'au moins un modèle est proposé pour SON format (même règle que contrats,
     #210), sélecteur affiché ou non."""
     catalogue = None
+    store = None
     offres = {}
     for ext in (".pdf", ".docx"):
         voie = voie_pour(ext)
@@ -128,7 +139,8 @@ def offres_par_format():
             offres[ext] = []
             continue
         catalogue = catalogue or charger()
-        offres[ext] = [o["id"] for o in catalogue.modeles_offerts(TACHE, voie, externes=(voie == "texte" and EXTERNES))]
+        store = store_pret() if store is None else store
+        offres[ext] = [o["id"] for o in catalogue.modeles_offerts(TACHE, voie, externes=(voie == "texte" and EXTERNES), store=store)]
     return offres
 
 
@@ -148,7 +160,7 @@ class Choix:
         catalogue = charger()
         try:
             self.offre = catalogue.choisir_modele(TACHE, voie, self.modele, document=document,
-                                                  externes=(voie == "texte" and EXTERNES))
+                                                  externes=(voie == "texte" and EXTERNES), store=store_pret())
         except catalogue.CatalogueError as exc:
             raise ErreurTache(str(exc), code=exc.code) from None
         return self.offre["identifiant"]
@@ -222,7 +234,7 @@ def modele_servi(voie, metadata):
     Catalogue illisible : le nom brut, jamais une exception.
     """
     try:
-        servi = charger().modele_servi(TACHE, voie, metadata)
+        servi = charger().modele_servi(TACHE, voie, metadata, store=store_pret())
     except Exception:
         brut = (metadata or {}).get("agent" if voie == "agent" else "model")
         servi = {"id": None, "libelle": brut} if isinstance(brut, str) and brut.strip() else None

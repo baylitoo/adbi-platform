@@ -61,77 +61,87 @@ class LLMIndisponible(RuntimeError):
 
 # ── Chaîne configurable ───────────────────────────────────────────────────────
 
-def chaine_defaut() -> list:
-    """
-    Chaîne appliquée tant que rien n'a été configuré : la passerelle
-    d'inférence auto-hébergée ADBI (ADBI_LLM_BASE_URL / ADBI_LLM_API_KEY, voir
-    config.py). Vide si ADBI_LLM_BASE_URL n'est pas posée : pas d'erreur au
-    démarrage, simplement pas d'IA tant que ce n'est pas configuré —
-    l'extraction locale Docling reste disponible sans elle.
-
-    Plusieurs modèles à essayer en cascade : ADBI_LLM_MODELS (séparés par des
-    virgules) ; à défaut, ADBI_LLM_MODEL seul.
-
-    L'ordre reste modifiable depuis l'écran Paramètres ; une fois la chaîne
-    enregistrée, c'est le fichier qui fait foi.
-    """
+def candidats_chat() -> list:
+    """Modèles de chat proposés maintenant : store DocIE (catalogue `chat` puis découverts), sinon ADBI_LLM_MODELS."""
     if not LLM_BASE_URL:
         return []
+    try:
+        import choix_modele
+        from docie_bridge_extraction import _load_bridge
+        offres = choix_modele.charger().modeles_chat(_load_bridge().store_utilisable())
+    except Exception:
+        offres = []
+    if offres:
+        return [{"modele": o["identifiant"], "nom": o["libelle"], "decouvert": o["decouvert"]} for o in offres]
     modeles = [m.strip() for m in os.environ.get("ADBI_LLM_MODELS", "").split(",") if m.strip()]
     if not modeles and LLM_MODEL:
         modeles = [LLM_MODEL]
-    return [{
-        "actif": True, "nom": "ADBI", "url": LLM_BASE_URL,
-        "modele": m, "cle": LLM_API_KEY,
-    } for m in modeles]
+    return [{"modele": m, "nom": "ADBI", "decouvert": False} for m in modeles]
 
 
-# Hôtes définitivement écartés. Le filtre porte sur l'URL et non sur le nom :
-# une chaîne enregistrée avant leur retrait les ramènerait sinon en douce, et
-# c'est justement le fichier qui fait foi sur le défaut. OVHcloud AI Endpoints
-# a servi de fournisseur transitoire avant la passerelle interne ; retiré au
-# même titre qu'OpenAI et OpenRouter — aucun tiers non identifié.
-HOTES_RETIRES = ("api.openai.com", "openrouter.ai", "oai.endpoints.kepler.ai.cloud.ovh.net")
+def chaine_defaut() -> list:
+    """
+    Chaîne appliquée tant que rien n'a été enregistré : chaque modèle de chat
+    proposé, dans l'ordre, sur la passerelle d'inférence ADBI (ADBI_LLM_BASE_URL
+    / ADBI_LLM_API_KEY, config.py). Vide si ADBI_LLM_BASE_URL n'est pas posée :
+    pas d'IA tant que ce n'est pas configuré, l'extraction locale reste là.
+
+    URL et clé viennent TOUJOURS de l'environnement, jamais d'un navigateur :
+    le fichier de la chaîne ne porte que l'ordre et l'activation des modèles.
+    """
+    return [{"actif": True, "url": LLM_BASE_URL, "cle": LLM_API_KEY, **c} for c in candidats_chat()]
+
+
+def _nu(modele: str) -> str:
+    return str(modele or "").strip().removeprefix("store:")
 
 
 def charger_chaine() -> list:
+    """Chaîne courante : ordre et activation enregistrés appliqués aux modèles proposés maintenant.
+
+    Un modèle enregistré qui n'est plus proposé disparaît ; un modèle nouvellement
+    prêt sur DocIE s'ajoute en fin, actif. Une liste VIDE enregistrée est un
+    CHOIX (2026-09) : pas d'IA, « Revenir au défaut » supprime le fichier.
+    """
+    candidats = chaine_defaut()
     if not CHAINE_FICHIER.exists():
-        return chaine_defaut()
+        return candidats
     try:
-        entrees = json.loads(CHAINE_FICHIER.read_text(encoding="utf-8"))
-        # Une liste VIDE enregistrée est un CHOIX (demande utilisateur 2026-09) :
-        # aucun modèle, pas d'IA — l'application vit sur l'extraction locale et
-        # les appels LLM répondent « Aucun service actif ». Pour retrouver les
-        # modèles par défaut : bouton Réinitialiser (qui supprime ce fichier).
-        if entrees == []:
-            return []
-        gardees = [
-            e for e in entrees
-            if e.get("url") and e.get("modele")
-            and not any(h in e["url"] for h in HOTES_RETIRES)
-        ]
-        return gardees or chaine_defaut()
+        enregistrees = json.loads(CHAINE_FICHIER.read_text(encoding="utf-8"))
     except Exception:
         # Un fichier corrompu ne doit pas priver l'application de LLM.
-        return chaine_defaut()
+        return candidats
+    if enregistrees == []:
+        return []
+    if not isinstance(enregistrees, list):
+        return candidats
+    par_modele = {_nu(c["modele"]): c for c in candidats}
+    ordonnees = []
+    for e in enregistrees:
+        c = par_modele.pop(_nu(e.get("modele")), None) if isinstance(e, dict) else None
+        if c:
+            ordonnees.append({**c, "actif": bool(e.get("actif", True))})
+    chaine = ordonnees + list(par_modele.values())
+    # Fichier d'avant (URL et clé enregistrées depuis le navigateur) : réécrit sans, une fois ; vide = supprimé, jamais un « [] » qui vaudrait « pas d'IA ».
+    if any(isinstance(e, dict) and ("cle" in e or "url" in e) for e in enregistrees):
+        if chaine:
+            enregistrer_chaine(chaine)
+        else:
+            reinitialiser_chaine()
+    return chaine
 
 
 def enregistrer_chaine(entrees: list) -> list:
+    """N'enregistre que {modele, actif, nom} parmi les modèles proposés ; ValueError sur un modèle inconnu."""
+    proposes = {_nu(c["modele"]): c for c in chaine_defaut()}
     propres = []
     for e in entrees:
-        url    = (e.get("url") or "").strip()
-        modele = (e.get("modele") or "").strip()
-        if not url or not modele:
+        modele = _nu((e or {}).get("modele"))
+        if not modele:
             continue
-        if any(h in url for h in HOTES_RETIRES):
-            continue        # ni réintroduits par l'interface
-        propres.append({
-            "actif":  bool(e.get("actif", True)),
-            "nom":    (e.get("nom") or "Service").strip(),
-            "url":    url,
-            "modele": modele,
-            "cle":    (e.get("cle") or "").strip(),
-        })
+        if modele not in proposes:
+            raise ValueError(f"Modèle non proposé par la passerelle : {modele}")
+        propres.append({"actif": bool(e.get("actif", True)), "nom": proposes[modele]["nom"], "modele": proposes[modele]["modele"]})
     with _chaine_verrou:
         DATA_DIR.mkdir(exist_ok=True)
         CHAINE_FICHIER.write_text(

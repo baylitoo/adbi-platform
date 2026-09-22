@@ -142,6 +142,7 @@ async function importerAvecModele(buffer, filename, { env, fetchImpl, modele }) 
   // champ et marque de relecture poses par mapperAdbiResume, sur toutes les
   // voies DocIE, choix ou non — rien a ajouter ici.
   const options = { env, fetchImpl };
+  await choix.rafraichirStore(env);
   let master;
   if (source.voie === "agent") {
     const offre = choix.choisir("agent", modele, { pages: await choix.compterPages(buffer) }, env);

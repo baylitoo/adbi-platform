@@ -378,21 +378,18 @@
       <div class="card-title">Chaîne de secours</div>
       <div id="chaineAlert" class="alert"></div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.55">
-        Les services sont essayés <strong>dans l'ordre</strong> : le premier qui répond fournit
-        la réponse. Un service en panne, à court de quota ou dont la clé a expiré est
-        simplement sauté — l'analyse ne s'arrête plus pour autant.<br>
-        L'ordre par défaut est <strong>optimisé pour l'extraction de CV</strong> : d'abord les
-        modèles justes sur les nombres (l'ancienneté se calcule à partir des dates),
-        ensuite les plus réguliers, enfin les plus rapides.<br>
-        Tous les services de cette chaîne pointent vers la passerelle d'inférence
-        interne ADBI : c'est la seule à qui confier un CV.
+        Les modèles sont essayés <strong>dans l'ordre</strong> : le premier qui répond fournit
+        la réponse. Un modèle en panne ou à court de quota est simplement sauté — l'analyse
+        ne s'arrête plus pour autant.<br>
+        La liste suit <strong>le store DocIE</strong> : tout modèle de chat prêt y apparaît de
+        lui-même, un modèle arrêté en disparaît. Ici on ne règle que l'ordre et l'activation ;
+        adresse et clé de la passerelle restent côté serveur (variables d'environnement).
       </div>
 
       <div id="chaineListe"></div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
-        <button class="btn-primary" onclick="enregistrerChaine()">💾 Enregistrer la chaîne</button>
-        <button class="btn-ghost" onclick="ajouterService()">➕ Ajouter un service</button>
+        <button class="btn-primary" onclick="enregistrerChaine()">💾 Enregistrer l'ordre</button>
         <button class="btn-ghost" onclick="reinitChaine()">↺ Revenir au défaut</button>
       </div>
     </div>
@@ -402,8 +399,8 @@
       <div class="card-title">Modèles disponibles sur DocIE</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.55">
         Lu en direct sur le store DocIE : ce qui est déployé, et s'il est prêt à servir.
-        Le <code>nom</code> est celui à poser dans <code>DOCIE_MODELE_*</code>
-        (<code>store:&lt;nom&gt;</code>). Rafraîchi toutes les 5 minutes, par
+        Un modèle prêt est proposé de lui-même dans les sélecteurs d'extraction et dans la
+        chaîne ci-dessus ; aucune variable à poser. Rafraîchi toutes les 5 minutes, par
         « Tester la connexion », ou à la demande.
       </div>
       <div id="docieModelesListe"><div class="empty-state">Chargement…</div></div>
@@ -795,8 +792,8 @@ async function chargerChaine() {
 function dessinerChaine() {
   const zone = document.getElementById('chaineListe');
   if (!_chaine.length) {
-    zone.innerHTML = '<div style="font-size:13px;color:var(--muted)">Aucun service. ' +
-                     'Ajoutez-en un, ou revenez au défaut.</div>';
+    zone.innerHTML = '<div class="empty-state">Aucun modèle de chat prêt sur DocIE — ' +
+                     'la chaîne se remplit dès qu\'un modèle est démarré.</div>';
     return;
   }
   zone.innerHTML = _chaine.map((e, i) => `
@@ -816,26 +813,18 @@ function dessinerChaine() {
       </label>
 
       <div style="flex:1;min-width:220px">
-        <input type="text" value="${e.nom}" onchange="majService(${i},'nom',this.value)"
-               style="font-weight:700;margin-bottom:3px" placeholder="Nom du service">
-        <input type="text" value="${e.modele}" onchange="majService(${i},'modele',this.value)"
-               placeholder="Identifiant du modèle">
-        <input type="text" value="${e.url}" onchange="majService(${i},'url',this.value)"
-               placeholder="URL /chat/completions" style="font-size:11px;margin-top:3px">
-        <input type="password" placeholder="${e.a_une_cle ? 'Clé enregistrée : ' + e.cle_masquee : 'Clé API (facultative)'}"
-               onchange="majService(${i},'cle',this.value)" style="font-size:11px;margin-top:3px">
+        <div style="font-weight:700;font-size:13px">${escDocie(e.nom)}
+          ${e.decouvert ? '<span style="font-size:10px;font-weight:700;color:var(--muted);margin-left:6px">découvert sur DocIE</span>' : ''}
+        </div>
+        <code style="font-size:11px;color:var(--muted)">${escDocie(e.modele)}</code>
       </div>
 
       <span id="voyant-${i}" style="font-size:11px;font-weight:700;color:var(--muted);min-width:78px">—</span>
       <button class="btn-ghost" onclick="testerService(${i})" style="padding:4px 10px">Tester</button>
-      <button class="btn-ghost" onclick="supprimerService(${i})" style="padding:4px 10px"
-              title="Retirer de la chaîne">✕</button>
     </div>`).join('');
 }
 
-function majService(i, champ, valeur) { _chaine[i][champ] = valeur.trim(); }
-function basculerService(i, actif)    { _chaine[i].actif = actif; dessinerChaine(); }
-function supprimerService(i)          { _chaine.splice(i, 1); dessinerChaine(); }
+function basculerService(i, actif) { _chaine[i].actif = actif; dessinerChaine(); }
 
 function deplacerService(i, sens) {
   const j = i + sens;
@@ -844,21 +833,15 @@ function deplacerService(i, sens) {
   dessinerChaine();
 }
 
-function ajouterService() {
-  _chaine.push({ actif: true, nom: 'Nouveau service', modele: '',
-                 url: 'https://', cle: '', a_une_cle: false, cle_masquee: '' });
-  dessinerChaine();
-}
-
 async function enregistrerChaine() {
   const r = await fetch('/api/settings/llm/chaine', {
     method: 'PUT', credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entrees: _chaine }),
+    body: JSON.stringify({ entrees: _chaine.map(e => ({ modele: e.modele, actif: e.actif })) }),
   });
   const d = await r.json();
   if (!r.ok) { showAlert('chaineAlert', d.error || 'Erreur', true); return false; }
-  showAlert('chaineAlert', `✓ Chaîne enregistrée — ${d.nombre} service(s)`, false);
+  showAlert('chaineAlert', `✓ Ordre enregistré — ${d.nombre} modèle(s)`, false);
   await chargerChaine();
   return true;
 }
@@ -874,9 +857,7 @@ async function testerService(i) {
   voyant.textContent = '⏳ test…';
   voyant.style.color = 'var(--muted)';
 
-  /* La chaîne est enregistrée avant le test : le serveur teste par position,
-     et les clés ne quittent jamais le serveur — on ne peut donc pas tester une
-     entrée qui n'existe pas encore chez lui. */
+  /* La chaîne est enregistrée avant le test : le serveur teste par position. */
   if (!await enregistrerChaine()) return;
 
   try {
@@ -889,11 +870,11 @@ async function testerService(i) {
     const v = document.getElementById('voyant-' + i);
     if (d.ok) {
       v.textContent = `● ${d.ms} ms`;
-      v.style.color = '#15803d';                 // vert : le service répond
+      v.style.color = 'var(--adbi-ok)';
     } else {
       v.textContent = '● ' + d.detail;
       // Un quota atteint n'est pas une panne : il se réarme seul, d'où l'orange.
-      v.style.color = d.detail.includes('quota') ? 'var(--adbi-attention)' : '#c8102e';
+      v.style.color = d.detail.includes('quota') ? 'var(--adbi-attention)' : 'var(--adbi-erreur)';
     }
   } catch (e) {
     document.getElementById('voyant-' + i).textContent = '● injoignable';

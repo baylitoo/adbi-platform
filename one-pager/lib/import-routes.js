@@ -35,13 +35,14 @@ function monterImport(app, { importerCv, db, gestionnaire, choixModele = null })
    * `resume`. Catalogue illisible ou identifiant mal forme : aucun modele et la
    * faute est dite (`erreur`), l'import sans choix reste possible.
    */
-  app.get("/api/modeles", (req, res) => {
+  app.get("/api/modeles", async (req, res) => {
     if (req.query.tache != null && req.query.tache !== "resume") {
       return res.status(400).json({ error: "Tâche inconnue : ce service ne propose des modèles que pour « resume »." });
     }
     try {
       // eslint-disable-next-line global-require
       const choix = choixModele || require("./choix-modele");
+      if (choix.rafraichirStore) await choix.rafraichirStore();
       res.json({ modeles: choix.modelesProposes(), voies: choix.offresParVoie() });
     } catch (e) {
       console.error("[modeles]", e);
