@@ -23,6 +23,9 @@ const choixModele = require("./choix-modele");
 // aussi image/webp, que le bridge refuse : refuse ici, avant le 202.
 const MIME_ACCEPTES = new Set(["application/pdf", "image/png", "image/jpeg"]);
 
+// Express 4 ignore une promesse rejetée : un gestionnaire async passe son échec à next().
+const asynchrone = (fn) => (req, res, next) => fn(req, res, next).catch(next);
+
 /**
  * @param {import("express").Express} app
  * @param {{
@@ -56,7 +59,7 @@ function monterPreremplissage(app, {
    * Le resultat de la tache est exactement l'ancienne reponse synchrone :
    * { requestId, values, warnings, errors, ok }. Rien n'est ecrit en base.
    */
-  app.post("/api/contracts/importer/extraire", async (req, res) => {
+  app.post("/api/contracts/importer/extraire", asynchrone(async (req, res) => {
     const { mimeType, dataBase64 } = req.body || {};
     if (!isEnabled(env)) {
       return res.status(400).json({ error: MESSAGES_SERVICE.disabled, code: "disabled" });
@@ -110,7 +113,7 @@ function monterPreremplissage(app, {
       journal("[contracts/importer/extraire]", e);
       res.status(500).json({ error: "Pré-remplissage impossible : erreur interne.", code: "interne" });
     }
-  });
+  }));
 
   /**
    * GET /api/taches/:id -> etat de la tache (contrat : lib/taches-extraction.js).
@@ -151,7 +154,7 @@ function monterPreremplissage(app, {
    * aucun selecteur et n'envoie aucun `modele`, soit exactement le comportement
    * d'avant.
    */
-  app.get("/api/modeles", async (req, res) => {
+  app.get("/api/modeles", asynchrone(async (req, res) => {
     const tache = String((req.query && req.query.tache) || "");
     if (!Object.hasOwn(choixModele.TACHES, tache)) {
       return res.status(400).json({ error: "Tâche sans sélecteur de modèle.", code: "tache" });
@@ -170,7 +173,7 @@ function monterPreremplissage(app, {
       const code = e && e.name === "ErreurChoixModele" ? e.code : "interne";
       res.status(500).json({ error: choixModele.MESSAGES_CHOIX.configuration, code });
     }
-  });
+  }));
 }
 
 module.exports = { monterPreremplissage, MIME_ACCEPTES };

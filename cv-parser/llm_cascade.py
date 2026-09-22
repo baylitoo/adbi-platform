@@ -122,9 +122,12 @@ def charger_chaine() -> list:
         if c:
             ordonnees.append({**c, "actif": bool(e.get("actif", True))})
     chaine = ordonnees + list(par_modele.values())
-    # Fichier d'avant (URL et clé enregistrées depuis le navigateur) : réécrit sans, une fois.
+    # Fichier d'avant (URL et clé enregistrées depuis le navigateur) : réécrit sans, une fois ; vide = supprimé, jamais un « [] » qui vaudrait « pas d'IA ».
     if any(isinstance(e, dict) and ("cle" in e or "url" in e) for e in enregistrees):
-        enregistrer_chaine(chaine)
+        if chaine:
+            enregistrer_chaine(chaine)
+        else:
+            reinitialiser_chaine()
     return chaine
 
 
