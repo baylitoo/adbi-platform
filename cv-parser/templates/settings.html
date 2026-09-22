@@ -397,6 +397,21 @@
       </div>
     </div>
 
+    <!-- Modèles disponibles sur DocIE -->
+    <div class="card">
+      <div class="card-title">Modèles disponibles sur DocIE</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.55">
+        Lu en direct sur le store DocIE : ce qui est déployé, et s'il est prêt à servir.
+        Le <code>nom</code> est celui à poser dans <code>DOCIE_MODELE_*</code>
+        (<code>store:&lt;nom&gt;</code>). Rafraîchi toutes les 5 minutes, par
+        « Tester la connexion », ou à la demande.
+      </div>
+      <div id="docieModelesListe"><div class="empty-state">Chargement…</div></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+        <button class="btn-ghost" onclick="chargerModelesDocie()" id="btnDocieModeles">↻ Rafraîchir la liste</button>
+      </div>
+    </div>
+
     <!-- Current status -->
     <div class="card">
       <div class="card-title">État actuel</div>
@@ -441,7 +456,7 @@ function switchTab(name) {
   document.getElementById('tab' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
   if (name === 'users') loadUsers();
   if (name === 'activity') loadActivity();
-  if (name === 'llm') { loadLlm(); chargerChaine(); }
+  if (name === 'llm') { loadLlm(); chargerChaine(); chargerModelesDocie(); armerSondageDocie(); }
 }
 
 /* ── Profile ── */
@@ -725,6 +740,43 @@ async function testLlm() {
     res.textContent = `❌ Erreur réseau : ${e.message}`;
   }
   btn.disabled = false; btn.textContent = '🧪 Tester la connexion';
+  chargerModelesDocie();
+}
+
+/* ── Modèles DocIE ── */
+let _docieTimer = null;
+const escDocie = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function armerSondageDocie() {
+  if (!_docieTimer) _docieTimer = setInterval(chargerModelesDocie, 5 * 60 * 1000);
+}
+function ligneModeleDocie(m) {
+  const etat = m.utilisable ? 'prêt' : (m.etat || 'inconnu');
+  const extras = [m.phase, m.tokens_par_seconde ? Math.round(m.tokens_par_seconde) + ' tok/s' : null,
+                  m.slots ? m.slots + ' slot' + (m.slots > 1 ? 's' : '') : null].filter(Boolean);
+  return `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <span style="width:9px;height:9px;border-radius:50%;flex:none;background:${m.utilisable ? 'var(--adbi-ok)' : 'var(--muted)'}"></span>
+      <code style="font-weight:700">${escDocie(m.nom || '?')}</code>
+      <span style="color:var(--muted)">${escDocie(m.famille || '')}</span>
+      <span style="margin-left:auto;color:var(--muted)">${escDocie([etat, ...extras].join(' · '))}</span>
+    </div>`;
+}
+async function chargerModelesDocie() {
+  const zone = document.getElementById('docieModelesListe');
+  const btn = document.getElementById('btnDocieModeles');
+  if (!zone) return;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Lecture…'; }
+  try {
+    const r = await fetch('/api/settings/docie/modeles', { credentials: 'include' });
+    const d = await r.json();
+    if (!r.ok || d.error) zone.innerHTML = `<div class="empty-state">${escDocie(d.error || 'DocIE injoignable')}</div>`;
+    else if (!d.modeles.length) zone.innerHTML = '<div class="empty-state">Aucun modèle dans le store DocIE</div>';
+    else zone.innerHTML = d.modeles.map(ligneModeleDocie).join('');
+  } catch (e) {
+    zone.innerHTML = `<div class="empty-state">Erreur réseau : ${escDocie(e.message)}</div>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Rafraîchir la liste'; }
+  }
 }
 
 /* ── Chaîne de secours ── */

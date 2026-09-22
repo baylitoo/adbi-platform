@@ -336,6 +336,17 @@ def reset_llm_chaine():
     return jsonify({"success": True, "nombre": len(entrees)})
 
 
+@settings_bp.route("/api/settings/docie/modeles", methods=["GET"])
+@require_superuser
+def get_docie_modeles():
+    """Modèles du store DocIE, lus en direct : de quoi remplir DOCIE_MODELE_* sans deviner."""
+    import docie_client
+    try:
+        return jsonify({"modeles": docie_client.lister_modeles_store()})
+    except docie_client.DocIEError as exc:
+        return jsonify({"error": str(exc), "code": getattr(exc, "code", None)}), 502
+
+
 @settings_bp.route("/api/llm/apercu", methods=["GET"])
 @require_auth
 def apercu_llm():

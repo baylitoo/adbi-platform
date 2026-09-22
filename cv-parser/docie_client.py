@@ -480,6 +480,57 @@ def repli_openai(file_path, mode_transport="rapide", progress=None, session=None
     return _extraire_par_openai(texte, mode_transport, schema, progress=progress, session=session)
 
 
+def _projeter_modele_store(entree):
+    """Une entrée de GET /v1/serving/store -> ses seules clés stables, sans endpoint ni chemin."""
+    placement = entree.get("placement") if isinstance(entree.get("placement"), dict) else {}
+    etat = placement.get("state")
+    endpoint = placement.get("endpoint")
+    debit = placement.get("tokens_per_second")
+    slots = placement.get("slot_count")
+    return {
+        "nom": entree.get("name") if isinstance(entree.get("name"), str) else None,
+        "famille": entree.get("family") if isinstance(entree.get("family"), str) else None,
+        "etat": etat if isinstance(etat, str) else "inconnu",
+        "phase": placement.get("phase") if isinstance(placement.get("phase"), str) else None,
+        "utilisable": etat == "ready" and isinstance(endpoint, str) and bool(endpoint),
+        "tokens_par_seconde": debit if isinstance(debit, (int, float)) and not isinstance(debit, bool) else None,
+        "slots": slots if isinstance(slots, int) and not isinstance(slots, bool) else None,
+    }
+
+
+def lister_modeles_store(session=None):
+    """Modèles du store DocIE (GET /v1/serving/store, en-tête x-api-key), projetés."""
+    base = os.environ.get("DOCIE_BASE_URL", "").strip().rstrip("/")
+    parsed = urlsplit(base)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise DocIEError("Configurez DOCIE_BASE_URL avec l'URL racine du service DocIE.", "configuration")
+    headers = {}
+    key = os.environ.get("DOCIE_API_KEY", "").strip()
+    if key:
+        headers["x-api-key"] = key
+    owned = session is None
+    session = session or requests.Session()
+    try:
+        try:
+            reponse = session.get(base + "/v1/serving/store", headers=headers, timeout=(10, 30), allow_redirects=False)
+        except requests.RequestException:
+            raise DocIEError("DocIE injoignable ou délai réseau dépassé. Vérifiez la connexion.", "network") from None
+        if reponse.status_code in (401, 403):
+            raise DocIEError("DocIE : accès refusé. Vérifiez DOCIE_API_KEY.", "auth")
+        if not 200 <= reponse.status_code < 300:
+            raise DocIEError(f"DocIE : erreur HTTP {reponse.status_code}. Vérifiez le schéma et le service.", "upstream")
+        try:
+            corps = reponse.json()
+        except ValueError:
+            raise DocIEError("DocIE : réponse JSON invalide.", "response") from None
+    finally:
+        if owned:
+            session.close()
+    if not isinstance(corps, list):
+        raise DocIEError("DocIE : réponse JSON invalide.", "response")
+    return [_projeter_modele_store(e) for e in corps if isinstance(e, dict)]
+
+
 def extract_resume(file_path, progress=None, *, session=None, choix=None):
     """`choix` (#194, choix_modele.Choix) : modèle explicitement choisi. Vérifié
     sur le texte réel (lignes non vides) juste avant l'appel, son identifiant
