@@ -383,7 +383,9 @@ test("route /api/document/analyze (DocIE mocké au bridge) : les clés enrichies
       expectedName: "ACME Conseil",
     });
     assert.equal(status, 200);
-    assert.deepEqual(appelsDocie, ["https://docie.example.test/v1/agents/kbis-agent-test/chat/completions"]);
+    // Le relevé du store (GET, lecture seule) précède l'extraction ; seul l'agent extrait.
+    assert.deepEqual(appelsDocie.filter((u) => !u.endsWith("/v1/serving/store")),
+      ["https://docie.example.test/v1/agents/kbis-agent-test/chat/completions"]);
     // Le serveur ne filtre rien : les 10 clés enrichies sont dans la réponse HTTP.
     for (const k of ENRICHED_KEYS) assert.ok(Object.hasOwn(body, k), k + " absente de la réponse HTTP");
     assert.equal(body.siren, "123456789");
