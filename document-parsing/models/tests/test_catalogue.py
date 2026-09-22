@@ -225,6 +225,11 @@ class Externes(unittest.TestCase):
                              [("openai_rapide", "rapide", "OPENAI_API_KEY"), ("openai_raisonnement", "raisonnement", "OPENAI_API_KEY")])
             for env in ({}, {"OPENAI_API_KEY": ""}, {"OPENAI_API_KEY": "  "}):
                 self.assertEqual(cat.modeles_offerts(tache, "texte", env=env, externes=True), [], f"{tache} {env}")
+            # La clé seule NE suffit PAS : sans modèle ADBI configuré pour la
+            # voie, aucun externe. Sinon le premier de la liste serait celui que
+            # le navigateur présélectionne (aucune option ne porte `selected`),
+            # et le document partirait chez le fournisseur PAR DÉFAUT.
+            self.assertEqual(cat.modeles_offerts(tache, "texte", env={"OPENAI_API_KEY": CLE}, externes=True), [], tache)
 
     def test_sans_cle_ou_sans_option_sortie_inchangee(self):
         for env in ({}, ENV_DOCIE_COMPLET):
@@ -247,8 +252,16 @@ class Externes(unittest.TestCase):
         self.assertEqual(e.exception.code, "modele_non_propose")
 
     def test_ni_cle_ni_url_dans_la_liste(self):
-        env = {"OPENAI_API_KEY": CLE, "OPENAI_BASE_URL": "https://eu.api.openai.com"}
-        texte = json.dumps([cat.modeles_offerts(t, "texte", env=env, externes=True) for t in TACHES_EXTERNES])
+        # Modèles DocIE configurés EXPRÈS : sans eux, le garde-fou « jamais à
+        # leur place » rendrait les listes vides et les deux assertions
+        # passeraient À VIDE — vertes sans rien vérifier.
+        env = {"OPENAI_API_KEY": CLE, "OPENAI_BASE_URL": "https://eu.api.openai.com",
+               "DOCIE_MODELE_LFM25_2_6B": "store:l", "DOCIE_MODELE_NUEXTRACT3": "store:n",
+               "DOCIE_MODELE_LFM25_350M": "store:m"}
+        listes = [cat.modeles_offerts(t, "texte", env=env, externes=True) for t in TACHES_EXTERNES]
+        self.assertTrue(all(any(o["role"] == "externe" for o in liste) for liste in listes),
+                        "aucun externe : ce test ne vérifierait rien")
+        texte = json.dumps(listes)
         self.assertNotIn(CLE, texte)
         self.assertNotIn("api.openai.com", texte)
 

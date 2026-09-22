@@ -160,8 +160,14 @@ async function chargerModeles() {
   const modeles = Array.isArray(data.modeles) ? data.modeles : [];
   choixModeles.voies = data.voies || { texte: [], agent: [] };
   if (modeles.length) {
-    $("#choix-modele").innerHTML = modeles.map((m) =>
-      `<option value="${echapper(m.id)}"${m.role === "defaut" ? " selected" : ""}>${echapper(libelleOptionModele(m))}</option>`
+    // Index 0 et non `role === "defaut"` : la liste est deja triee defaut en
+    // tete (lib/choix-modele.modelesProposes), donc le premier EST le defaut
+    // quand il existe. Mais une voie peut n'avoir que son alternative
+    // configuree : aucune option ne portait alors `selected`, et le navigateur
+    // preselectionnait quand meme la premiere — un choix implicite que personne
+    // n'avait fait. On le rend explicite.
+    $("#choix-modele").innerHTML = modeles.map((m, i) =>
+      `<option value="${echapper(m.id)}"${i === 0 ? " selected" : ""}>${echapper(libelleOptionModele(m))}</option>`
     ).join("");
     modelesExternes.clear();
     for (const m of modeles) if (m.role === "externe") modelesExternes.add(m.id);

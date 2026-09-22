@@ -148,8 +148,19 @@ def modeles_configures(tache: str, voie: str, env: Mapping[str, str] | None = No
             "prerequis": entree.get("prerequis"),
             "experimental": entree.get("experimental") is True,
         })
-    # Modèles HORS ADBI, après le défaut et l'alternative DocIE, seulement sur demande.
-    if externes and isinstance(v.get("externes"), list):
+    # Modèles HORS ADBI, après le défaut et l'alternative DocIE, seulement sur
+    # demande — et SEULEMENT si au moins un modèle ADBI est configuré pour cette
+    # voie (`offres` ne contient encore que défaut/alternative).
+    #
+    # Sans ce dernier garde-fou, une voie sans modèle DocIE configuré ne
+    # proposait QUE des externes. Le premier de la liste est celui que le
+    # navigateur présélectionne, et aucune option ne porte `selected` (les
+    # interfaces ne le posent que sur `role == "defaut"`) : le document partait
+    # donc chez le fournisseur PAR DÉFAUT, sans que personne ne l'ait choisi.
+    # La prose de catalogue.json l'interdit depuis toujours — « toujours en plus
+    # du défaut et de l'alternative, jamais à leur place ni par défaut » — mais
+    # le code ne l'appliquait pas.
+    if externes and offres and isinstance(v.get("externes"), list):
         for entree in v["externes"]:
             offre = _offre_externe(catalogue, t, entree, voie, env)
             if offre:
