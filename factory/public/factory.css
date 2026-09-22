@@ -832,6 +832,9 @@ body.module .contenu {
   padding-top: 9px;
   border-top: 1px solid var(--border);
 }
+.ia-pied + .ia-tete {
+  margin-top: 14px;
+}
 
 /* ── Mascotte 3D du héro ─────────────────────────────────────────────────────
    Le canvas three.js vit dans ce conteneur ; il apparaît en fondu quand le

@@ -25,6 +25,9 @@
         '<button type="button" id="ia-tout">Tout tester</button></div>' +
       '<div id="ia-lignes"></div>' +
       '<div class="ia-pied" id="ia-pied"></div>' +
+      '<div class="ia-tete"><h3>Modèles DocIE</h3>' +
+        '<button type="button" id="ia-modeles-maj">Rafraîchir</button></div>' +
+      '<div id="ia-modeles"></div>' +
     '</div>';
 
   /* La puce « Tout tourne en local » garde sa place en bout de ligne. */
@@ -125,6 +128,29 @@
     $('ia-tout').disabled = false;
   }
 
+  /* Modèles du store DocIE : lus via le hub (cache 5 min côté serveur), jamais d'identifiant interne. */
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  async function chargerModeles(forcer) {
+    const btn = $('ia-modeles-maj');
+    btn.disabled = true;
+    let d;
+    try { d = await fetch(forcer ? '/api/llm/modeles?maj=1' : '/api/llm/modeles').then(r => r.json()); }
+    catch (e) { d = { erreur: e.message, modeles: [] }; }
+    const z = $('ia-modeles');
+    if (d.erreur) z.innerHTML = `<div class="ia-pied">${esc(d.erreur)}</div>`;
+    else if (!d.modeles.length) z.innerHTML = '<div class="ia-pied">Aucun modèle dans le store DocIE.</div>';
+    else z.innerHTML = d.modeles.map(m => {
+      const detail = [m.utilisable ? 'prêt' : (m.etat || 'inconnu'),
+                      m.tokens_par_seconde ? Math.round(m.tokens_par_seconde) + ' tok/s' : null].filter(Boolean).join(' · ');
+      return `<div class="ia-ligne${m.utilisable ? ' ok' : ''}">` +
+        `<span class="point"></span><span class="ia-nom" title="${esc(m.nom || '')}">${esc(m.nom || '?')}</span>` +
+        `<span class="ia-detail">${esc(detail)}</span></div>`;
+    }).join('');
+    btn.disabled = false;
+  }
+  $('ia-modeles-maj').addEventListener('click', () => chargerModeles(true));
+  setInterval(() => chargerModeles(false), 5 * 60 * 1000);
+
   /* Le panneau est en position fixe : on l'aligne sous la puce à l'ouverture,
      et on le replace si la fenêtre bouge pendant qu'il est ouvert. */
   function placer() {
@@ -144,7 +170,7 @@
   });
   window.addEventListener('resize', placer);
   window.addEventListener('scroll', placer, { passive: true });
-  $('ia-tout').addEventListener('click', toutTester);
+  $('ia-tout').addEventListener('click', () => { toutTester(); chargerModeles(true); });
   document.addEventListener('click', e => {
     if (!zone.contains(e.target)) {
       $('ia-panneau').hidden = true;
@@ -153,4 +179,5 @@
   });
 
   verifier();
+  chargerModeles(false);
 })();
