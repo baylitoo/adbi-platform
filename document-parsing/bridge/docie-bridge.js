@@ -998,8 +998,70 @@ function storeUtilisableConnu() {
   return storeCache.modeles.slice();
 }
 
+// Nom de store visé par un sélecteur de modèle DocIE (`store:<nom>` ou nom nu) ; null sinon.
+function nomStore(selecteur) {
+  if (typeof selecteur !== "string" || !selecteur.trim()) return null;
+  const s = selecteur.trim();
+  if (s.startsWith("policy:")) return null;
+  return s.startsWith("store:") ? s.slice("store:".length) : s;
+}
+
+// Projection d'une entrée de GET /v1/agents : clés stables, jamais le prompt système ni les options brutes.
+function projeterAgent(entree) {
+  const options = object(entree.options) ? entree.options : {};
+  const kind = typeof entree.kind === "string" ? entree.kind : null;
+  let mode = options.mode;
+  // `mode` absent (agent d'avant le champ) : `extractor` présent vaut ocr_extract, sinon ocr.
+  if (typeof mode !== "string") mode = options.extractor ? "ocr_extract" : "ocr";
+  let selecteur;
+  if (kind === "ocr") selecteur = mode === "vision" ? options.vision_model : mode === "ocr_extract" ? options.extractor : null;
+  else selecteur = entree.model_profile;
+  const schema = typeof options.schema === "string" && options.schema.trim() ? options.schema : null;
+  return {
+    nom: typeof entree.name === "string" ? entree.name : null,
+    kind,
+    mode: kind === "ocr" ? mode : null,
+    actif: entree.enabled !== false,
+    schema,
+    modele_store: nomStore(selecteur),
+    extraction: kind === "ocr" && (mode === "ocr_extract" || mode === "vision") && schema !== null,
+    vision: kind === "ocr" && mode === "vision",
+  };
+}
+
+// GET /v1/agents : les agents enregistrés, projetés ; l'aptitude « prêt » se déduit du store, pas d'ici.
+async function listAgents({ env = process.env, fetchImpl = fetch, timeout = null } = {}) {
+  const { base, key, timeout: delai } = connection(env);
+  const body = await getJson(base + "/v1/agents", { "x-api-key": key }, key, Math.min(delai, timeout || 30), fetchImpl);
+  if (!Array.isArray(body)) fail("response", "DocIE returned an invalid agent listing.");
+  return body.filter(object).map(projeterAgent);
+}
+
+const agentsCache = { quand: null, agents: [] };
+
+// Agents d'extraction actifs dont le modèle est prêt sur le store (cache 5 min) ; DocIE muet : dernier relevé, sinon [].
+async function agentsUtilisables({ env = process.env, fetchImpl = fetch, maintenant = Date.now() } = {}) {
+  if (agentsCache.quand !== null && maintenant - agentsCache.quand < STORE_CACHE_MS) return agentsCache.agents.slice();
+  if (!String(env.DOCIE_BASE_URL || "").trim()) return agentsCache.agents.slice();
+  const prets = new Set((await storeUtilisable({ env, fetchImpl, maintenant })).map((m) => m.nom));
+  try {
+    const agents = (await listAgents({ env, fetchImpl, timeout: STORE_TIMEOUT_S }))
+      .filter((a) => a.actif && a.extraction && a.nom && prets.has(a.modele_store));
+    Object.assign(agentsCache, { quand: maintenant, agents });
+  } catch (e) {
+    if (!(e instanceof DocIEBridgeError)) throw e;
+    console.error("[docie-bridge] agents DocIE non relus (" + e.code + ") : dernier relevé conservé");
+    agentsCache.quand = maintenant;
+  }
+  return agentsCache.agents.slice();
+}
+
+function agentsUtilisablesConnus() {
+  return agentsCache.agents.slice();
+}
+
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload, listStore, projeterStore,
-  storeUtilisable, storeUtilisableConnu,
+  storeUtilisable, storeUtilisableConnu, listAgents, projeterAgent, agentsUtilisables, agentsUtilisablesConnus, nomStore,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
   DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
   MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };

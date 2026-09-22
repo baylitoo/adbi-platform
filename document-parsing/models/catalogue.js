@@ -112,11 +112,28 @@ function tacheDuCatalogue(catalogue, tache) {
  * `experimental` : vrai seulement si l'entrée de la tâche le déclare (le même
  * modèle peut être éprouvé sur une tâche et expérimental sur une autre).
  */
+// `store` : noms des modèles prêts, ou { modeles: noms, agents: [...] } (relevé du pont) -> { noms, agents }.
+function releve(store) {
+  if (store == null) return { noms: new Set(), agents: [] };
+  if (!Array.isArray(store) && typeof store === "object") {
+    return { noms: new Set(store.modeles || []), agents: Array.isArray(store.agents) ? store.agents : [] };
+  }
+  return { noms: new Set(store), agents: [] };
+}
+
 // `store:<nom>` si le modèle est prêt sur le store (voies texte/chat), sinon "".
 function identifiantStore(voie, modele, store) {
   const nom = modele.store;
-  if (voie === "agent" || store == null || typeof nom !== "string" || !new Set(store).has(nom)) return "";
+  if (voie === "agent" || typeof nom !== "string" || !releve(store).noms.has(nom)) return "";
   return "store:" + nom;
+}
+
+// Nom du premier agent prêt qui applique le `schema` de la tâche avec le `store` du modèle (voie agent), sinon "".
+function identifiantAgent(voie, t, modele, store) {
+  if (voie !== "agent" || typeof t.schema !== "string" || typeof modele.store !== "string") return "";
+  const agent = releve(store).agents.find((a) => a && typeof a === "object" && a.schema === t.schema
+    && a.modele_store === modele.store && typeof a.nom === "string" && NOM_AGENT.test(a.nom));
+  return agent ? agent.nom : "";
 }
 
 function modelesConfigures(tache, voie, { env = process.env, catalogue = chargerCatalogue(), externes = false, store = null } = {}) {
@@ -133,7 +150,8 @@ function modelesConfigures(tache, voie, { env = process.env, catalogue = charger
     // n'est jamais un défaut ni l'alternative DocIE, même mal placé.
     if (!modele || !modele.etiquettes.includes(t.usage) || modele.fournisseur) continue;
     const variable = nomVariable(voie, tache, entree.modele, { catalogue });
-    const brut = String((env || {})[variable] ?? "").trim() || identifiantStore(voie, modele, store);
+    const brut = String((env || {})[variable] ?? "").trim() || identifiantStore(voie, modele, store)
+      || identifiantAgent(voie, t, modele, store);
     if (!brut) continue;
     if (!identifiantValide(voie, brut)) {
       throw new CatalogueError("configuration", `Identifiant mal formé dans ${variable}.`, { variable });

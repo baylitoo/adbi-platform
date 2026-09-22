@@ -33,14 +33,17 @@ function chargerCatalogue() {
   return require(CHEMIN_CATALOGUE);
 }
 
-// Noms des modèles prêts sur le store DocIE, dernier relevé du pont ; pont absent : [].
+// Dernier relevé du pont : { modeles: noms prêts, agents: agents prêts } ; pont absent : vide.
 function storePret() {
-  try { return require(CHEMIN_PONT).storeUtilisableConnu().map((m) => m.nom).filter(Boolean); } catch { return []; }
+  try {
+    const pont = require(CHEMIN_PONT);
+    return { modeles: pont.storeUtilisableConnu().map((m) => m.nom).filter(Boolean), agents: pont.agentsUtilisablesConnus() };
+  } catch { return { modeles: [], agents: [] }; }
 }
 
-// Relit le store (cache 5 min du pont) avant un rendu de sélecteur ou une vérification.
+// Relit store et agents (cache 5 min du pont) avant un rendu de sélecteur ou une vérification.
 async function rafraichirStore(env = process.env) {
-  try { await require(CHEMIN_PONT).storeUtilisable({ env }); } catch { /* relevé précédent conservé */ }
+  try { await require(CHEMIN_PONT).agentsUtilisables({ env }); } catch { /* relevé précédent conservé */ }
 }
 
 // Tâches de ce service qui ont un sélecteur, et leur voie DocIE par défaut (#194 :

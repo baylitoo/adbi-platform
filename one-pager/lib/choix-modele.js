@@ -52,14 +52,17 @@ function chargerPont() {
   return require("../../document-parsing/bridge/docie-bridge");
 }
 
-// Noms des modeles prets sur le store DocIE, dernier releve du pont ; pont absent : [].
+// Dernier releve du pont : { modeles: noms prets, agents: agents prets } ; pont absent : vide.
 function storePret() {
-  try { return chargerPont().storeUtilisableConnu().map((m) => m.nom).filter(Boolean); } catch { return []; }
+  try {
+    const pont = chargerPont();
+    return { modeles: pont.storeUtilisableConnu().map((m) => m.nom).filter(Boolean), agents: pont.agentsUtilisablesConnus() };
+  } catch { return { modeles: [], agents: [] }; }
 }
 
-// Relit le store (cache 5 min du pont) avant un rendu de selecteur ou une verification.
+// Relit store et agents (cache 5 min du pont) avant un rendu de selecteur ou une verification.
 async function rafraichirStore(env = process.env) {
-  try { await chargerPont().storeUtilisable({ env }); } catch { /* releve precedent conserve */ }
+  try { await chargerPont().agentsUtilisables({ env }); } catch { /* releve precedent conserve */ }
 }
 
 function docieActif(env) {
