@@ -95,26 +95,9 @@ class FileImportsPleineError extends Error {
   }
 }
 
-/**
- * Messages des codes nommes du bridge DocIE (document-parsing/bridge/
- * docie-bridge.js). Liste relevee dans le bridge, pas supposee. Un code absent
- * de cette table n'est PAS repris tel quel : il devient `interne`.
- */
-const MESSAGES_BRIDGE = {
-  loading: "Modèle en cours de chargement, réessayez dans quelques instants.",
-  context: "Document trop long pour le modèle d'extraction.",
-  timeout: "L'extraction a dépassé le délai imparti.",
-  limits: "Document refusé par le service d'extraction : au-delà de ses limites (taille, pages ou blocs OCR).",
-  upstream: "Le service d'extraction a répondu en erreur.",
-  network: "Service d'extraction injoignable.",
-  input: "Document refusé par le service d'extraction.",
-  configuration: "Service d'extraction mal configuré.",
-  auth: "Accès au service d'extraction refusé (configuration).",
-  rate_limit: "Service d'extraction saturé, réessayez plus tard.",
-  response: "Réponse du service d'extraction invalide.",
-  incomplete: "Extraction inachevée par le service d'extraction.",
-  schema: "Le service d'extraction a renvoyé un autre type de document.",
-};
+// Messages des codes du bridge : la table du pont lui-meme, jamais une copie ; un code absent devient `interne`.
+const pont = require("../../document-parsing/bridge/docie-bridge");
+const MESSAGES_BRIDGE = pont.MESSAGES_ERREUR;
 
 const MESSAGE_INTERNE = "Lecture impossible : erreur interne.";
 
@@ -141,18 +124,7 @@ function mapperErreur(e) {
   if (e && e.name === "ImportError" && typeof e.message === "string") {
     return { code: "input", message: e.message };
   }
-  const code = e && typeof e.code === "string" ? e.code : null;
-  if (code && Object.hasOwn(MESSAGES_BRIDGE, code)) {
-    if (code === "loading") {
-      const eta = e.eta_seconds;
-      if (typeof eta === "number" && Number.isFinite(eta) && eta >= 0) {
-        const n = Math.ceil(eta);
-        return { code, message: `Modèle en cours de chargement, réessayez dans ~${n} s.`, eta_seconds: n };
-      }
-    }
-    return { code, message: MESSAGES_BRIDGE[code] };
-  }
-  return { code: "interne", message: MESSAGE_INTERNE };
+  return pont.messageErreur(e) || { code: "interne", message: MESSAGE_INTERNE };
 }
 
 /**

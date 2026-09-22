@@ -182,6 +182,37 @@ class DocIEBridgeError extends Error {
 function fail(code, message, status, etaSeconds = null) { throw new DocIEBridgeError(code, message, status, etaSeconds); }
 function object(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
+// Message français par code stable, la seule table de la plateforme ; le texte anglais du pont ne s'affiche jamais.
+const MESSAGES_ERREUR = Object.freeze({
+  loading: "Modèle en cours de chargement, réessayez dans quelques instants.",
+  context: "Document trop long pour le modèle d'extraction.",
+  timeout: "L'extraction a dépassé le délai imparti.",
+  limits: "Document refusé par le service d'extraction : au-delà de ses limites (taille, pages ou blocs OCR).",
+  upstream: "Le service d'extraction a répondu en erreur.",
+  network: "Service d'extraction injoignable.",
+  input: "Document refusé par le service d'extraction.",
+  configuration: "Service d'extraction mal configuré.",
+  auth: "Accès au service d'extraction refusé (configuration).",
+  rate_limit: "Service d'extraction saturé, réessayez plus tard.",
+  response: "Réponse du service d'extraction invalide.",
+  incomplete: "Extraction inachevée par le service d'extraction.",
+  schema: "Le service d'extraction a renvoyé un autre type de document.",
+});
+
+// { code, message, eta_seconds? } présentable pour une erreur du pont (objet à `code`, `eta_seconds`) ; code inconnu : null.
+function messageErreur(err) {
+  const code = err && typeof err.code === "string" ? err.code : null;
+  if (!code || !Object.hasOwn(MESSAGES_ERREUR, code)) return null;
+  if (code === "loading") {
+    const eta = err.eta_seconds;
+    if (typeof eta === "number" && Number.isFinite(eta) && eta >= 0) {
+      const n = Math.ceil(eta);
+      return { code, message: `Modèle en cours de chargement, réessayez dans ~${n} s.`, eta_seconds: n };
+    }
+  }
+  return { code, message: MESSAGES_ERREUR[code] };
+}
+
 // API root, access key and timeout — what BOTH DocIE paths need. Split out of
 // configuration() for extractText(): POST /v1/extract/text has no agent in its
 // URL, so requiring DOCIE_AGENT_<KIND> there would refuse a text extraction
@@ -1062,6 +1093,7 @@ function agentsUtilisablesConnus() {
 
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload, listStore, projeterStore,
   storeUtilisable, storeUtilisableConnu, listAgents, projeterAgent, agentsUtilisables, agentsUtilisablesConnus, nomStore,
+  MESSAGES_ERREUR, messageErreur,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
   DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
   MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };

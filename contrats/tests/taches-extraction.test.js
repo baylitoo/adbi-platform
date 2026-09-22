@@ -372,7 +372,7 @@ test("chaque code du bridge garde son nom et recoit un message francais propre e
     messages.add(m.message);
   }
   assert.equal(messages.size, codesDuBridge().length, "un message distinct par code");
-  assert.equal(mapperErreur(erreurBridge("context", "x")).message, "Contrat trop long pour le modèle d'extraction.");
+  assert.equal(mapperErreur(erreurBridge("context", "x")).message, "Document trop long pour le modèle d'extraction.");
 });
 
 test("erreurs metier d'extractContractValues : disabled et input gardent leur code et leur message, identique au texte reellement leve", async () => {
