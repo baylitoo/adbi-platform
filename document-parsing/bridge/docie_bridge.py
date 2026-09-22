@@ -894,6 +894,71 @@ def extract_document(content, mime_type, *, kind="resume", agent=None, env=None,
     return result
 
 
+STORE_MAX_BYTES = 1024 * 1024
+
+
+def get_json(endpoint, headers, key, timeout, session):
+    """Un GET, jamais de relance ; même classement de statut, même plafond, même rédaction de clé que post_json."""
+    own_session = session is None
+    session = session or requests.Session()
+    chunks, size = [], 0
+    try:
+        with session.get(endpoint, headers=headers, timeout=(min(10, timeout), timeout),
+                         allow_redirects=False, stream=True) as response:
+            status = response.status_code
+            if status != 200:
+                fail({401: "auth", 403: "auth", 429: "rate_limit"}.get(status, "upstream"),
+                     "DocIE request failed (HTTP " + str(status) + ").", status)
+            for chunk in response.iter_content(65536):
+                size += len(chunk)
+                if size > STORE_MAX_BYTES:
+                    fail("response", "DocIE response exceeded the size ceiling.")
+                chunks.append(chunk)
+    except requests.Timeout:
+        fail("timeout", "DocIE timeout.")
+    except requests.RequestException:
+        fail("network", "DocIE network or TLS failure.")
+    finally:
+        if own_session:
+            session.close()
+    try:
+        return json.loads(b"".join(chunks).decode("utf-8", "replace").replace(key, "[REDACTED]"))
+    except ValueError:
+        fail("response", "DocIE returned invalid JSON.")
+
+
+def projeter_store(entree):
+    """Projection d'une entrée de GET /v1/serving/store : clés stables seulement, jamais endpoint ni chemin."""
+    placement = entree.get("placement") if isinstance(entree.get("placement"), dict) else {}
+    etat = placement.get("state")
+    endpoint = placement.get("endpoint")
+    debit = placement.get("tokens_per_second")
+    slots = placement.get("slot_count")
+
+    def chaine(valeur):
+        return valeur if isinstance(valeur, str) else None
+
+    return {
+        "nom": chaine(entree.get("name")),
+        "famille": chaine(entree.get("family")),
+        "etat": etat if isinstance(etat, str) else "inconnu",
+        "phase": chaine(placement.get("phase")),
+        "utilisable": etat == "ready" and isinstance(endpoint, str) and bool(endpoint),
+        "tokens_par_seconde": debit if isinstance(debit, (int, float)) and not isinstance(debit, bool) and math.isfinite(debit) else None,
+        "slots": slots if isinstance(slots, int) and not isinstance(slots, bool) else None,
+    }
+
+
+def list_store(*, env=None, session=None):
+    """GET /v1/serving/store : ce qui EST déployé, et s'il est prêt (placement.state "ready" + endpoint)."""
+    env = os.environ if env is None else env
+    base, key, timeout = connection(env)
+    body = get_json(base + "/v1/serving/store", {"x-api-key": key}, key, min(timeout, 30), session)
+    if not isinstance(body, list):
+        fail("response", "DocIE returned an invalid store listing.")
+    return [projeter_store(e) for e in body if isinstance(e, dict)]
+
+
 def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, model_profile=None, langue=None, env=None, session=None):
     """Send already-readable text to POST /v1/extract/text. One call, no retry.
 

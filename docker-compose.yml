@@ -29,7 +29,13 @@ services:
       context: ./factory
       additional_contexts:
         auth: ./auth
+        bridge: ./document-parsing/bridge
     environment:
+      # Liste du store DocIE dans le voyant IA du hub (pont partage, GET /v1/serving/store).
+      DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
+      DOCIE_API_KEY: ${DOCIE_API_KEY:-}
+      DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
+      DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-360}
       ADBI_ONEPAGER_URL: ${ADBI_ONEPAGER_URL:?Set the public OnePager HTTPS URL}
       ADBI_CONTRATS_URL: ${ADBI_CONTRATS_URL:?Set the public Contrats HTTPS URL}
       ADBI_COFFRE_URL: ${ADBI_COFFRE_URL:?Set the public Coffre HTTPS URL}

@@ -383,6 +383,51 @@ async function testerModeleLlm(modele) {
 // (`testsLlmCache`) : un boucleur ne coûte plus qu'un appel amont par modèle
 // et par fenêtre, quel que soit son débit. Les échecs ne sont pas mis en
 // cache pour que le voyant reflète un rétablissement sans attendre le TTL.
+// Liste du store DocIE : en cache 5 min et regroupée, le hub étant ouvert à tous ses utilisateurs.
+const MODELES_DOCIE_CACHE_MS = 5 * 60 * 1000;
+let modelesDocieCache = null;
+let modelesDocieEnCours = null;
+
+function chargerPontDocie() {
+  const nodePath = require("node:path");
+  for (const chemin of ["/document-parsing/bridge/docie-bridge.js", nodePath.join(__dirname, "..", "document-parsing", "bridge", "docie-bridge.js")]) {
+    try { return require(chemin); } catch {}
+  }
+  return null;
+}
+
+async function listerModelesDocie() {
+  const pont = chargerPontDocie();
+  if (!pont) return { configure: false, erreur: "Pont DocIE absent de cette image.", modeles: [] };
+  if (!(process.env.DOCIE_BASE_URL || "").trim()) return { configure: false, erreur: "DocIE non configuré (DOCIE_BASE_URL).", modeles: [] };
+  try {
+    return { configure: true, modeles: await pont.listStore({ env: process.env }) };
+  } catch (e) {
+    return { configure: true, erreur: MESSAGES_PONT_DOCIE[e.code] || "DocIE : " + e.message, code: e.code || null, modeles: [] };
+  }
+}
+
+const MESSAGES_PONT_DOCIE = {
+  configuration: "DocIE mal configuré côté hub (DOCIE_BASE_URL / DOCIE_API_KEY).",
+  auth: "DocIE : accès refusé. Vérifiez DOCIE_API_KEY.",
+  rate_limit: "DocIE : limite de débit atteinte, réessayez plus tard.",
+  upstream: "DocIE : erreur côté serveur DocIE.",
+  timeout: "DocIE : délai dépassé.",
+  network: "DocIE injoignable ou délai réseau dépassé.",
+  response: "DocIE : réponse invalide.",
+};
+
+function listerModelesDocieMisEnCache(forcer) {
+  if (!forcer && modelesDocieCache && modelesDocieCache.expire > Date.now()) return Promise.resolve(modelesDocieCache.corps);
+  if (!modelesDocieEnCours) {
+    modelesDocieEnCours = listerModelesDocie().then((corps) => {
+      if (!corps.erreur) modelesDocieCache = { corps, expire: Date.now() + MODELES_DOCIE_CACHE_MS };
+      return corps;
+    }).finally(() => { modelesDocieEnCours = null; });
+  }
+  return modelesDocieEnCours;
+}
+
 const TEST_LLM_CACHE_MS = 15 * 1000;
 const testsLlmEnCours = new Map(); // modele -> Promise<ms>
 const testsLlmCache = new Map();   // modele -> { ms, expire }
@@ -560,6 +605,10 @@ const serveur = http.createServer(async (req, rep) => {
       configure: !!LLM_BASE_URL && LLM_MODELES.length > 0,
       modeles: LLM_MODELES,
     });
+  }
+
+  if (chemin === "/api/llm/modeles" && req.method === "GET") {
+    return repondreJson(rep, 200, await listerModelesDocieMisEnCache(url.searchParams.has("maj")));
   }
 
   if (chemin === "/api/llm/tester" && req.method === "POST") {
