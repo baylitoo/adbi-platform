@@ -8,18 +8,14 @@ aucun Docling, Torch, OCR ou modèle à installer dans cette image.
 Dépôt du CV → cache par empreinte → lecture du texte → DocIE (schéma inline) →
 normalisation ADBI → PostgreSQL et exports PDF/Word.
 
-Par défaut, le client utilise `POST /v1/extract/text` avec le schéma `adbi_resume`
-fourni dans la requête. PDF texte et DOCX sont pris en charge, pas encore les scans.
+Tout appel DocIE passe par le pont partagé (`document-parsing/bridge/docie_bridge.py`) :
+`POST /v1/extract/text` avec le schéma `adbi_resume` fourni dans la requête. PDF texte
+et DOCX sont pris en charge ; les scans exigent le pont actif (voie agent, OCR distant).
 Voir [le guide Coolify + DocIE](../docs/coolify-docie.md).
-
-En mode historique explicite `DOCIE_EXTRACTION_MODE=studio`, le client utilise
-`POST /v1/studio/extract` avec `dynamic_schema_name`, puis
-`GET /v1/studio/runs/{event_id}` jusqu'au résultat persistant. Il conserve
-les expériences, formations, compétences et métadonnées de validation.
-Les PDF sont envoyés en `content_b64`. Pour les DOCX, le texte des paragraphes
-et tableaux est envoyé dans `text` (DocIE ne lit pas directement le format Word).
-Un DOCX constitué uniquement d'images doit être exporté en PDF pour l'OCR.
-Une panne distante est signalée ; une réanalyse échouée conserve la fiche existante.
+Pour les DOCX, le texte des paragraphes et tableaux est envoyé dans `text` (DocIE ne
+lit pas directement le format Word). Un DOCX constitué uniquement d'images doit être
+exporté en PDF pour l'OCR. Une panne distante est signalée ; une réanalyse échouée
+conserve la fiche existante.
 
 ## Configuration DocIE
 
@@ -30,10 +26,8 @@ en exécution native, exporter les variables dans le shell) :
   `http://host.docker.internal:8080` ; hors Docker : `http://127.0.0.1:8080`.
 - `DOCIE_API_KEY` : clé envoyée côté serveur dans `x-api-key`.
   Laisser vide uniquement si l'instance DocIE fonctionne sans authentification.
-- `DOCIE_SCHEMA_NAME=resume` : schéma dynamique déjà enregistré dans DocIE.
 - `DOCIE_MODEL_PROFILE` : profil DocIE ; vide pour son choix par défaut.
-- `DOCIE_OCR_BACKEND` : backend OCR distant ; vide pour son choix par défaut.
-- `DOCIE_TIMEOUT_SECONDS=900` : attente totale maximale (1 à 3600 secondes).
+- `DOCIE_TIMEOUT_SECONDS=360` : attente totale maximale (1 à 3600 secondes).
 
 Le schéma `resume` doit suivre celui de
 `document-parsing/scripts/register_and_test.py`. Le client ne remplace pas
@@ -176,10 +170,9 @@ contrats et one-pager ont chacun leur propre garde et lisent chacun **leur**
 (voir `factory/README.md` et `docs/recette-post-deploiement.md`).
 
 Variables d'environnement : voir [`.env.example`](.env.example).
-# Déploiement DocIE inline
+# Déploiement DocIE
 
-Le mode par défaut est maintenant `DOCIE_EXTRACTION_MODE=inline` : PDF texte/DOCX
-vers `/v1/extract/text`, schéma `adbi_resume` fourni dans la requête, sans création
-de schéma distant. Les scans nécessitent encore une intégration OCR ; ils sont
-refusés explicitement. `DOCIE_EXTRACTION_MODE=studio` conserve le client historique
-décrit plus bas. Voir [le guide Coolify](../docs/coolify-docie.md).
+PDF texte/DOCX vers `/v1/extract/text` par le pont partagé, schéma `adbi_resume`
+fourni dans la requête, sans création de schéma distant. Les scans sont refusés
+explicitement tant que le pont n'est pas actif (voie agent, OCR distant).
+Voir [le guide Coolify](../docs/coolify-docie.md).

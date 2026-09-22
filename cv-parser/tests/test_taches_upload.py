@@ -430,8 +430,8 @@ class Erreurs(unittest.TestCase):
 
     def test_loading_client_historique(self):
         # Le message réel de docie_client (#192), pas une copie.
-        avec = DocIEError(docie_client.message_chargement({"detail": {"status": "loading", "eta_seconds": 41.5}}))
-        sans = DocIEError(docie_client.message_chargement({"detail": {"status": "loading"}}))
+        avec = DocIEError(docie_client.message_chargement(41.5))
+        sans = DocIEError(docie_client.message_chargement(None))
         self.assertEqual(tu.mapper_erreur(avec), {
             "code": "loading", "message": "Modèle en cours de chargement, réessayez dans ~42 s.",
             "eta_seconds": 42})
@@ -458,7 +458,6 @@ class Erreurs(unittest.TestCase):
         examiné avant d'arriver dans `erreur.message`.
         """
         connus = {
-            ("docie_client.py", "DocIE : erreur HTTP "),
             # `key` parcourt un tuple de noms de champs écrit dans map_resume.
             ("docie_client.py", "DocIE : champ "),
             ("docie_bridge_extraction.py", "Document introuvable ou illisible : "),
@@ -480,7 +479,7 @@ class Erreurs(unittest.TestCase):
                         trouves.add((nom, tete))
                     elif not isinstance(arg, ast.Constant):
                         trouves.add((nom, ast.unparse(arg)))
-        self.assertEqual(trouves, connus | {("docie_client.py", "message_chargement(corps)")})
+        self.assertEqual(trouves, connus)
 
     def test_aucun_secret_dans_la_vue_et_journal_serveur(self):
         secret = "sk-docie-SECRET-4242 upstream said: /etc/passwd"

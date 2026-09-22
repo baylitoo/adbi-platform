@@ -299,11 +299,8 @@ services:
     environment:
       PORT: 5000
       DOCIE_BASE_URL: ${DOCIE_BASE_URL:?Set the DocIE API root URL}
-      DOCIE_EXTRACTION_MODE: inline
       DOCIE_API_KEY: ${DOCIE_API_KEY:?Set the DocIE application access key}
-      DOCIE_SCHEMA_NAME: ${DOCIE_SCHEMA_NAME:-resume}
       DOCIE_MODEL_PROFILE: ${DOCIE_MODEL_PROFILE:-lfm2.5-2.6b}
-      DOCIE_OCR_BACKEND: ${DOCIE_OCR_BACKEND:-}
       DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-360}
       # Bascule issue #151 : off par défaut, docie_client.py (ci-dessus) reste
       # le chemin d'extraction. DOCIE_AGENT_RESUME n'est requis que si activée

@@ -312,6 +312,7 @@ class VoieTexteTests(unittest.TestCase):
     def test_modele_choisi_verifie_sur_le_texte_et_envoye_en_model_profile(self):
         pont = self._pont()
         choix = Mock()
+        choix.est_externe = False
         choix.pour_texte.return_value = "store:lfm25_2_6b"
         self._extraire("cv.docx", "Alice Dupont", pont, choix=choix)
         choix.pour_texte.assert_called_once_with("Alice Dupont")

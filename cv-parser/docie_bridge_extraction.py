@@ -1,18 +1,17 @@
 """Extraction CV via le bridge DocIE partagé (issue #151).
 
-`docie_client.py` (commit "standardize DocIE extraction") appelait DocIE
-directement, avant que le bridge commun (#150/#155,
-document-parsing/bridge/docie_bridge.py) n'existe. Ce module ajoute un
-second chemin d'extraction qui passe par ce bridge — auth, timeouts,
-classification d'erreurs sans fuite de secret et parsing de la réponse
-DocIE y sont déjà traités, pas réimplémentés ici.
+Tout appel DocIE de cv-parser passe par le bridge commun (#150/#155,
+document-parsing/bridge/docie_bridge.py) : auth, timeouts, classification
+d'erreurs sans fuite de secret et parsing de la réponse y sont traités une
+fois, jamais réimplémentés ici. `docie_client.py` ne garde que la lecture
+locale du texte, la projection du résultat et le repli externe.
 
 Bascule : DOCIE_EXTRACTION_ENABLED (voir docie_extraction_enabled ci-dessous).
-Off par défaut, le chemin historique `docie_client.extract_resume` reste
-inchangé — le point n'est pas de retirer ce client aujourd'hui, seulement
-d'offrir un chemin de bascule sûr et réversible. La normalisation, l'édition
-et les exports en aval (app.py::process_cv, normalize_cv_data, bilan_adbi,
-export_dossier.py) ne changent pas : seule l'étape d'extraction change.
+Off par défaut : tout dépôt (PDF texte, DOCX) suit la voie TEXTE
+(`extraire_texte`). On : PDF et images suivent la voie AGENT (OCR distant),
+le DOCX la voie texte. La normalisation, l'édition et les exports en aval
+(app.py::process_cv, normalize_cv_data, bilan_adbi, export_dossier.py) ne
+changent pas : seule l'étape d'extraction change.
 
 Le bridge sert les DEUX surfaces de DocIE, et la voie se choisit sur la
 structure que la source a réellement (règle #180) :
@@ -152,6 +151,8 @@ def _echouer_pont(exc):
     `return DocIEError(...)` rendrait ce garde-fou aveugle.
     """
     message = _ERROR_MESSAGES.get(exc.code, f"DocIE (bridge) : {exc}")
+    if exc.code == "loading":
+        message = docie_client.message_chargement(exc.eta_seconds)
     # Le code voyage aussi en VALEUR (docie_client.DocIEError.code), pas
     # seulement dans la prose : le repli externe doit pouvoir décider sans
     # relire une chaîne de caractères. `args[0]` reste la même f-string, donc la
@@ -215,6 +216,36 @@ def _adapter(bridge_result, voie):
     return data, metadata
 
 
+def extraire_texte(file_path, progress=None, *, session=None, choix=None):
+    """Voie TEXTE du pont (PDF à couche texte, DOCX) : lecture locale, choix vérifié, un seul appel -> (data, metadata).
+
+    Seul chemin de la voie texte pour cv-parser : `docie_client.extract_resume`
+    (pont éteint, tout dépôt) et le DOCX de `extract_resume` (pont actif) y
+    passent tous deux. Un modèle EXTERNE choisi envoie le texte au fournisseur,
+    jamais à DocIE.
+    """
+    path = Path(file_path)
+    texte, raison = docie_client.texte_document(path)
+    if raison == "page_sans_texte" or not texte.strip():
+        raise DocIEError("PDF sans couche texte (scan ou page vide) : OCR requis, non disponible sur la voie texte.")
+    options = {}
+    if choix is not None:
+        identifiant = choix.pour_texte(texte)
+        if choix.est_externe:
+            return docie_client.extraire_par_externe(texte, choix.mode_externe, _schema_resume(),
+                                                     progress=progress, session=session)
+        options["model_profile"] = identifiant
+    docie_bridge = _load_bridge()
+    if progress:
+        progress("Envoi du texte du document à DocIE (bridge)")
+    try:
+        bridge_result = docie_bridge.extract_text(texte, kind="resume", dynamic_schema=_schema_resume(),
+                                                  session=session, **options)
+    except docie_bridge.DocIEBridgeError as exc:
+        _echouer_pont(exc)
+    return _adapter(bridge_result, "texte")
+
+
 def extract_resume(file_path, progress=None, *, session=None, choix=None):
     """Même contrat que docie_client.extract_resume : renvoie (data, metadata).
 
@@ -235,9 +266,8 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
     volontairement inéligible tant que le sélecteur de modèles ne sait pas
     prédire la voie PAR FICHIER (voir le commentaire du corps).
 
-    `metadata` porte `transport` ("docie-bridge", ou "docie" quand un suffixe
-    qu'aucune voie du pont ne lit est délégué au client historique) et `voie`
-    ("texte" ou "agent"), que l'appelant ne peut plus déduire du transport.
+    `metadata` porte `transport` ("docie-bridge") et `voie` ("texte" ou
+    "agent"), que l'appelant ne peut pas déduire du transport.
 
     `choix` (#194, choix_modele.Choix) : modèle explicitement choisi. Voie
     texte : vérifié sur le texte réel (lignes non vides) et envoyé en
@@ -264,31 +294,9 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
     # Le faire proprement demande une prédiction PAR FICHIER côté sélecteur,
     # comme contrats a dû l'écrire pour le Kbis (#194, preparerSelecteurKbis).
     # Hors de cette PR : c'est un changement d'interface, pas de transport.
-    if suffixe == ".docx":
-        # Règle PARTAGÉE avec le client historique, jamais recopiée. Un DOCX
-        # sans texte lisible est déjà refusé, nommé, par document_payload ;
-        # `page_sans_texte` ne concerne que les PDF, donc jamais ce chemin.
-        texte, _raison = docie_client.texte_document(path)
-        docie_bridge = _load_bridge()
-        if progress:
-            progress("Envoi du texte du document à DocIE (bridge)")
-        options = {}
-        if choix is not None:
-            options["model_profile"] = choix.pour_texte(texte)
-        try:
-            bridge_result = docie_bridge.extract_text(
-                texte, kind="resume", dynamic_schema=_schema_resume(),
-                session=session, **options)
-        except docie_bridge.DocIEBridgeError as exc:
-            _echouer_pont(exc)
-        return _adapter(bridge_result, "texte")
-
-    if mime_type is None:
-        # Suffixe qu'aucune voie du pont ne sait lire : un seul appel, via le
-        # client historique — pas un second essai après un échec du pont.
-        options = {"choix": choix} if choix is not None else {}
-        data, metadata = docie_client.extract_resume(path, progress=progress, session=session, **options)
-        return data, {**metadata, "transport": "docie", "voie": "texte"}
+    # DOCX : voie texte. Suffixe inconnu du pont : la même voie le refuse, nommé (texte_document).
+    if suffixe == ".docx" or mime_type is None:
+        return extraire_texte(path, progress, session=session, choix=choix)
 
     docie_bridge = _load_bridge()
 

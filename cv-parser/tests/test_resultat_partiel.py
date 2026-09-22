@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import docie_client  # noqa: E402
 from docie_review import (AVERTISSEMENT_TRONCATURE, LIBELLES_PARTIEL,  # noqa: E402
                           libelle_partiel, revue_docie)
-from test_choix_modele import DEUX_AGENT, DEUX_TEXTE, docx, environnement, fonctions_d_app, rendre  # noqa: E402
+from test_choix_modele import DEUX_AGENT, DEUX_TEXTE, docx, environnement, fonctions_d_app, rendre, session_pont  # noqa: E402
 
 RAISONS = ("boucle", "valeur_abandonnee", "forme_invalide", "feuille_abandonnee", "liste_plafonnee_possible")
 
@@ -217,18 +217,17 @@ class ProcessCv(unittest.TestCase):
 
 
 class VoieTexteHistorique(unittest.TestCase):
-    """docie_client.extract_resume (inline) mesure désormais `troncature_possible`."""
+    """docie_client.extract_resume (voie texte du pont) mesure `troncature_possible`."""
 
     FIXTURE = RACINE.parent / "document-parsing/fixtures/cv_samples/results/simple_docie.json"
 
-    def extraire(self, lignes, mode="inline"):
+    def extraire(self, lignes):
         sortie = json.loads(self.FIXTURE.read_text(encoding="utf-8"))
-        sortie.update(schema_name="adbi_resume", request_id="request-1")
-        session = Mock()
-        session.request.return_value = Mock(status_code=200, json=lambda: sortie)
+        sortie.update(schema_name="adbi_resume", request_id="request-1"); sortie["result"]["document_type"] = "adbi_resume"
+        session = session_pont((200, sortie))
         chemin = docx(lignes)
         try:
-            with patch.dict(os.environ, {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_EXTRACTION_MODE": mode}):
+            with patch.dict(os.environ, {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "secret"}):
                 return docie_client.extract_resume(chemin, session=session)[1]
         finally:
             chemin.unlink(missing_ok=True)
@@ -237,11 +236,6 @@ class VoieTexteHistorique(unittest.TestCase):
         self.assertEqual(self.extraire(800)["blocs_texte"], 800)
         self.assertIs(self.extraire(800)["troncature_possible"], False)
         self.assertIs(self.extraire(801)["troncature_possible"], True)
-
-    def test_bridge_introuvable_non_mesurable(self):
-        with patch("docie_bridge_extraction._load_bridge", side_effect=ImportError("absent")):
-            meta = self.extraire(900)
-        self.assertEqual((meta["blocs_texte"], meta["troncature_possible"]), (None, None))
 
 
 class Affichage(unittest.TestCase):

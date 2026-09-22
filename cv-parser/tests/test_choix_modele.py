@@ -6,6 +6,7 @@ remplacé dans les routes. Le catalogue lu est le vrai
 environnement de test.
 """
 import ast
+import json
 import os
 import sys
 import tempfile
@@ -62,6 +63,21 @@ def docx(lignes):
         archive.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/'
                          f'wordprocessingml/2006/main"><w:body>{corps}</w:body></w:document>')
     return Path(fichier.name)
+
+
+def session_pont(*reponses):
+    """Session `requests` simulée au contrat du pont : `post()` -> réponse en flux (status_code, headers, iter_content)."""
+    def reponse(status, corps):
+        octets = corps if isinstance(corps, bytes) else json.dumps(corps).encode("utf-8")
+        r = MagicMock()
+        r.status_code = status
+        r.headers = {}
+        r.iter_content = lambda n: iter([octets])
+        r.__enter__.return_value = r
+        return r
+    session = Mock()
+    session.post.side_effect = [reponse(status, corps) for status, corps in reponses]
+    return session
 
 
 def pdf(pages):
@@ -121,10 +137,6 @@ class Offre(unittest.TestCase):
     def test_alternative_seule_configuree_proposee_seule(self):
         with environnement(DOCIE_MODELE_NUEXTRACT3="store:nuextract3"):
             self.assertEqual([m["id"] for m in choix_modele.modeles_proposes()], ["nuextract3"])
-
-    def test_mode_studio_aucune_voie_du_catalogue(self):
-        with environnement(DOCIE_EXTRACTION_MODE="studio", **DEUX_TEXTE):
-            self.assertEqual(choix_modele.modeles_proposes(), [])
 
     def test_bridge_actif_pdf_voie_agent_docx_voie_texte(self):
         with environnement(DOCIE_EXTRACTION_ENABLED="true", DOCIE_AGENT_RESUME_NUEXTRACT3="agent_nu",
@@ -201,10 +213,6 @@ class Limites(unittest.TestCase):
                     choix_modele.Choix(modele).verifier(".pdf")
                 self.assertEqual(ctx.exception.code, "modele_non_propose")
                 self.assertIn(nom, str(ctx.exception))
-        with environnement(DOCIE_EXTRACTION_MODE="studio", **DEUX_TEXTE):
-            with self.assertRaises(tu.ErreurTache) as ctx:
-                choix_modele.Choix("lfm25_2_6b").verifier(".pdf")
-            self.assertEqual(ctx.exception.code, "modele_non_propose")
 
     def test_refus_nomme_traverse_la_tache(self):
         erreur = tu.ErreurTache("LFM2.5 2.6B n'est pas proposé au-delà de 800 lignes non vides (document : 801).",
@@ -214,14 +222,13 @@ class Limites(unittest.TestCase):
 
 class VoieTexte(unittest.TestCase):
     ENV = {"DOCIE_BASE_URL": "https://docie.example", "DOCIE_API_KEY": "secret",
-           "DOCIE_EXTRACTION_MODE": "inline", "DOCIE_MODEL_PROFILE": "profil-env", **DEUX_TEXTE}
+           "DOCIE_MODEL_PROFILE": "profil-env", **DEUX_TEXTE}
 
     def extraire(self, lignes, choix):
         from docie_client import extract_resume
-        session = Mock()
         sortie = {"schema_name": "adbi_resume", "request_id": "r1", "model_profile": "store:nuextract3",
                   "result": {"name": "Alice Dupont"}, "validation": {"valid": True, "errors": [], "warnings": []}}
-        session.request.return_value = Mock(status_code=200, json=lambda: sortie)
+        session = session_pont((200, sortie))
         chemin = docx(lignes)
         self.addCleanup(chemin.unlink)
         options = {"choix": choix} if choix else {}
@@ -233,7 +240,7 @@ class VoieTexte(unittest.TestCase):
         with environnement(**DEUX_TEXTE):
             choix = choix_modele.Choix("nuextract3")
         session, (_, metadata) = self.extraire(1200, choix)
-        self.assertEqual(session.request.call_args.kwargs["json"]["model_profile"], "store:nuextract3")
+        self.assertEqual(session.post.call_args.kwargs["json"]["model_profile"], "store:nuextract3")
         self.assertEqual(metadata["model_profile"], "store:nuextract3")
 
     def test_limite_depassee_refus_avant_tout_appel(self):
@@ -244,11 +251,11 @@ class VoieTexte(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "limite")
         # 800 lignes : envoyé, avec l'identifiant du modèle choisi.
         session, _ = self.extraire(800, choix)
-        self.assertEqual(session.request.call_args.kwargs["json"]["model_profile"], "store:lfm2.5-2.6b")
+        self.assertEqual(session.post.call_args.kwargs["json"]["model_profile"], "store:lfm2.5-2.6b")
 
     def test_sans_choix_comportement_d_avant(self):
         session, _ = self.extraire(1200, None)
-        self.assertEqual(session.request.call_args.kwargs["json"]["model_profile"], "profil-env")
+        self.assertEqual(session.post.call_args.kwargs["json"]["model_profile"], "profil-env")
 
 
 class VoieAgent(unittest.TestCase):
