@@ -907,7 +907,69 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, ocrBlo
   return result;
 }
 
-module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload,
+const STORE_MAX_BYTES = 1024 * 1024;
+
+// Un GET, jamais de relance ; même classement de statut, même plafond, même rédaction de clé que postJson.
+async function getJson(endpoint, headers, key, timeout, fetchImpl) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout * 1000);
+  let reader;
+  try {
+    const response = await fetchImpl(endpoint, { method: "GET", redirect: "manual", signal: controller.signal, headers });
+    if (response.status !== 200) {
+      const mapped = ({ 401: "auth", 403: "auth", 429: "rate_limit" })[response.status] || "upstream";
+      try { await response.body?.cancel(); } catch {}
+      fail(mapped, "DocIE request failed (HTTP " + response.status + ").", response.status);
+    }
+    if (!response.body) fail("response", "DocIE returned an empty response.");
+    reader = response.body.getReader();
+    const chunks = []; let size = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > STORE_MAX_BYTES) fail("response", "DocIE response exceeded the size ceiling.");
+      chunks.push(Buffer.from(value));
+    }
+    try { return JSON.parse(Buffer.concat(chunks).toString("utf8").split(key).join("[REDACTED]")); }
+    catch { fail("response", "DocIE returned invalid JSON."); }
+  } catch (error) {
+    if (error instanceof DocIEBridgeError) throw error;
+    if (controller.signal.aborted) fail("timeout", "DocIE timeout.");
+    fail("network", "DocIE network or TLS failure.");
+  } finally {
+    clearTimeout(timer);
+    try { reader?.releaseLock(); } catch {}
+  }
+}
+
+// Projection d'une entrée de GET /v1/serving/store : clés stables seulement, jamais endpoint ni chemin.
+function projeterStore(entree) {
+  const placement = object(entree.placement) ? entree.placement : {};
+  const etat = placement.state;
+  const endpoint = placement.endpoint;
+  const chaine = (v) => (typeof v === "string" ? v : null);
+  const nombre = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  return {
+    nom: chaine(entree.name),
+    famille: chaine(entree.family),
+    etat: typeof etat === "string" ? etat : "inconnu",
+    phase: chaine(placement.phase),
+    utilisable: etat === "ready" && typeof endpoint === "string" && endpoint.length > 0,
+    tokens_par_seconde: nombre(placement.tokens_per_second),
+    slots: Number.isInteger(placement.slot_count) ? placement.slot_count : null,
+  };
+}
+
+// GET /v1/serving/store : ce qui EST déployé, et s'il est prêt (placement.state "ready" + endpoint).
+async function listStore({ env = process.env, fetchImpl = fetch } = {}) {
+  const { base, key, timeout } = connection(env);
+  const body = await getJson(base + "/v1/serving/store", { "x-api-key": key }, key, Math.min(timeout, 30), fetchImpl);
+  if (!Array.isArray(body)) fail("response", "DocIE returned an invalid store listing.");
+  return body.filter(object).map(projeterStore);
+}
+
+module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload, listStore, projeterStore,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
   DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
   MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };

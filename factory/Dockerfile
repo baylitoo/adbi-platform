@@ -20,6 +20,8 @@ COPY --chown=node:node modules.docker.json modules.json
 # bibliotheque n'en a aucune, c'est ce qui permet a factory de garder les
 # siennes a zero.
 COPY --from=auth --chown=node:node . /auth
+# Pont DocIE partage (additional_contexts: bridge) : le hub liste le store DocIE.
+COPY --from=bridge --chown=node:node . /document-parsing/bridge
 
 ENV NODE_ENV=production
 # Sans ca, server.js lie 127.0.0.1 (defaut poste de dev) : injoignable via le
