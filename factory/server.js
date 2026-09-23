@@ -544,6 +544,14 @@ function cheminPublic(chemin) {
     || chemin.startsWith("/fonts/");
 }
 
+// Origine publique vue par le navigateur (en-têtes du proxy, sinon Host), quand ADBI_FACTORY_URL est vide.
+function origineRequete(req) {
+  const hote = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+  const proto = String(req.headers["x-forwarded-proto"] || "http").split(",")[0].trim().toLowerCase();
+  if (!/^[a-z0-9.\-]+(:\d+)?$/i.test(hote) && !/^\[[0-9a-f:]+\](:\d+)?$/i.test(hote)) return "";
+  return (proto === "https" ? "https" : "http") + "://" + hote;
+}
+
 /** Renvoie true si la reponse a ete ecrite (visiteur refuse). */
 function refuserSiNonAuthentifie(req, rep, chemin) {
   if (cheminPublic(chemin)) return false;
@@ -558,7 +566,8 @@ function refuserSiNonAuthentifie(req, rep, chemin) {
   // Page : on renvoie vers la connexion de cv-parser, seul emetteur
   // d'identite. `next` lui dit ou revenir -- il le VALIDE de son cote, on ne
   // lui fait pas confiance sur parole.
-  const retour = FACTORY_URL ? "?next=" + encodeURIComponent(FACTORY_URL) : "";
+  const origine = FACTORY_URL || origineRequete(req);
+  const retour = origine ? "?next=" + encodeURIComponent(origine + req.url) : "";
   const cible = PARSER_URL ? PARSER_URL + "/login" + retour : "/";
   rep.writeHead(302, { Location: cible, "Cache-Control": "no-store" });
   rep.end();

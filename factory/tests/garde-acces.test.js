@@ -241,7 +241,7 @@ test("la branche api/page suit le chemin", () => {
 
 test("une page refusee redirige vers la connexion de cv-parser, avec next", () => {
   assert.match(SERVEUR, /PARSER_URL \+ "\/login" \+ retour/, "cible de redirection absente");
-  assert.match(SERVEUR, /encodeURIComponent\(FACTORY_URL\)/, "`next` non encode");
+  assert.match(SERVEUR, /encodeURIComponent\(origine \+ req\.url\)/, "`next` non encode");
   assert.match(SERVEUR, /rep\.writeHead\(302/, "pas de redirection 302");
 });
 

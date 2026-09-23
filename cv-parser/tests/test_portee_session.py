@@ -39,10 +39,10 @@ app = Flask(__name__)
 def _retour_avec(factory_url):
     """`_retour_apres_connexion` d'app.py, lié à un ADBI_FACTORY_URL donné."""
     arbre = ast.parse((RACINE / "app.py").read_text(encoding="utf-8"))
-    fonction = next(n for n in arbre.body
-                    if isinstance(n, ast.FunctionDef) and n.name == "_retour_apres_connexion")
-    espace = {"request": request, "urlsplit": urlsplit, "FACTORY_URL": factory_url}
-    exec(compile(ast.unparse(fonction), str(RACINE / "app.py"), "exec"), espace)
+    fonctions = [n for n in arbre.body
+                 if isinstance(n, ast.FunctionDef) and n.name in ("_url_de_confiance", "_retour_apres_connexion")]
+    espace = {"request": request, "urlsplit": urlsplit, "FACTORY_URL": factory_url, "COOKIE_DOMAIN": ""}
+    exec(compile(ast.unparse(ast.Module(body=fonctions, type_ignores=[])), str(RACINE / "app.py"), "exec"), espace)
     return espace["_retour_apres_connexion"]
 
 

@@ -25,7 +25,7 @@ for _flux in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from flask import Flask, request, jsonify, send_file, render_template, abort, redirect, g
+from flask import Flask, request, jsonify, send_file, render_template, abort, redirect, g, make_response
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 # L'extraction/OCR est effectuée par DocIE, sans runtime ML dans ce process.
@@ -67,7 +67,7 @@ from urllib.parse import urlsplit
 from config import (
     UPLOAD_DIR, MAX_LLM_CHARS,
     CV_LIST_MAX, CV_SKILLS_FLAT_MAX,
-    FACTORY_URL,
+    FACTORY_URL, COOKIE_DOMAIN,
 )
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -132,8 +132,8 @@ if not AUTH_ACTIVE:
 # ── Context processor Jinja2 ─────────────────────────────────────────────────
 @app.context_processor
 def inject_user():
-    # Lien de retour vers le hub (ADBI_FACTORY_URL), absent si la variable n'est pas une URL http(s).
-    hub_url = FACTORY_URL if urlsplit(FACTORY_URL).scheme in ("http", "https") else ""
+    # Lien « ← Hub » : ADBI_FACTORY_URL, sinon l'origine retenue à la connexion (cookie adbi_hub).
+    hub_url = FACTORY_URL if urlsplit(FACTORY_URL).scheme in ("http", "https") else _url_de_confiance(request.cookies.get("adbi_hub"))
     token = request.cookies.get("adbi_access")
     if token:
         payload = verify_access_token(token)
@@ -1906,31 +1906,38 @@ def _versionner_statiques(endpoint, valeurs):
         pass                                    # fichier absent : on laisse tel quel
 
 
-def _retour_apres_connexion() -> str:
-    """Destination sûre après connexion : le hub si `?next=` le désigne, sinon "/".
-
-    `next` est fourni par l'appelant, donc hostile par défaut. Une page de
-    connexion qui redirige vers une URL arbitraire est une redirection ouverte
-    à l'endroit le PIRE possible : la victime vient d'y saisir son mot de
-    passe, et l'écran suivant peut être une copie de cette même page.
-
-    D'où une liste blanche stricte plutôt qu'un filtrage : seul FACTORY_URL
-    (ADBI_FACTORY_URL) est accepté, comparé sur son ORIGINE exacte -- schéma,
-    hôte et port. Pas de comparaison par préfixe : « https://hub.example.fr »
-    ne doit pas laisser passer « https://hub.example.fr.attaquant.test ».
-    Variable vide, `next` absent, ou origine non reconnue -> "/", sans erreur :
-    une redirection refusée n'est pas un incident à montrer à l'utilisateur.
-    """
-    demande = (request.args.get("next") or "").strip()
-    if not demande or not FACTORY_URL:
-        return "/"
+def _url_de_confiance(url) -> str:
+    """`url` si elle vise le hub, l'hôte courant ou le domaine du cookie de session, sinon ""."""
+    if not isinstance(url, str) or not url or "\\" in url or any(c.isspace() or ord(c) < 32 for c in url):
+        return ""
     try:
-        voulu, attendu = urlsplit(demande), urlsplit(FACTORY_URL)
+        voulu = urlsplit(url)
+        hote, _ = (voulu.hostname or "").lower(), voulu.port
+        courant = (urlsplit("//" + request.host).hostname or "").lower()
+        hub = urlsplit(FACTORY_URL) if FACTORY_URL else None
     except ValueError:
-        return "/"
-    if (voulu.scheme, voulu.netloc) == (attendu.scheme, attendu.netloc) and voulu.scheme in ("http", "https"):
-        return demande
-    return "/"
+        return ""
+    if voulu.scheme not in ("http", "https") or not hote or "@" in voulu.netloc:
+        return ""
+    domaine = COOKIE_DOMAIN.lstrip(".").lower()
+    if ((hub and (voulu.scheme, voulu.netloc) == (hub.scheme, hub.netloc)) or hote == courant
+            or (domaine and (hote == domaine or hote.endswith("." + domaine)))):
+        return url
+    return ""
+
+
+def _retour_apres_connexion() -> str:
+    """Destination après connexion : le `next` s'il est de confiance, sinon "/"."""
+    return _url_de_confiance((request.args.get("next") or "").strip()) or "/"
+
+
+def _avec_hub(reponse, retour):
+    """Retient l'origine du hub qui a envoyé ici, pour le lien « ← Hub » quand ADBI_FACTORY_URL est vide."""
+    voulu = urlsplit(retour)
+    if retour != "/" and voulu.netloc != request.host:
+        reponse.set_cookie("adbi_hub", voulu.scheme + "://" + voulu.netloc, max_age=30 * 24 * 3600,
+                           httponly=True, samesite="Lax", secure=request.is_secure)
+    return reponse
 
 
 @app.route("/login")
@@ -1944,8 +1951,8 @@ def login_page():
         # Deja connecte : on honore `next` aussi, sinon un utilisateur renvoye
         # ici par le hub avec une session valide resterait bloque sur /app au
         # lieu de repartir d'ou il venait.
-        return redirect(retour)
-    return render_template("login.html", retour=retour)
+        return _avec_hub(redirect(retour), retour)
+    return _avec_hub(make_response(render_template("login.html", retour=retour)), retour)
 
 
 @app.route("/")
