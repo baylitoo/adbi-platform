@@ -13,7 +13,8 @@
 # adapter ce fichier également.
 services:
   postgres:
-    image: postgres:17-alpine
+    # Image postgres:17-alpine + pgvector (recherche sémantique des CV), voir infra/postgres/Dockerfile.
+    build: ./infra/postgres
     container_name: adbi-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-adbi}
