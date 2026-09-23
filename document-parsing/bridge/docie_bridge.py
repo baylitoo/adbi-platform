@@ -730,7 +730,12 @@ def loading_detail(body):
     automatique, décision « échouer bruyamment » de #194 : le consommateur
     affiche le délai, l'utilisateur relance.
     """
-    detail = body.get("detail") if isinstance(body, dict) else None
+    if not isinstance(body, dict):
+        return None
+    # Routeur chat (rerank, chat) : corps PLAT `{"status": "loading", …}`, sans `detail`.
+    if body.get("status") == "loading":
+        return body
+    detail = body.get("detail")
     return detail if isinstance(detail, dict) and detail.get("status") == "loading" else None
 
 
@@ -1006,6 +1011,7 @@ def projeter_store(entree):
         "chat": not drapeau("embedding") and not drapeau("reranker") and not drapeau("analyzer"),
         "extraction": not drapeau("embedding") and not drapeau("reranker") and (not drapeau("analyzer") or drapeau("structured_extraction")),
         "vision": drapeau("vision"),
+        "reranker": drapeau("reranker"),
     }
 
 
@@ -1108,6 +1114,46 @@ def agents_utilisables(*, env=None, session=None, maintenant=None):
         return list(_agents_cache["agents"])
     _agents_cache.update(quand=maintenant, agents=agents)
     return list(agents)
+
+
+RERANK_DOCUMENTS_MAX = 500
+
+
+def reranker_pret(*, env=None, session=None):
+    """Sélecteur `store:<nom>` du premier reranker prêt sur le store (relevé en cache), sinon None."""
+    for m in store_utilisable(env=env, session=session):
+        if m.get("reranker") and m.get("nom"):
+            return "store:" + m["nom"]
+    return None
+
+
+def rerank(query, documents, *, modele, top_n=None, env=None, session=None):
+    """POST /v1/rerank : [{index, score}] trié décroissant ; textes seuls, scores comparables dans UN appel seulement."""
+    env = os.environ if env is None else env
+    base, key, timeout = connection(env)
+    if not isinstance(query, str) or not query.strip():
+        fail("input", "Rerank query must not be empty.")
+    if not isinstance(documents, list) or not documents or not all(isinstance(d, str) and d.strip() for d in documents):
+        fail("input", "Rerank documents must be a non-empty list of non-empty strings.")
+    if len(documents) > RERANK_DOCUMENTS_MAX:
+        fail("input", "Too many documents to rerank in one call.")
+    payload = {"model": per_call_model_profile(modele), "query": query, "documents": documents}
+    if isinstance(top_n, int) and not isinstance(top_n, bool) and top_n >= 1:
+        payload["top_n"] = top_n
+    body, _elapsed = post_json(base + "/v1/rerank", {"x-api-key": key}, payload, key, timeout, session, loading=True)
+    resultats = body.get("results") if isinstance(body, dict) else None
+    if not isinstance(resultats, list):
+        fail("response", "Invalid DocIE rerank response.")
+    sortie = []
+    for r in resultats:
+        index = r.get("index") if isinstance(r, dict) else None
+        score = r.get("relevance_score") if isinstance(r, dict) else None
+        if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(documents) \
+                or not isinstance(score, (int, float)) or isinstance(score, bool) or not math.isfinite(score):
+            fail("response", "Invalid DocIE rerank result entry.")
+        sortie.append({"index": index, "score": float(score)})
+    sortie.sort(key=lambda r: -r["score"])
+    return sortie
 
 
 def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, model_profile=None, langue=None, env=None, session=None):

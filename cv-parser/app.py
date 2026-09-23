@@ -68,7 +68,6 @@ from config import (
     UPLOAD_DIR, MAX_LLM_CHARS,
     CV_LIST_MAX, CV_SKILLS_FLAT_MAX,
     FACTORY_URL,
-    get_active_llm, set_active_llm,
 )
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -931,10 +930,6 @@ def llm_parse_cv(md_content: str, txt_content: str, progression=None) -> dict:
             # Impose un objet JSON : évite le texte d'introduction et le
             # brouillon de réflexion, donc du budget gagné pour la réponse.
             json_mode=True,
-            # Le CV est le plus gros envoi de l'application : on s'assure
-            # d'abord qu'un modèle répond, plutôt que d'expédier le document
-            # vers un service hors service ou à court de quota.
-            verifier=True,
             # Une réponse tronquée compte comme un échec de CE modèle : la
             # cascade en essaie un autre au lieu de rendre une fiche vide.
             valider=_json_du_cv,
