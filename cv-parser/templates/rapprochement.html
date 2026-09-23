@@ -223,6 +223,7 @@
       <span class="logo-name">adbi<span>.</span>cv</span>
     </a>
     <nav class="nav">
+      {% if hub_url %}<a href="{{ hub_url }}" target="_top">← Hub</a>{% endif %}
       <a href="/app">CVthèque</a>
       <a href="/needs">Besoins</a>
       <a href="/rapprochement" class="active">Rapprochement</a>
