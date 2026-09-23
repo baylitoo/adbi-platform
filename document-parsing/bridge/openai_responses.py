@@ -106,20 +106,14 @@ def schema_openai(dynamic_schema):
     return {"name": "adbi_" + dynamic_schema["document_type"], "schema": _objet_strict(dynamic_schema.get("fields"), "")}
 
 
-# ---------------------------------------------------------------------------
-# Transport : POST {OPENAI_BASE_URL}/v1/responses, un seul appel, jamais de
-# relance. Faits de la documentation OpenAI consultée le 2026-09-16 et
-# justification des plafonds : voir openai-responses.js (mêmes valeurs).
-# Le MODE (entrée du catalogue) décide seul de l'envoi d'un bloc `reasoning`,
-# jamais le nom du modèle.
-# ---------------------------------------------------------------------------
+# Transport : POST {OPENAI_BASE_URL}/v1/responses, un seul appel, jamais de relance ; le MODE seul fixe `reasoning`.
 MODES = {
-    "rapide": {"variable": "OPENAI_MODELE_RAPIDE", "defaut": "gpt-4.1-nano",
-               "autorises": ("gpt-4.1-nano", "gpt-4.1-mini"), "raisonnement": None},
-    "raisonnement": {"variable": "OPENAI_MODELE_RAISONNEMENT", "defaut": "gpt-5-nano",
-                     "autorises": ("gpt-5-nano",), "raisonnement": {"effort": "low"}},
+    "rapide": {"variable": "OPENAI_MODELE_RAPIDE", "defaut": "gpt-6-luna",
+               "autorises": ("gpt-6-luna",), "raisonnement": {"effort": "none"}},
+    "raisonnement": {"variable": "OPENAI_MODELE_RAISONNEMENT", "defaut": "gpt-6-luna",
+                     "autorises": ("gpt-6-luna",), "raisonnement": {"effort": "low"}},
 }
-MAX_TEXT_BYTES = 4 * 1024 * 1024
+MAX_TEXT_BYTES = 922000 * 4
 MAX_OUTPUT_TOKENS = 16384
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_ERROR_BYTES = 64 * 1024
@@ -284,7 +278,7 @@ def extraire_via_openai(texte, *, mode, dynamic_schema, env=None, session=None):
     if not isinstance(texte, str) or not texte.strip() or "\x00" in texte:
         fail("input", "OpenAI accepts extracted document text only (no PDF, image or binary content).")
     if len(texte.encode("utf-8")) > MAX_TEXT_BYTES:
-        fail("input", "Document text must not exceed 4 MiB for OpenAI.")
+        fail("input", "Document text must not exceed 3.5 MiB for OpenAI.")
     try:
         format_ = schema_openai(dynamic_schema)
     except ErreurSchema:
