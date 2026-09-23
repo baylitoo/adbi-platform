@@ -207,6 +207,15 @@ const MESSAGES_ERREUR = Object.freeze({
   schema: "Le service d'extraction a renvoyé un autre type de document.",
 });
 
+// DOCIE_EXTRACTION_ENABLED : "on" (1/on/true/oui), "off" (0/off/false/non ou valeur inconnue), "auto" si absent et DocIE configuré.
+function activationExtraction(env) {
+  const brut = String((env || {}).DOCIE_EXTRACTION_ENABLED || "").trim().toLowerCase();
+  if (["1", "on", "true", "oui"].includes(brut)) return "on";
+  if (brut) return "off";
+  const configure = String(env.DOCIE_BASE_URL || "").trim() && String(env.DOCIE_API_KEY || "").trim();
+  return configure ? "auto" : "off";
+}
+
 // { code, message, eta_seconds? } présentable pour une erreur du pont (objet à `code`, `eta_seconds`) ; code inconnu : null.
 function messageErreur(err) {
   const code = err && typeof err.code === "string" ? err.code : null;
@@ -1173,7 +1182,7 @@ async function rerank(query, documents, { modele, topN = null, env = process.env
 
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload, listStore, projeterStore,
   storeUtilisable, storeUtilisableConnu, listAgents, projeterAgent, agentsUtilisables, agentsUtilisablesConnus, nomStore,
-  MESSAGES_ERREUR, messageErreur, embed, embedderPret, EMBED_TEXTES_MAX, rerank, rerankerPret, RERANK_DOCUMENTS_MAX, rediger,
+  MESSAGES_ERREUR, messageErreur, activationExtraction, rerank, rerankerPret, RERANK_DOCUMENTS_MAX, rediger, embed, embedderPret, EMBED_TEXTES_MAX,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
   DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
   MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };

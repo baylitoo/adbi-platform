@@ -219,6 +219,17 @@ MESSAGES_ERREUR = {
 }
 
 
+def activation_extraction(env):
+    """DOCIE_EXTRACTION_ENABLED : "on" (1/on/true/oui), "off" (0/off/false/non ou valeur inconnue), "auto" si absent et DocIE configuré."""
+    brut = str(env.get("DOCIE_EXTRACTION_ENABLED") or "").strip().lower()
+    if brut in ("1", "on", "true", "oui"):
+        return "on"
+    if brut:
+        return "off"
+    configure = str(env.get("DOCIE_BASE_URL") or "").strip() and str(env.get("DOCIE_API_KEY") or "").strip()
+    return "auto" if configure else "off"
+
+
 def message_erreur(exc):
     """{code, message, eta_seconds?} présentable pour une erreur du pont (objet à `code`, `eta_seconds`) ; code inconnu : None."""
     code = getattr(exc, "code", None)
