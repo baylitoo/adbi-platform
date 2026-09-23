@@ -210,6 +210,9 @@
     .filter-btn { background: #F1F5FF; color: var(--muted); border: 1px solid #C7D9F6; border-radius: 5px; padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all .15s; }
     .filter-btn:hover { background: #E0EAFF; color: var(--blue); }
     .filter-btn.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+    .filter-btn[disabled] { opacity: .45; cursor: not-allowed; }
+    .filter-btns.mode-recherche { margin-top: 8px; }
+    .sb-note { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
 
     /* Reset */
     .btn-reset { width: 100%; background: none; border: 1.5px solid var(--border); color: var(--muted); font-size: 12px; font-weight: 700; padding: 7px; border-radius: 6px; cursor: pointer; transition: all .15s; }
@@ -684,6 +687,12 @@
       </div>
       <input class="sb-search" id="searchInput" type="text"
              placeholder="🔍  Nom, titre, techno, ville…" />
+      <div class="filter-btns mode-recherche" id="modeRechercheBtns">
+        <button class="filter-btn active" data-val="classique" onclick="setModeRecherche(this)">Classique</button>
+        <button class="filter-btn" data-val="semantique" id="btnSemantique" onclick="setModeRecherche(this)" disabled
+                title="Vérification de la disponibilité…">Sémantique</button>
+      </div>
+      <div class="sb-note" id="semantiqueNote" hidden></div>
     </div>
 
     <!-- Technologies -->
@@ -1190,15 +1199,17 @@ function scheduleFilter() {
   _searchTimer = setTimeout(applyFilters, 140);
 }
 
-document.getElementById('searchInput').addEventListener('input', scheduleFilter);
+document.getElementById('searchInput').addEventListener('input', () => _modeRecherche === 'semantique' ? planifierSemantique() : scheduleFilter());
 document.getElementById('locationInput').addEventListener('input', scheduleFilter);
 
 function applyFilters() {
   activeFilters.q        = (document.getElementById('searchInput').value   || '').toLowerCase().trim();
   activeFilters.location = (document.getElementById('locationInput').value || '').toLowerCase().trim();
 
+  const semantique = _modeRecherche === 'semantique' && _semantique;
   let filtered = allCVs.filter(cv => {
-    if (activeFilters.q) {
+    if (semantique && !_semantique.has(cv.id)) return false;
+    if (activeFilters.q && !semantique) {
       const h = `${cv.name||''} ${cv.title||''} ${(cv.skills_flat||[]).join(' ')} ${cv.location||''}`.toLowerCase();
       if (!h.includes(activeFilters.q)) return false;
     }
@@ -1219,10 +1230,52 @@ function applyFilters() {
     return true;
   });
 
-  filtered = sortCVs(filtered, _sortMode);
+  filtered = semantique ? filtered.sort((a, b) => _semantique.get(b.id) - _semantique.get(a.id)) : sortCVs(filtered, _sortMode);
   renderCards(filtered);
   renderActiveChips();
 }
+
+/* ── Recherche sémantique (vecteurs DocIE + pgvector) ── */
+let _modeRecherche = 'classique', _semantique = null, _semTimer = null, _semSeq = 0;
+function noteSemantique(texte) {
+  const n = document.getElementById('semantiqueNote');
+  n.textContent = texte || ''; n.hidden = !texte;
+}
+async function chargerEtatSemantique() {
+  const btn = document.getElementById('btnSemantique');
+  try {
+    const d = await fetch('/api/search/semantique/etat', { credentials:'include' }).then(r => r.json());
+    btn.disabled = !d.disponible;
+    btn.title = d.disponible ? `Classement par sens (${d.modele})` : (d.message || 'Indisponible');
+  } catch { btn.disabled = true; btn.title = 'Indisponible'; }
+}
+function setModeRecherche(btn) {
+  if (btn.disabled) return;
+  _modeRecherche = btn.dataset.val;
+  document.querySelectorAll('#modeRechercheBtns .filter-btn').forEach(b => b.classList.toggle('active', b===btn));
+  _semantique = null; noteSemantique('');
+  if (_modeRecherche === 'semantique') lancerSemantique(); else applyFilters();
+}
+function planifierSemantique() {
+  clearTimeout(_semTimer);
+  _semTimer = setTimeout(lancerSemantique, 450);
+}
+async function lancerSemantique() {
+  const q = (document.getElementById('searchInput').value || '').trim();
+  const seq = ++_semSeq;
+  if (!q) { _semantique = null; noteSemantique(''); applyFilters(); return; }
+  noteSemantique('Recherche par sens…');
+  try {
+    const r = await fetch('/api/search/semantique?q=' + encodeURIComponent(q), { credentials:'include' });
+    const d = await r.json();
+    if (seq !== _semSeq) return;
+    if (!r.ok) { _semantique = null; noteSemantique(d.error || 'Recherche sémantique indisponible.'); applyFilters(); return; }
+    _semantique = new Map(d.resultats.map(x => [x.id, x.score]));
+    noteSemantique(`Classés par proximité de sens · ${d.modele}`);
+  } catch { if (seq === _semSeq) { _semantique = null; noteSemantique('Recherche sémantique injoignable.'); } }
+  applyFilters();
+}
+chargerEtatSemantique();
 
 function toggleTech(skill) {
   if (activeFilters.techs.has(skill)) activeFilters.techs.delete(skill);
@@ -1245,6 +1298,7 @@ function resetFilters() {
   activeFilters.q=''; activeFilters.techs.clear(); activeFilters.location=''; activeFilters.minExp=0; activeFilters.seniority='';
   document.getElementById('searchInput').value = '';
   document.getElementById('locationInput').value = '';
+  _semantique = null; noteSemantique('');
   document.querySelectorAll('.skill-tag.active').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.val===''||b.dataset.val==='0'));
   applyFilters();

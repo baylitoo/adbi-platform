@@ -2592,6 +2592,34 @@ def search_cvs():
     return jsonify(results)
 
 
+@app.route("/api/search/semantique/etat")
+@require_auth
+def etat_recherche_semantique():
+    """Disponibilité de la recherche sémantique (modèle d'embedding prêt sur DocIE + pgvector)."""
+    from core import semantique
+    return jsonify(semantique.etat())
+
+
+@app.route("/api/search/semantique")
+@require_auth
+def recherche_semantique():
+    """[{id, score}] classés par similarité ; les autres filtres restent ceux de l'écran."""
+    from core import semantique
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"error": "Requête vide."}), 400
+    try:
+        resultats, modele = semantique.rechercher(q, cvstore_pg.list_cvs())
+    except semantique.Indisponible as exc:
+        return jsonify({"error": str(exc), "raison": exc.raison}), 409
+    except Exception as exc:
+        traduit = getattr(exc, "code", None) and semantique._pont().message_erreur(exc)
+        if not traduit:
+            raise
+        return jsonify({"error": traduit["message"], "code": traduit["code"]}), 502
+    return jsonify({"modele": modele, "resultats": resultats})
+
+
 # Champs liste relus par core/matcher.py pour CHAQUE CV de la CVthèque à
 # CHAQUE appel de matching (SequenceMatcher, aplatissement de skills...) :
 # bornés en nombre d'entrées, même discipline que les besoins clients côté

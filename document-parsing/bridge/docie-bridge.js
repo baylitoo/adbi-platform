@@ -618,7 +618,10 @@ function parseResponse(body, expectedSchema, agent) {
 // automatique, décision « échouer bruyamment » de #194 : le consommateur affiche
 // le délai, l'utilisateur relance.
 function loadingDetail(body) {
-  return object(body) && object(body.detail) && body.detail.status === "loading" ? body.detail : null;
+  if (!object(body)) return null;
+  // Routeur chat (embeddings, chat) : corps PLAT `{"status": "loading", …}`, sans `detail`.
+  if (body.status === "loading") return body;
+  return object(body.detail) && body.detail.status === "loading" ? body.detail : null;
 }
 function failLoading(detail, status) {
   const eta = detail ? detail.eta_seconds : null;
@@ -994,6 +997,7 @@ function projeterStore(entree) {
     chat: !drapeau("embedding") && !drapeau("reranker") && !drapeau("analyzer"),
     extraction: !drapeau("embedding") && !drapeau("reranker") && (!drapeau("analyzer") || drapeau("structured_extraction")),
     vision: drapeau("vision"),
+    embedding: drapeau("embedding"),
   };
 }
 
@@ -1091,9 +1095,43 @@ function agentsUtilisablesConnus() {
   return agentsCache.agents.slice();
 }
 
+const EMBED_TEXTES_MAX = 64;
+const EMBED_TEXTE_CARACTERES_MAX = 8000;
+
+// Sélecteur `store:<nom>` du premier modèle d'embedding prêt sur le store (relevé en cache), sinon null.
+async function embedderPret({ env = process.env, fetchImpl = fetch } = {}) {
+  const m = (await storeUtilisable({ env, fetchImpl })).find((x) => x.embedding && x.nom);
+  return m ? "store:" + m.nom : null;
+}
+
+// POST /v1/embeddings (forme OpenAI) : un vecteur par texte, dans l'ordre ; dimension commune vérifiée.
+async function embed(textes, { modele, env = process.env, fetchImpl = fetch } = {}) {
+  const { base, key, timeout } = connection(env);
+  if (!Array.isArray(textes) || !textes.length || !textes.every((t) => typeof t === "string" && t.trim())) {
+    fail("input", "Embedding inputs must be a non-empty list of non-empty strings.");
+  }
+  if (textes.length > EMBED_TEXTES_MAX) fail("input", "Too many texts to embed in one call.");
+  const payload = { model: perCallModelProfile(modele), input: textes.map((t) => t.slice(0, EMBED_TEXTE_CARACTERES_MAX)) };
+  const { body } = await postJson(base + "/v1/embeddings", { "x-api-key": key }, payload, key, timeout, fetchImpl, { loading: true });
+  const donnees = object(body) ? body.data : null;
+  if (!Array.isArray(donnees) || donnees.length !== textes.length) fail("response", "Invalid DocIE embeddings response.");
+  const vecteurs = new Array(textes.length).fill(null);
+  for (const d of donnees) {
+    const index = object(d) ? d.index : null;
+    const vecteur = object(d) ? d.embedding : null;
+    if (!Number.isInteger(index) || index < 0 || index >= textes.length || vecteurs[index] !== null
+        || !Array.isArray(vecteur) || !vecteur.length || !vecteur.every(number)) {
+      fail("response", "Invalid DocIE embedding entry.");
+    }
+    vecteurs[index] = vecteur.map(Number);
+  }
+  if (new Set(vecteurs.map((v) => v.length)).size !== 1) fail("response", "DocIE embeddings have inconsistent dimensions.");
+  return vecteurs;
+}
+
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload, listStore, projeterStore,
   storeUtilisable, storeUtilisableConnu, listAgents, projeterAgent, agentsUtilisables, agentsUtilisablesConnus, nomStore,
-  MESSAGES_ERREUR, messageErreur,
+  MESSAGES_ERREUR, messageErreur, embed, embedderPret, EMBED_TEXTES_MAX,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
   DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
   MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };
