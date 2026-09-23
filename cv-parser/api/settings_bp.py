@@ -6,9 +6,7 @@ from datetime import datetime, timezone, timedelta
 
 from flask import Blueprint, request, jsonify, make_response
 
-import requests as _requests
 import llm_cascade
-from config import PROVIDERS, get_active_llm, set_active_llm
 from core.auth import (
     require_auth, require_superuser, get_current_user,
     list_users, get_user_by_id, update_user, delete_user,
@@ -211,63 +209,23 @@ def get_stats():
 @settings_bp.route("/api/settings/llm", methods=["GET"])
 @require_superuser
 def get_llm_config():
-    llm = get_active_llm()
+    """Modèles de chat actifs, dans l'ordre de la chaîne ; ni URL ni clé."""
+    actifs = [e for e in llm_cascade.charger_chaine() if e.get("actif", True)]
     return jsonify({
-        "provider": llm["provider"],
-        "model":    llm["model"],
-        "url":      llm["url"],
-        # Modèle enregistré mais écarté car il n'appartient pas au fournisseur
-        # actif : l'interface peut ainsi l'expliquer au lieu de laisser croire
-        # que c'est lui qui est utilisé.
-        "modele_ignore": llm.get("modele_ignore"),
+        "configure": bool(actifs),
+        "modeles":   [{"nom": e.get("nom", ""), "modele": e.get("modele", "")} for e in actifs],
     })
-
-
-@settings_bp.route("/api/settings/llm", methods=["PATCH"])
-@require_superuser
-def update_llm_config():
-    data     = request.json or {}
-    provider = (data.get("provider") or PROVIDERS[0]).strip()
-    model    = (data.get("model") or "").strip()
-    if provider not in PROVIDERS:
-        return jsonify({"error": f"Fournisseur invalide : seul « {PROVIDERS[0]} » reste disponible."}), 400
-
-    resultat = set_active_llm(provider, model)
-    # Un modèle qui n'est pas celui du fournisseur n'est pas enregistré : c'est
-    # exactement l'inversion qui rendait toutes les requêtes invalides.
-    if resultat["refus"]:
-        return jsonify({"error": resultat["refus"],
-                        "provider": resultat["provider"],
-                        "model": resultat["model"]}), 400
-    return jsonify({"success": True,
-                    "provider": resultat["provider"],
-                    "model": resultat["model"]})
 
 
 @settings_bp.route("/api/settings/llm/test", methods=["POST"])
 @require_superuser
 def test_llm():
-    """Teste la connexion au LLM actif avec un mini-prompt."""
-    llm = get_active_llm()
-    try:
-        resp = _requests.post(
-            llm["url"],
-            headers={"Authorization": f"Bearer {llm['key']}", "Content-Type": "application/json"},
-            json={"model": llm["model"], "messages": [{"role": "user", "content": "Réponds juste 'OK'"}], "max_tokens": 5},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        answer = resp.json()["choices"][0]["message"]["content"].strip()
-        return jsonify({"success": True, "provider": llm["provider"], "model": llm["model"], "response": answer})
-    except _requests.exceptions.Timeout:
-        return jsonify({"success": False, "error": "Timeout (10s)"}), 408
-    except _requests.exceptions.HTTPError as e:
-        body = ""
-        try: body = e.response.text[:200]
-        except: pass
-        return jsonify({"success": False, "error": f"HTTP {e.response.status_code}: {body}"}), 502
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    """Premier modèle de la chaîne qui répond (llm_cascade.etat) ; jamais le corps amont."""
+    etat = llm_cascade.etat()
+    if etat.get("ok"):
+        return jsonify({"success": True, "service": etat["service"], "rang": etat["rang"], "total": etat["total"]})
+    return jsonify({"success": False,
+                    "error": f"Aucun des {etat.get('total') or 0} modèles de la chaîne ne répond."}), 502
 
 
 # ── Chaîne de secours LLM (superuser) ────────────────────────────────────────

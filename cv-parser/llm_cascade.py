@@ -24,11 +24,10 @@ import threading
 
 import requests
 
-from config import DATA_DIR, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, get_active_llm
+from config import DATA_DIR, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 from llm_url import chat_endpoint
 
-# Session partagée : les connexions TLS sont réutilisées entre les appels
-# (sondage puis envoi réel vers le même hôte) au lieu d'être renégociées.
+# Session partagée : les connexions TLS sont réutilisées entre les appels.
 _session = requests.Session()
 
 # Chaîne personnalisée par l'écran Paramètres. Tant que ce fichier n'existe pas,
@@ -45,12 +44,6 @@ _dernier = {"service": None, "ms": None, "quand": None, "sautes": 0}
 
 def dernier_service() -> dict:
     return dict(_dernier)
-
-# L'ancienne chaîne de secours listait six modèles OVHcloud précis, mesurés sur
-# l'extraction de CV (justesse sur les nombres, régularité, vitesse). Ce banc
-# d'essai ne vaut que pour ces modèles-là : à refaire une fois la passerelle
-# interne en service, avec les modèles qu'elle sert réellement (voir issue
-# GitHub « Adapter la chaîne de secours aux modèles réellement servis »).
 
 TIMEOUT_DEFAUT = 60
 
@@ -207,86 +200,20 @@ def _appel(url, cle, modele, messages, max_tokens, temperature, timeout, json_mo
     return contenu
 
 
-TIMEOUT_SONDAGE = 6
-
-
-TAILLE_VAGUE = 3
-
-
-def sonder(candidats):
-    """
-    Cherche, maintenant, le premier service qui répond.
-
-    Le sondage est refait à chaque appel, sans mémoire : un verdict vieux d'une
-    minute ne dit rien de l'instant présent — le quota d'OVHcloud se compte par
-    minute et par modèle, si bien qu'un service disponible il y a trente
-    secondes peut être bloqué à l'appel suivant. Un cache faisait justement
-    choisir un modèle déjà à court de quota.
-
-    Il se fait par VAGUES parallèles de trois : en séquentiel, six services
-    saturés coûtaient jusqu'à 60 s de sondage avant même le premier envoi
-    (mesuré sur un dépôt réel). La vague borne l'attente à ~6 s par groupe,
-    au prix de deux mini-sondages de plus au pire — 8 jetons chacun, sur des
-    quotas comptés PAR MODÈLE : le surcoût est négligeable, le gain constant.
-    En cas de plusieurs réponses dans la vague, l'ordre de la chaîne tranche.
-
-    Renvoie (candidats réordonnés, service retenu ou None).
-    """
-    for depart in range(0, len(candidats), TAILLE_VAGUE):
-        vague = candidats[depart:depart + TAILLE_VAGUE]
-        verdicts = [False] * len(vague)
-
-        def tester(rang, entree):
-            verdicts[rang] = tester_entree(entree, timeout=TIMEOUT_SONDAGE)["ok"]
-
-        fils = [threading.Thread(target=tester, args=(rang, entree), daemon=True)
-                for rang, entree in enumerate(vague)]
-        for f in fils:
-            f.start()
-        for f in fils:
-            f.join(TIMEOUT_SONDAGE + 2)
-
-        for rang, entree in enumerate(vague):
-            if verdicts[rang]:
-                i = depart + rang
-                # Le service retenu passe en tête ; les autres gardent leur
-                # ordre derrière lui, utilisables si le vrai appel échoue.
-                return [entree] + candidats[:i] + candidats[i + 1:], entree
-    return candidats, None
-
-
-ATTENTE_QUOTA = 15          # secondes avant de retenter quand tout est saturé
-
-
 def chat(messages, max_tokens=2000, temperature=0.0,
-         timeout=TIMEOUT_DEFAUT, json_mode=False, verifier=True, valider=None,
-         reprises=1, budget_s=None, progression=None):
+         timeout=TIMEOUT_DEFAUT, json_mode=False, valider=None,
+         budget_s=None, progression=None):
     """
-    Renvoie (contenu, modele_utilise).
+    Renvoie (contenu, modele_utilise) : les modèles actifs de la chaîne sont
+    essayés dans l'ordre, le premier qui rend une réponse valide gagne.
 
-    Par défaut, la chaîne est sondée juste avant l'envoi et le service retenu
-    est celui qui répond à cet instant — pas celui qui répondait tout à l'heure.
-    Le sondage coûte un petit appel ; en échange, le document n'est jamais
-    expédié vers un service hors ligne ou à court de quota.
+    `valider(contenu)` refuse une réponse reçue mais inutilisable (JSON
+    tronqué) : elle compte comme un échec de CE modèle, le suivant est essayé.
+    `budget_s` borne la durée TOTALE de la cascade ; passé ce budget, on rend
+    la main au repli local de l'appelant. `progression(texte)` tient
+    l'interface au courant.
 
-    Si aucun ne répond au sondage, on tente quand même la chaîne dans l'ordre :
-    un sondage peut échouer là où le vrai appel passerait, et mieux vaut
-    essayer que renoncer.
-
-    `valider(contenu)` permet à l'appelant de refuser une réponse formellement
-    reçue mais inutilisable — typiquement un JSON tronqué parce que le modèle a
-    atteint sa limite de jetons. Elle compte alors comme un échec de CE modèle,
-    et la cascade passe au suivant : sans cela, une réponse coupée en deux
-    arrêtait tout, alors qu'un autre modèle aurait pu répondre entièrement.
-
-    Lève LLMIndisponible seulement si TOUS les modèles ont échoué ; les appelants
-    peuvent donc traiter cette exception comme « le service est hors ligne »
-    plutôt que comme un incident ponctuel.
-
-    `budget_s` borne la durée TOTALE (sondage + cascade + reprises) : passé ce
-    budget, on abandonne pour laisser la main au repli local de l'appelant —
-    l'utilisateur préfère une fiche « extraction locale » en une minute qu'une
-    fiche parfaite en trois. `progression(texte)` tient l'interface au courant.
+    Lève LLMIndisponible si TOUS les modèles ont échoué.
     """
     import time
     echeance = None if budget_s is None else time.monotonic() + budget_s
@@ -303,16 +230,6 @@ def chat(messages, max_tokens=2000, temperature=0.0,
     if not candidats:
         raise LLMIndisponible("Aucun service actif dans la chaîne (voir Paramètres).")
 
-    if verifier:
-        prevenir("recherche d'un service disponible…")
-        candidats, retenu = sonder(candidats)
-        if retenu:
-            print(f"[LLM] sondage : {retenu['nom']}/{retenu['modele']} répond, c'est lui qui traite.")
-            prevenir(f"{retenu['modele']} répond, analyse en cours…")
-        else:
-            print(f"[LLM] sondage : aucun des {len(candidats)} services ne répond, on tente quand même.")
-            prevenir("services saturés, on insiste…")
-
     for e in candidats:
         etiquette = f"{e['nom']}/{e['modele']}"
         timeout_effectif = timeout
@@ -322,6 +239,7 @@ def chat(messages, max_tokens=2000, temperature=0.0,
                 tentatives.append("budget de temps épuisé")
                 break
             timeout_effectif = max(5, min(timeout, restant))
+        prevenir(f"{e['modele']} : analyse en cours…")
         debut = time.perf_counter()
         try:
             contenu = _appel(e["url"], e.get("cle"), e["modele"], messages,
@@ -342,26 +260,6 @@ def chat(messages, max_tokens=2000, temperature=0.0,
             tentatives.append(f"{etiquette} : délai dépassé ({round(timeout_effectif)}s)")
         except Exception as err:                            # réseau, JSON, réponse vide
             tentatives.append(f"{etiquette} : {err}")
-
-    # Toute la chaîne en quota dépassé : ce n'est pas une panne, c'est une
-    # attente. Le palier gratuit se réarme à la minute ; abandonner ici rendait
-    # une fiche vide alors qu'une pause suffisait. Mesuré sur 14 dépôts : 5
-    # échecs de ce type, tous récupérables.
-    quota_partout = tentatives and all(
-        ("429" in t) or ("quota" in t.lower()) for t in tentatives
-    )
-    # La reprise n'a de sens que si le budget de temps la permet encore.
-    budget_permet = echeance is None or (echeance - time.monotonic()) > ATTENTE_QUOTA + 10
-    if quota_partout and reprises > 0 and budget_permet:
-        print(f"[LLM] les {len(tentatives)} services sont en quota — "
-              f"nouvelle tentative dans {ATTENTE_QUOTA} s.")
-        prevenir(f"tous les services en quota, nouvel essai dans {ATTENTE_QUOTA} s…")
-        time.sleep(ATTENTE_QUOTA)
-        budget_restant = None if echeance is None else max(5, echeance - time.monotonic())
-        return chat(messages, max_tokens=max_tokens, temperature=temperature,
-                    timeout=timeout, json_mode=json_mode, verifier=verifier,
-                    valider=valider, reprises=reprises - 1,
-                    budget_s=budget_restant, progression=progression)
 
     raise LLMIndisponible(
         f"Les {len(candidats)} services essayés ont échoué — " + " | ".join(tentatives)
