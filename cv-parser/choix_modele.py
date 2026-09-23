@@ -63,7 +63,7 @@ EXTERNES = True
 # voie « agent » pour un format sans issue. tests/test_parite_extensions.py
 # épingle désormais les deux niveaux de miroir.
 _EXT_BRIDGE = (".pdf", ".png", ".jpg", ".jpeg")
-# Extensions que le client historique lit en texte en mode inline (docie_client.extract_resume).
+# Extensions lues en texte localement pour la voie texte du pont (docie_bridge_extraction.extraire_texte).
 _EXT_TEXTE = (".pdf", ".docx")
 
 _catalogue = None
@@ -94,7 +94,7 @@ def voie_pour(ext):
     ext = str(ext or "").lower()
     if docie_extraction_enabled() and ext in _EXT_BRIDGE:
         return "agent"
-    if os.environ.get("DOCIE_EXTRACTION_MODE", "inline") == "inline" and ext in _EXT_TEXTE:
+    if ext in _EXT_TEXTE:
         return "texte"
     return None
 

@@ -8,7 +8,9 @@ from unittest.mock import Mock, patch
 from zipfile import ZipFile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from docie_client import DocIEError, extract_resume, map_resume, document_payload
+from test_choix_modele import docx, session_pont
 
 FIXTURE = Path(__file__).resolve().parents[2] / "document-parsing/fixtures/cv_samples/results/simple_docie.json"
 
@@ -16,22 +18,17 @@ FIXTURE = Path(__file__).resolve().parents[2] / "document-parsing/fixtures/cv_sa
 class DocIEClientTests(unittest.TestCase):
     def setUp(self):
         self.output = json.loads(FIXTURE.read_text(encoding="utf-8"))
-        self.env = patch.dict(os.environ, {"DOCIE_BASE_URL": "http://docie:8080",
+        self.env = patch.dict(os.environ, {"DOCIE_BASE_URL": "http://docie:8080", "DOCIE_ALLOW_HTTP": "true",
                              "DOCIE_API_KEY": "test-secret", "DOCIE_MODEL_PROFILE": "test-model",
-                             "DOCIE_SCHEMA_NAME": "resume", "DOCIE_TIMEOUT_SECONDS": "10",
-                             "DOCIE_EXTRACTION_MODE": "studio"})
+                             "DOCIE_TIMEOUT_SECONDS": "10"})
         self.env.start()
         self.addCleanup(self.env.stop)
 
     def run_client(self, responses):
-        session = Mock()
-        session.request.side_effect = [Mock(status_code=status, json=Mock(return_value=value))
-                                       for status, value in responses]
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "cv.pdf"
-            path.write_bytes(b"test-document")
-            with patch("docie_client.time.sleep"):
-                result = extract_resume(path, session=session)
+        session = session_pont(*responses)
+        path = docx(3)
+        self.addCleanup(path.unlink)
+        result = extract_resume(path, session=session)
         return result, session
 
     def test_maps_real_docie_fixture(self):
@@ -61,28 +58,17 @@ class DocIEClientTests(unittest.TestCase):
         self.assertEqual(data["title"], "Analyste")
         self.assertEqual(data["experience"][0]["company"], "Numelia")
 
-    def test_extract_polls_and_authenticates(self):
-        (data, meta), session = self.run_client([
-            (200, {"event_ids": ["event-1"]}),
-            (200, {"data": [{"status": "Completed", "ended_at": None}]}),
-            (200, {"data": [{"status": "Failed", "ended_at": None}]}),
-            (200, [{"status": "Completed", "output": self.output}]),
-        ])
+    def test_extract_authenticates_and_sends_the_text_contract(self):
+        self.output.update(schema_name="adbi_resume", request_id="request-1"); self.output["result"]["document_type"] = "adbi_resume"
+        (data, meta), session = self.run_client([(200, self.output)])
         self.assertTrue(data["name"])
-        self.assertEqual(meta["event_id"], "event-1")
-        first = session.request.call_args_list[0]
-        self.assertEqual(first.args, ("POST", "http://docie:8080/v1/studio/extract"))
-        self.assertEqual(first.kwargs["json"]["dynamic_schema_name"], "resume")
-        self.assertEqual(first.kwargs["json"]["model_profile"], "test-model")
-        self.assertEqual(first.kwargs["json"]["content_b64"], "dGVzdC1kb2N1bWVudA==")
-        for call in session.request.call_args_list:
-            self.assertEqual(call.kwargs["headers"], {"x-api-key": "test-secret"})
-            self.assertFalse(call.kwargs["allow_redirects"])
-
-    def test_rejects_failed_or_missing_result(self):
-        for row in ({"status": "Failed"}, {"status": "Cancelled"}, {"status": "Completed"}):
-            with self.subTest(row=row), self.assertRaises(DocIEError):
-                self.run_client([(200, {"event_ids": ["event"]}), (200, [row])])
+        self.assertEqual(meta["event_id"], "request-1")
+        call = session.post.call_args
+        self.assertEqual(call.args, ("http://docie:8080/v1/extract/text",))
+        self.assertEqual(call.kwargs["headers"], {"x-api-key": "test-secret"})
+        self.assertEqual(call.kwargs["json"]["model_profile"], "test-model")
+        self.assertEqual(call.kwargs["json"]["dynamic_schema"]["document_type"], "adbi_resume")
+        self.assertFalse(call.kwargs["allow_redirects"])
 
     def test_rejects_bad_credentials_and_redirects(self):
         for status in (401, 403, 302, 500):
@@ -99,7 +85,7 @@ class DocIEClientTests(unittest.TestCase):
 
     def test_no_config_fails_before_network(self):
         with patch.dict(os.environ, {"DOCIE_BASE_URL": ""}), self.assertRaises(DocIEError):
-            extract_resume("does-not-exist.pdf", session=Mock())
+            extract_resume(docx(1), session=Mock())
 
     def test_rejects_wrong_schema(self):
         self.output["schema_name"] = "contract"
@@ -125,29 +111,6 @@ class DocIEClientTests(unittest.TestCase):
         kbis = {"result": {"siren": "123456789", "denomination": "Numelia SAS"}}
         with self.assertRaisesRegex(DocIEError, "aucune donnée"):
             map_resume(kbis)
-
-    def test_schema_rapporte_remonte_dans_les_metadonnees(self):
-        """La tolérance n'est pas un silence : le fait est rendu au relecteur,
-        sous le même drapeau que le bridge (`schema_reported`), dont
-        docie_review fait l'avertissement `docie_schema_non_verifie`."""
-        (_, meta), _ = self.run_client([
-            (200, {"event_ids": ["event-1"]}),
-            (200, [{"status": "Completed", "output": self.output}]),
-        ])
-        self.assertIs(meta["schema_reported"], True)
-
-        sans_schema = dict(self.output)
-        del sans_schema["schema_name"]
-        (_, meta), _ = self.run_client([
-            (200, {"event_ids": ["event-1"]}),
-            (200, [{"status": "Completed", "output": sans_schema}]),
-        ])
-        self.assertIs(meta["schema_reported"], False)
-
-    def test_timeout_is_bounded(self):
-        with patch("docie_client.time.monotonic", side_effect=[0, 0, 11]):
-            with self.assertRaisesRegex(DocIEError, "délai"):
-                self.run_client([(200, {"event_ids": ["event"]})])
 
     def test_docx_uses_text_contract_including_tables(self):
         xml = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Alice Martin</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Python</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>'

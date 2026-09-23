@@ -1660,7 +1660,7 @@ def process_cv(file_path, jeton=None, modele=None, repli_externe=False) -> dict:
         "extraction": mode,
         # Un service EXTERNE n'est pas DocIE : le dire, sinon la fiche attribue à
         # DocIE une lecture qu'il n'a pas faite (#194, modèles hors ADBI).
-        "llm_service": ({"docie-bridge": "DocIE Bridge / ", "openai": "Service externe (hors ADBI) / "}
+        "llm_service": ({"openai": "Service externe (hors ADBI) / "}
                         .get(mode, "DocIE / ")) + (metadata["model_profile"] or "défaut"),
         "docie_event_id": metadata["event_id"],
         "docie_validation": metadata["validation"],

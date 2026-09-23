@@ -1,16 +1,10 @@
-"""DocIE Studio extraction client; no local OCR or model runtime."""
-import base64
+"""Lecture locale du texte, projection du résultat DocIE et repli externe ; le transport est le pont partagé."""
 import json
 import math
-import os
 import sys
-import time
 from pathlib import Path
-from urllib.parse import quote, urlsplit
 from zipfile import ZipFile, BadZipFile
 from xml.etree import ElementTree
-
-import requests
 
 
 class DocIEError(RuntimeError):
@@ -150,9 +144,9 @@ def _tableau(tbl):
 
 
 def document_payload(path):
-    """DocIE's file endpoint accepts PDF/images; DOCX uses its text input."""
+    """Texte d'un DOCX pour la voie texte de DocIE : {filename, text}."""
     if path.suffix.lower() != ".docx":
-        return {"filename": path.name, "content_b64": base64.b64encode(path.read_bytes()).decode("ascii")}
+        raise DocIEError("Document Word attendu.")
     try:
         with ZipFile(path) as archive:
             info = archive.getinfo("word/document.xml")
@@ -273,40 +267,10 @@ def map_resume(response, expected_schema="resume"):
     return data
 
 
-_ILLISIBLE = object()
-
-
-def blocs_texte_envoyes(texte):
-    """`blocs_texte` / `troncature_possible` du texte EXACTEMENT envoyé (#190).
-
-    Cette voie appelle /v1/extract/text sans passer par le bridge : elle subit
-    le même plafond silencieux de 800 blocs, mais rien ne le mesurait. Comptage
-    et seuil sont ceux du bridge (`compter_blocs_texte`,
-    `DOCIE_BLOCS_TEXTE_MAX`), importés et non recopiés. Bridge introuvable :
-    None pour les deux, « non mesurable », jamais une exception.
-    """
-    try:
-        from docie_bridge_extraction import _load_bridge
-        bridge = _load_bridge()
-        blocs = bridge.compter_blocs_texte(texte)
-        return {"blocs_texte": blocs, "troncature_possible": blocs > bridge.DOCIE_BLOCS_TEXTE_MAX}
-    except Exception:
-        return {"blocs_texte": None, "troncature_possible": None}
-
-
-def modele_en_chargement(corps):
-    """Corps de chargement de DocIE sur /v1/extract/text (#194) :
-    `{"detail": {"status": "loading", "eta_seconds": …, "message": …}}`."""
-    detail = corps.get("detail") if isinstance(corps, dict) else None
-    return isinstance(detail, dict) and detail.get("status") == "loading"
-
-
-def message_chargement(corps):
+def message_chargement(eta):
     """Message pour l'utilisateur, qui relance lui-même (« échouer
     bruyamment », #194). Le `message` amont n'est jamais recopié ; le délai
-    n'est cité que s'il est un nombre fini et positif ou nul."""
-    detail = corps.get("detail") if isinstance(corps, dict) else None
-    eta = detail.get("eta_seconds") if isinstance(detail, dict) else None
+    (`eta_seconds` porté par le pont) n'est cité que s'il est un nombre fini et positif ou nul."""
     if isinstance(eta, (int, float)) and not isinstance(eta, bool) and math.isfinite(eta) and eta >= 0:
         return f"DocIE : modèle en cours de chargement, réessayez dans environ {math.ceil(eta)} s."
     return "DocIE : modèle en cours de chargement, réessayez dans quelques instants."
@@ -363,7 +327,7 @@ def _charger_openai():
     return openai_responses
 
 
-def _extraire_par_openai(texte, mode_transport, schema, progress=None, session=None):
+def extraire_par_externe(texte, mode_transport, schema, progress=None, session=None):
     """Extraction par un fournisseur HORS ADBI (#194). Un appel, aucun repli.
 
     Le texte du CV — donnée personnelle d'un CANDIDAT — quitte ADBI ici, et
@@ -420,8 +384,8 @@ def texte_document(path):
       * `(texte, None)` — le document porte sa couche texte, exploitable ;
       * `(None, "page_sans_texte")` — au moins une page sans texte. Ce n'est
         pas une erreur en soi, c'est un FAIT sur la source : à l'appelant d'en
-        décider. Le client historique refuse (mode inline, aucun OCR ici) ;
-        docie_bridge_extraction route vers la voie agent, qui OCRise.
+        décider. La voie texte refuse (aucun OCR) ; le pont actif route les
+        PDF vers la voie agent, qui OCRise.
 
     Lève DocIEError pour ce qui est réellement illisible (PDF protégé, DOCX
     invalide) et pour un suffixe qu'aucune voie texte ne sait lire.
@@ -442,7 +406,7 @@ def texte_document(path):
         return "\n".join(pages), None
     if suffixe == ".docx":
         return document_payload(path)["text"], None
-    raise DocIEError("Le mode inline accepte PDF texte et DOCX uniquement.")
+    raise DocIEError("La voie texte accepte PDF texte et DOCX uniquement.")
 
 
 def repli_possible(exc):
@@ -477,7 +441,7 @@ def repli_openai(file_path, mode_transport="rapide", progress=None, session=None
             "Repli externe impossible : ce document n'a pas de couche texte "
             "(scan ou page muette), il n'y a rien à envoyer.", "sans_texte")
     schema = json.loads(Path(__file__).with_name("adbi_resume.schema.json").read_text(encoding="utf-8"))
-    return _extraire_par_openai(texte, mode_transport, schema, progress=progress, session=session)
+    return extraire_par_externe(texte, mode_transport, schema, progress=progress, session=session)
 
 
 def lister_modeles_store(session=None):
@@ -491,136 +455,6 @@ def lister_modeles_store(session=None):
 
 
 def extract_resume(file_path, progress=None, *, session=None, choix=None):
-    """`choix` (#194, choix_modele.Choix) : modèle explicitement choisi. Vérifié
-    sur le texte réel (lignes non vides) juste avant l'appel, son identifiant
-    remplace DOCIE_MODEL_PROFILE pour CETTE requête ; refus = exception nommée,
-    jamais un autre modèle. Absent : comportement d'avant."""
-    base =os.environ.get("DOCIE_BASE_URL", "").strip().rstrip("/")
-    parsed = urlsplit(base)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise DocIEError("Configurez DOCIE_BASE_URL avec l'URL racine du service DocIE.")
-    try:
-        budget = float(os.environ.get("DOCIE_TIMEOUT_SECONDS", "900"))
-        if not 1 <= budget <= 3600:
-            raise ValueError()
-    except ValueError:
-        raise DocIEError("DOCIE_TIMEOUT_SECONDS doit être compris entre 1 et 3600.") from None
-    path = Path(file_path)
-    mode = os.environ.get("DOCIE_EXTRACTION_MODE", "inline")
-    if mode not in ("inline", "studio"):
-        raise DocIEError("DOCIE_EXTRACTION_MODE doit être inline ou studio.")
-    if mode == "inline":
-        # Lecture locale par la règle PARTAGÉE (texte_document ci-dessus) :
-        # docie_bridge_extraction lit le même texte de la même façon. Le refus
-        # d'un PDF à page muette reste ICI, inchangé — c'est le mode inline qui
-        # n'a pas d'OCR, pas la lecture qui a échoué.
-        text, raison = texte_document(path)
-        if raison == "page_sans_texte":
-            raise DocIEError("PDF contenant une page sans texte : OCR requis (scan ou page vide).")
-        if not text.strip():
-            raise DocIEError("PDF sans texte : OCR requis. Le mode inline ne traite pas encore les scans.")
-        schema = json.loads(Path(__file__).with_name("adbi_resume.schema.json").read_text(encoding="utf-8"))
-        payload = {"text": text, "schema_mode": "dynamic", "schema_name": "adbi_resume",
-                   "dynamic_schema": schema}
-    else:
-        payload = document_payload(path)
-        payload["dynamic_schema_name"] = os.environ.get("DOCIE_SCHEMA_NAME", "resume")
-    for env, field in (("DOCIE_MODEL_PROFILE", "model_profile"), ("DOCIE_OCR_BACKEND", "ocr_backend")):
-        if os.environ.get(env, "").strip() and (field != "ocr_backend" or mode == "studio"):
-            payload[field] = os.environ[env].strip()
-    if choix is not None:
-        # Le catalogue n'a pas de voie studio : un choix n'y est jamais proposé.
-        if mode != "inline":
-            raise DocIEError("Choix du modèle impossible en mode studio : voie texte (inline) uniquement.")
-        identifiant = choix.pour_texte(text)
-        if choix.est_externe:
-            # Modèle HORS ADBI (#194) : le texte part chez le fournisseur, pas
-            # chez DocIE. `identifiant` est alors le MODE du transport
-            # (`rapide` / `raisonnement`) et non un profil DocIE — le poser dans
-            # `payload` demanderait à DocIE un modèle nommé « rapide ».
-            return _extraire_par_openai(text, choix.mode_externe, schema,
-                                        progress=progress, session=session)
-        payload["model_profile"] = identifiant
-    headers = {}
-    key = os.environ.get("DOCIE_API_KEY", "").strip()
-    if key:
-        headers["x-api-key"] = key
-    deadline = time.monotonic() + budget
-    owned = session is None
-    session = session or requests.Session()
-
-    def call(method, route, **kwargs):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise DocIEError("DocIE : délai d'extraction dépassé. Le traitement distant peut continuer.", "timeout")
-        try:
-            response = session.request(method, base + route, headers=headers,
-                                       timeout=(min(10, remaining), remaining if mode == "inline" else min(30, remaining)), allow_redirects=False, **kwargs)
-        except requests.RequestException:
-            raise DocIEError("DocIE injoignable ou délai réseau dépassé. Vérifiez la connexion.") from None
-        if response.status_code in (401, 403):
-            raise DocIEError("DocIE : accès refusé. Vérifiez DOCIE_API_KEY.")
-        if not 200 <= response.status_code < 300:
-            raise DocIEError(f"DocIE : erreur HTTP {response.status_code}. Vérifiez le schéma et le service.")
-        try:
-            corps = response.json()
-        except ValueError:
-            corps = _ILLISIBLE
-        # Voie texte seulement (#194) : un `store:` pas encore chargé répond
-        # 202 sans mettre la requête en file. On échoue tout de suite, sans
-        # relance ni attente. Pas sur la voie studio : un 202 y peut porter
-        # des `event_ids` légitimes, et rien ici ne montre qu'elle charge.
-        if mode == "inline" and (response.status_code == 202 or modele_en_chargement(corps)):
-            raise DocIEError(message_chargement(corps))
-        if corps is _ILLISIBLE:
-            raise DocIEError("DocIE : réponse JSON invalide.")
-        return corps
-
-    try:
-        if progress:
-            progress("Envoi du document à DocIE")
-        if mode == "inline":
-            output = call("POST", "/v1/extract/text", json=payload)
-            data = map_resume(output, "adbi_resume")
-            return data, {"event_id": output.get("request_id", ""),
-                          "model_profile": output.get("model_profile", ""),
-                          "validation": output.get("validation") or {},
-                          "schema_reported": schema_rapporte(output),
-                          **blocs_texte_envoyes(text)}
-        trigger = call("POST", "/v1/studio/extract", json=payload)
-        ids = trigger.get("event_ids") if isinstance(trigger, dict) else None
-        if not isinstance(ids, list) or not ids or not isinstance(ids[0], str) or not ids[0]:
-            raise DocIEError("DocIE : identifiant de traitement absent.")
-        event_id = ids[0]
-        while True:
-            result = call("GET", "/v1/studio/runs/" + quote(event_id, safe=""))
-            rows = result.get("data", []) if isinstance(result, dict) else result
-            if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
-                raise DocIEError("DocIE : état de traitement invalide.")
-            for row in rows:
-                status = str(row.get("status") or "").lower()
-                # A proxy row with no ended_at is interim, even if Inngest
-                # labels a failed/retried step Failed. Await the durable outcome.
-                terminal = not isinstance(result, dict) or bool(row.get("ended_at"))
-                if status in ("cancelled", "canceled") or (terminal and status in ("failed", "error")):
-                    raise DocIEError("DocIE : extraction échouée ou annulée. Consultez le traitement dans DocIE.")
-                if row.get("output") is not None:
-                    output = row["output"]
-                    data = map_resume(output, payload["dynamic_schema_name"])
-                    return data, {"event_id": event_id, "model_profile": output.get("model_profile", ""),
-                                  "validation": output.get("validation") or {},
-                                  "schema_reported": schema_rapporte(output)}
-                # Inngest's interim proxy can report Completed for a step while
-                # the extraction is still running. Only the durable list is
-                # authoritative; keep polling the wrapped {data: [...]} shape.
-                if not isinstance(result, dict) and status in ("completed", "success", "succeeded"):
-                    raise DocIEError("DocIE : traitement terminé sans résultat. Une version avec résultats persistés est requise.")
-            if progress:
-                progress("Extraction et reconnaissance de texte dans DocIE")
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise DocIEError("DocIE : délai d'extraction dépassé. Le traitement distant peut continuer.", "timeout")
-            time.sleep(min(2, remaining))
-    finally:
-        if owned:
-            session.close()
+    """Voie texte via le pont partagé (docie_bridge_extraction.extraire_texte) ; même contrat (data, metadata)."""
+    import docie_bridge_extraction
+    return docie_bridge_extraction.extraire_texte(file_path, progress, session=session, choix=choix)
