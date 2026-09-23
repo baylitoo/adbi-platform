@@ -3,7 +3,8 @@
     "Catalogue des modèles proposés par action (#194, « Liste retenue (2026-09-15) »).",
     "Une seule liste : chaque modèle porte ses étiquettes (extraction et/ou chat) ; une tâche d'un usage ne propose jamais un modèle sans l'étiquette de cet usage.",
     "Le dépôt porte les rôles, les libellés et les conditions ; les identifiants réels viennent de l'environnement de déploiement (motifs sous `variables`). Un modèle sans identifiant configuré pour une voie n'est pas proposé sur cette voie.",
-    "`store` d'un modèle : son nom sur le store DocIE (GET /v1/serving/store). Voies texte et chat : sans variable d'environnement, un modèle est proposé dès que son `store` figure dans le relevé des modèles prêts passé aux chargeurs (option `store`), sous l'identifiant `store:<nom>`. La variable, si posée, l'emporte. Voie agent : variable seule, le store ne liste pas les agents.",
+    "`store` d'un modèle : son nom sur le store DocIE (GET /v1/serving/store). Voies texte et chat : sans variable d'environnement, un modèle est proposé dès que son `store` figure dans le relevé des modèles prêts passé aux chargeurs (option `store`), sous l'identifiant `store:<nom>`. La variable, si posée, l'emporte.",
+    "`schema` d'une tâche : le nom du schéma DocIE que ses agents appliquent (`options.schema` de GET /v1/agents). Voie agent : sans variable, un modèle est proposé sous le nom du premier agent actif dont le schéma est celui de la tâche, dont le modèle (`extractor` / `vision_model`) est le `store` du modèle, et dont ce modèle est prêt — relevé `agents` du pont. La variable, si posée, l'emporte.",
     "Aucun identifiant configuré pour une tâche et une voie : le consommateur garde son comportement d'avant le catalogue (DOCIE_MODEL_PROFILE, DOCIE_AGENT_<TYPE>).",
     "`limites` d'un modèle : évaluées par les chargeurs (catalogue.js, catalogue.py) sur le document réel, pour toutes les tâches. `prerequis` : condition de déploiement ou de contrôle côté ADBI, lue par un humain, jamais évaluée ici.",
     "`experimental: true` sur une entrée de tâche : le modèle y est proposé mais signalé « expérimental » dans les sélecteurs (aucune lecture réelle réussie sur ce type de document) ; exposé par les deux chargeurs, jamais évalué ici.",
@@ -60,6 +61,7 @@
     "resume": {
       "libelle": "CV",
       "usage": "extraction",
+      "schema": "adbi_resume",
       "voies": {
         "texte": {
           "defaut": { "modele": "lfm25_2_6b", "condition": "Non proposé au-delà de 800 lignes non vides (#190)." },
@@ -93,6 +95,7 @@
     "kbis": {
       "libelle": "Kbis",
       "usage": "extraction",
+      "schema": "kbis",
       "voies": {
         "texte": {
           "defaut": { "modele": "lfm25_2_6b", "condition": "PDF avec couche texte." },
@@ -154,6 +157,7 @@
     "cni": {
       "libelle": "Carte d'identité (photo)",
       "usage": "extraction",
+      "schema": "cni",
       "voies": {
         "agent": {
           "defaut": { "modele": "nuextract3", "condition": "Vision.", "prerequis": "Contrôle des chiffres de la MRZ." },

@@ -426,19 +426,10 @@ async function listerModelesDocie() {
   try {
     return { configure: true, modeles: await pont.listStore({ env: process.env }) };
   } catch (e) {
-    return { configure: true, erreur: MESSAGES_PONT_DOCIE[e.code] || "DocIE : " + e.message, code: e.code || null, modeles: [] };
+    const traduit = pont.messageErreur(e);
+    return { configure: true, erreur: traduit ? traduit.message : "DocIE : " + e.message, code: e.code || null, modeles: [] };
   }
 }
-
-const MESSAGES_PONT_DOCIE = {
-  configuration: "DocIE mal configuré côté hub (DOCIE_BASE_URL / DOCIE_API_KEY).",
-  auth: "DocIE : accès refusé. Vérifiez DOCIE_API_KEY.",
-  rate_limit: "DocIE : limite de débit atteinte, réessayez plus tard.",
-  upstream: "DocIE : erreur côté serveur DocIE.",
-  timeout: "DocIE : délai dépassé.",
-  network: "DocIE injoignable ou délai réseau dépassé.",
-  response: "DocIE : réponse invalide.",
-};
 
 function listerModelesDocieMisEnCache(forcer) {
   if (!forcer && modelesDocieCache && modelesDocieCache.expire > Date.now()) return Promise.resolve(modelesDocieCache.corps);

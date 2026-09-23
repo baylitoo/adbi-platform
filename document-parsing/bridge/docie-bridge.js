@@ -182,6 +182,37 @@ class DocIEBridgeError extends Error {
 function fail(code, message, status, etaSeconds = null) { throw new DocIEBridgeError(code, message, status, etaSeconds); }
 function object(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
+// Message français par code stable, la seule table de la plateforme ; le texte anglais du pont ne s'affiche jamais.
+const MESSAGES_ERREUR = Object.freeze({
+  loading: "Modèle en cours de chargement, réessayez dans quelques instants.",
+  context: "Document trop long pour le modèle d'extraction.",
+  timeout: "L'extraction a dépassé le délai imparti.",
+  limits: "Document refusé par le service d'extraction : au-delà de ses limites (taille, pages ou blocs OCR).",
+  upstream: "Le service d'extraction a répondu en erreur.",
+  network: "Service d'extraction injoignable.",
+  input: "Document refusé par le service d'extraction.",
+  configuration: "Service d'extraction mal configuré.",
+  auth: "Accès au service d'extraction refusé (configuration).",
+  rate_limit: "Service d'extraction saturé, réessayez plus tard.",
+  response: "Réponse du service d'extraction invalide.",
+  incomplete: "Extraction inachevée par le service d'extraction.",
+  schema: "Le service d'extraction a renvoyé un autre type de document.",
+});
+
+// { code, message, eta_seconds? } présentable pour une erreur du pont (objet à `code`, `eta_seconds`) ; code inconnu : null.
+function messageErreur(err) {
+  const code = err && typeof err.code === "string" ? err.code : null;
+  if (!code || !Object.hasOwn(MESSAGES_ERREUR, code)) return null;
+  if (code === "loading") {
+    const eta = err.eta_seconds;
+    if (typeof eta === "number" && Number.isFinite(eta) && eta >= 0) {
+      const n = Math.ceil(eta);
+      return { code, message: `Modèle en cours de chargement, réessayez dans ~${n} s.`, eta_seconds: n };
+    }
+  }
+  return { code, message: MESSAGES_ERREUR[code] };
+}
+
 // API root, access key and timeout — what BOTH DocIE paths need. Split out of
 // configuration() for extractText(): POST /v1/extract/text has no agent in its
 // URL, so requiring DOCIE_AGENT_<KIND> there would refuse a text extraction
@@ -587,7 +618,10 @@ function parseResponse(body, expectedSchema, agent) {
 // automatique, décision « échouer bruyamment » de #194 : le consommateur affiche
 // le délai, l'utilisateur relance.
 function loadingDetail(body) {
-  return object(body) && object(body.detail) && body.detail.status === "loading" ? body.detail : null;
+  if (!object(body)) return null;
+  // Routeur chat (rerank, chat) : corps PLAT `{"status": "loading", …}`, sans `detail`.
+  if (body.status === "loading") return body;
+  return object(body.detail) && body.detail.status === "loading" ? body.detail : null;
 }
 function failLoading(detail, status) {
   const eta = detail ? detail.eta_seconds : null;
@@ -963,6 +997,7 @@ function projeterStore(entree) {
     chat: !drapeau("embedding") && !drapeau("reranker") && !drapeau("analyzer"),
     extraction: !drapeau("embedding") && !drapeau("reranker") && (!drapeau("analyzer") || drapeau("structured_extraction")),
     vision: drapeau("vision"),
+    reranker: drapeau("reranker"),
   };
 }
 
@@ -998,8 +1033,104 @@ function storeUtilisableConnu() {
   return storeCache.modeles.slice();
 }
 
+// Nom de store visé par un sélecteur de modèle DocIE (`store:<nom>` ou nom nu) ; null sinon.
+function nomStore(selecteur) {
+  if (typeof selecteur !== "string" || !selecteur.trim()) return null;
+  const s = selecteur.trim();
+  if (s.startsWith("policy:")) return null;
+  return s.startsWith("store:") ? s.slice("store:".length) : s;
+}
+
+// Projection d'une entrée de GET /v1/agents : clés stables, jamais le prompt système ni les options brutes.
+function projeterAgent(entree) {
+  const options = object(entree.options) ? entree.options : {};
+  const kind = typeof entree.kind === "string" ? entree.kind : null;
+  let mode = options.mode;
+  // `mode` absent (agent d'avant le champ) : `extractor` présent vaut ocr_extract, sinon ocr.
+  if (typeof mode !== "string") mode = options.extractor ? "ocr_extract" : "ocr";
+  let selecteur;
+  if (kind === "ocr") selecteur = mode === "vision" ? options.vision_model : mode === "ocr_extract" ? options.extractor : null;
+  else selecteur = entree.model_profile;
+  const schema = typeof options.schema === "string" && options.schema.trim() ? options.schema : null;
+  return {
+    nom: typeof entree.name === "string" ? entree.name : null,
+    kind,
+    mode: kind === "ocr" ? mode : null,
+    actif: entree.enabled !== false,
+    schema,
+    modele_store: nomStore(selecteur),
+    extraction: kind === "ocr" && (mode === "ocr_extract" || mode === "vision") && schema !== null,
+    vision: kind === "ocr" && mode === "vision",
+  };
+}
+
+// GET /v1/agents : les agents enregistrés, projetés ; l'aptitude « prêt » se déduit du store, pas d'ici.
+async function listAgents({ env = process.env, fetchImpl = fetch, timeout = null } = {}) {
+  const { base, key, timeout: delai } = connection(env);
+  const body = await getJson(base + "/v1/agents", { "x-api-key": key }, key, Math.min(delai, timeout || 30), fetchImpl);
+  if (!Array.isArray(body)) fail("response", "DocIE returned an invalid agent listing.");
+  return body.filter(object).map(projeterAgent);
+}
+
+const agentsCache = { quand: null, agents: [] };
+
+// Agents d'extraction actifs dont le modèle est prêt sur le store (cache 5 min) ; DocIE muet : dernier relevé, sinon [].
+async function agentsUtilisables({ env = process.env, fetchImpl = fetch, maintenant = Date.now() } = {}) {
+  if (agentsCache.quand !== null && maintenant - agentsCache.quand < STORE_CACHE_MS) return agentsCache.agents.slice();
+  if (!String(env.DOCIE_BASE_URL || "").trim()) return agentsCache.agents.slice();
+  const prets = new Set((await storeUtilisable({ env, fetchImpl, maintenant })).map((m) => m.nom));
+  try {
+    const agents = (await listAgents({ env, fetchImpl, timeout: STORE_TIMEOUT_S }))
+      .filter((a) => a.actif && a.extraction && a.nom && prets.has(a.modele_store));
+    Object.assign(agentsCache, { quand: maintenant, agents });
+  } catch (e) {
+    if (!(e instanceof DocIEBridgeError)) throw e;
+    console.error("[docie-bridge] agents DocIE non relus (" + e.code + ") : dernier relevé conservé");
+    agentsCache.quand = maintenant;
+  }
+  return agentsCache.agents.slice();
+}
+
+function agentsUtilisablesConnus() {
+  return agentsCache.agents.slice();
+}
+
+const RERANK_DOCUMENTS_MAX = 500;
+
+// Sélecteur `store:<nom>` du premier reranker prêt sur le store (relevé en cache), sinon null.
+async function rerankerPret({ env = process.env, fetchImpl = fetch } = {}) {
+  const m = (await storeUtilisable({ env, fetchImpl })).find((x) => x.reranker && x.nom);
+  return m ? "store:" + m.nom : null;
+}
+
+// POST /v1/rerank : [{ index, score }] trié décroissant ; textes seuls, scores comparables dans UN appel seulement.
+async function rerank(query, documents, { modele, topN = null, env = process.env, fetchImpl = fetch } = {}) {
+  const { base, key, timeout } = connection(env);
+  if (typeof query !== "string" || !query.trim()) fail("input", "Rerank query must not be empty.");
+  if (!Array.isArray(documents) || !documents.length || !documents.every((d) => typeof d === "string" && d.trim())) {
+    fail("input", "Rerank documents must be a non-empty list of non-empty strings.");
+  }
+  if (documents.length > RERANK_DOCUMENTS_MAX) fail("input", "Too many documents to rerank in one call.");
+  const payload = { model: perCallModelProfile(modele), query, documents };
+  if (Number.isInteger(topN) && topN >= 1) payload.top_n = topN;
+  const { body } = await postJson(base + "/v1/rerank", { "x-api-key": key }, payload, key, timeout, fetchImpl, { loading: true });
+  const resultats = object(body) ? body.results : null;
+  if (!Array.isArray(resultats)) fail("response", "Invalid DocIE rerank response.");
+  const sortie = resultats.map((r) => {
+    const index = object(r) ? r.index : null;
+    const score = object(r) ? r.relevance_score : null;
+    if (!Number.isInteger(index) || index < 0 || index >= documents.length || !number(score)) {
+      fail("response", "Invalid DocIE rerank result entry.");
+    }
+    return { index, score };
+  });
+  sortie.sort((a, b) => b.score - a.score);
+  return sortie;
+}
+
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload, listStore, projeterStore,
-  storeUtilisable, storeUtilisableConnu,
+  storeUtilisable, storeUtilisableConnu, listAgents, projeterAgent, agentsUtilisables, agentsUtilisablesConnus, nomStore,
+  MESSAGES_ERREUR, messageErreur, rerank, rerankerPret, RERANK_DOCUMENTS_MAX,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
   DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
   MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };

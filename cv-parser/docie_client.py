@@ -267,15 +267,6 @@ def map_resume(response, expected_schema="resume"):
     return data
 
 
-def message_chargement(eta):
-    """Message pour l'utilisateur, qui relance lui-même (« échouer
-    bruyamment », #194). Le `message` amont n'est jamais recopié ; le délai
-    (`eta_seconds` porté par le pont) n'est cité que s'il est un nombre fini et positif ou nul."""
-    if isinstance(eta, (int, float)) and not isinstance(eta, bool) and math.isfinite(eta) and eta >= 0:
-        return f"DocIE : modèle en cours de chargement, réessayez dans environ {math.ceil(eta)} s."
-    return "DocIE : modèle en cours de chargement, réessayez dans quelques instants."
-
-
 # Codes d'échec DocIE qu'un repli externe ne doit JAMAIS rejouer.
 #
 # `timeout` : DocIE peut encore être en train de traiter le document — et de le
@@ -291,7 +282,7 @@ _CODES_SANS_REPLI = frozenset({"timeout", "input"})
 # (document-parsing/bridge/openai_responses.py::fail). Le texte de l'exception
 # elle-même n'est JAMAIS recopié dans `erreur.message` : il peut porter un corps
 # de réponse amont, un chemin, voire la clé. Même arbitrage que
-# docie_bridge_extraction._ERROR_MESSAGES, pour la même raison.
+# la table MESSAGES_ERREUR du pont DocIE, pour la même raison.
 _MESSAGES_EXTERNE = {
     "configuration": "service mal configuré côté serveur (clé ou URL).",
     "input": "document refusé (texte vide, trop volumineux ou binaire).",

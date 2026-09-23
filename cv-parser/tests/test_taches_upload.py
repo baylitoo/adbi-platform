@@ -428,15 +428,6 @@ class Erreurs(unittest.TestCase):
             m = tu.mapper_erreur(erreur_bridge("loading", eta=eta))
             self.assertEqual(m, {"code": "loading", "message": tu.MESSAGES_BRIDGE["loading"]}, repr(eta))
 
-    def test_loading_client_historique(self):
-        # Le message réel de docie_client (#192), pas une copie.
-        avec = DocIEError(docie_client.message_chargement(41.5))
-        sans = DocIEError(docie_client.message_chargement(None))
-        self.assertEqual(tu.mapper_erreur(avec), {
-            "code": "loading", "message": "Modèle en cours de chargement, réessayez dans ~42 s.",
-            "eta_seconds": 42})
-        self.assertEqual(tu.mapper_erreur(sans), {"code": "loading", "message": tu.MESSAGES_BRIDGE["loading"]})
-
     def test_erreur_metier_rendue_telle_quelle(self):
         self.assertEqual(tu.mapper_erreur(tu.ErreurTache("CV introuvable")),
                          {"code": "input", "message": "CV introuvable"})

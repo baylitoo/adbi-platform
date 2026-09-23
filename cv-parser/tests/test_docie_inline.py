@@ -65,12 +65,12 @@ class InlineTests(unittest.TestCase):
     def test_202_de_chargement_leve_un_message_clair_avec_le_delai(self):
         with self.assertRaises(DocIEError) as ctx:
             self._inline(self._chargement(eta_seconds=42))
-        self.assertEqual(str(ctx.exception), "DocIE : modèle en cours de chargement, réessayez dans environ 42 s. [loading]")
+        self.assertEqual(str(ctx.exception), "Modèle en cours de chargement, réessayez dans ~42 s. [loading]")
         self.assertEqual(ctx.exception.code, "loading")
         self.assertNotIn("SECRET-AMONT", str(ctx.exception))
 
     def test_delai_fractionnaire_arrondi_au_dessus(self):
-        with self.assertRaisesRegex(DocIEError, "environ 42 s"):
+        with self.assertRaisesRegex(DocIEError, "~42 s"):
             self._inline(self._chargement(eta_seconds=41.2))
 
     def test_delai_absent_ou_invalide_sans_nombre(self):
@@ -79,24 +79,24 @@ class InlineTests(unittest.TestCase):
                 with self.assertRaises(DocIEError) as ctx:
                     self._inline(self._chargement(eta_seconds=eta))
                 self.assertEqual(str(ctx.exception),
-                                 "DocIE : modèle en cours de chargement, réessayez dans quelques instants. [loading]")
+                                 "Modèle en cours de chargement, réessayez dans quelques instants. [loading]")
 
     def test_202_sans_corps_lisible_reste_un_chargement(self):
-        with self.assertRaisesRegex(DocIEError, "modèle en cours de chargement, réessayez dans quelques instants"):
+        with self.assertRaisesRegex(DocIEError, "Modèle en cours de chargement, réessayez dans quelques instants"):
             self._inline((202, b"pas du json"))
 
     def test_202_sans_detail_reste_un_chargement(self):
-        with self.assertRaisesRegex(DocIEError, "modèle en cours de chargement"):
+        with self.assertRaisesRegex(DocIEError, "Modèle en cours de chargement"):
             self._inline((202, {}))
 
     def test_statut_loading_sous_200_aussi(self):
-        with self.assertRaisesRegex(DocIEError, "environ 7 s"):
+        with self.assertRaisesRegex(DocIEError, "~7 s"):
             self._inline(self._chargement(status=200, eta_seconds=7))
 
     def test_json_invalide_hors_chargement_inchange(self):
         with self.assertRaises(DocIEError) as ctx:
             self._inline((200, b"pas du json"))
-        self.assertEqual(str(ctx.exception), "DocIE (bridge) : réponse invalide. [response]")
+        self.assertEqual(str(ctx.exception), "Réponse du service d'extraction invalide. [response]")
 
     def test_scanned_pdf_fails_before_network(self):
         from pypdf import PdfWriter

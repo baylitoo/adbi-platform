@@ -66,22 +66,6 @@ _MIME_BY_SUFFIX = {
     ".jpeg": "image/jpeg",
 }
 
-# Messages FR par code stable du bridge (document-parsing/bridge/docie_bridge.py).
-# Le texte du bridge lui-même (`str(exc)`) est en anglais et resterait affiché
-# tel quel à l'utilisateur (parse_warning) sans cette table.
-_ERROR_MESSAGES = {
-    "configuration": "DocIE (bridge) mal configuré côté serveur cv-parser.",
-    "input": "Document invalide pour le bridge DocIE (taille ou format).",
-    "auth": "DocIE (bridge) : accès refusé. Vérifiez DOCIE_API_KEY.",
-    "rate_limit": "DocIE (bridge) : limite de débit atteinte, réessayez plus tard.",
-    "upstream": "DocIE (bridge) : erreur côté serveur DocIE.",
-    "timeout": "DocIE (bridge) : délai dépassé. Le traitement distant peut continuer.",
-    "network": "DocIE (bridge) injoignable ou délai réseau dépassé.",
-    "response": "DocIE (bridge) : réponse invalide.",
-    "incomplete": "DocIE (bridge) : extraction non terminée.",
-    "schema": "DocIE (bridge) : schéma de réponse inattendu.",
-}
-
 
 def docie_extraction_enabled() -> bool:
     """DOCIE_EXTRACTION_ENABLED (défaut : désactivé).
@@ -150,9 +134,8 @@ def _echouer_pont(exc):
     qu'aucun message recopiant une valeur n'échappe à la revue. Un
     `return DocIEError(...)` rendrait ce garde-fou aveugle.
     """
-    message = _ERROR_MESSAGES.get(exc.code, f"DocIE (bridge) : {exc}")
-    if exc.code == "loading":
-        message = docie_client.message_chargement(exc.eta_seconds)
+    traduit = _load_bridge().message_erreur(exc)
+    message = traduit["message"] if traduit else f"DocIE (bridge) : {exc}"
     # Le code voyage aussi en VALEUR (docie_client.DocIEError.code), pas
     # seulement dans la prose : le repli externe doit pouvoir décider sans
     # relire une chaîne de caractères. `args[0]` reste la même f-string, donc la

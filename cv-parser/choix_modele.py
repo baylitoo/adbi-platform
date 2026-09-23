@@ -81,12 +81,14 @@ def charger():
 
 
 def store_pret():
-    """Noms des modèles prêts sur le store DocIE (relevé du pont, cache 5 min) ; pont absent ou muet : []."""
+    """Relevé du pont (cache 5 min) : {"modeles": noms prêts, "agents": agents prêts} ; pont absent ou muet : vide."""
     try:
         from docie_bridge_extraction import _load_bridge
-        return [m["nom"] for m in _load_bridge().store_utilisable() if m.get("nom")]
+        pont = _load_bridge()
+        return {"modeles": [m["nom"] for m in pont.store_utilisable() if m.get("nom")],
+                "agents": pont.agents_utilisables()}
     except Exception:
-        return []
+        return {"modeles": [], "agents": []}
 
 
 def voie_pour(ext):

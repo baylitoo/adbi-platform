@@ -190,6 +190,37 @@ def fail(code, message, status=None, eta_seconds=None):
     raise DocIEBridgeError(code, message, status, eta_seconds)
 
 
+# Message français par code stable, la seule table de la plateforme ; le texte anglais du pont ne s'affiche jamais.
+MESSAGES_ERREUR = {
+    "loading": "Modèle en cours de chargement, réessayez dans quelques instants.",
+    "context": "Document trop long pour le modèle d'extraction.",
+    "timeout": "L'extraction a dépassé le délai imparti.",
+    "limits": "Document refusé par le service d'extraction : au-delà de ses limites (taille, pages ou blocs OCR).",
+    "upstream": "Le service d'extraction a répondu en erreur.",
+    "network": "Service d'extraction injoignable.",
+    "input": "Document refusé par le service d'extraction.",
+    "configuration": "Service d'extraction mal configuré.",
+    "auth": "Accès au service d'extraction refusé (configuration).",
+    "rate_limit": "Service d'extraction saturé, réessayez plus tard.",
+    "response": "Réponse du service d'extraction invalide.",
+    "incomplete": "Extraction inachevée par le service d'extraction.",
+    "schema": "Le service d'extraction a renvoyé un autre type de document.",
+}
+
+
+def message_erreur(exc):
+    """{code, message, eta_seconds?} présentable pour une erreur du pont (objet à `code`, `eta_seconds`) ; code inconnu : None."""
+    code = getattr(exc, "code", None)
+    if not isinstance(code, str) or code not in MESSAGES_ERREUR:
+        return None
+    if code == "loading":
+        eta = getattr(exc, "eta_seconds", None)
+        if isinstance(eta, (int, float)) and not isinstance(eta, bool) and math.isfinite(eta) and eta >= 0:
+            n = math.ceil(eta)
+            return {"code": code, "message": f"Modèle en cours de chargement, réessayez dans ~{n} s.", "eta_seconds": n}
+    return {"code": code, "message": MESSAGES_ERREUR[code]}
+
+
 def connection(env):
     """API root, access key and timeout — what BOTH DocIE paths need.
 
@@ -679,7 +710,12 @@ def loading_detail(body):
     automatique, décision « échouer bruyamment » de #194 : le consommateur
     affiche le délai, l'utilisateur relance.
     """
-    detail = body.get("detail") if isinstance(body, dict) else None
+    if not isinstance(body, dict):
+        return None
+    # Routeur chat (rerank, chat) : corps PLAT `{"status": "loading", …}`, sans `detail`.
+    if body.get("status") == "loading":
+        return body
+    detail = body.get("detail")
     return detail if isinstance(detail, dict) and detail.get("status") == "loading" else None
 
 
@@ -954,6 +990,7 @@ def projeter_store(entree):
         "chat": not drapeau("embedding") and not drapeau("reranker") and not drapeau("analyzer"),
         "extraction": not drapeau("embedding") and not drapeau("reranker") and (not drapeau("analyzer") or drapeau("structured_extraction")),
         "vision": drapeau("vision"),
+        "reranker": drapeau("reranker"),
     }
 
 
@@ -988,6 +1025,114 @@ def store_utilisable(*, env=None, session=None, maintenant=None):
         return list(_store_cache["modeles"])
     _store_cache.update(quand=maintenant, modeles=modeles)
     return list(modeles)
+
+
+def nom_store(selecteur):
+    """Nom de store visé par un sélecteur de modèle DocIE (`store:<nom>` ou nom nu) ; None sinon."""
+    if not isinstance(selecteur, str) or not selecteur.strip():
+        return None
+    selecteur = selecteur.strip()
+    if selecteur.startswith("policy:"):
+        return None
+    return selecteur[len("store:"):] if selecteur.startswith("store:") else selecteur
+
+
+def projeter_agent(entree):
+    """Projection d'une entrée de GET /v1/agents : clés stables, jamais le prompt système ni les options brutes."""
+    options = entree.get("options") if isinstance(entree.get("options"), dict) else {}
+    kind = entree.get("kind") if isinstance(entree.get("kind"), str) else None
+    mode = options.get("mode")
+    # `mode` absent (agent d'avant le champ) : `extractor` présent vaut ocr_extract, sinon ocr.
+    if not isinstance(mode, str):
+        mode = "ocr_extract" if options.get("extractor") else "ocr"
+    if kind == "ocr":
+        selecteur = options.get("vision_model") if mode == "vision" else options.get("extractor") if mode == "ocr_extract" else None
+    else:
+        selecteur = entree.get("model_profile")
+    schema = options.get("schema") if isinstance(options.get("schema"), str) and options.get("schema").strip() else None
+    return {
+        "nom": entree.get("name") if isinstance(entree.get("name"), str) else None,
+        "kind": kind,
+        "mode": mode if kind == "ocr" else None,
+        "actif": entree.get("enabled") is not False,
+        "schema": schema,
+        "modele_store": nom_store(selecteur),
+        "extraction": kind == "ocr" and mode in ("ocr_extract", "vision") and schema is not None,
+        "vision": kind == "ocr" and mode == "vision",
+    }
+
+
+def list_agents(*, env=None, session=None, timeout=None):
+    """GET /v1/agents : les agents enregistrés, projetés ; l'aptitude « prêt » se déduit du store, pas d'ici."""
+    env = os.environ if env is None else env
+    base, key, delai = connection(env)
+    body = get_json(base + "/v1/agents", {"x-api-key": key}, key, min(delai, timeout or 30), session)
+    if not isinstance(body, list):
+        fail("response", "DocIE returned an invalid agent listing.")
+    return [projeter_agent(e) for e in body if isinstance(e, dict)]
+
+
+_agents_cache = {"quand": None, "agents": []}
+
+
+def agents_utilisables(*, env=None, session=None, maintenant=None):
+    """Agents d'extraction actifs dont le modèle est prêt sur le store (cache 5 min) ; DocIE muet : dernier relevé, sinon []."""
+    env = os.environ if env is None else env
+    maintenant = time.monotonic() if maintenant is None else maintenant
+    if _agents_cache["quand"] is not None and maintenant - _agents_cache["quand"] < STORE_CACHE_S:
+        return list(_agents_cache["agents"])
+    if not str(env.get("DOCIE_BASE_URL") or "").strip():
+        return list(_agents_cache["agents"])
+    prets = {m["nom"] for m in store_utilisable(env=env, session=session, maintenant=maintenant)}
+    try:
+        agents = [a for a in list_agents(env=env, session=session, timeout=STORE_TIMEOUT_S)
+                  if a["actif"] and a["extraction"] and a["nom"] and a["modele_store"] in prets]
+    except DocIEBridgeError as exc:
+        print("[docie_bridge] agents DocIE non relus (%s) : dernier relevé conservé" % exc.code, file=sys.stderr)
+        _agents_cache["quand"] = maintenant
+        return list(_agents_cache["agents"])
+    _agents_cache.update(quand=maintenant, agents=agents)
+    return list(agents)
+
+
+RERANK_DOCUMENTS_MAX = 500
+
+
+def reranker_pret(*, env=None, session=None):
+    """Sélecteur `store:<nom>` du premier reranker prêt sur le store (relevé en cache), sinon None."""
+    for m in store_utilisable(env=env, session=session):
+        if m.get("reranker") and m.get("nom"):
+            return "store:" + m["nom"]
+    return None
+
+
+def rerank(query, documents, *, modele, top_n=None, env=None, session=None):
+    """POST /v1/rerank : [{index, score}] trié décroissant ; textes seuls, scores comparables dans UN appel seulement."""
+    env = os.environ if env is None else env
+    base, key, timeout = connection(env)
+    if not isinstance(query, str) or not query.strip():
+        fail("input", "Rerank query must not be empty.")
+    if not isinstance(documents, list) or not documents or not all(isinstance(d, str) and d.strip() for d in documents):
+        fail("input", "Rerank documents must be a non-empty list of non-empty strings.")
+    if len(documents) > RERANK_DOCUMENTS_MAX:
+        fail("input", "Too many documents to rerank in one call.")
+    payload = {"model": per_call_model_profile(modele), "query": query, "documents": documents}
+    if isinstance(top_n, int) and not isinstance(top_n, bool) and top_n >= 1:
+        payload["top_n"] = top_n
+    body, _elapsed = post_json(base + "/v1/rerank", {"x-api-key": key}, payload, key, timeout, session, loading=True)
+    resultats = body.get("results") if isinstance(body, dict) else None
+    if not isinstance(resultats, list):
+        fail("response", "Invalid DocIE rerank response.")
+    sortie = []
+    for r in resultats:
+        index = r.get("index") if isinstance(r, dict) else None
+        score = r.get("relevance_score") if isinstance(r, dict) else None
+        if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(documents) \
+                or not isinstance(score, (int, float)) or isinstance(score, bool) or not math.isfinite(score):
+            fail("response", "Invalid DocIE rerank result entry.")
+        sortie.append({"index": index, "score": float(score)})
+    sortie.sort(key=lambda r: -r["score"])
+    return sortie
 
 
 def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, model_profile=None, langue=None, env=None, session=None):
