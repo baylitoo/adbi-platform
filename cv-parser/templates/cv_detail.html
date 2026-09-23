@@ -556,6 +556,8 @@
        tronquée s'affiche exactement comme une extraction complète. #}
     {% set revue = cv.docie_review or {} %}
     {% set a_verifier = revue.needs_review or [] %}
+    {% set preuves = cv.docie_preuves or {} %}
+    {% macro preuve(chemin) %}{% set lues = preuves.get(chemin) or [] %}{% if lues %} title="Lu par DocIE{% for l in lues[:3] %} · {{ ('page ' ~ l.page ~ ' : ') if l.page }}« {{ l.extrait }} »{% endfor %}"{% endif %}{% endmacro %}
     {% if a_verifier or revue.warnings %}
     <div class="revue-docie">
       <span class="revue-docie-titre">⚠️ DocIE n'est pas sûr de cette extraction.</span>
@@ -751,19 +753,19 @@
       </div>
       <div class="sec-body">
         <div class="field-row"><span class="field-label">Nom</span>
-          <div class="field-val{{ ' a-verifier' if 'name' in a_verifier }}" contenteditable="true" data-field="name" data-empty="{{ 'true' if not cv.name else 'false' }}" data-placeholder="Non renseigné">{{ cv.name or '' }}</div></div>
+          <div class="field-val{{ ' a-verifier' if 'name' in a_verifier }}"{{ preuve('name') }} contenteditable="true" data-field="name" data-empty="{{ 'true' if not cv.name else 'false' }}" data-placeholder="Non renseigné">{{ cv.name or '' }}</div></div>
         <div class="field-row"><span class="field-label">Titre</span>
-          <div class="field-val{{ ' a-verifier' if 'title' in a_verifier }}" contenteditable="true" data-field="title" data-empty="{{ 'true' if not cv.title else 'false' }}" data-placeholder="Non renseigné">{{ cv.title or '' }}</div></div>
+          <div class="field-val{{ ' a-verifier' if 'title' in a_verifier }}"{{ preuve('title') }} contenteditable="true" data-field="title" data-empty="{{ 'true' if not cv.title else 'false' }}" data-placeholder="Non renseigné">{{ cv.title or '' }}</div></div>
         <div class="field-row"><span class="field-label">Années d'exp.</span>
           <div class="field-val" contenteditable="true" data-field="years_experience" data-empty="{{ 'true' if not cv.years_experience else 'false' }}" data-placeholder="0">{{ cv.years_experience or '' }}</div></div>
         <div class="field-row"><span class="field-label">Email</span>
-          <div class="field-val{{ ' a-verifier' if 'contact.email' in a_verifier }}" contenteditable="true" data-section="contact" data-field="email" data-empty="{{ 'true' if not c.email else 'false' }}" data-placeholder="Non renseigné">{{ c.email or '' }}</div></div>
+          <div class="field-val{{ ' a-verifier' if 'contact.email' in a_verifier }}"{{ preuve('contact.email') }} contenteditable="true" data-section="contact" data-field="email" data-empty="{{ 'true' if not c.email else 'false' }}" data-placeholder="Non renseigné">{{ c.email or '' }}</div></div>
         <div class="field-row"><span class="field-label">Téléphone</span>
-          <div class="field-val{{ ' a-verifier' if 'contact.phone' in a_verifier }}" contenteditable="true" data-section="contact" data-field="phone" data-empty="{{ 'true' if not c.phone else 'false' }}" data-placeholder="Non renseigné">{{ c.phone or '' }}</div></div>
+          <div class="field-val{{ ' a-verifier' if 'contact.phone' in a_verifier }}"{{ preuve('contact.phone') }} contenteditable="true" data-section="contact" data-field="phone" data-empty="{{ 'true' if not c.phone else 'false' }}" data-placeholder="Non renseigné">{{ c.phone or '' }}</div></div>
         <div class="field-row"><span class="field-label">Localisation</span>
-          <div class="field-val{{ ' a-verifier' if 'contact.location' in a_verifier }}" contenteditable="true" data-section="contact" data-field="location" data-empty="{{ 'true' if not c.location else 'false' }}" data-placeholder="Non renseigné">{{ c.location or '' }}</div></div>
+          <div class="field-val{{ ' a-verifier' if 'contact.location' in a_verifier }}"{{ preuve('contact.location') }} contenteditable="true" data-section="contact" data-field="location" data-empty="{{ 'true' if not c.location else 'false' }}" data-placeholder="Non renseigné">{{ c.location or '' }}</div></div>
         <div class="field-row"><span class="field-label">LinkedIn</span>
-          <div class="field-val{{ ' a-verifier' if 'contact.linkedin' in a_verifier }}" contenteditable="true" data-section="contact" data-field="linkedin" data-empty="{{ 'true' if not c.linkedin else 'false' }}" data-placeholder="Non renseigné">{{ c.linkedin or '' }}</div></div>
+          <div class="field-val{{ ' a-verifier' if 'contact.linkedin' in a_verifier }}"{{ preuve('contact.linkedin') }} contenteditable="true" data-section="contact" data-field="linkedin" data-empty="{{ 'true' if not c.linkedin else 'false' }}" data-placeholder="Non renseigné">{{ c.linkedin or '' }}</div></div>
       </div>
     </div>
 
@@ -898,12 +900,12 @@
           <div class="entry-card" draggable="true" data-section="education" data-entry-idx="{{ loop.index0 }}">
             <div class="entry-head">
               <div class="entry-head-left">
-                <div class="entry-company{{ ' a-verifier' if chemin_edu ~ 'title' in a_verifier }}" contenteditable="true" data-f="title" data-empty="{{ 'true' if not edu.title else 'false' }}" data-placeholder="Intitulé du diplôme">{{ edu.title or '' }}</div>
-                <div class="entry-role{{ ' a-verifier' if chemin_edu ~ 'subtitle' in a_verifier }}" contenteditable="true" data-f="subtitle" data-empty="{{ 'true' if not edu.subtitle else 'false' }}" data-placeholder="Établissement">{{ edu.subtitle or '' }}</div>
+                <div class="entry-company{{ ' a-verifier' if chemin_edu ~ 'title' in a_verifier }}"{{ preuve(chemin_edu ~ 'title') }} contenteditable="true" data-f="title" data-empty="{{ 'true' if not edu.title else 'false' }}" data-placeholder="Intitulé du diplôme">{{ edu.title or '' }}</div>
+                <div class="entry-role{{ ' a-verifier' if chemin_edu ~ 'subtitle' in a_verifier }}"{{ preuve(chemin_edu ~ 'subtitle') }} contenteditable="true" data-f="subtitle" data-empty="{{ 'true' if not edu.subtitle else 'false' }}" data-placeholder="Établissement">{{ edu.subtitle or '' }}</div>
               </div>
               <div class="entry-head-right">
                 <span class="drag-handle" title="Glisser pour réordonner">⠿</span>
-                <div class="period-badge{{ ' a-verifier' if chemin_edu ~ 'period' in a_verifier }}" contenteditable="true" data-f="period" data-empty="{{ 'true' if not edu.period else 'false' }}">{{ edu.period or '' }}</div>
+                <div class="period-badge{{ ' a-verifier' if chemin_edu ~ 'period' in a_verifier }}"{{ preuve(chemin_edu ~ 'period') }} contenteditable="true" data-f="period" data-empty="{{ 'true' if not edu.period else 'false' }}">{{ edu.period or '' }}</div>
                 <button class="btn-rm" onclick="this.closest('.entry-card').remove()">×</button>
               </div>
             </div>
@@ -943,24 +945,24 @@
           <div class="entry-card" draggable="true" data-section="experience" data-entry-idx="{{ loop.index0 }}">
             <div class="entry-head">
               <div class="entry-head-left">
-                <div class="entry-company{{ ' a-verifier' if chemin_exp ~ 'company' in a_verifier }}" contenteditable="true" data-f="company" data-empty="{{ 'true' if not company else 'false' }}" data-placeholder="Entreprise">{{ company }}</div>
-                <div class="entry-role{{ ' a-verifier' if chemin_exp ~ 'title' in a_verifier }}" contenteditable="true" data-f="title" data-empty="{{ 'true' if not role else 'false' }}" data-placeholder="Poste occupé">{{ role }}</div>
+                <div class="entry-company{{ ' a-verifier' if chemin_exp ~ 'company' in a_verifier }}"{{ preuve(chemin_exp ~ 'company') }} contenteditable="true" data-f="company" data-empty="{{ 'true' if not company else 'false' }}" data-placeholder="Entreprise">{{ company }}</div>
+                <div class="entry-role{{ ' a-verifier' if chemin_exp ~ 'title' in a_verifier }}"{{ preuve(chemin_exp ~ 'title') }} contenteditable="true" data-f="title" data-empty="{{ 'true' if not role else 'false' }}" data-placeholder="Poste occupé">{{ role }}</div>
               </div>
               <div class="entry-head-right">
                 <span class="drag-handle" title="Glisser pour réordonner">⠿</span>
-                <div class="period-badge{{ ' a-verifier' if chemin_exp ~ 'period' in a_verifier }}" contenteditable="true" data-f="period" data-empty="{{ 'true' if not exp.period else 'false' }}">{{ exp.period or '' }}</div>
+                <div class="period-badge{{ ' a-verifier' if chemin_exp ~ 'period' in a_verifier }}"{{ preuve(chemin_exp ~ 'period') }} contenteditable="true" data-f="period" data-empty="{{ 'true' if not exp.period else 'false' }}">{{ exp.period or '' }}</div>
                 <button class="btn-rm" onclick="this.closest('.entry-card').remove()">×</button>
               </div>
             </div>
             <div class="field-row"><span class="field-label">Client</span>
-              <div class="field-val{{ ' a-verifier' if chemin_exp ~ 'client' in a_verifier }}" contenteditable="true" data-f="client" data-empty="{{ 'true' if not exp.client else 'false' }}" data-placeholder="Nom du client / donneur d'ordre">{{ exp.client or '' }}</div></div>
+              <div class="field-val{{ ' a-verifier' if chemin_exp ~ 'client' in a_verifier }}"{{ preuve(chemin_exp ~ 'client') }} contenteditable="true" data-f="client" data-empty="{{ 'true' if not exp.client else 'false' }}" data-placeholder="Nom du client / donneur d'ordre">{{ exp.client or '' }}</div></div>
             {# #177 ligne 17 : le lieu de la mission, que DocIE rend et que la
                fiche jetait. Case ÉDITABLE et non simple affichage : collectData
                ramasse les missions par la boucle générique [data-f], donc tout
                ce qui n'est pas une case `data-f` disparaît au premier
                enregistrement — le piège qui a fait différer cette ligne. #}
             <div class="field-row"><span class="field-label">Lieu</span>
-              <div class="field-val{{ ' a-verifier' if chemin_exp ~ 'location' in a_verifier }}" contenteditable="true" data-f="location" data-empty="{{ 'true' if not exp.location else 'false' }}" data-placeholder="Ville, pays">{{ exp.location or '' }}</div></div>
+              <div class="field-val{{ ' a-verifier' if chemin_exp ~ 'location' in a_verifier }}"{{ preuve(chemin_exp ~ 'location') }} contenteditable="true" data-f="location" data-empty="{{ 'true' if not exp.location else 'false' }}" data-placeholder="Ville, pays">{{ exp.location or '' }}</div></div>
             <div class="field-row"><span class="field-label">Contexte</span>
               <div class="field-val" contenteditable="true" data-f="contexte" data-empty="{{ 'true' if not exp.contexte else 'false' }}" data-placeholder="Secteur, client, environnement">{{ exp.contexte or '' }}</div></div>
             <div class="field-row"><span class="field-label">Objectifs</span>
@@ -968,9 +970,9 @@
             <div class="field-row"><span class="field-label">Méthodologie</span>
               <div class="field-val" contenteditable="true" data-f="methodologie" data-empty="{{ 'true' if not exp.methodologie else 'false' }}" data-placeholder="Agile, Scrum…">{{ exp.methodologie or '' }}</div></div>
             <div class="field-row"><span class="field-label">Env. technique</span>
-              <div class="field-val{{ ' a-verifier' if chemin_exp ~ 'env_technique' in a_verifier }}" contenteditable="true" data-f="env_technique" data-empty="{{ 'true' if not exp.env_technique else 'false' }}" data-placeholder="Technologies, frameworks">{{ exp.env_technique or '' }}</div></div>
+              <div class="field-val{{ ' a-verifier' if chemin_exp ~ 'env_technique' in a_verifier }}"{{ preuve(chemin_exp ~ 'env_technique') }} contenteditable="true" data-f="env_technique" data-empty="{{ 'true' if not exp.env_technique else 'false' }}" data-placeholder="Technologies, frameworks">{{ exp.env_technique or '' }}</div></div>
             <div class="bullets-section">
-              <div class="bullets-label{{ ' a-verifier' if chemin_exp ~ 'description' in a_verifier }}">Description</div>
+              <div class="bullets-label{{ ' a-verifier' if chemin_exp ~ 'description' in a_verifier }}"{{ preuve(chemin_exp ~ 'description') }}>Description</div>
               <div data-f="description">
                 {% set bullets = exp.description.split(' · ') if exp.description else [] %}
                 {% for b in bullets %}{% if b.strip() %}
@@ -1008,11 +1010,11 @@
         {% for cert in cv.certifications %}
         {% set chemin_cert = 'certifications[' ~ loop.index0 ~ '].' %}
         <div class="cert-row">
-          <div class="cert-name{{ ' a-verifier' if chemin_cert ~ 'name' in a_verifier }}" contenteditable="true" data-cert-name="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.name else 'false' }}" data-placeholder="Nom de la certification">{{ cert.name or '' }}</div>
+          <div class="cert-name{{ ' a-verifier' if chemin_cert ~ 'name' in a_verifier }}"{{ preuve(chemin_cert ~ 'name') }} contenteditable="true" data-cert-name="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.name else 'false' }}" data-placeholder="Nom de la certification">{{ cert.name or '' }}</div>
           {# #177 ligne 18 : l'organisme émetteur. « Architecte Solutions » ne
              dit pas la même chose selon qu'AWS ou Azure la délivre. #}
-          <div class="cert-issuer{{ ' a-verifier' if chemin_cert ~ 'issuer' in a_verifier }}" contenteditable="true" data-cert-issuer="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.issuer else 'false' }}" data-placeholder="Organisme">{{ cert.issuer or '' }}</div>
-          <div class="cert-year{{ ' a-verifier' if chemin_cert ~ 'year' in a_verifier }}" contenteditable="true" data-cert-year="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.year else 'false' }}">{{ cert.year or '' }}</div>
+          <div class="cert-issuer{{ ' a-verifier' if chemin_cert ~ 'issuer' in a_verifier }}"{{ preuve(chemin_cert ~ 'issuer') }} contenteditable="true" data-cert-issuer="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.issuer else 'false' }}" data-placeholder="Organisme">{{ cert.issuer or '' }}</div>
+          <div class="cert-year{{ ' a-verifier' if chemin_cert ~ 'year' in a_verifier }}"{{ preuve(chemin_cert ~ 'year') }} contenteditable="true" data-cert-year="{{ loop.index0 }}" data-empty="{{ 'true' if not cert.year else 'false' }}">{{ cert.year or '' }}</div>
           <button class="btn-rm-sm" onclick="this.closest('.cert-row').remove()">×</button>
         </div>
         {% endfor %}
