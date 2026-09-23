@@ -208,8 +208,9 @@ def extraire_texte(file_path, progress=None, *, session=None, choix=None):
     jamais à DocIE.
     """
     path = Path(file_path)
-    texte, raison = docie_client.texte_document(path)
-    if raison == "page_sans_texte" or not texte.strip():
+    pages = docie_client.pages_document(path)
+    texte = "\n".join(t for _, t in pages)
+    if any(not t.strip() for _, t in pages) or not texte.strip():
         raise DocIEError("PDF sans couche texte (scan ou page vide) : OCR requis, non disponible sur la voie texte.")
     options = {}
     if choix is not None:
@@ -221,12 +222,43 @@ def extraire_texte(file_path, progress=None, *, session=None, choix=None):
     docie_bridge = _load_bridge()
     if progress:
         progress("Envoi du texte du document à DocIE (bridge)")
+    blocs, table = _blocs_pages(pages, docie_bridge.DOCIE_BLOCS_OCR_MAX)
+    if blocs:
+        options["ocr_blocks"] = blocs
     try:
         bridge_result = docie_bridge.extract_text(texte, kind="resume", dynamic_schema=_schema_resume(),
                                                   session=session, **options)
     except docie_bridge.DocIEBridgeError as exc:
         _echouer_pont(exc)
-    return _adapter(bridge_result, "texte")
+    data, metadata = _adapter(bridge_result, "texte")
+    metadata["preuves"] = _preuves((bridge_result.get("metadata") or {}).get("evidence"), table)
+    return data, metadata
+
+
+def _blocs_pages(pages, plafond):
+    """Une ligne non vide = un bloc (le découpage de DocIE), numéroté par page ; au-delà du plafond, None (DocIE redécoupe)."""
+    blocs, table = [], {}
+    for page, texte in pages:
+        for n, ligne in enumerate((l.strip() for l in texte.splitlines() if l.strip()), start=1):
+            identifiant = f"p{page}l{n}" if page else f"l{len(blocs) + 1}"
+            bloc = {"id": identifiant, "text": ligne, "source": "pdf_text" if page else "unknown"}
+            if page:
+                bloc["page"] = page
+            blocs.append(bloc)
+            table[identifiant] = {"page": page, "extrait": ligne[:200]}
+    return (blocs, table) if 0 < len(blocs) <= plafond else (None, {})
+
+
+def _preuves(evidence, table):
+    """{chemin du champ: [{page, extrait}]} à partir des evidence_ids qui nomment nos blocs ; les autres sont ignorés."""
+    if not isinstance(evidence, dict) or not table:
+        return {}
+    preuves = {}
+    for chemin, ids in evidence.items():
+        lus = [table[i] for i in ids if isinstance(i, str) and i in table]
+        if lus:
+            preuves[chemin] = lus
+    return preuves
 
 
 def extract_resume(file_path, progress=None, *, session=None, choix=None):

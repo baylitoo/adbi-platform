@@ -423,6 +423,25 @@ def field_confidences(value, path="", into=None):
     return into
 
 
+def field_evidence(value, path="", into=None):
+    """Identifiants de preuve par champ, relevés avant que unwrap() ne jette les enveloppes ; mêmes clés que field_confidences."""
+    into = {} if into is None else into
+    if isinstance(value, dict):
+        if is_envelope(value):
+            ids = value.get("evidence_ids")
+            if path and isinstance(ids, list):
+                propres = [i for i in ids if isinstance(i, str) and i]
+                if propres:
+                    into[path] = propres
+            return field_evidence(value["value"], path, into)
+        for key, item in value.items():
+            field_evidence(item, (path + "." + key) if path else str(key), into)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            field_evidence(item, path + "[" + str(index) + "]", into)
+    return into
+
+
 def reported_field_confidence(meta):
     """`docie_agent.field_confidence` — {"experience[0].title": {"confidence": 0.5}}.
 
@@ -686,6 +705,7 @@ def parse_response(body, expected_schema, agent):
     metadata = {"request_id": body.get("id"), "agent": agent, "model": body.get("model"),
                 "validation": validation, "usage": body.get("usage"),
                 "field_confidence": field_confidences(result) if confidence is None else confidence,
+                "evidence": field_evidence(result),
                 "prompt_profile": prompt_profile(meta),
                 "partiel": resultat_partiel(validation, unwrapped),
                 "blocs_texte": None, "troncature_possible": None, "blocs_fournis": None,
@@ -766,6 +786,7 @@ def parse_text_response(body, expected_schema):
                 "model": body.get("model_profile"), "validation": validation,
                 "usage": body.get("usage"),
                 "field_confidence": field_confidences(result) if confidence is None else confidence,
+                "evidence": field_evidence(result),
                 "prompt_profile": None,
                 "partiel": resultat_partiel(validation, unwrapped),
                 "blocs_texte": None, "troncature_possible": None, "blocs_fournis": None,
