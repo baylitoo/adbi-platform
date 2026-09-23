@@ -173,6 +173,7 @@
     }
     .ftab:hover { border-color: var(--blue); color: var(--blue); }
     .ftab.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .ftab.indisponible { opacity: .45; cursor: not-allowed; }
 
     /* ── NEED ITEM ── */
     .need-item {
@@ -461,6 +462,10 @@
       <span class="list-count" id="needCount"></span>
     </div>
     <div class="list-body">
+      <div class="filter-tabs" id="modeMatching">
+        <div class="ftab active" data-val="classique" onclick="setModeMatching(this)">Matching classique</div>
+        <div class="ftab" data-val="semantique" id="ftabSemantique" onclick="setModeMatching(this)">Matching sémantique</div>
+      </div>
       <div class="filter-tabs">
         <div class="ftab active" onclick="filterNeeds('all', this)">Tous</div>
         <div class="ftab" onclick="filterNeeds('active', this)">Actifs</div>
@@ -659,9 +664,25 @@ async function deleteNeed(id) {
   loadNeeds();
 }
 
+/* Mode de matching : classique (règles) ou sémantique (vecteurs DocIE dans pgvector), selon disponibilité. */
+let _modeMatching = 'classique';
+async function chargerEtatSemantique() {
+  const tab = document.getElementById('ftabSemantique');
+  try {
+    const d = await fetch('/api/search/semantique/etat', { credentials: 'include' }).then(r => r.json());
+    tab.classList.toggle('indisponible', !d.disponible);
+    tab.title = d.disponible ? `Titre et missions notés par proximité de sens (${d.modele})` : (d.message || 'Indisponible');
+  } catch { tab.classList.add('indisponible'); tab.title = 'Indisponible'; }
+}
+function setModeMatching(tab) {
+  if (tab.classList.contains('indisponible')) { showToast(tab.title, true); return; }
+  _modeMatching = tab.dataset.val;
+  document.querySelectorAll('#modeMatching .ftab').forEach(t => t.classList.toggle('active', t === tab));
+}
+
 async function goMatch(needId) {
-  showToast('Matching en cours…');
-  const r = await fetch(`/api/needs/${needId}/match`, { method: 'POST', credentials: 'include' });
+  showToast(_modeMatching === 'semantique' ? 'Matching sémantique en cours…' : 'Matching en cours…');
+  const r = await fetch(`/api/needs/${needId}/match?mode=${_modeMatching}`, { method: 'POST', credentials: 'include' });
   if (!r.ok) {
     // 503 (issue #94, api/matching_bp.py) : trop de matchings deja en cours —
     // le corps porte un message explicite ("reessayez dans quelques
@@ -689,6 +710,7 @@ function showToast(msg, error = false) {
 
 checkAuth();
 loadNeeds();
+chargerEtatSemantique();
 </script>
 <script src="/static/etat-ia.js"></script>
 </body>
