@@ -182,6 +182,14 @@ class DocIEBridgeError extends Error {
 function fail(code, message, status, etaSeconds = null) { throw new DocIEBridgeError(code, message, status, etaSeconds); }
 function object(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
+// Retire la clé de toute VALEUR texte d'un corps JSON déjà lu ; les noms de champs ne sont jamais réécrits.
+function rediger(valeur, key) {
+  if (typeof valeur === "string") return key ? valeur.split(key).join("[REDACTED]") : valeur;
+  if (Array.isArray(valeur)) return valeur.map((v) => rediger(v, key));
+  if (object(valeur)) return Object.fromEntries(Object.entries(valeur).map(([k, v]) => [k, rediger(v, key)]));
+  return valeur;
+}
+
 // Message français par code stable, la seule table de la plateforme ; le texte anglais du pont ne s'affiche jamais.
 const MESSAGES_ERREUR = Object.freeze({
   loading: "Modèle en cours de chargement, réessayez dans quelques instants.",
@@ -760,7 +768,7 @@ async function postJson(endpoint, headers, payload, key, timeout, fetchImpl, { l
       chunks.push(Buffer.from(value));
     }
     let body;
-    try { body = JSON.parse(Buffer.concat(chunks).toString("utf8").split(key).join("[REDACTED]")); }
+    try { body = rediger(JSON.parse(Buffer.concat(chunks).toString("utf8")), key); }
     catch { fail("response", "DocIE returned invalid JSON."); }
     return { body, elapsed: Math.round(performance.now() - started) };
   } catch (error) {
@@ -962,7 +970,7 @@ async function getJson(endpoint, headers, key, timeout, fetchImpl) {
       if (size > STORE_MAX_BYTES) fail("response", "DocIE response exceeded the size ceiling.");
       chunks.push(Buffer.from(value));
     }
-    try { return JSON.parse(Buffer.concat(chunks).toString("utf8").split(key).join("[REDACTED]")); }
+    try { return rediger(JSON.parse(Buffer.concat(chunks).toString("utf8")), key); }
     catch { fail("response", "DocIE returned invalid JSON."); }
   } catch (error) {
     if (error instanceof DocIEBridgeError) throw error;
@@ -1093,7 +1101,7 @@ function agentsUtilisablesConnus() {
 
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload, listStore, projeterStore,
   storeUtilisable, storeUtilisableConnu, listAgents, projeterAgent, agentsUtilisables, agentsUtilisablesConnus, nomStore,
-  MESSAGES_ERREUR, messageErreur,
+  MESSAGES_ERREUR, messageErreur, rediger,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
   DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
   MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };
