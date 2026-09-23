@@ -242,6 +242,11 @@ async function extractViaDocie({ dataBase64, mimeType, items, expectedName } = {
   const { extractDocument } = deps.extractDocument ? deps : loadBridge();
   const options = { kind: DOCIE_KIND, env };
   if (deps.fetchImpl) options.fetchImpl = deps.fetchImpl;
+  // Sans DOCIE_AGENT_KBIS : l'agent découvert sur DocIE (#284) pour le modèle vision par défaut, s'il est prêt.
+  if (!String(env["DOCIE_AGENT_" + DOCIE_KIND.toUpperCase()] || "").trim()) {
+    const defaut = choixModele.defautSansChoix(DOCIE_KIND, "agent", null, { env });
+    if (defaut) options.agent = defaut.identifiant;
+  }
   const response = await extractDocument(buffer, mime, options);
   return mapDocieResult(response, { items, expectedName });
 }
@@ -481,10 +486,21 @@ function erreurModeleChoisi(error) {
 // avec une trace serveur (code d'erreur seulement, jamais de secret — le
 // bridge redacte déjà la clé de tout corps de réponse) et un avertissement
 // ajouté à la réponse pour transparence.
+// Voie DocIE de la pièce : forcée par le drapeau, ou d'office (drapeau absent) quand un modèle texte par défaut est prêt.
+async function voieActive(items, env) {
+  const voie = voiePour(items);
+  if (!voie) return null;
+  const activation = isEnabled(env) ? "on" : loadBridge().activationExtraction(env);
+  if (activation === "on") return voie;
+  if (activation !== "auto") return null;
+  await choixModele.rafraichirStore(env);
+  try { return choixModele.defautSansChoix(pieceDemandee(items), "texte", null, { env }) ? voie : null; } catch { return null; }
+}
+
 async function analyzeDocument(body = {}, deps = {}) {
   const analyzeLocal = deps.analyzeLocal || analyzeDocumentLocal;
   const env = deps.env || process.env;
-  const voie = isEnabled(env) ? voiePour(body.items) : null;
+  const voie = await voieActive(body.items, env);
   if (!voie) return analyzeLocal(body);
   const piece = pieceDemandee(body.items);
   const parType = Object.hasOwn(PIECES_PAR_TYPE, piece);
