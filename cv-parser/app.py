@@ -132,12 +132,14 @@ if not AUTH_ACTIVE:
 # ── Context processor Jinja2 ─────────────────────────────────────────────────
 @app.context_processor
 def inject_user():
+    # Lien de retour vers le hub (ADBI_FACTORY_URL), absent si la variable n'est pas une URL http(s).
+    hub_url = FACTORY_URL if urlsplit(FACTORY_URL).scheme in ("http", "https") else ""
     token = request.cookies.get("adbi_access")
     if token:
         payload = verify_access_token(token)
         if payload:
-            return {"current_user": payload}
-    return {"current_user": None}
+            return {"current_user": payload, "hub_url": hub_url}
+    return {"current_user": None, "hub_url": hub_url}
 
 @app.errorhandler(LLMIndisponible)
 def handle_llm_indisponible(e):
