@@ -419,7 +419,13 @@ def _build_explanation(
 # POINT D'ENTRÉE
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_matching(need: dict, limit: int = 50, ids: list[str] | None = None) -> list[dict]:
+def _requete_besoin(need: dict) -> str:
+    parts = [need.get("title"), need.get("context"), need.get("client"), need.get("sector"),
+             ", ".join(str(s) for s in (need.get("required_skills") or []) if s)]
+    return "\n".join(str(p).strip() for p in parts if p and str(p).strip())
+
+
+def run_matching(need: dict, limit: int = 50, ids: list[str] | None = None, mode: str = "classique") -> list[dict]:
     """
     Calcule le score de chaque candidat de la CVthèque vs le besoin.
     Retourne la liste triée du meilleur au moins bon.
@@ -433,15 +439,29 @@ def run_matching(need: dict, limit: int = 50, ids: list[str] | None = None) -> l
         retenus = [i for i in ids if i in db]
         db = {i: db[i] for i in retenus}
     results = []
+    # Mode sémantique : titre + missions (30 pts) par similarité cosinus des vecteurs DocIE ; lève semantique.Indisponible.
+    proximite, modele = {}, None
+    if mode == "semantique" and db:
+        from core import semantique
+        requete = _requete_besoin(need)
+        if requete:
+            classement, modele = semantique.rechercher(requete, db)
+            proximite = {r["id"]: max(0.0, min(1.0, r["score"])) for r in classement}
 
     for cid, cv in db.items():
         candidate_skills = _get_skills_flat(cv)
         skill_score, missing_skills = _score_skills(need, candidate_skills)
-        title_score       = _score_title(need, cv)
         seniority_score   = _score_seniority(need, cv)
         avail_score       = _score_availability(cv)
-        mission_score     = _score_missions(need, cv)
         bonus_score, maluses = _score_bonus(need, cv)
+        if cid in proximite:
+            title_score   = round(proximite[cid] * WEIGHTS["title"], 2)
+            mission_score = round(proximite[cid] * WEIGHTS["missions"], 2)
+            origine = {"source": "semantique", "modele": modele, "proximite": round(proximite[cid], 3)}
+        else:
+            title_score   = _score_title(need, cv)
+            mission_score = _score_missions(need, cv)
+            origine = {"source": "classique"}
 
         total = (
             skill_score + title_score + seniority_score
@@ -459,6 +479,7 @@ def run_matching(need: dict, limit: int = 50, ids: list[str] | None = None) -> l
             "bonus":        bonus_score,
         }
         explanation = _build_explanation(need, cv, scores, missing_skills, maluses)
+        explanation["semantique"] = origine
 
         contact = cv.get("contact") or {}
         results.append({
