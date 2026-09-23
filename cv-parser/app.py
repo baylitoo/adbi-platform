@@ -1607,7 +1607,7 @@ def process_cv(file_path, jeton=None, modele=None, repli_externe=False) -> dict:
     from docie_bridge_extraction import docie_extraction_enabled
     from docie_bridge_extraction import extract_resume as extract_resume_bridge
     from docie_client import extract_resume as extract_resume_legacy
-    from docie_review import revue_docie
+    from docie_review import preuves_fiche, revue_docie
 
     started = time.perf_counter()
     options = {}
@@ -1692,7 +1692,7 @@ def process_cv(file_path, jeton=None, modele=None, repli_externe=False) -> dict:
     revue = revue_docie(raw_data, {**metadata, "partiel": partiel})
     cv_data["docie_review"] = revue
     # Page et extrait d'où DocIE a lu chaque champ (voie texte, blocs ADBI) ; vide si inconnu.
-    cv_data["docie_preuves"] = metadata.get("preuves") or {}
+    cv_data["docie_preuves"] = preuves_fiche(raw_data, metadata.get("preuves"))
     if revue["needs_review"] or revue["warnings"]:
         cv_data["parse_warning"] = "DocIE signale des champs à vérifier. Relisez la fiche extraite."
     # Modèle explicitement choisi (#194) : un résultat partiel (#203) n'est
