@@ -627,7 +627,10 @@ function parseResponse(body, expectedSchema, agent) {
 // automatique, décision « échouer bruyamment » de #194 : le consommateur affiche
 // le délai, l'utilisateur relance.
 function loadingDetail(body) {
-  return object(body) && object(body.detail) && body.detail.status === "loading" ? body.detail : null;
+  if (!object(body)) return null;
+  // Routeur chat (rerank, chat) : corps PLAT `{"status": "loading", …}`, sans `detail`.
+  if (body.status === "loading") return body;
+  return object(body.detail) && body.detail.status === "loading" ? body.detail : null;
 }
 function failLoading(detail, status) {
   const eta = detail ? detail.eta_seconds : null;
@@ -1003,6 +1006,7 @@ function projeterStore(entree) {
     chat: !drapeau("embedding") && !drapeau("reranker") && !drapeau("analyzer"),
     extraction: !drapeau("embedding") && !drapeau("reranker") && (!drapeau("analyzer") || drapeau("structured_extraction")),
     vision: drapeau("vision"),
+    reranker: drapeau("reranker"),
   };
 }
 
@@ -1100,9 +1104,42 @@ function agentsUtilisablesConnus() {
   return agentsCache.agents.slice();
 }
 
+const RERANK_DOCUMENTS_MAX = 500;
+
+// Sélecteur `store:<nom>` du premier reranker prêt sur le store (relevé en cache), sinon null.
+async function rerankerPret({ env = process.env, fetchImpl = fetch } = {}) {
+  const m = (await storeUtilisable({ env, fetchImpl })).find((x) => x.reranker && x.nom);
+  return m ? "store:" + m.nom : null;
+}
+
+// POST /v1/rerank : [{ index, score }] trié décroissant ; textes seuls, scores comparables dans UN appel seulement.
+async function rerank(query, documents, { modele, topN = null, env = process.env, fetchImpl = fetch } = {}) {
+  const { base, key, timeout } = connection(env);
+  if (typeof query !== "string" || !query.trim()) fail("input", "Rerank query must not be empty.");
+  if (!Array.isArray(documents) || !documents.length || !documents.every((d) => typeof d === "string" && d.trim())) {
+    fail("input", "Rerank documents must be a non-empty list of non-empty strings.");
+  }
+  if (documents.length > RERANK_DOCUMENTS_MAX) fail("input", "Too many documents to rerank in one call.");
+  const payload = { model: perCallModelProfile(modele), query, documents };
+  if (Number.isInteger(topN) && topN >= 1) payload.top_n = topN;
+  const { body } = await postJson(base + "/v1/rerank", { "x-api-key": key }, payload, key, timeout, fetchImpl, { loading: true });
+  const resultats = object(body) ? body.results : null;
+  if (!Array.isArray(resultats)) fail("response", "Invalid DocIE rerank response.");
+  const sortie = resultats.map((r) => {
+    const index = object(r) ? r.index : null;
+    const score = object(r) ? r.relevance_score : null;
+    if (!Number.isInteger(index) || index < 0 || index >= documents.length || !number(score)) {
+      fail("response", "Invalid DocIE rerank result entry.");
+    }
+    return { index, score };
+  });
+  sortie.sort((a, b) => b.score - a.score);
+  return sortie;
+}
+
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload, listStore, projeterStore,
   storeUtilisable, storeUtilisableConnu, listAgents, projeterAgent, agentsUtilisables, agentsUtilisablesConnus, nomStore,
-  MESSAGES_ERREUR, messageErreur, activationExtraction,
+  MESSAGES_ERREUR, messageErreur, activationExtraction, rerank, rerankerPret, RERANK_DOCUMENTS_MAX,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
   DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
   MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };
