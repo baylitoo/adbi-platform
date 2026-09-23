@@ -990,6 +990,74 @@ def store_utilisable(*, env=None, session=None, maintenant=None):
     return list(modeles)
 
 
+def nom_store(selecteur):
+    """Nom de store visé par un sélecteur de modèle DocIE (`store:<nom>` ou nom nu) ; None sinon."""
+    if not isinstance(selecteur, str) or not selecteur.strip():
+        return None
+    selecteur = selecteur.strip()
+    if selecteur.startswith("policy:"):
+        return None
+    return selecteur[len("store:"):] if selecteur.startswith("store:") else selecteur
+
+
+def projeter_agent(entree):
+    """Projection d'une entrée de GET /v1/agents : clés stables, jamais le prompt système ni les options brutes."""
+    options = entree.get("options") if isinstance(entree.get("options"), dict) else {}
+    kind = entree.get("kind") if isinstance(entree.get("kind"), str) else None
+    mode = options.get("mode")
+    # `mode` absent (agent d'avant le champ) : `extractor` présent vaut ocr_extract, sinon ocr.
+    if not isinstance(mode, str):
+        mode = "ocr_extract" if options.get("extractor") else "ocr"
+    if kind == "ocr":
+        selecteur = options.get("vision_model") if mode == "vision" else options.get("extractor") if mode == "ocr_extract" else None
+    else:
+        selecteur = entree.get("model_profile")
+    schema = options.get("schema") if isinstance(options.get("schema"), str) and options.get("schema").strip() else None
+    return {
+        "nom": entree.get("name") if isinstance(entree.get("name"), str) else None,
+        "kind": kind,
+        "mode": mode if kind == "ocr" else None,
+        "actif": entree.get("enabled") is not False,
+        "schema": schema,
+        "modele_store": nom_store(selecteur),
+        "extraction": kind == "ocr" and mode in ("ocr_extract", "vision") and schema is not None,
+        "vision": kind == "ocr" and mode == "vision",
+    }
+
+
+def list_agents(*, env=None, session=None, timeout=None):
+    """GET /v1/agents : les agents enregistrés, projetés ; l'aptitude « prêt » se déduit du store, pas d'ici."""
+    env = os.environ if env is None else env
+    base, key, delai = connection(env)
+    body = get_json(base + "/v1/agents", {"x-api-key": key}, key, min(delai, timeout or 30), session)
+    if not isinstance(body, list):
+        fail("response", "DocIE returned an invalid agent listing.")
+    return [projeter_agent(e) for e in body if isinstance(e, dict)]
+
+
+_agents_cache = {"quand": None, "agents": []}
+
+
+def agents_utilisables(*, env=None, session=None, maintenant=None):
+    """Agents d'extraction actifs dont le modèle est prêt sur le store (cache 5 min) ; DocIE muet : dernier relevé, sinon []."""
+    env = os.environ if env is None else env
+    maintenant = time.monotonic() if maintenant is None else maintenant
+    if _agents_cache["quand"] is not None and maintenant - _agents_cache["quand"] < STORE_CACHE_S:
+        return list(_agents_cache["agents"])
+    if not str(env.get("DOCIE_BASE_URL") or "").strip():
+        return list(_agents_cache["agents"])
+    prets = {m["nom"] for m in store_utilisable(env=env, session=session, maintenant=maintenant)}
+    try:
+        agents = [a for a in list_agents(env=env, session=session, timeout=STORE_TIMEOUT_S)
+                  if a["actif"] and a["extraction"] and a["nom"] and a["modele_store"] in prets]
+    except DocIEBridgeError as exc:
+        print("[docie_bridge] agents DocIE non relus (%s) : dernier relevé conservé" % exc.code, file=sys.stderr)
+        _agents_cache["quand"] = maintenant
+        return list(_agents_cache["agents"])
+    _agents_cache.update(quand=maintenant, agents=agents)
+    return list(agents)
+
+
 def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, model_profile=None, langue=None, env=None, session=None):
     """Send already-readable text to POST /v1/extract/text. One call, no retry.
 

@@ -105,12 +105,32 @@ def _offre_externe(catalogue: dict, t: dict, entree: dict, voie: str, env: Mappi
     }
 
 
+def _releve(store) -> tuple[set, list]:
+    """``store`` : noms des modèles prêts, ou ``{"modeles": noms, "agents": [...]}`` (relevé du pont) -> (noms, agents)."""
+    if store is None:
+        return set(), []
+    if isinstance(store, Mapping):
+        return set(store.get("modeles") or []), list(store.get("agents") or [])
+    return set(store), []
+
+
 def identifiant_store(voie: str, modele: dict, store) -> str:
     """``store:<nom>`` si le modèle est prêt sur le store (voies texte/chat), sinon ``""``."""
     nom = modele.get("store")
-    if voie == "agent" or store is None or not isinstance(nom, str) or nom not in set(store):
+    if voie == "agent" or not isinstance(nom, str) or nom not in _releve(store)[0]:
         return ""
     return "store:" + nom
+
+
+def identifiant_agent(voie: str, t: dict, modele: dict, store) -> str:
+    """Nom du premier agent prêt qui applique le ``schema`` de la tâche avec le ``store`` du modèle (voie agent), sinon ``""``."""
+    if voie != "agent" or not isinstance(t.get("schema"), str) or not isinstance(modele.get("store"), str):
+        return ""
+    for agent in _releve(store)[1]:
+        if isinstance(agent, Mapping) and agent.get("schema") == t["schema"] and agent.get("modele_store") == modele["store"] \
+                and isinstance(agent.get("nom"), str) and NOM_AGENT.fullmatch(agent["nom"]):
+            return agent["nom"]
+    return ""
 
 
 def modeles_configures(tache: str, voie: str, env: Mapping[str, str] | None = None,
@@ -120,8 +140,10 @@ def modeles_configures(tache: str, voie: str, env: Mapping[str, str] | None = No
     ``experimental`` : vrai seulement si l'entrée de la tâche le déclare.
     ``externes`` : le consommateur sait appeler un modèle hors ADBI ; sans cette
     option, aucune offre externe, même avec la clé (sortie inchangée).
-    ``store`` : noms des modèles prêts sur le store DocIE ; sans variable, un
-    modèle dont le ``store`` y figure est proposé sous ``store:<nom>``.
+    ``store`` : noms des modèles prêts sur le store DocIE, ou relevé
+    ``{"modeles", "agents"}`` du pont ; sans variable, un modèle dont le
+    ``store`` y figure est proposé sous ``store:<nom>`` (texte/chat), et sur la
+    voie agent sous le nom de l'agent prêt qui applique le ``schema`` de la tâche.
     """
     catalogue = catalogue or charger_catalogue()
     env = os.environ if env is None else env
@@ -139,7 +161,8 @@ def modeles_configures(tache: str, voie: str, env: Mapping[str, str] | None = No
         if not modele or t["usage"] not in modele["etiquettes"] or modele.get("fournisseur"):
             continue
         variable = nom_variable(voie, tache, entree["modele"], catalogue)
-        brut = str(env.get(variable) or "").strip() or identifiant_store(voie, modele, store)
+        brut = (str(env.get(variable) or "").strip() or identifiant_store(voie, modele, store)
+                or identifiant_agent(voie, t, modele, store))
         if not brut:
             continue
         if not _identifiant_valide(voie, brut):
