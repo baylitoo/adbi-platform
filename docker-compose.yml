@@ -1,7 +1,8 @@
 # Production deployment: runtime secrets only; no published host ports.
 services:
   postgres:
-    image: postgres:17-alpine
+    # Image postgres:17-alpine + pgvector (recherche sémantique des CV), voir infra/postgres/Dockerfile.
+    build: ./infra/postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-adbi}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD est requis (voir .env.example) — jamais de mot de passe par défaut sur une base de données}
