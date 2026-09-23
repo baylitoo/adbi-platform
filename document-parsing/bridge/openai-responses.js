@@ -103,45 +103,23 @@ function schemaOpenAI(dynamicSchema) {
   return { name: "adbi_" + dynamicSchema.document_type, schema: objetStrict(dynamicSchema.fields, "") };
 }
 
-// ---------------------------------------------------------------------------
-// Transport : POST {OPENAI_BASE_URL}/v1/responses, un seul appel, jamais de
-// relance (travail facturé). Faits de la documentation OpenAI consultée le
-// 2026-09-16 (developers.openai.com/api/docs) :
-//   - `store: false` : sans lui, la Responses API conserve l'état applicatif
-//     30 jours (guide « Data controls », your-data) ;
-//   - journaux de surveillance des abus conservés jusqu'à 30 jours, sauf
-//     accord de conservation zéro (ZDR) — `store: false` ne les supprime pas ;
-//   - Structured Outputs via `text.format` {type: "json_schema", strict: true} ;
-//   - gpt-5-nano : `reasoning.effort` accepte minimal, low, medium, high
-//     (guide GPT-5, défaut medium) ; `low` est le choix du propriétaire ;
-//   - gpt-4.1-nano / gpt-4.1-mini : modèles SANS raisonnement ; la
-//     documentation ne dit rien d'un `reasoning` envoyé à ces modèles, des
-//     rapports publics (litellm #40470, hermes-agent #76255) décrivent un
-//     HTTP 400 « Unsupported parameter » : il n'est donc jamais envoyé ;
-//   - jetons de raisonnement facturés comme jetons de sortie.
-//
-// Le MODE (entrée du catalogue : `rapide` ou `raisonnement`) décide seul de
-// l'envoi d'un bloc `reasoning`, jamais le nom du modèle : un nom mal configuré
-// ne peut ni activer ni couper le raisonnement en silence, il est refusé
-// (`configuration`) s'il n'est pas dans la courte liste du mode.
-// ---------------------------------------------------------------------------
+// Transport : POST {OPENAI_BASE_URL}/v1/responses, un seul appel, jamais de relance ; le MODE seul fixe `reasoning`.
 const { DocIEBridgeError } = require("./docie-bridge");
 
 const MODES = Object.freeze({
-  rapide: Object.freeze({ variable: "OPENAI_MODELE_RAPIDE", defaut: "gpt-4.1-nano",
-    autorises: Object.freeze(["gpt-4.1-nano", "gpt-4.1-mini"]), raisonnement: null }),
-  raisonnement: Object.freeze({ variable: "OPENAI_MODELE_RAISONNEMENT", defaut: "gpt-5-nano",
-    autorises: Object.freeze(["gpt-5-nano"]), raisonnement: Object.freeze({ effort: "low" }) }),
+  rapide: Object.freeze({ variable: "OPENAI_MODELE_RAPIDE", defaut: "gpt-6-luna",
+    autorises: Object.freeze(["gpt-6-luna"]), raisonnement: Object.freeze({ effort: "none" }) }),
+  raisonnement: Object.freeze({ variable: "OPENAI_MODELE_RAISONNEMENT", defaut: "gpt-6-luna",
+    autorises: Object.freeze(["gpt-6-luna"]), raisonnement: Object.freeze({ effort: "low" }) }),
+  moyen: Object.freeze({ variable: "OPENAI_MODELE_RAISONNEMENT", defaut: "gpt-6-luna",
+    autorises: Object.freeze(["gpt-6-luna"]), raisonnement: Object.freeze({ effort: "medium" }) }),
+  eleve: Object.freeze({ variable: "OPENAI_MODELE_RAISONNEMENT", defaut: "gpt-6-luna",
+    autorises: Object.freeze(["gpt-6-luna"]), raisonnement: Object.freeze({ effort: "high" }) }),
 });
 
-// Plafonds locaux. Texte : 4 MiB, soit environ la fenêtre du plus grand modèle
-// autorisé (gpt-4.1-nano, 1 047 576 jetons, à ~4 octets par jeton) — au-delà,
-// l'envoi serait facturé pour finir en `context`. Sortie : 16 384 jetons, sous
-// le maximum de chaque modèle autorisé (32 768 pour gpt-4.1-*), largement
-// au-dessus d'une extraction de document métier ; le raisonnement `low` s'y
-// décompte aussi. Un dépassement rend `status: "incomplete"` -> `incomplete`.
-const MAX_TEXT_BYTES = 4 * 1024 * 1024;
-const MAX_OUTPUT_TOKENS = 16384;
+// Texte : ~4 octets par jeton sous l'entrée maximale de gpt-6-luna (922 000 jetons).
+const MAX_TEXT_BYTES = 922000 * 4;
+const MAX_OUTPUT_TOKENS = 32768;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_ERROR_BYTES = 64 * 1024;
 // Fenêtre de contexte dépassée : reconnue au TEXTE du corps d'erreur (code
@@ -167,7 +145,7 @@ function fail(code, message, status = null) { throw new DocIEBridgeError(code, m
  * -> { url, key, timeout, modele, mode }
  */
 function configurationOpenAI(env, mode) {
-  if (typeof mode !== "string" || !Object.hasOwn(MODES, mode)) fail("input", "Unknown OpenAI mode (expected rapide or raisonnement).");
+  if (typeof mode !== "string" || !Object.hasOwn(MODES, mode)) fail("input", "Unknown OpenAI mode (expected rapide, raisonnement, moyen or eleve).");
   const regle = MODES[mode];
   const base = String(env.OPENAI_BASE_URL || "").trim().replace(/\/+$/, "") || "https://api.openai.com";
   let url;
@@ -330,7 +308,7 @@ async function extraireViaOpenAI(texte, { mode, dynamicSchema, env = process.env
   if (typeof texte !== "string" || !texte.trim() || texte.includes("\u0000")) {
     fail("input", "OpenAI accepts extracted document text only (no PDF, image or binary content).");
   }
-  if (Buffer.byteLength(texte, "utf8") > MAX_TEXT_BYTES) fail("input", "Document text must not exceed 4 MiB for OpenAI.");
+  if (Buffer.byteLength(texte, "utf8") > MAX_TEXT_BYTES) fail("input", "Document text must not exceed 3.5 MiB for OpenAI.");
   let format;
   try { format = schemaOpenAI(dynamicSchema); } catch (e) {
     if (e instanceof ErreurSchema) fail("input", "dynamic_schema cannot be converted to a strict OpenAI schema.");
