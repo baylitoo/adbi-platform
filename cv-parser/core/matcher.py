@@ -7,10 +7,15 @@ Score /100 décomposé en 6 critères :
   10 pts — disponibilité
   10 pts — missions / clients / secteur
   10 pts — bonus (langue, certifs, cloud, localisation, contrat)
+
+Titre et missions (30 pts) viennent du reranker DocIE (POST /v1/rerank) dès
+qu'un modèle `reranker` est prêt sur le store ; sinon de difflib et des
+mots-clés, et `explanation.semantique` le dit.
 """
 from __future__ import annotations
 
 import re
+import sys
 from difflib import SequenceMatcher
 from functools import lru_cache
 
@@ -416,14 +421,50 @@ def _build_explanation(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# POINT D'ENTRÉE
+# PERTINENCE SÉMANTIQUE — reranker DocIE quand un est prêt, sinon local
 # ══════════════════════════════════════════════════════════════════════════════
+
+RERANK_TEXTE_MAX = 6000
+
 
 def _requete_besoin(need: dict) -> str:
     parts = [need.get("title"), need.get("context"), need.get("client"), need.get("sector"),
              ", ".join(str(s) for s in (need.get("required_skills") or []) if s)]
     return "\n".join(str(p).strip() for p in parts if p and str(p).strip())
 
+
+def _pertinence_docie(need: dict, cvs: list[tuple[str, dict]]) -> tuple[dict | None, str | None]:
+    """({cid: pertinence 0..1}, modèle) par le reranker DocIE prêt sur le store ; sinon (None, raison nommée)."""
+    try:
+        from docie_bridge_extraction import _load_bridge
+        pont = _load_bridge()
+        modele = pont.reranker_pret()
+    except Exception:
+        return None, "pont_absent"
+    if not modele:
+        return None, "aucun_reranker"
+    query = _requete_besoin(need)
+    if not query:
+        return None, "besoin_vide"
+    indexes = [(cid, _get_all_text(cv)[:RERANK_TEXTE_MAX]) for cid, cv in cvs]
+    indexes = [(cid, texte) for cid, texte in indexes if texte.strip()]
+    if not indexes:
+        return None, "cvs_sans_texte"
+    scores = {}
+    try:
+        for debut in range(0, len(indexes), pont.RERANK_DOCUMENTS_MAX):
+            lot = indexes[debut:debut + pont.RERANK_DOCUMENTS_MAX]
+            for r in pont.rerank(query, [texte for _, texte in lot], modele=modele):
+                scores[lot[r["index"]][0]] = max(0.0, min(1.0, r["score"]))
+    except pont.DocIEBridgeError as exc:
+        print(f"[MATCHING] reranker DocIE non utilisé ({exc.code}) : pertinence locale", file=sys.stderr)
+        return None, exc.code
+    return {"scores": scores, "modele": modele}, None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# POINT D'ENTRÉE
+# ══════════════════════════════════════════════════════════════════════════════
 
 def run_matching(need: dict, limit: int = 50, ids: list[str] | None = None, mode: str = "classique") -> list[dict]:
     """
@@ -439,14 +480,17 @@ def run_matching(need: dict, limit: int = 50, ids: list[str] | None = None, mode
         retenus = [i for i in ids if i in db]
         db = {i: db[i] for i in retenus}
     results = []
-    # Mode sémantique : titre + missions (30 pts) par similarité cosinus des vecteurs DocIE ; lève semantique.Indisponible.
+    # Mode sémantique : titre + missions (30 pts) par similarité des vecteurs DocIE ; lève semantique.Indisponible.
     proximite, modele = {}, None
     if mode == "semantique" and db:
-        from core import semantique
+        from core import semantique as vecteurs
         requete = _requete_besoin(need)
         if requete:
-            classement, modele = semantique.rechercher(requete, db)
+            classement, modele = vecteurs.rechercher(requete, db)
             proximite = {r["id"]: max(0.0, min(1.0, r["score"])) for r in classement}
+    # Mode classique : pertinence du reranker DocIE quand un est prêt, sinon difflib/mots-clés.
+    semantique, raison = (None, "mode_semantique") if mode == "semantique" else (
+        _pertinence_docie(need, list(db.items())) if db else (None, "aucun_cv"))
 
     for cid, cv in db.items():
         candidate_skills = _get_skills_flat(cv)
@@ -458,10 +502,15 @@ def run_matching(need: dict, limit: int = 50, ids: list[str] | None = None, mode
             title_score   = round(proximite[cid] * WEIGHTS["title"], 2)
             mission_score = round(proximite[cid] * WEIGHTS["missions"], 2)
             origine = {"source": "semantique", "modele": modele, "proximite": round(proximite[cid], 3)}
+        elif semantique and cid in semantique["scores"]:
+            pertinence = semantique["scores"][cid]
+            title_score   = round(pertinence * WEIGHTS["title"], 2)
+            mission_score = round(pertinence * WEIGHTS["missions"], 2)
+            origine = {"source": "docie-rerank", "modele": semantique["modele"], "pertinence": round(pertinence, 3)}
         else:
             title_score   = _score_title(need, cv)
             mission_score = _score_missions(need, cv)
-            origine = {"source": "classique"}
+            origine = {"source": "local", "raison": raison or "cv_sans_texte"}
 
         total = (
             skill_score + title_score + seniority_score
