@@ -112,9 +112,13 @@ MODES = {
                "autorises": ("gpt-6-luna",), "raisonnement": {"effort": "none"}},
     "raisonnement": {"variable": "OPENAI_MODELE_RAISONNEMENT", "defaut": "gpt-6-luna",
                      "autorises": ("gpt-6-luna",), "raisonnement": {"effort": "low"}},
+    "moyen": {"variable": "OPENAI_MODELE_RAISONNEMENT", "defaut": "gpt-6-luna",
+              "autorises": ("gpt-6-luna",), "raisonnement": {"effort": "medium"}},
+    "eleve": {"variable": "OPENAI_MODELE_RAISONNEMENT", "defaut": "gpt-6-luna",
+              "autorises": ("gpt-6-luna",), "raisonnement": {"effort": "high"}},
 }
 MAX_TEXT_BYTES = 922000 * 4
-MAX_OUTPUT_TOKENS = 16384
+MAX_OUTPUT_TOKENS = 32768
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_ERROR_BYTES = 64 * 1024
 CONTEXT_OVERFLOW = re.compile(r"context_length_exceeded|maximum context length|exceeds the context window", re.IGNORECASE)
@@ -135,7 +139,7 @@ def fail(code, message, status=None):
 def configuration_openai(env, mode):
     """Réglages d'un appel pour `mode`. Seul le NOM d'une variable entre dans un message."""
     if not isinstance(mode, str) or mode not in MODES:
-        fail("input", "Unknown OpenAI mode (expected rapide or raisonnement).")
+        fail("input", "Unknown OpenAI mode (expected rapide, raisonnement, moyen or eleve).")
     regle = MODES[mode]
     base = str(env.get("OPENAI_BASE_URL") or "").strip().rstrip("/") or "https://api.openai.com"
     try:

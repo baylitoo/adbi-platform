@@ -43,18 +43,32 @@
       "limites": { "texte": { "lignes_non_vides_max": 800 } }
     },
     "openai_rapide": {
-      "libelle": "OpenAI rapide — externe (hors ADBI)",
+      "libelle": "OpenAI sans raisonnement — externe (hors ADBI)",
       "description": "Service externe OpenAI, sans raisonnement, le plus rapide — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
       "etiquettes": ["extraction"],
       "fournisseur": "openai",
       "mode": "rapide"
     },
     "openai_raisonnement": {
-      "libelle": "OpenAI raisonnement — externe (hors ADBI)",
+      "libelle": "OpenAI raisonnement faible — externe (hors ADBI)",
       "description": "Service externe OpenAI, raisonnement faible, plus lent — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
       "etiquettes": ["extraction"],
       "fournisseur": "openai",
       "mode": "raisonnement"
+    },
+    "openai_moyen": {
+      "libelle": "OpenAI raisonnement moyen — externe (hors ADBI)",
+      "description": "Service externe OpenAI, raisonnement moyen, plus lent — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
+      "etiquettes": ["extraction"],
+      "fournisseur": "openai",
+      "mode": "moyen"
+    },
+    "openai_eleve": {
+      "libelle": "OpenAI raisonnement élevé — externe (hors ADBI)",
+      "description": "Service externe OpenAI, raisonnement élevé, le plus lent et le plus coûteux — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
+      "etiquettes": ["extraction"],
+      "fournisseur": "openai",
+      "mode": "eleve"
     }
   },
   "taches": {
@@ -68,7 +82,9 @@
           "alternative": { "modele": "nuextract3", "experimental": true, "prerequis": "Après la PR DocIE #522 (JSON invalide sur listes imbriquées avant elle) ; expérimental tant qu'aucun CV riche en listes n'a été lu en réel depuis." },
           "externes": [
             { "modele": "openai_rapide", "experimental": true, "prerequis": "DONNÉES PERSONNELLES : un CV est la donnée d'un candidat, pas un document d'entreprise. Le texte quitte ADBI ; l'utilisateur doit en être averti au moment du choix." },
-            { "modele": "openai_raisonnement", "experimental": true, "prerequis": "DONNÉES PERSONNELLES : un CV est la donnée d'un candidat, pas un document d'entreprise. Le texte quitte ADBI ; l'utilisateur doit en être averti au moment du choix." }
+            { "modele": "openai_raisonnement", "experimental": true, "prerequis": "DONNÉES PERSONNELLES : un CV est la donnée d'un candidat, pas un document d'entreprise. Le texte quitte ADBI ; l'utilisateur doit en être averti au moment du choix." },
+            { "modele": "openai_moyen", "experimental": true, "prerequis": "DONNÉES PERSONNELLES : un CV est la donnée d'un candidat, pas un document d'entreprise. Le texte quitte ADBI ; l'utilisateur doit en être averti au moment du choix." },
+            { "modele": "openai_eleve", "experimental": true, "prerequis": "DONNÉES PERSONNELLES : un CV est la donnée d'un candidat, pas un document d'entreprise. Le texte quitte ADBI ; l'utilisateur doit en être averti au moment du choix." }
           ]
         },
         "agent": {
@@ -86,7 +102,9 @@
           "alternative": { "modele": "lfm25_2_6b", "condition": "Seulement si le document fait au plus 800 lignes non vides." },
           "externes": [
             { "modele": "openai_rapide", "experimental": true },
-            { "modele": "openai_raisonnement", "experimental": true }
+            { "modele": "openai_raisonnement", "experimental": true },
+            { "modele": "openai_moyen", "experimental": true },
+            { "modele": "openai_eleve", "experimental": true }
           ]
         }
       },
@@ -102,7 +120,9 @@
           "alternative": { "modele": "nuextract3" },
           "externes": [
             { "modele": "openai_rapide", "experimental": true },
-            { "modele": "openai_raisonnement", "experimental": true }
+            { "modele": "openai_raisonnement", "experimental": true },
+            { "modele": "openai_moyen", "experimental": true },
+            { "modele": "openai_eleve", "experimental": true }
           ]
         },
         "agent": {
@@ -121,7 +141,9 @@
           "alternative": { "modele": "lfm25_350m", "prerequis": "Uniquement derrière nos contrôles de plausibilité de date." },
           "externes": [
             { "modele": "openai_rapide", "experimental": true },
-            { "modele": "openai_raisonnement", "experimental": true }
+            { "modele": "openai_raisonnement", "experimental": true },
+            { "modele": "openai_moyen", "experimental": true },
+            { "modele": "openai_eleve", "experimental": true }
           ]
         }
       }
@@ -135,7 +157,9 @@
           "alternative": { "modele": "lfm25_350m", "prerequis": "Uniquement derrière nos contrôles de plausibilité de date." },
           "externes": [
             { "modele": "openai_rapide", "experimental": true },
-            { "modele": "openai_raisonnement", "experimental": true }
+            { "modele": "openai_raisonnement", "experimental": true },
+            { "modele": "openai_moyen", "experimental": true },
+            { "modele": "openai_eleve", "experimental": true }
           ]
         }
       }
@@ -149,7 +173,9 @@
           "alternative": { "modele": "lfm25_350m", "prerequis": "Uniquement derrière le contrôle IBAN modulo 97 et le format BIC." },
           "externes": [
             { "modele": "openai_rapide", "experimental": true },
-            { "modele": "openai_raisonnement", "experimental": true }
+            { "modele": "openai_raisonnement", "experimental": true },
+            { "modele": "openai_moyen", "experimental": true },
+            { "modele": "openai_eleve", "experimental": true }
           ]
         }
       }

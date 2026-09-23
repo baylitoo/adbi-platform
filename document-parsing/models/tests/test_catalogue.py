@@ -61,7 +61,8 @@ class TableRetenue(unittest.TestCase):
         self.assertEqual(docie, {"lfm25_2_6b", "nuextract3", "lfm25_350m"})
         # Plus les deux modes OpenAI, externes (#194) — jamais défaut ni alternative.
         externes = {m: (d["fournisseur"], d["mode"]) for m, d in self.c["modeles"].items() if d.get("fournisseur")}
-        self.assertEqual(externes, {"openai_rapide": ("openai", "rapide"), "openai_raisonnement": ("openai", "raisonnement")})
+        self.assertEqual(externes, {"openai_rapide": ("openai", "rapide"), "openai_raisonnement": ("openai", "raisonnement"),
+                                    "openai_moyen": ("openai", "moyen"), "openai_eleve": ("openai", "eleve")})
         for m in externes:
             self.assertEqual(self.c["modeles"][m]["etiquettes"], ["extraction"])
             self.assertIn("externe (hors ADBI)", self.c["modeles"][m]["libelle"])
@@ -213,16 +214,16 @@ class Externes(unittest.TestCase):
         c = cat.charger_catalogue()
         for tache, t in c["taches"].items():
             for voie, v in t["voies"].items():
-                attendu = [("openai_rapide", True), ("openai_raisonnement", True)] if (voie == "texte" and tache in TACHES_EXTERNES) else []
+                attendu = [(m, True) for m in ("openai_rapide", "openai_raisonnement", "openai_moyen", "openai_eleve")] if (voie == "texte" and tache in TACHES_EXTERNES) else []
                 self.assertEqual([(e["modele"], e.get("experimental")) for e in v.get("externes") or []], attendu, f"{tache}/{voie}")
         self.assertEqual(c["fournisseurs"], {"openai": {"variable": "OPENAI_API_KEY", "voies": ["texte"]}})
 
     def test_offerts_apres_docie_si_et_seulement_si_cle(self):
         for tache in TACHES_EXTERNES:
             offres = cat.modeles_offerts(tache, "texte", env={**ENV_DOCIE_COMPLET, "OPENAI_API_KEY": CLE}, externes=True)
-            self.assertEqual([o["role"] for o in offres], ["defaut", "alternative", "externe", "externe"], tache)
+            self.assertEqual([o["role"] for o in offres], ["defaut", "alternative"] + ["externe"] * 4, tache)
             self.assertEqual([(o["id"], o["identifiant"], o["variable"]) for o in offres[2:]],
-                             [("openai_rapide", "rapide", "OPENAI_API_KEY"), ("openai_raisonnement", "raisonnement", "OPENAI_API_KEY")])
+                             [("openai_" + m, m, "OPENAI_API_KEY") for m in ("rapide", "raisonnement", "moyen", "eleve")])
             for env in ({}, {"OPENAI_API_KEY": ""}, {"OPENAI_API_KEY": "  "}):
                 self.assertEqual(cat.modeles_offerts(tache, "texte", env=env, externes=True), [], f"{tache} {env}")
             # La clé seule NE suffit PAS : sans modèle ADBI configuré pour la
@@ -243,7 +244,7 @@ class Externes(unittest.TestCase):
         part en vision chez DocIE, et le fournisseur ne déclare que `texte`."""
         env = {**ENV_DOCIE_COMPLET, "OPENAI_API_KEY": CLE}
         offres = cat.modeles_offerts("resume", "texte", env=env, externes=True)
-        self.assertEqual([o["id"] for o in offres][-2:], ["openai_rapide", "openai_raisonnement"])
+        self.assertEqual([o["id"] for o in offres][-4:], ["openai_rapide", "openai_raisonnement", "openai_moyen", "openai_eleve"])
         self.assertFalse([o for o in cat.modeles_offerts("resume", "agent", env=env, externes=True) if o["id"].startswith("openai")])
         self.assertEqual(cat.choisir_modele("resume", "texte", "openai_rapide", env=env, externes=True)["identifiant"], "rapide")
         # Sans l'option `externes`, un consommateur pas encore câblé ne voit toujours rien.
@@ -269,7 +270,7 @@ class Externes(unittest.TestCase):
         env = {"OPENAI_API_KEY": CLE, "DOCIE_MODELE_LFM25_2_6B": "rapide"}
         meta = {"fournisseur": "openai", "mode": "raisonnement", "model": "gpt-5-nano-2025-08-07"}
         self.assertEqual(cat.modele_servi("rib", "texte", meta, env=env),
-                         {"id": "openai_raisonnement", "libelle": "OpenAI raisonnement — externe (hors ADBI)",
+                         {"id": "openai_raisonnement", "libelle": "OpenAI raisonnement faible — externe (hors ADBI)",
                           "identifiant": "gpt-5-nano-2025-08-07"})
         self.assertEqual(cat.modele_servi("rib", "texte", meta, env={})["id"], None)
         self.assertEqual(cat.modele_servi("rib", "texte", {"model": "rapide"}, env=env)["id"], "lfm25_2_6b")

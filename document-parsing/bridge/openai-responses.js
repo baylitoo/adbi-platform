@@ -111,11 +111,15 @@ const MODES = Object.freeze({
     autorises: Object.freeze(["gpt-6-luna"]), raisonnement: Object.freeze({ effort: "none" }) }),
   raisonnement: Object.freeze({ variable: "OPENAI_MODELE_RAISONNEMENT", defaut: "gpt-6-luna",
     autorises: Object.freeze(["gpt-6-luna"]), raisonnement: Object.freeze({ effort: "low" }) }),
+  moyen: Object.freeze({ variable: "OPENAI_MODELE_RAISONNEMENT", defaut: "gpt-6-luna",
+    autorises: Object.freeze(["gpt-6-luna"]), raisonnement: Object.freeze({ effort: "medium" }) }),
+  eleve: Object.freeze({ variable: "OPENAI_MODELE_RAISONNEMENT", defaut: "gpt-6-luna",
+    autorises: Object.freeze(["gpt-6-luna"]), raisonnement: Object.freeze({ effort: "high" }) }),
 });
 
 // Texte : ~4 octets par jeton sous l'entrée maximale de gpt-6-luna (922 000 jetons).
 const MAX_TEXT_BYTES = 922000 * 4;
-const MAX_OUTPUT_TOKENS = 16384;
+const MAX_OUTPUT_TOKENS = 32768;
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_ERROR_BYTES = 64 * 1024;
 // Fenêtre de contexte dépassée : reconnue au TEXTE du corps d'erreur (code
@@ -141,7 +145,7 @@ function fail(code, message, status = null) { throw new DocIEBridgeError(code, m
  * -> { url, key, timeout, modele, mode }
  */
 function configurationOpenAI(env, mode) {
-  if (typeof mode !== "string" || !Object.hasOwn(MODES, mode)) fail("input", "Unknown OpenAI mode (expected rapide or raisonnement).");
+  if (typeof mode !== "string" || !Object.hasOwn(MODES, mode)) fail("input", "Unknown OpenAI mode (expected rapide, raisonnement, moyen or eleve).");
   const regle = MODES[mode];
   const base = String(env.OPENAI_BASE_URL || "").trim().replace(/\/+$/, "") || "https://api.openai.com";
   let url;
