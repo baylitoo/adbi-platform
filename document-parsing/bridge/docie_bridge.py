@@ -190,6 +190,37 @@ def fail(code, message, status=None, eta_seconds=None):
     raise DocIEBridgeError(code, message, status, eta_seconds)
 
 
+# Message français par code stable, la seule table de la plateforme ; le texte anglais du pont ne s'affiche jamais.
+MESSAGES_ERREUR = {
+    "loading": "Modèle en cours de chargement, réessayez dans quelques instants.",
+    "context": "Document trop long pour le modèle d'extraction.",
+    "timeout": "L'extraction a dépassé le délai imparti.",
+    "limits": "Document refusé par le service d'extraction : au-delà de ses limites (taille, pages ou blocs OCR).",
+    "upstream": "Le service d'extraction a répondu en erreur.",
+    "network": "Service d'extraction injoignable.",
+    "input": "Document refusé par le service d'extraction.",
+    "configuration": "Service d'extraction mal configuré.",
+    "auth": "Accès au service d'extraction refusé (configuration).",
+    "rate_limit": "Service d'extraction saturé, réessayez plus tard.",
+    "response": "Réponse du service d'extraction invalide.",
+    "incomplete": "Extraction inachevée par le service d'extraction.",
+    "schema": "Le service d'extraction a renvoyé un autre type de document.",
+}
+
+
+def message_erreur(exc):
+    """{code, message, eta_seconds?} présentable pour une erreur du pont (objet à `code`, `eta_seconds`) ; code inconnu : None."""
+    code = getattr(exc, "code", None)
+    if not isinstance(code, str) or code not in MESSAGES_ERREUR:
+        return None
+    if code == "loading":
+        eta = getattr(exc, "eta_seconds", None)
+        if isinstance(eta, (int, float)) and not isinstance(eta, bool) and math.isfinite(eta) and eta >= 0:
+            n = math.ceil(eta)
+            return {"code": code, "message": f"Modèle en cours de chargement, réessayez dans ~{n} s.", "eta_seconds": n}
+    return {"code": code, "message": MESSAGES_ERREUR[code]}
+
+
 def connection(env):
     """API root, access key and timeout — what BOTH DocIE paths need.
 

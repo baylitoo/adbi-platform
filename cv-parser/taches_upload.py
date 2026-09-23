@@ -59,7 +59,6 @@ un modèle explicitement choisi (#194, choix_modele.py), le repli ne s'applique
 pas et la tâche finit `echec` au code nommé. La ré-analyse n'a jamais eu
 ce repli (elle répondait 500) : son échec DocIE est un `echec` au code nommé.
 """
-import math
 import os
 import re
 import threading
@@ -68,6 +67,8 @@ import traceback
 import uuid
 from collections import deque
 from datetime import datetime, timezone
+
+from docie_bridge_extraction import _load_bridge
 
 # Même nom de variable dans les trois services (one-pager, contrats, cv-parser,
 # #196) ; le docker-compose.yml racine la remplit depuis
@@ -147,31 +148,10 @@ def max_simultanees_depuis_env(env=None) -> int:
 
 # ── Correspondance des erreurs ───────────────────────────────────────────────
 
-# Codes nommés du bridge (document-parsing/bridge/docie_bridge.py, appels
-# fail("…") et table des statuts 401/403/413/429). Un code absent de cette
-# table n'est PAS repris tel quel : il devient `interne`.
-MESSAGES_BRIDGE = {
-    "loading": "Modèle en cours de chargement, réessayez dans quelques instants.",
-    "context": "Document trop long pour le modèle d'extraction.",
-    "timeout": "L'extraction a dépassé le délai imparti.",
-    "limits": "Document refusé par le service d'extraction : au-delà de ses limites (taille, pages ou blocs OCR).",
-    "upstream": "Le service d'extraction a répondu en erreur.",
-    "network": "Service d'extraction injoignable.",
-    "input": "Document refusé par le service d'extraction.",
-    "configuration": "Service d'extraction mal configuré.",
-    "auth": "Accès au service d'extraction refusé (configuration).",
-    "rate_limit": "Service d'extraction saturé, réessayez plus tard.",
-    "response": "Réponse du service d'extraction invalide.",
-    "incomplete": "Extraction inachevée par le service d'extraction.",
-    "schema": "Le service d'extraction a renvoyé un autre type de document.",
-}
+# Messages des codes du bridge : la table du pont lui-même, jamais une copie ; un code absent devient `interne`.
+MESSAGES_BRIDGE = _load_bridge().MESSAGES_ERREUR
 
 MESSAGE_INTERNE = "Analyse impossible : erreur interne."
-
-# Message de docie_client.message_chargement (#192), client historique sans
-# code : seul signal de chargement de ce chemin. Un test vérifie que ce motif
-# reconnaît bien ce que la fonction produit.
-_CHARGEMENT_CLIENT_RE = re.compile(r"^DocIE : modèle en cours de chargement(?:, réessayez dans environ (\d+) s)?")
 
 # Le seul message de DocIEError qui recopie un texte tiers (OSError, donc un
 # chemin local) : docie_bridge_extraction.extract_resume. Tronqué à sa partie
@@ -179,41 +159,24 @@ _CHARGEMENT_CLIENT_RE = re.compile(r"^DocIE : modèle en cours de chargement(?:,
 _PREFIXES_TRONQUES = ("Document introuvable ou illisible",)
 
 
-def _message_chargement(eta):
-    if isinstance(eta, (int, float)) and not isinstance(eta, bool) and math.isfinite(eta) and eta >= 0:
-        n = math.ceil(eta)
-        return {"code": "loading", "message": f"Modèle en cours de chargement, réessayez dans ~{n} s.",
-                "eta_seconds": n}
-    return {"code": "loading", "message": MESSAGES_BRIDGE["loading"]}
-
-
 def mapper_erreur(e) -> dict:
     """Exception -> { code, message, eta_seconds? } présentable à l'utilisateur.
 
     - DocIEError levée depuis un DocIEBridgeError (`raise … from exc` dans
-      docie_bridge_extraction) : code du bridge, message constant de la table ;
+      docie_bridge_extraction) : code du bridge, message de la table du pont ;
       `loading` porte `eta_seconds` (arrondi au-dessus) quand DocIE l'annonce ;
-    - DocIEError du client historique (docie_client, sans code) : ses messages
-      sont écrits par nous, en français -> code `extraction`, son message
-      (`loading` reconnu à part) ;
+    - DocIEError sans cause (lecture locale, refus nommés) : ses messages sont
+      écrits par nous, en français -> code `extraction`, son message ;
     - ErreurTache (erreur métier écrite par nous) -> son code, son message ;
     - tout le reste -> `interne`, message constant.
     """
     if isinstance(e, ErreurTache):
         return {"code": e.code, "message": str(e)}
     cause = getattr(e, "__cause__", None)
-    code = getattr(cause, "code", None)
-    if type(cause).__name__ == "DocIEBridgeError" and isinstance(code, str):
-        if code not in MESSAGES_BRIDGE:
-            return {"code": "interne", "message": MESSAGE_INTERNE}
-        if code == "loading":
-            return _message_chargement(getattr(cause, "eta_seconds", None))
-        return {"code": code, "message": MESSAGES_BRIDGE[code]}
+    if type(cause).__name__ == "DocIEBridgeError" and isinstance(getattr(cause, "code", None), str):
+        return _load_bridge().message_erreur(cause) or {"code": "interne", "message": MESSAGE_INTERNE}
     if type(e).__name__ == "DocIEError" and cause is None:
         message = str(e)
-        chargement = _CHARGEMENT_CLIENT_RE.match(message)
-        if chargement:
-            return _message_chargement(int(chargement.group(1)) if chargement.group(1) else None)
         for prefixe in _PREFIXES_TRONQUES:
             if message.startswith(prefixe):
                 return {"code": "extraction", "message": prefixe + "."}
