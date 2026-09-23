@@ -190,6 +190,17 @@ def fail(code, message, status=None, eta_seconds=None):
     raise DocIEBridgeError(code, message, status, eta_seconds)
 
 
+def rediger(valeur, key):
+    """Retire la clé de toute VALEUR texte d'un corps JSON déjà lu ; les noms de champs ne sont jamais réécrits."""
+    if isinstance(valeur, str):
+        return valeur.replace(key, "[REDACTED]") if key else valeur
+    if isinstance(valeur, list):
+        return [rediger(v, key) for v in valeur]
+    if isinstance(valeur, dict):
+        return {k: rediger(v, key) for k, v in valeur.items()}
+    return valeur
+
+
 # Message français par code stable, la seule table de la plateforme ; le texte anglais du pont ne s'affiche jamais.
 MESSAGES_ERREUR = {
     "loading": "Modèle en cours de chargement, réessayez dans quelques instants.",
@@ -882,8 +893,7 @@ def post_json(endpoint, headers, payload, key, timeout, session, *, loading=Fals
                 chunks.append(chunk)
             try:
                 # Never propagate a reflected access key to app logs or a browser.
-                raw = b"".join(chunks).decode("utf-8").replace(key, "[REDACTED]")
-                body = json.loads(raw)
+                body = rediger(json.loads(b"".join(chunks).decode("utf-8")), key)
             except (ValueError, UnicodeError):
                 fail("response", "DocIE returned invalid JSON.")
             return body, round((time.monotonic() - started) * 1000)
@@ -970,7 +980,7 @@ def get_json(endpoint, headers, key, timeout, session):
         if own_session:
             session.close()
     try:
-        return json.loads(b"".join(chunks).decode("utf-8", "replace").replace(key, "[REDACTED]"))
+        return rediger(json.loads(b"".join(chunks).decode("utf-8", "replace")), key)
     except ValueError:
         fail("response", "DocIE returned invalid JSON.")
 
