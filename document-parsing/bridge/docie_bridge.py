@@ -723,7 +723,7 @@ def loading_detail(body):
     """
     if not isinstance(body, dict):
         return None
-    # Routeur chat (rerank, chat) : corps PLAT `{"status": "loading", …}`, sans `detail`.
+    # Routeur chat (rerank, embeddings, chat) : corps PLAT `{"status": "loading", …}`, sans `detail`.
     if body.get("status") == "loading":
         return body
     detail = body.get("detail")
@@ -1000,6 +1000,7 @@ def projeter_store(entree):
         "chat": not drapeau("embedding") and not drapeau("reranker") and not drapeau("analyzer"),
         "extraction": not drapeau("embedding") and not drapeau("reranker") and (not drapeau("analyzer") or drapeau("structured_extraction")),
         "vision": drapeau("vision"),
+        "embedding": drapeau("embedding"),
         "reranker": drapeau("reranker"),
     }
 
@@ -1103,6 +1104,43 @@ def agents_utilisables(*, env=None, session=None, maintenant=None):
         return list(_agents_cache["agents"])
     _agents_cache.update(quand=maintenant, agents=agents)
     return list(agents)
+
+
+EMBED_TEXTES_MAX = 64
+EMBED_TEXTE_CARACTERES_MAX = 8000
+
+
+def embedder_pret(*, env=None, session=None):
+    """Sélecteur `store:<nom>` du premier modèle d'embedding prêt sur le store (relevé en cache), sinon None."""
+    for m in store_utilisable(env=env, session=session):
+        if m.get("embedding") and m.get("nom"):
+            return "store:" + m["nom"]
+    return None
+
+
+def embed(textes, *, modele, env=None, session=None):
+    """POST /v1/embeddings (forme OpenAI) : un vecteur par texte, dans l'ordre ; dimension commune vérifiée."""
+    env = os.environ if env is None else env
+    base, key, timeout = connection(env)
+    if not isinstance(textes, list) or not textes or not all(isinstance(t, str) and t.strip() for t in textes):
+        fail("input", "Embedding inputs must be a non-empty list of non-empty strings.")
+    if len(textes) > EMBED_TEXTES_MAX:
+        fail("input", "Too many texts to embed in one call.")
+    payload = {"model": per_call_model_profile(modele), "input": [t[:EMBED_TEXTE_CARACTERES_MAX] for t in textes]}
+    body, _elapsed = post_json(base + "/v1/embeddings", {"x-api-key": key}, payload, key, timeout, session, loading=True)
+    donnees = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(donnees, list) or len(donnees) != len(textes):
+        fail("response", "Invalid DocIE embeddings response.")
+    vecteurs = [None] * len(textes)
+    for d in donnees:
+        index = d.get("index") if isinstance(d, dict) else None
+        vecteur = d.get("embedding") if isinstance(d, dict) else None
+        if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(textes) or vecteurs[index] is not None                 or not isinstance(vecteur, list) or not vecteur                 or not all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in vecteur):
+            fail("response", "Invalid DocIE embedding entry.")
+        vecteurs[index] = [float(x) for x in vecteur]
+    if len({len(v) for v in vecteurs}) != 1:
+        fail("response", "DocIE embeddings have inconsistent dimensions.")
+    return vecteurs
 
 
 RERANK_DOCUMENTS_MAX = 500
