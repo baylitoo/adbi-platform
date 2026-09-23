@@ -228,6 +228,7 @@ class VoieTexteTests(unittest.TestCase):
 
     def _pont(self):
         pont = MagicMock()
+        pont.DOCIE_BLOCS_OCR_MAX = 1000
         pont.extract_text.return_value = {"schema_name": "adbi_resume", "result": {
             "name": "Alice Dupont", "title": "Développeuse", "experience": [],
             "education": [], "skills": [], "languages": [], "projects": [],

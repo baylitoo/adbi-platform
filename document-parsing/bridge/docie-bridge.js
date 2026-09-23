@@ -380,6 +380,21 @@ function fieldConfidences(value, path = "", into = {}) {
   return into;
 }
 
+// Identifiants de preuve par champ, relevés avant que unwrap() ne jette les enveloppes ; mêmes clés que fieldConfidences.
+function fieldEvidence(value, path = "", into = {}) {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => fieldEvidence(item, path + "[" + index + "]", into));
+  } else if (object(value)) {
+    if (envelope(value)) {
+      const ids = Array.isArray(value.evidence_ids) ? value.evidence_ids.filter((i) => typeof i === "string" && i) : [];
+      if (path && ids.length) into[path] = ids;
+      return fieldEvidence(value.value, path, into);
+    }
+    for (const [key, item] of Object.entries(value)) fieldEvidence(item, path ? path + "." + key : key, into);
+  }
+  return into;
+}
+
 // `docie_agent.field_confidence` — {"experience[0].title": {"confidence": 0.5}}.
 // DocIE's own per-field map, authoritative when the agent emits it: same dotted
 // paths, and it survives an agent that flattens its result before answering
@@ -605,7 +620,7 @@ function parseResponse(body, expectedSchema, agent) {
   // `blocs_texte` / `troncature_possible` / `blocs_fournis` : null sur cette voie, « non
   // mesurable » et non « non tronqué » — c'est l'OCR distant qui fait les blocs.
   const metadata = { request_id: body.id ?? null, agent, model: body.model ?? null,
-    validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
+    validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result), evidence: fieldEvidence(result),
     prompt_profile: promptProfile(meta), partiel: resultatPartiel(validation, unwrapped),
     blocs_texte: null, troncature_possible: null, blocs_fournis: null,
     schema_reported: reported.some(item => item != null) };
@@ -673,7 +688,7 @@ function parseTextResponse(body, expectedSchema) {
   // blocs envoyés ne sont dans la réponse ; extractText() les renseigne, un
   // appel direct les laisse à null (« inconnu », jamais « aucun bloc fourni »).
   const metadata = { request_id: body.request_id ?? null, agent: null, model: body.model_profile ?? null,
-    validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result),
+    validation, usage: body.usage ?? null, field_confidence: confidence ?? fieldConfidences(result), evidence: fieldEvidence(result),
     prompt_profile: null, partiel: resultatPartiel(validation, unwrapped),
     blocs_texte: null, troncature_possible: null, blocs_fournis: null,
     schema_reported: reported.some(item => item != null) };
@@ -1173,7 +1188,7 @@ async function rerank(query, documents, { modele, topN = null, env = process.env
 
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload, listStore, projeterStore,
   storeUtilisable, storeUtilisableConnu, listAgents, projeterAgent, agentsUtilisables, agentsUtilisablesConnus, nomStore,
-  MESSAGES_ERREUR, messageErreur, embed, embedderPret, EMBED_TEXTES_MAX, rerank, rerankerPret, RERANK_DOCUMENTS_MAX, rediger,
+  MESSAGES_ERREUR, messageErreur, fieldEvidence, rerank, rerankerPret, RERANK_DOCUMENTS_MAX, rediger, embed, embedderPret, EMBED_TEXTES_MAX,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
   DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
   MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };

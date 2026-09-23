@@ -1691,6 +1691,8 @@ def process_cv(file_path, jeton=None, modele=None, repli_externe=False) -> dict:
     partiel = choix_modele.resultat_partiel(metadata, raw_data)
     revue = revue_docie(raw_data, {**metadata, "partiel": partiel})
     cv_data["docie_review"] = revue
+    # Page et extrait d'où DocIE a lu chaque champ (voie texte, blocs ADBI) ; vide si inconnu.
+    cv_data["docie_preuves"] = metadata.get("preuves") or {}
     if revue["needs_review"] or revue["warnings"]:
         cv_data["parse_warning"] = "DocIE signale des champs à vérifier. Relisez la fiche extraite."
     # Modèle explicitement choisi (#194) : un résultat partiel (#203) n'est
