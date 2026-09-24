@@ -25,7 +25,7 @@ for _flux in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from flask import Flask, request, jsonify, send_file, render_template, abort, redirect, g, make_response
+from flask import Flask, request, jsonify, send_file, render_template, render_template_string, abort, redirect, g, make_response
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 # L'extraction/OCR est effectuée par DocIE, sans runtime ML dans ce process.
@@ -172,9 +172,37 @@ def handle_exception(e):
     absent, et faisait chercher une panne là où il n'y en avait pas.
     """
     if isinstance(e, HTTPException):
-        return jsonify({"error": e.description, "code": e.code}), e.code
-    traceback.print_exc()
-    return jsonify({"error": f"Erreur serveur : {str(e)}"}), 500
+        code = e.code or 500
+    else:
+        traceback.print_exc()
+        code = 500
+    titre, message, api = _MESSAGES_HTTP.get(code, _MESSAGES_HTTP[500 if code >= 500 else 400])
+    if request.path.startswith("/api/"):
+        return jsonify({"error": api, "code": code}), code
+    return render_template_string(_PAGE_MESSAGE, titre=titre, message=message), code
+
+
+# Textes fixes des erreurs HTTP : jamais la description anglaise de Werkzeug ni le texte d'une exception.
+_MESSAGES_HTTP = {
+    400: ("Requête invalide", "La demande n'a pas pu être traitée.", "Requête invalide."),
+    401: ("Session expirée", "Reconnectez-vous pour continuer.", "Session expirée, reconnectez-vous."),
+    403: ("Accès refusé", "Cette ressource n'est pas accessible.", "Accès refusé."),
+    404: ("Page introuvable", "Cette page n'existe pas ou a été déplacée.", "Ressource introuvable."),
+    405: ("Action non autorisée", "Cette action n'est pas possible ici.", "Action non autorisée."),
+    413: ("Fichier trop volumineux", "Le fichier dépasse la taille autorisée.", "Fichier trop volumineux."),
+    500: ("Une erreur est survenue", "Réessayez dans quelques instants.", "Erreur interne du serveur, réessayez dans quelques instants."),
+}
+_PAGE_MESSAGE = """<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ titre }} — ADBI</title>
+<script src="/static/adbi-theme.js"></script><link rel="stylesheet" href="/static/adbi-theme.css">
+<style>
+  .adbi-message { max-width: 32rem; margin: 18vh auto 0; padding: 2rem; background: var(--adbi-surface); border: 1px solid var(--adbi-border); border-radius: var(--adbi-r-lg); box-shadow: var(--adbi-sh); }
+  .adbi-message h1 { margin: 0 0 .5rem; font-size: 1.2rem; color: var(--adbi-text1); }
+  .adbi-message p { margin: 0; color: var(--adbi-text2); line-height: 1.5; }
+  .adbi-message-lien { display: inline-block; margin-top: 1rem; color: var(--adbi-accent); font-weight: 600; }
+</style></head>
+<body><main class="adbi-message"><h1>{{ titre }}</h1><p>{{ message }}</p><p><a class="adbi-message-lien" href="/">Retour à l'accueil</a></p></main></body></html>"""
 
 
 
@@ -1846,7 +1874,8 @@ def api_sante():
         _pg_ping()
         return jsonify({"etat": "pret", "base": "ok"})
     except Exception as e:
-        return jsonify({"etat": "indisponible", "base": "ko", "erreur": str(e)}), 503
+        print(f"[SANTE] base injoignable : {e}")
+        return jsonify({"etat": "indisponible", "base": "ko"}), 503
 
 
 @app.route("/api/status")
