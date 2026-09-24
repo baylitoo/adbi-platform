@@ -135,7 +135,7 @@ def _echouer_pont(exc):
     `return DocIEError(...)` rendrait ce garde-fou aveugle.
     """
     traduit = _load_bridge().message_erreur(exc)
-    message = traduit["message"] if traduit else f"DocIE (bridge) : {exc}"
+    message = traduit["message"] if traduit else f"Plateforme d'inférence interne : {exc}"
     # Le code voyage aussi en VALEUR (docie_client.DocIEError.code), pas
     # seulement dans la prose : le repli externe doit pouvoir décider sans
     # relire une chaîne de caractères. `args[0]` reste la même f-string, donc la
@@ -221,7 +221,7 @@ def extraire_texte(file_path, progress=None, *, session=None, choix=None):
         options["model_profile"] = identifiant
     docie_bridge = _load_bridge()
     if progress:
-        progress("Envoi du texte du document à DocIE (bridge)")
+        progress("Envoi du texte du document à la plateforme d'inférence interne")
     blocs, table = _blocs_pages(pages, docie_bridge.DOCIE_BLOCS_OCR_MAX)
     if blocs:
         options["ocr_blocks"] = blocs
@@ -316,7 +316,7 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
     docie_bridge = _load_bridge()
 
     if progress:
-        progress("Envoi du document à DocIE (bridge)")
+        progress("Envoi du document à la plateforme d'inférence interne")
     try:
         content = path.read_bytes()
     except OSError as exc:

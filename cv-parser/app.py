@@ -1658,7 +1658,7 @@ def process_cv(file_path, jeton=None, modele=None, repli_externe=False) -> dict:
         # Un service EXTERNE n'est pas DocIE : le dire, sinon la fiche attribue à
         # DocIE une lecture qu'il n'a pas faite (#194, modèles hors ADBI).
         "llm_service": ({"openai": "Service externe (hors ADBI) / "}
-                        .get(mode, "DocIE / ")) + (metadata["model_profile"] or "défaut"),
+                        .get(mode, "Inférence interne / ")) + (metadata["model_profile"] or "défaut"),
         "docie_event_id": metadata["event_id"],
         "docie_validation": metadata["validation"],
         "_timing": {"total_s": round(time.perf_counter() - started, 3)},
@@ -1696,7 +1696,7 @@ def process_cv(file_path, jeton=None, modele=None, repli_externe=False) -> dict:
     # Page et extrait d'où DocIE a lu chaque champ (voie texte, blocs ADBI) ; vide si inconnu.
     cv_data["docie_preuves"] = preuves_fiche(raw_data, metadata.get("preuves"))
     if revue["needs_review"] or revue["warnings"]:
-        cv_data["parse_warning"] = "DocIE signale des champs à vérifier. Relisez la fiche extraite."
+        cv_data["parse_warning"] = "La plateforme d'inférence interne signale des champs à vérifier. Relisez la fiche extraite."
     # Modèle explicitement choisi (#194) : un résultat partiel (#203) n'est
     # jamais présenté comme complet. Il est enregistré avec le modèle servi et
     # dit dans l'avertissement, champ par champ ; non vérifiable, il est dit aussi.

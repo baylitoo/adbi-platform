@@ -3114,7 +3114,7 @@ async function preremplirImportDepuisPdf() {
   }
   const old = btn.textContent;
   btn.disabled = true; btn.textContent = "Extraction…";
-  st.textContent = "🔎 Extraction DocIE en cours…";
+  st.textContent = "🔎 Extraction (inférence interne) en cours…";
   st.className = "status";
   // Marques d'un pré-remplissage précédent : elles ne valent plus.
   marquerChampsImportAVerifier([]);
@@ -3144,7 +3144,7 @@ async function preremplirImportDepuisPdf() {
       if (t.etat === "terminee") d = t.resultat || {};
       else if (t.etat === "echec") throw new Error((t.erreur && t.erreur.message) || "extraction en échec.");
       else if (t.etape === "en_attente") st.textContent = "⏳ En attente d'une extraction libre" + (t.position ? " (position " + t.position + ")" : "") + "…";
-      else st.textContent = "🔎 Extraction DocIE en cours…";
+      else st.textContent = "🔎 Extraction (inférence interne) en cours…";
     }
     if (!d) throw new Error("extraction trop longue : abandon du suivi après 30 minutes.");
     const v = d.values || {};

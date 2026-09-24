@@ -66,12 +66,12 @@
       <div class="fallback-corps">
         <label class="fallback-choix">
           <input type="radio" name="fallback" value="" checked>
-          <span>DocIE seul
-            <small>Si DocIE échoue, on retombe sur l'analyse locale — rien ne sort d'ADBI.</small></span>
+          <span>Inférence interne seule
+            <small>Si l'inférence interne échoue, on retombe sur l'analyse locale — rien ne sort d'ADBI.</small></span>
         </label>
         <label class="fallback-choix">
           <input type="radio" name="fallback" value="openai">
-          <span>DocIE, puis OpenAI si échec
+          <span>Inférence interne, puis OpenAI si échec
             <small>Le texte du CV sera alors envoyé au service externe (hors
               ADBI). Un document sans couche texte (scan) ne peut pas être
               secouru ainsi.</small></span>

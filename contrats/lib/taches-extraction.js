@@ -112,7 +112,7 @@ const MESSAGES_BRIDGE = pont.MESSAGES_ERREUR;
  * leve reellement.
  */
 const MESSAGES_SERVICE = {
-  disabled: "Extraction DocIE désactivée (DOCIE_EXTRACTION_ENABLED=false) — saisie manuelle requise.",
+  disabled: "Extraction (inférence interne) désactivée (DOCIE_EXTRACTION_ENABLED=false) — saisie manuelle requise.",
   input: "Aucun fichier reçu.",
   // Choix de modèle (#194, lib/choix-modele.js) : modele_non_propose, limite,
   // scan, configuration — messages constants de ce module.
