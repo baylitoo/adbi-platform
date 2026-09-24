@@ -1203,7 +1203,7 @@ $("#btn-pptx").addEventListener("click", async () => {
     if (!r.ok) throw new Error((await r.json()).error || "Export impossible.");
     telecharger(await r.blob(), `One-pager-${nomFichier()}.pptx`);
   } catch (e) {
-    alert(e.message);
+    alert(e instanceof TypeError ? "Serveur injoignable : vérifiez votre connexion." : e.message);
   } finally {
     b.disabled = false;
     b.textContent = "PowerPoint";

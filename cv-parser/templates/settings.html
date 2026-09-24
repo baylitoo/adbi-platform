@@ -694,7 +694,7 @@ async function testLlm() {
   } catch (e) {
     res.style.display = 'block';
     res.style.background = 'var(--adbi-erreur-fond)'; res.style.color = 'var(--adbi-erreur)'; res.style.border = '1px solid var(--adbi-erreur-bord)';
-    res.textContent = `❌ Erreur réseau : ${e.message}`;
+    res.textContent = '❌ Erreur réseau : serveur injoignable.';
   }
   btn.disabled = false; btn.textContent = '🧪 Tester la connexion';
   chargerModelesDocie();
@@ -730,7 +730,7 @@ async function chargerModelesDocie() {
     else if (!d.modeles.length) zone.innerHTML = '<div class="empty-state">Aucun modèle dans le store DocIE</div>';
     else zone.innerHTML = d.modeles.map(ligneModeleDocie).join('');
   } catch (e) {
-    zone.innerHTML = `<div class="empty-state">Erreur réseau : ${escDocie(e.message)}</div>`;
+    zone.innerHTML = '<div class="empty-state">Erreur réseau : serveur injoignable.</div>';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↻ Rafraîchir la liste'; }
   }

@@ -156,4 +156,4 @@ function surveiller(m, url) {
   }, 3000);
 }
 
-ouvrir().catch((err) => echec("Erreur", err.message));
+ouvrir().catch(() => echec("Plateforme injoignable", "Vérifiez votre connexion puis rechargez la page."));

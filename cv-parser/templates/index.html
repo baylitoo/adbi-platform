@@ -995,7 +995,7 @@ async function envoyerCv(file, discret, suivi, modele = modeleChoisi(file)) {
     const r = await fetch('/api/upload', { method: 'POST', body: fd, credentials: 'include' });
     let data = await r.json();
     if (!r.ok || data.error) {
-      const erreur = data.error || `Erreur HTTP ${r.status}`;
+      const erreur = data.error || "Le serveur n'a pas répondu correctement.";
       if (!discret) ConvWidget.fail(erreur);
       return { ok: false, erreur };
     }
@@ -1007,8 +1007,9 @@ async function envoyerCv(file, discret, suivi, modele = modeleChoisi(file)) {
       try {
         data = await attendreAnalyse(data.tache, suivi);
       } catch (e) {
-        if (!discret) ConvWidget.fail(e.message);
-        return { ok: false, erreur: e.message };
+        const texte = e instanceof TypeError ? 'Serveur injoignable, vérifiez votre connexion.' : e.message;
+        if (!discret) ConvWidget.fail(texte);
+        return { ok: false, erreur: texte };
       }
     }
     // `ConvWidget.done` émet `convDone` : c'est cet écouteur qui affiche la
@@ -1590,7 +1591,7 @@ async function checkApiStatus() {
       document.getElementById('apiBadge').title=`Modèle : ${d.model}`;
     } else {
       dot.className='api-dot err'; label.textContent='API KO';
-      document.getElementById('apiBadge').title=d.error||`HTTP ${d.http}`;
+      document.getElementById('apiBadge').title=d.error||'Service indisponible';
     }
   } catch { dot.className='api-dot err'; label.textContent='API KO'; }
 }

@@ -165,7 +165,7 @@
         li.appendChild(lienTelechargement(sortie.nom, sortie.blob, true));
       } catch (err) {
         li.className = "erreur";
-        etat.textContent = err.message;
+        etat.textContent = (err instanceof TypeError ? "Serveur injoignable : vérifiez votre connexion." : err.message);
       }
     }
     btnDechiffrer.disabled = false;
@@ -429,7 +429,7 @@
       li.appendChild(lienTelechargement(sortie.nom, sortie.blob, true));
     } catch (err) {
       li.className = "erreur";
-      etat.textContent = err.message;
+      etat.textContent = (err instanceof TypeError ? "Serveur injoignable : vérifiez votre connexion." : err.message);
     }
     btnArchiver.disabled = false;
     majBoutonArchiver();

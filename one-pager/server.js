@@ -121,7 +121,8 @@ app.use(express.json({ limit: "25mb" }));
 //     envoi de 25 Mo non authentifie recoit alors un 401 propre que le front
 //     sait lire, au lieu d'une connexion coupee en plein transfert.
 function cheminPublic(chemin) {
-  return chemin === "/api/sante";
+  return chemin === "/api/sante"
+    || chemin === "/adbi-theme.css" || chemin === "/adbi-theme.js" || chemin.startsWith("/fonts/");
 }
 
 function gardeAcces(req, res, next) {
@@ -132,12 +133,12 @@ function gardeAcces(req, res, next) {
   if (decision.api) {
     // Le front appelle tout par fetch() : du HTML la ou il attend du JSON
     // casserait l'affichage au lieu de signaler la session expiree.
-    return res.status(401).json({ erreur: "Non authentifie" });
+    return res.status(401).json({ erreur: "Non authentifié" });
   }
   if (!FACTORY_URL) {
     // Sans URL de hub, aucune cible de reconnexion fabricable : on le dit,
     // plutot que de renvoyer vers une page absente de ce service.
-    return res.status(401).type("text/plain; charset=utf-8").send("Non authentifie");
+    return res.status(401).type("text/html; charset=utf-8").send(auth.pageMessage("Session expirée", "Rouvrez la plateforme ADBI pour vous reconnecter."));
   }
   // Page : one-pager est un module affiche en <iframe>. Rediriger sur place
   // ferait un cadre mort a l'expiration du jeton (1 h) ; pageReconnexion()
@@ -162,7 +163,8 @@ app.get("/api/sante", async (req, res) => {
     await db.verifierConnexion();
     res.json({ etat: "pret", base: "ok" });
   } catch (e) {
-    res.status(503).json({ etat: "indisponible", base: "ko", erreur: e.message });
+    console.error("[sante] base injoignable :", e.message);
+    res.status(503).json({ etat: "indisponible", base: "ko" });
   }
 });
 
@@ -227,7 +229,7 @@ app.get("/api/cvs", async (req, res) => {
     res.json(await db.search(req.query.q));
   } catch (e) {
     console.error("[cvs:list]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -238,7 +240,7 @@ app.get("/api/cvs/:id", async (req, res) => {
     res.json(r);
   } catch (e) {
     console.error("[cvs:get]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -251,7 +253,7 @@ app.post("/api/cvs", async (req, res) => {
     res.json(await db.save({ id: id || crypto.randomUUID(), hash, master, options }));
   } catch (e) {
     console.error("[save]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -261,7 +263,7 @@ app.delete("/api/cvs/:id", async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error("[cvs:delete]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -277,7 +279,7 @@ app.post("/api/onepager", (req, res) => {
     res.json(build(master, options || {}));
   } catch (e) {
     console.error("[onepager]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -301,7 +303,7 @@ app.post("/api/export/pptx", async (req, res) => {
     res.send(buffer);
   } catch (e) {
     console.error("[pptx]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -359,7 +361,7 @@ app.post("/api/export/livret", async (req, res) => {
     res.send(buffer);
   } catch (e) {
     console.error("[livret]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -425,7 +427,7 @@ app.post("/api/matching", async (req, res) => {
     });
   } catch (e) {
     console.error("[matching]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -505,7 +507,7 @@ app.post("/api/badges", (req, res) => {
     res.json({ cle, editeur, libelle });
   } catch (e) {
     console.error("[badges]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -589,6 +591,19 @@ function catalogueBadges(racine) {
 function fileSafe(s) {
   return String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9 _-]/g, "").replace(/\s+/g, "-").slice(0, 60) || "cv";
 }
+
+// Fin de chaîne : route inconnue et erreur imprévue, en français et à la charte ; le détail reste dans le journal.
+app.use((req, res) => {
+  if (auth.estApi(req.path)) return res.status(404).json({ error: "Ressource introuvable." });
+  res.status(404).type("text/html; charset=utf-8").send(auth.pageMessage("Page introuvable", "Cette page n'existe pas ou a été déplacée."));
+});
+app.use((err, req, res, next) => {
+  console.error("[erreur]", req.method, req.path, err && err.stack || err);
+  if (res.headersSent) return next(err);
+  const statut = err && Number.isInteger(err.status) && err.status >= 400 && err.status < 500 ? err.status : 500;
+  if (auth.estApi(req.path)) return res.status(statut).json({ error: statut === 500 ? "Erreur interne du serveur." : "Requête invalide." });
+  res.status(statut).type("text/html; charset=utf-8").send(auth.pageMessage("Une erreur est survenue", "Réessayez dans quelques instants."));
+});
 
 // ------------------------------------------------------------ Demarrage ---
 

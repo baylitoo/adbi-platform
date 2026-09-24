@@ -195,7 +195,7 @@ async function demarrerModule(m) {
     const ok = await attendrePort(m.port, m.delai || 40, hote);
     return ok
       ? { etat: "pret" }
-      : { etat: "demarrage", message: `En attente de ${m.id} sur ${hote}:${m.port} (démarré par docker-compose).` };
+      : { etat: "demarrage", message: "Le module démarre encore : patientez quelques instants." };
   }
 
   if (await portOuvert(m.port)) return { etat: "pret" };
@@ -203,7 +203,7 @@ async function demarrerModule(m) {
   if (!moduleInstalle(m)) {
     return {
       etat: "indisponible",
-      message: `Introuvable : ${path.join(m.dossier || "?", m.entree || "")}`,
+      message: "Ce module n'est pas installé sur ce poste.",
     };
   }
 
@@ -511,8 +511,8 @@ function lireCorpsJson(req) {
 function servirFichier(rep, chemin) {
   fs.readFile(chemin, (err, contenu) => {
     if (err) {
-      rep.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-      rep.end("Introuvable");
+      rep.writeHead(404, { "Content-Type": "text/html; charset=utf-8" });
+      rep.end(auth.pageMessage("Page introuvable", "Cette page n'existe pas ou a été déplacée."));
       return;
     }
     rep.writeHead(200, {
@@ -561,7 +561,7 @@ function refuserSiNonAuthentifie(req, rep, chemin) {
   if (decision.api) {
     // Une API repond en JSON : le navigateur ne doit pas recevoir du HTML de
     // connexion la ou il attend des donnees.
-    return repondreJson(rep, 401, { erreur: "Non authentifie" }), true;
+    return repondreJson(rep, 401, { erreur: "Non authentifié" }), true;
   }
   // Page : on renvoie vers la connexion de cv-parser, seul emetteur
   // d'identite. `next` lui dit ou revenir -- il le VALIDE de son cote, on ne
@@ -663,7 +663,7 @@ const serveur = http.createServer(async (req, rep) => {
     }
   }
 
-  if (chemin.startsWith("/api/")) return repondreJson(rep, 404, { erreur: "Route inconnue" });
+  if (chemin.startsWith("/api/")) return repondreJson(rep, 404, { erreur: "Ressource introuvable." });
 
   // La charte commune vit dans theme/ (source unique, recopiee dans les
   // applications par scripts/sync-theme.js). La Factory la sert directement
@@ -681,8 +681,8 @@ const serveur = http.createServer(async (req, rep) => {
   if (relatif === "/module") relatif = "/module.html";
   const cible = path.join(PUBLIC, path.normalize(relatif).replace(/^[\\/]+/, ""));
   if (!cible.startsWith(PUBLIC)) {
-    rep.writeHead(403);
-    return rep.end("Interdit");
+    rep.writeHead(403, { "Content-Type": "text/html; charset=utf-8" });
+    return rep.end(auth.pageMessage("Accès refusé", "Cette ressource n'est pas accessible."));
   }
   servirFichier(rep, cible);
 });
