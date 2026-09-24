@@ -115,21 +115,13 @@ test("le dispatcher APPELLE le garde avant TOUTE route sensible", () => {
 
 // ── Surface publique ─────────────────────────────────────────────────────────
 
-test("cheminPublic n'expose QUE /api/sante", () => {
-  /*
-   * factory exempte aussi /adbi-theme.* et /fonts/ parce que la page vers
-   * laquelle il redirige doit pouvoir s'afficher. Le coffre n'en a pas besoin :
-   * la page rendue a un visiteur non authentifie vient de
-   * auth.pageReconnexion(), entierement autonome (styles en ligne). Exempter
-   * des ressources statiques ici ouvrirait des chemins pour rien.
-   */
+test("cheminPublic n'expose que /api/sante et la charte de la page de reconnexion", () => {
+  // La page de reconnexion (auth.pageMessage) charge thème et police avant toute session, comme chez factory.
   assert.match(
     SERVEUR,
-    /function cheminPublic\(chemin\) \{\s*return chemin === "\/api\/sante";\s*\}/,
-    "cheminPublic doit n'exempter que /api/sante"
+    /function cheminPublic\(chemin\) \{\s*return chemin === "\/api\/sante"\s*\|\| chemin === "\/adbi-theme\.css" \|\| chemin === "\/adbi-theme\.js" \|\| chemin\.startsWith\("\/fonts\/"\);\s*\}/,
+    "cheminPublic doit n'exempter que /api/sante et la charte"
   );
-  assert.ok(!SERVEUR.includes('"/adbi-theme.css"'), "exemption de charte inattendue");
-  assert.ok(!SERVEUR.includes('"/fonts/"'), "exemption de polices inattendue");
 });
 
 test("la fonction de refus existe et couvre les deux formes de reponse", () => {
@@ -144,7 +136,7 @@ test("la fonction de refus existe et couvre les deux formes de reponse", () => {
 test("une API refusee repond 401 JSON, jamais du HTML", () => {
   // Le front appelle tout par fetch() : du HTML la ou il attend du JSON
   // casserait l'affichage au lieu de signaler la session expiree.
-  assert.match(SERVEUR, /repondreJson\(rep, 401, \{ erreur: "Non authentifie" \}\)/);
+  assert.match(SERVEUR, /repondreJson\(rep, 401, \{ erreur: "Non authentifié" \}\)/);
 });
 
 test("une page refusee renvoie le NIVEAU SUPERIEUR vers le hub", () => {
@@ -164,7 +156,7 @@ test("sans URL de hub, le refus reste un refus", () => {
   // Une variable manquante ne doit jamais devenir un passage libre, ni une
   // redirection vers une page qui n'existe pas sur ce service.
   assert.match(SERVEUR, /if \(!FACTORY_URL\) \{/, "cas FACTORY_URL vide non traite");
-  assert.match(SERVEUR, /rep\.end\("Non authentifie"\);/, "pas de refus en clair");
+  assert.match(SERVEUR, /rep\.end\(auth\.pageMessage\("Session expirée"/, "pas de refus en clair");
 });
 
 // ── Image et sonde ───────────────────────────────────────────────────────────
