@@ -557,10 +557,10 @@
     {% set revue = cv.docie_review or {} %}
     {% set a_verifier = revue.needs_review or [] %}
     {% set preuves = cv.docie_preuves or {} %}
-    {% macro preuve(chemin) %}{% set lues = preuves.get(chemin) or [] %}{% if lues %} title="Lu par DocIE{% for l in lues[:3] %} · {{ ('page ' ~ l.page ~ ' : ') if l.page }}« {{ l.extrait }} »{% endfor %}"{% endif %}{% endmacro %}
+    {% macro preuve(chemin) %}{% set lues = preuves.get(chemin) or [] %}{% if lues %} title="Lu par la plateforme d'inférence interne{% for l in lues[:3] %} · {{ ('page ' ~ l.page ~ ' : ') if l.page }}« {{ l.extrait }} »{% endfor %}"{% endif %}{% endmacro %}
     {% if a_verifier or revue.warnings %}
     <div class="revue-docie">
-      <span class="revue-docie-titre">⚠️ DocIE n'est pas sûr de cette extraction.</span>
+      <span class="revue-docie-titre">⚠️ La plateforme d'inférence interne n'est pas sûre de cette extraction.</span>
       {% if a_verifier %}
       {{ a_verifier|length }} champ{{ 's' if a_verifier|length > 1 else '' }} à relire, marqué{{ 's' if a_verifier|length > 1 else '' }} dans l'onglet « Modifier ».
       {% endif %}
@@ -594,7 +594,7 @@
              absente. #}
           {% set libelles_anciennete = {
                'periodes': "Calculé depuis les périodes des missions de la fiche.",
-               'docie':    "Annoncé par l'extraction DocIE : aucune période de mission n'était lisible.",
+               'docie':    "Annoncé par la plateforme d'inférence interne : aucune période de mission n'était lisible.",
                'forfait':  "Estimé à un an par mission dont la période est illisible : un ordre de grandeur, pas une mesure.",
                'manuel':   "Saisi à la main dans cette fiche.",
                'aucune':   "Aucune source : ni période de mission, ni valeur annoncée par l'extraction."} %}

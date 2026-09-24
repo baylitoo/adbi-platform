@@ -163,7 +163,7 @@ test("flag coupe -> 400 disabled, meme code qu'avant ; aucune tache, ni extracti
     const r = await srv.post(CORPS);
     assert.equal(r.status, 400);
     assert.deepEqual(await r.json(), {
-      error: "Extraction DocIE désactivée (DOCIE_EXTRACTION_ENABLED=false) — saisie manuelle requise.",
+      error: "Extraction (inférence interne) désactivée (DOCIE_EXTRACTION_ENABLED=false) — saisie manuelle requise.",
       code: "disabled",
     });
     assert.equal(srv.gestionnaire.statistiques().conservees, 0);
@@ -262,7 +262,7 @@ test("echecs dans la tache : code nomme + message constant ; texte amont et secr
       ["echec", { code: "configuration", message: MESSAGES_BRIDGE.configuration }],
       ["echec", { code: "loading", message: "Modèle en cours de chargement, réessayez dans ~30 s.", eta_seconds: 30 }],
       ["echec", { code: "upstream", message: MESSAGES_BRIDGE.upstream }],
-      ["echec", { code: "disabled", message: "Extraction DocIE désactivée (DOCIE_EXTRACTION_ENABLED=false) — saisie manuelle requise." }],
+      ["echec", { code: "disabled", message: "Extraction (inférence interne) désactivée (DOCIE_EXTRACTION_ENABLED=false) — saisie manuelle requise." }],
       ["echec", { code: "interne", message: "Pré-remplissage impossible : erreur interne." }],
     ]);
     assert.ok(!JSON.stringify(vues).includes("SECRET"));

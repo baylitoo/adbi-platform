@@ -25,7 +25,7 @@
         '<button type="button" id="ia-tout">Tout tester</button></div>' +
       '<div id="ia-lignes"></div>' +
       '<div class="ia-pied" id="ia-pied"></div>' +
-      '<div class="ia-tete"><h3>Modèles DocIE</h3>' +
+      '<div class="ia-tete"><h3>Modèles de l\'inférence interne</h3>' +
         '<button type="button" id="ia-modeles-maj">Rafraîchir</button></div>' +
       '<div id="ia-modeles"></div>' +
     '</div>';
@@ -138,7 +138,7 @@
     catch (e) { d = { erreur: e.message, modeles: [] }; }
     const z = $('ia-modeles');
     if (d.erreur) z.innerHTML = `<div class="ia-pied">${esc(d.erreur)}</div>`;
-    else if (!d.modeles.length) z.innerHTML = '<div class="ia-pied">Aucun modèle dans le store DocIE.</div>';
+    else if (!d.modeles.length) z.innerHTML = "<div class=\"ia-pied\">Aucun modèle dans le catalogue de la plateforme d'inférence interne.</div>";
     else z.innerHTML = d.modeles.map(m => {
       const detail = [m.utilisable ? 'prêt' : (m.etat || 'inconnu'),
                       m.tokens_par_seconde ? Math.round(m.tokens_par_seconde) + ' tok/s' : null].filter(Boolean).join(' · ');
