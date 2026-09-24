@@ -473,7 +473,7 @@ async function lancer() {
     });
     if (!r.ok) {
       const d = await r.json().catch(() => ({}));
-      throw new Error(d.error || `HTTP ${r.status}`);
+      throw new Error(d.error || "Le serveur n'a pas répondu correctement.");
     }
 
     // Réponse diffusée : une ligne JSON par étape, la dernière porte le résultat.
@@ -498,7 +498,7 @@ async function lancer() {
   } catch (e) {
     clearInterval(chrono);
     document.getElementById('carteTravail').hidden = true;
-    alert('❌ ' + e.message);
+    alert('❌ ' + (e instanceof TypeError ? 'Serveur injoignable, vérifiez votre connexion.' : e.message));
   } finally {
     btn.disabled = false;
     btn.textContent = 'Comparer et classer';

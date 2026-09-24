@@ -195,7 +195,7 @@ async function demarrerModule(m) {
     const ok = await attendrePort(m.port, m.delai || 40, hote);
     return ok
       ? { etat: "pret" }
-      : { etat: "demarrage", message: `En attente de ${m.id} sur ${hote}:${m.port} (démarré par docker-compose).` };
+      : { etat: "demarrage", message: "Le module démarre encore : patientez quelques instants." };
   }
 
   if (await portOuvert(m.port)) return { etat: "pret" };
@@ -203,7 +203,7 @@ async function demarrerModule(m) {
   if (!moduleInstalle(m)) {
     return {
       etat: "indisponible",
-      message: `Introuvable : ${path.join(m.dossier || "?", m.entree || "")}`,
+      message: "Ce module n'est pas installé sur ce poste.",
     };
   }
 

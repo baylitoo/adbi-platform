@@ -12,6 +12,7 @@
 const fs = require("fs");
 const path = require("path");
 const { DELAI_HTTP_MS, delaiSignal, messageDelai } = require("./httpDelai");
+const { messagePublic } = require("../../auth/auth-adbi");
 const { controlerSirenSiret, VALIDE } = require("./siren-siret");
 
 const SECRETS_PATH = path.join(__dirname, "..", "data", "secrets.json");
@@ -426,7 +427,7 @@ async function testProvider(name) {
     }
     return { ok: false, message: "Fournisseur inconnu." };
   } catch (e) {
-    return { ok: false, message: e.message };
+    return { ok: false, message: messagePublic(e) };
   }
 }
 

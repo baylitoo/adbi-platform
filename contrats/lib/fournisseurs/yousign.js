@@ -21,6 +21,7 @@
 const fs = require("fs");
 const path = require("path");
 const { DELAI_HTTP_MS, DELAI_UPLOAD_MS, delaiSignal, messageDelai } = require("../httpDelai");
+const { messagePublic } = require("../../../auth/auth-adbi");
 
 const SECRETS_PATH = path.join(__dirname, "..", "..", "data", "secrets.json");
 
@@ -81,7 +82,7 @@ async function verifier() {
     await appel("/signature_requests?limit=1");
     return { ok: true, message: "Connexion Yousign réussie (mode " + c.mode + ")." };
   } catch (e) {
-    return { ok: false, message: e.message };
+    return { ok: false, message: messagePublic(e) };
   }
 }
 
