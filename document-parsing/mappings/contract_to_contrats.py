@@ -425,12 +425,12 @@ def map_docie_contract_to_sous_traitance(extraction_response: dict) -> MappingRe
         warnings.append(f"{CHAMPS_SIREN_SIRET[probleme['champ']]}: {probleme['message']}")
 
     for note in result.get("extraction_notes") or []:
-        warnings.append(f"DocIE extraction_notes: {note}")
+        warnings.append(f"Note d'extraction : {note}")
     validation = extraction_response.get("validation") or {}
     for w in validation.get("warnings") or []:
-        warnings.append(f"DocIE validation.warnings: {w}")
+        warnings.append(f"Avertissement de validation : {w}")
     for e in validation.get("errors") or []:
-        warnings.append(f"DocIE validation.errors: {e}")
+        warnings.append(f"Erreur de validation : {e}")
 
     errors: list[str] = []
     # Miroir exact des controles de contrats/server.js::POST /api/contracts/importer

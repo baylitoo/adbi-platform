@@ -146,7 +146,7 @@ class ProcessCv(unittest.TestCase):
         revue = fiche["docie_review"]
         self.assertEqual(revue["needs_review"], ["experience[1].period", "contact.email"])
         self.assertEqual(sum(w.startswith("Résultat partiel — ") for w in revue["warnings"]), 5)
-        self.assertEqual(fiche["parse_warning"], "DocIE signale des champs à vérifier. Relisez la fiche extraite.")
+        self.assertEqual(fiche["parse_warning"], "La plateforme d'inférence interne signale des champs à vérifier. Relisez la fiche extraite.")
         # Non bloquant : seules la revue et la phrase d'avertissement diffèrent.
         self.assertNotIn("partiel", fiche["modele_extraction"])
         pareil = lambda f: {k: v for k, v in f.items() if k not in ("docie_review", "parse_warning", "_timing")}

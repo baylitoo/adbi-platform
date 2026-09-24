@@ -318,7 +318,7 @@ class InfobulleTests(unittest.TestCase):
     def test_chaque_source_a_son_libelle(self):
         attendus = {
             "periodes": "Calculé depuis les périodes",
-            "docie": "Annoncé par l&#39;extraction DocIE",
+            "docie": "Annoncé par la plateforme d&#39;inférence interne",
             "forfait": "Estimé à un an par mission",
             "manuel": "Saisi à la main",
         }
