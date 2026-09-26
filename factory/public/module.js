@@ -65,8 +65,7 @@ async function ouvrir() {
   if (module.etat === "indisponible") {
     echec(
       "Application introuvable",
-      "Le dossier de ce module n'existe pas sur ce poste. Vérifiez le chemin dans " +
-        "<code>modules.json</code>."
+      "Ce module n'est pas installé sur ce poste. Si le problème persiste, contactez un administrateur."
     );
     return;
   }
@@ -103,13 +102,8 @@ async function ouvrir() {
 }
 
 function echoueDemarrage(reponse) {
-  let texte = reponse.message || "Erreur inconnue.";
-  if (reponse.journal) {
-    texte += "<pre class=\"journal\">" + echapper(reponse.journal) + "</pre>";
-  }
-  texte +=
-    "<br>Journal complet : <code>logs/" + identifiant + ".log</code> " +
-    "dans le dossier ADBI Factory.";
+  // Le journal technique reste côté serveur (logs/) : l'écran ne montre qu'un message.
+  const texte = echapper(reponse.message || "Le démarrage a échoué.") + " Si le problème persiste, contactez un administrateur.";
   echec("Le module n'a pas démarré", texte);
 }
 
@@ -142,15 +136,13 @@ function surveiller(m, url) {
       clearInterval(minuteur);
       echec(
         "Le module s'est arrêté",
-        "Il a quitté avant de répondre. Consultez <code>logs/" +
-          m.id + ".log</code> dans le dossier ADBI Factory."
+        "Il s'est arrêté avant d'être prêt. Si le problème persiste, contactez un administrateur."
       );
     } else if (Date.now() - debut > PLAFOND) {
       clearInterval(minuteur);
       echec(
         "Le module ne répond toujours pas",
-        "Après cinq minutes, l'application n'écoute pas sur le port " + m.port +
-          ". Consultez <code>logs/" + m.id + ".log</code>."
+        "Après cinq minutes, l'application ne répond toujours pas. Si le problème persiste, contactez un administrateur."
       );
     }
   }, 3000);

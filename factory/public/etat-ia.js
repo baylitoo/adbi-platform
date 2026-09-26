@@ -18,14 +18,14 @@
   zone.className = 'ia-zone';
   zone.innerHTML =
     '<button class="puce-ia test" id="puce-ia" type="button" aria-expanded="false">' +
-      '<span class="point"></span><span id="ia-libelle">IA — test…</span>' +
+      '<span class="point"></span><span id="ia-libelle">IA : vérification…</span>' +
     '</button>' +
     '<div class="ia-panneau" id="ia-panneau" hidden>' +
-      '<div class="ia-tete"><h3>Chaîne de secours</h3>' +
+      '<div class="ia-tete"><h3>Services d\'IA</h3>' +
         '<button type="button" id="ia-tout">Tout tester</button></div>' +
       '<div id="ia-lignes"></div>' +
       '<div class="ia-pied" id="ia-pied"></div>' +
-      '<div class="ia-tete"><h3>Modèles de l\'inférence interne</h3>' +
+      '<div class="ia-tete"><h3>Modèles disponibles</h3>' +
         '<button type="button" id="ia-modeles-maj">Rafraîchir</button></div>' +
       '<div id="ia-modeles"></div>' +
     '</div>';
@@ -37,6 +37,7 @@
 
   const $ = id => document.getElementById(id);
   let chaine = [];
+  let admin = false;
 
   function poser(etat, libelle) {
     $('puce-ia').className = 'puce-ia ' + etat;
@@ -76,7 +77,7 @@
      ici) : la chaîne configurée reste courte en pratique, et la simplicité du
      relais serveur prime sur la vitesse d'un voyant d'en-tête. */
   async function verifier() {
-    poser('test', 'IA — test…');
+    poser('test', 'IA : vérification…');
     let config;
     try {
       config = await fetch('/api/llm/chaine').then(r => r.json());
@@ -84,11 +85,14 @@
       config = { configure: false, modeles: [] };
     }
     chaine = config.modeles || [];
+    admin = config.admin === true;
+    $('puce-ia').title = admin ? 'Détail des services d\'IA' : 'État du service d\'IA';
     lignes();
+    if (admin) chargerModeles(false);
 
     if (!config.configure) {
-      poser('ko', 'IA — non configurée');
-      $('ia-pied').textContent = 'Passerelle d’inférence interne non configurée côté serveur (ADBI_LLM_BASE_URL / ADBI_LLM_MODELS).';
+      poser('ko', 'IA indisponible');
+      $('ia-pied').textContent = 'Le service d\'IA n\'est pas configuré sur ce serveur.';
       return;
     }
 
@@ -97,20 +101,20 @@
       const r = await tester(chaine[i]);
       if (r.ok) {
         majLigne(chaine[i], 'ok', r.ms + ' ms');
-        poser('ok', i ? `IA — secours ${i + 1}/${chaine.length}` : 'IA — en marche');
+        poser('ok', 'IA disponible');
         $('ia-pied').textContent = i
-          ? `${chaine[i]} répond en ${r.ms} ms. ${i} modèle(s) précédent(s) indisponible(s).`
-          : `${chaine[i]} répond en ${r.ms} ms.`;
+          ? `${chaine[i]} répond (${r.ms} ms) ; ${i} modèle(s) prioritaire(s) indisponible(s).`
+          : `${chaine[i]} répond (${r.ms} ms).`;
         try { sessionStorage.setItem(CACHE, JSON.stringify({ ok: true, modele: chaine[i], rang: i })); } catch {}
         return;
       }
-      majLigne(chaine[i], 'ko', (r.erreur || '').toLowerCase().includes('quota') ? 'quota' : 'panne');
+      majLigne(chaine[i], 'ko', (r.erreur || '').toLowerCase().includes('quota') ? 'saturé' : 'indisponible');
     }
 
-    poser('ko', 'IA — indisponible');
+    poser('ko', 'IA indisponible');
     $('ia-pied').textContent = chaine.length
       ? `Aucun des ${chaine.length} modèle(s) n'a répondu.`
-      : 'Aucun modèle configuré (ADBI_LLM_MODELS).';
+      : 'Aucun modèle d\'IA n\'est configuré.';
     try { sessionStorage.setItem(CACHE, JSON.stringify({ ok: false })); } catch {}
   }
 
@@ -120,25 +124,25 @@
     for (const m of chaine) {
       majLigne(m, 'test', '…');
       const r = await tester(m);
-      majLigne(m, r.ok ? 'ok' : 'ko', r.ok ? r.ms + ' ms' : ((r.erreur || '').toLowerCase().includes('quota') ? 'quota' : 'panne'));
+      majLigne(m, r.ok ? 'ok' : 'ko', r.ok ? r.ms + ' ms' : ((r.erreur || '').toLowerCase().includes('quota') ? 'saturé' : 'indisponible'));
     }
     const vivants = $('ia-lignes').querySelectorAll('.ia-ligne.ok').length;
     $('ia-pied').textContent = `${vivants} modèle(s) disponible(s) sur ${chaine.length}.`;
-    poser(vivants ? 'ok' : 'ko', vivants ? `IA — ${vivants}/${chaine.length} disponibles` : 'IA — indisponible');
+    poser(vivants ? 'ok' : 'ko', vivants ? 'IA disponible' : 'IA indisponible');
     $('ia-tout').disabled = false;
   }
 
-  /* Modèles du store DocIE : lus via le hub (cache 5 min côté serveur), jamais d'identifiant interne. */
+  /* Modèles de la plateforme d'inférence, lus via le hub (cache 5 min côté serveur) ; administrateur seulement. */
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   async function chargerModeles(forcer) {
     const btn = $('ia-modeles-maj');
     btn.disabled = true;
     let d;
     try { d = await fetch(forcer ? '/api/llm/modeles?maj=1' : '/api/llm/modeles').then(r => r.json()); }
-    catch (e) { d = { erreur: e.message, modeles: [] }; }
+    catch { d = { erreur: 'Liste des modèles indisponible.', modeles: [] }; }
     const z = $('ia-modeles');
     if (d.erreur) z.innerHTML = `<div class="ia-pied">${esc(d.erreur)}</div>`;
-    else if (!d.modeles.length) z.innerHTML = "<div class=\"ia-pied\">Aucun modèle dans le catalogue de la plateforme d'inférence interne.</div>";
+    else if (!d.modeles.length) z.innerHTML = '<div class="ia-pied">Aucun modèle disponible.</div>';
     else z.innerHTML = d.modeles.map(m => {
       const detail = [m.utilisable ? 'prêt' : (m.etat || 'inconnu'),
                       m.tokens_par_seconde ? Math.round(m.tokens_par_seconde) + ' tok/s' : null].filter(Boolean).join(' · ');
@@ -149,7 +153,7 @@
     btn.disabled = false;
   }
   $('ia-modeles-maj').addEventListener('click', () => chargerModeles(true));
-  setInterval(() => chargerModeles(false), 5 * 60 * 1000);
+  setInterval(() => { if (admin) chargerModeles(false); }, 5 * 60 * 1000);
 
   /* Le panneau est en position fixe : on l'aligne sous la puce à l'ouverture,
      et on le replace si la fenêtre bouge pendant qu'il est ouvert. */
@@ -163,6 +167,7 @@
   }
 
   $('puce-ia').addEventListener('click', () => {
+    if (!admin) return;
     const p = $('ia-panneau');
     p.hidden = !p.hidden;
     placer();
@@ -179,5 +184,4 @@
   });
 
   verifier();
-  chargerModeles(false);
 })();

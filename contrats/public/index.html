@@ -28,7 +28,7 @@
       <label>Type de contrat</label>
       <div id="typeButtons" class="type-buttons"></div>
     </div>
-    <div class="side-foot">Port 4100 — local — ADBI</div>
+    <div class="side-foot">ADBI Contrats</div>
   </aside>
 
   <main class="main">
@@ -281,7 +281,7 @@
     <section id="view-referentiels" class="view hidden">
       <div class="panel" style="max-width:780px">
         <div class="panel-head"><h2>Référentiels</h2></div>
-        <p class="muted set-intro">Stockés sur ce poste (<code>data/referentiels.json</code>). Les clients (avec leurs valideurs de CRA et leurs lieux) et les managers alimentent l'auto-complétion dans le formulaire.</p>
+        <p class="muted set-intro">Enregistrés sur le serveur et partagés par toute l'équipe. Les clients (avec leurs valideurs de CRA et leurs lieux) et les managers alimentent l'auto-complétion dans le formulaire.</p>
         <div id="refContent"></div>
       </div>
     </section>
@@ -290,7 +290,7 @@
     <section id="view-parametres" class="view hidden">
       <div class="panel settings-panel">
         <div class="panel-head"><h2>Paramètres — clés API</h2></div>
-        <p class="muted set-intro">Ces clés restent sur ce poste (fichier <code>data/secrets.json</code>), ne sont jamais partagées et n'apparaissent pas dans les contrats. Laissez un champ vide pour conserver la clé déjà enregistrée.</p>
+        <p class="muted set-intro">Ces clés sont conservées sur le serveur : elles ne sont jamais renvoyées au navigateur et n'apparaissent pas dans les contrats. Laissez un champ vide pour conserver la clé déjà enregistrée.</p>
 
         <div class="set-group">
           <h3>Recherche société</h3>
@@ -327,8 +327,7 @@
             il envoie les invitations et les relances, fait signer sur sa page sécurisée,
             et fournit le <b>dossier de preuve</b>. Deux connecteurs au choix :
             <b>Yousign</b> (eIDAS 🇫🇷, données UE, clé API simple, sandbox gratuite) et
-            <b>Zoho Sign</b> (région UE possible, OAuth2 — pratique si vous êtes déjà chez Zoho).
-            Voir <code>docs/INTEGRATION-SIGNATURE.md</code>.</div>
+            <b>Zoho Sign</b> (région UE possible, OAuth2 — pratique si vous êtes déjà chez Zoho).</div>
           <div class="smtp-grille">
             <label>Connecteur actif
               <select id="setSignFournisseur">
