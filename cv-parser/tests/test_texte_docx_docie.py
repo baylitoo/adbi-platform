@@ -332,7 +332,7 @@ class GardesInchangeesTests(unittest.TestCase):
         with self.assertRaises(DocIEError) as ctx:
             document_payload(chemin)
         self.assertEqual(str(ctx.exception),
-                         "Document Word sans texte lisible : exportez-le en PDF pour l'OCR DocIE.")
+                         "Document Word sans texte lisible : exportez-le en PDF pour l'OCR de la plateforme d'inférence interne.")
 
     def test_document_word_invalide(self):
         for contenu in (b"pas un zip", None):

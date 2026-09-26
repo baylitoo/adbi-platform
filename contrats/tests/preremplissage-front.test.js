@@ -112,7 +112,7 @@ test("202 -> en_attente -> extraction -> terminee : étape affichée, formulaire
   assert.deepEqual(delais, [2000, 2000, 2000]);
   // Ce que l'utilisateur voyait au moment de chaque relevé suivant.
   assert.equal(etats[2], "⏳ En attente d'une extraction libre (position 2)…");
-  assert.equal(etats[3], "🔎 Extraction DocIE en cours…");
+  assert.equal(etats[3], "🔎 Extraction (inférence interne) en cours…");
 
   assert.equal(elements.impNumero.value, "02-09-2026");
   assert.equal(elements.impSt.value, "ADCONSI");

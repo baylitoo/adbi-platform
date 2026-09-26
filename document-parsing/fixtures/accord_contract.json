@@ -12,7 +12,7 @@
     "ok": "egalite stricte",
     "errors": "egalite apres retrait des accents : les deux ports miroitent les memes controles de contrats/server.js, mais l'un ecrit « Le numero du contrat est requis. » et l'autre « Le numero... » accentue. MESURE : meme nombre, meme ordre, memes controles declenches.",
     "avertissements_nombre_et_ordre": "egalite stricte du NOMBRE et de l'ORDRE",
-    "avertissements_champ": "egalite stricte du prefixe avant le premier « : » (le champ DocIE concerne, ou le canal : « DocIE extraction_notes », « DocIE validation.warnings »)",
+    "avertissements_champ": "egalite stricte du prefixe avant le premier « : » (le champ DocIE concerne, ou le canal : « Note d'extraction », « Avertissement de validation »)",
     "controle_siren_siret": "egalite stricte des statuts par numero"
   },
   "_surcharge": "Un cas synthetique ne recopie pas les 21 champs de l'enveloppe nominale : il declare `base` (un fichier de document-parsing/mappings/fixtures/) et `surcharge`. Regle appliquee A L'IDENTIQUE par les deux ports : les cles de `surcharge.result` remplacent celles de `result` (fusion de surface, une cle a la fois), et `surcharge.validation`, s'il est present, remplace `validation` en entier. Rien d'autre n'est modifie.",
@@ -47,7 +47,7 @@
       "surcharge": {
         "validation": { "valid": false, "errors": ["champ obligatoire manquant"], "warnings": ["low overall confidence"] }
       },
-      "preuve": "Regression visee : #179 ligne A1, ou `extractContractValues` jetait `metadata.validation` que le pont avait pourtant rempli -- les doutes de DocIE sur sa propre extraction n'atteignaient jamais le relecteur cote JS. MESURE : les deux ports reportent desormais `DocIE validation.warnings` ET `DocIE validation.errors`. Noter que `ok` reste true : une validation negative de DocIE n'est pas un controle bloquant d'import."
+      "preuve": "Regression visee : #179 ligne A1, ou `extractContractValues` jetait `metadata.validation` que le pont avait pourtant rempli -- les doutes de DocIE sur sa propre extraction n'atteignaient jamais le relecteur cote JS. MESURE : les deux ports reportent desormais `Avertissement de validation` ET `Erreur de validation`. Noter que `ok` reste true : une validation negative de DocIE n'est pas un controle bloquant d'import."
     },
     {
       "nom": "siren_siret_invalides",

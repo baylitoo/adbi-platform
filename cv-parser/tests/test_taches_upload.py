@@ -450,7 +450,7 @@ class Erreurs(unittest.TestCase):
         """
         connus = {
             # `key` parcourt un tuple de noms de champs écrit dans map_resume.
-            ("docie_client.py", "DocIE : champ "),
+            ("docie_client.py", "Plateforme d'inférence interne : champ "),
             ("docie_bridge_extraction.py", "Document introuvable ou illisible : "),
             ("docie_bridge_extraction.py", ""),     # f"{message} [{exc.code}]" : cause bridge
             # Transport externe (#194, modèle HORS ADBI choisi explicitement) :

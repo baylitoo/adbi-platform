@@ -162,7 +162,7 @@ def document_payload(path):
         # XML illisible, plutôt qu'une exception brute.
         raise DocIEError("Document Word invalide.") from None
     if not text:
-        raise DocIEError("Document Word sans texte lisible : exportez-le en PDF pour l'OCR DocIE.")
+        raise DocIEError("Document Word sans texte lisible : exportez-le en PDF pour l'OCR de la plateforme d'inférence interne.")
     return {"filename": path.name, "text": text}
 
 
@@ -213,7 +213,7 @@ def schema_rapporte(response):
 
 def map_resume(response, expected_schema="resume"):
     if not isinstance(response, dict) or not isinstance(response.get("result"), dict):
-        raise DocIEError("DocIE : résultat d'extraction absent ou invalide.")
+        raise DocIEError("Plateforme d'inférence interne : résultat d'extraction absent ou invalide.")
     # #177 ligne 21 : un schéma NOMMÉ et faux est refusé, un schéma TU est
     # accepté — exactement l'arbitrage des deux ports du bridge
     # (`any(item is not None and item != expected_schema ...)`), et donc le
@@ -232,15 +232,15 @@ def map_resume(response, expected_schema="resume"):
     # `schema_reported`, que `docie_review` (PR #176) transforme en
     # avertissement `docie_schema_non_verifie`, le même code que one-pager.
     if response.get("schema_name") not in (None, expected_schema):
-        raise DocIEError("DocIE : le schéma du résultat ne correspond pas au schéma demandé.")
+        raise DocIEError("Plateforme d'inférence interne : le schéma du résultat ne correspond pas au schéma demandé.")
     data = unwrap(response["result"])
     for key in ("experience", "education", "skills", "languages", "projects", "certifications"):
         rows = data.get(key) or []
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
-            raise DocIEError(f"DocIE : champ {key} invalide.")
+            raise DocIEError(f"Plateforme d'inférence interne : champ {key} invalide.")
         data[key] = rows
     if not isinstance(data.get("contact") or {}, dict):
-        raise DocIEError("DocIE : coordonnées invalides.")
+        raise DocIEError("Plateforme d'inférence interne : coordonnées invalides.")
     for row in data["experience"]:
         row["period"] = row.get("period") or " – ".join(
             str(row[k]) for k in ("start_date", "end_date") if row.get(k)
@@ -254,16 +254,16 @@ def map_resume(response, expected_schema="resume"):
         if isinstance(items, str):
             items = [items]
         if not isinstance(items, list):
-            raise DocIEError("DocIE : liste de compétences invalide.")
+            raise DocIEError("Plateforme d'inférence interne : liste de compétences invalide.")
         row["items"] = [str(v.get("item") or "") if isinstance(v, dict) else str(v)
                         for v in items if v is not None]
     interests = data.get("interests") or []
     if not isinstance(interests, list):
-        raise DocIEError("DocIE : centres d'intérêt invalides.")
+        raise DocIEError("Plateforme d'inférence interne : centres d'intérêt invalides.")
     data["interests"] = [str(v.get("interest") or "") if isinstance(v, dict) else str(v)
                          for v in interests if v is not None]
     if not any(data.get(k) for k in ("name", "title", "experience", "education", "skills")):
-        raise DocIEError("DocIE n'a extrait aucune donnée du CV. Vérifiez le modèle et l'OCR.")
+        raise DocIEError("La plateforme d'inférence interne n'a extrait aucune donnée du CV. Vérifiez le modèle et l'OCR.")
     return data
 
 

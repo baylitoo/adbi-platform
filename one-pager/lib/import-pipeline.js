@@ -130,7 +130,7 @@ async function importerAvecModele(buffer, filename, { env, fetchImpl, modele }) 
   const choix = require("./choix-modele");
   if (!docieActif(env)) {
     throw new (choix.chargerCatalogue().CatalogueError)("configuration",
-      "Choix du modèle impossible : l'extraction DocIE est désactivée sur ce service.");
+      "Choix du modèle impossible : l'extraction (inférence interne) est désactivée sur ce service.");
   }
   const source = sourceDocie(buffer, filename);
   if (!source) {

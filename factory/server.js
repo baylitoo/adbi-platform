@@ -421,13 +421,13 @@ async function modelesChaineLlm() {
 
 async function listerModelesDocie() {
   const pont = chargerPontDocie();
-  if (!pont) return { configure: false, erreur: "Pont DocIE absent de cette image.", modeles: [] };
-  if (!(process.env.DOCIE_BASE_URL || "").trim()) return { configure: false, erreur: "DocIE non configuré (DOCIE_BASE_URL).", modeles: [] };
+  if (!pont) return { configure: false, erreur: "Pont de la plateforme d'inférence interne absent de cette image.", modeles: [] };
+  if (!(process.env.DOCIE_BASE_URL || "").trim()) return { configure: false, erreur: "Plateforme d'inférence interne non configurée (DOCIE_BASE_URL).", modeles: [] };
   try {
     return { configure: true, modeles: await pont.listStore({ env: process.env }) };
   } catch (e) {
     const traduit = pont.messageErreur(e);
-    return { configure: true, erreur: traduit ? traduit.message : "DocIE : " + e.message, code: e.code || null, modeles: [] };
+    return { configure: true, erreur: traduit ? traduit.message : "Plateforme d'inférence interne : " + e.message, code: e.code || null, modeles: [] };
   }
 }
 

@@ -387,7 +387,7 @@ function mapContractResult(docieResult, { validation } = {}) {
   }
 
   for (const note of docieResult.extraction_notes || []) {
-    warnings.push("DocIE extraction_notes: " + note);
+    warnings.push("Note d'extraction : " + note);
   }
   // Ce que DocIE dit lui-même de son extraction. Le front affiche les trois
   // premiers `warnings` sous le formulaire pré-rempli (public/app.js) : s'en
@@ -395,8 +395,8 @@ function mapContractResult(docieResult, { validation } = {}) {
   // sur sa propre confiance. Le module Python miroir les reporte depuis
   // toujours ; ce portage les jetait (inventaire de divergence #179, A1).
   if (validation) {
-    for (const w of validation.warnings || []) warnings.push("DocIE validation.warnings: " + w);
-    for (const e of validation.errors || []) warnings.push("DocIE validation.errors: " + e);
+    for (const w of validation.warnings || []) warnings.push("Avertissement de validation : " + w);
+    for (const e of validation.errors || []) warnings.push("Erreur de validation : " + e);
   }
 
   const errors = [];
@@ -425,7 +425,7 @@ function mapContractResult(docieResult, { validation } = {}) {
 async function extractContractValues(body = {}, deps = {}) {
   const env = deps.env || process.env;
   if (!isEnabled(env)) {
-    const err = new Error("Extraction DocIE désactivée (DOCIE_EXTRACTION_ENABLED=false) — saisie manuelle requise.");
+    const err = new Error("Extraction (inférence interne) désactivée (DOCIE_EXTRACTION_ENABLED=false) — saisie manuelle requise.");
     err.code = "disabled";
     throw err;
   }
