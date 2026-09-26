@@ -513,7 +513,7 @@ function avecCacheEtPlafond(fournisseur, cle, tache) {
   const horodatages = (historiqueAppelsFournisseur.get(fournisseur) || [])
     .filter((t) => maintenant - t < FENETRE_PLAFOND_MS);
   if (horodatages.length >= PLAFOND_FOURNISSEUR) {
-    const err = new Error("Trop d'appels vers " + fournisseur + " — réessaie dans quelques instants.");
+    const err = new Error("Trop d'appels vers " + fournisseur + " — réessayez dans quelques instants.");
     err.status = 429;
     return Promise.reject(err);
   }
@@ -642,7 +642,7 @@ app.post("/api/signatures", async (req, res) => {
     const actif = fournisseurs.fournisseurActif();
     const fournisseur = fournisseurs.externe(actif);
     if (!fournisseur) {
-      return res.status(400).json({ error: "Aucun connecteur de signature disponible — configure Yousign dans Paramètres → Signature électronique." });
+      return res.status(400).json({ error: "Aucun connecteur de signature disponible — configurez Yousign dans Paramètres → Signature électronique." });
     }
     try {
       // Reconstruire le PDF en capturant les positions réelles des cadres de
@@ -692,7 +692,7 @@ app.post("/api/signatures", async (req, res) => {
         envoiAuto: { envoye: true, destinataire: demande.signataires[0].email, fournisseur: actif },
       });
     } catch (e) {
-      res.status(502).json({ error: "Connecteur " + actif + " : " + auth.messagePublic(e) + " — vérifie la clé et le mode dans Paramètres → Signature électronique (bouton Tester)." });
+      res.status(502).json({ error: "Connecteur " + actif + " : " + auth.messagePublic(e) + " — vérifiez la clé et le mode dans Paramètres → Signature électronique (bouton Tester)." });
     }
   } catch (e) { console.error(e); auth.repondreErreur(res, e); }
 });

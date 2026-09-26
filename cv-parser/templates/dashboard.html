@@ -242,7 +242,7 @@
   <div class="welcome">
     <div class="welcome-tag">Bienvenue sur la plateforme ADBI</div>
     <h1>Choisissez votre <span>module</span></h1>
-    <p>Gérez vos CVs et lancez des matchings intelligents entre profils et besoins clients.</p>
+    <p>Gérez vos CV et lancez des matchings intelligents entre profils et besoins clients.</p>
   </div>
 
   <div class="modules">
@@ -253,11 +253,11 @@
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
       </div>
       <div class="module-logo">adbi.cv</div>
-      <div class="module-title">CV Parser</div>
+      <div class="module-title">CVthèque</div>
       <div class="module-stats">
-        <span class="stat-pill hi" id="cvCount">— CVs</span>
+        <span class="stat-pill hi" id="cvCount">— CV</span>
         <span class="stat-pill">PDF · DOCX</span>
-        <span class="stat-pill">IA GPT</span>
+        <span class="stat-pill">Extraction IA</span>
       </div>
       <div class="module-desc">
         Importez, analysez et gérez votre CVthèque. Extraction automatique par IA, édition inline, export PDF &amp; Word au format ADBI.
@@ -285,7 +285,7 @@
       </div>
       <button class="module-cta">
         <svg viewBox="0 0 24 24" style="width:14px;height:14px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        Accéder au Matching
+        Accéder au rapprochement
       </button>
     </a>
 
@@ -326,7 +326,7 @@ async function init() {
   // Load counts
   try {
     const cvs = await fetch('/api/cvs', { credentials: 'include' }).then(r => r.json());
-    document.getElementById('cvCount').textContent = `${Array.isArray(cvs) ? cvs.length : '?'} CVs`;
+    document.getElementById('cvCount').textContent = `${Array.isArray(cvs) ? cvs.length : '?'} CV`;
   } catch {}
   try {
     const needs = await fetch('/api/needs', { credentials: 'include' }).then(r => r.json());

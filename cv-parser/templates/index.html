@@ -4,7 +4,7 @@
   <script src="{{ url_for('static', filename='adbi-theme.js') }}"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ADBI — Bibliothèque CVs</title>
+  <title>ADBI — CVthèque</title>
   <style>
     :root {
       --navy:   #0F2042;
@@ -753,7 +753,7 @@
 
     <div class="lib-header">
       <div>
-        <div class="lib-title">Bibliothèque de CVs</div>
+        <div class="lib-title">CVthèque</div>
         <div class="lib-count" id="libCount">Chargement…</div>
       </div>
       <div class="lib-header-right">
@@ -1132,7 +1132,7 @@ async function loadLibrary() {
     animateCount(allCVs.length);
   } catch {
     document.getElementById('libCount').textContent = 'Erreur de chargement';
-    grid.innerHTML = `<div class="lib-empty"><p>Impossible de charger les CVs</p></div>`;
+    grid.innerHTML = `<div class="lib-empty"><p>Impossible de charger les CV</p></div>`;
   }
 }
 

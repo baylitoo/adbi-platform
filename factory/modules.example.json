@@ -42,7 +42,7 @@
     },
     {
       "id": "calculatrice",
-      "nom": "ADBI Calculator",
+      "nom": "ADBI Calculatrice",
       "accroche": "Marge, coût, point mort",
       "detail": "Simulation de la rentabilité d'une mission : TJM de vente, coût journalier, marge et seuil de rentabilité.",
       "tags": ["Commerce", "Simulation"],
@@ -52,7 +52,7 @@
     },
     {
       "id": "cv-parser",
-      "nom": "ADBI Parser",
+      "nom": "ADBI CVthèque",
       "accroche": "Extraction structurée de CV",
       "detail": "Moteur d'extraction Docling, base de compétences, recherche de profils et rapprochement avec les besoins.",
       "tags": ["Sourcing", "Base CV"],

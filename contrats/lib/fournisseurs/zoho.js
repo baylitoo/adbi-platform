@@ -73,7 +73,7 @@ async function jetonAcces(force) {
   }
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.access_token) {
-    throw new Error("Zoho OAuth : " + (j.error || "HTTP " + r.status) + " — vérifie client ID/secret/refresh token (région " + c.region + ").");
+    throw new Error("Zoho OAuth : " + (j.error || "HTTP " + r.status) + " — vérifiez le client ID, le secret et le refresh token (région " + c.region + ").");
   }
   jetonCache = { valeur: j.access_token, expire: Date.now() + ((j.expires_in || 3600) - 300) * 1000 };
   return jetonCache.valeur;
@@ -129,7 +129,7 @@ async function verifier() {
 async function echangerCode(code) {
   const s = lireSecrets();
   if (!s.zohoClientId || !s.zohoClientSecret) {
-    throw new Error("Renseigne et enregistre d'abord le client ID et le client secret Zoho.");
+    throw new Error("Renseignez et enregistrez d'abord le client ID et le client secret Zoho.");
   }
   const region = DOMAINES[s.zohoRegion] ? s.zohoRegion : "eu";
   let r;
@@ -151,7 +151,7 @@ async function echangerCode(code) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.refresh_token) {
     throw new Error("Échange refusé : " + (j.error || "HTTP " + r.status) +
-      " — le code expire en 10 minutes, régénère-le (API console Zoho, portée ZohoSign.documents.ALL) et vérifie la région (" + region + ").");
+      " — le code expire en 10 minutes : régénérez-le (API console Zoho, portée ZohoSign.documents.ALL) et vérifiez la région (" + region + ").");
   }
   s.zohoRefreshToken = j.refresh_token;
   fs.writeFileSync(SECRETS_PATH, JSON.stringify(s, null, 2));
