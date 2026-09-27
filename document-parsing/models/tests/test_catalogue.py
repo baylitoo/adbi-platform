@@ -72,9 +72,9 @@ class TableRetenue(unittest.TestCase):
 
     def test_libelles_lisibles(self):
         m = self.c["modeles"]
-        self.assertEqual(m["lfm25_2_6b"]["description"], "Rapide")
-        self.assertEqual(m["nuextract3"]["description"], "Précis mais lent — plusieurs minutes")
-        self.assertEqual(m["lfm25_350m"]["description"], "Très rapide — documents simples")
+        self.assertEqual(m["lfm25_2_6b"]["description"], "Bon équilibre entre vitesse et précision")
+        self.assertEqual(m["nuextract3"]["description"], "Plus lent — plusieurs minutes")
+        self.assertEqual(m["lfm25_350m"]["description"], "Documents simples uniquement")
 
     def test_modeles_refuses_absents_du_fichier(self):
         texte = cat.CHEMIN_CATALOGUE.read_text(encoding="utf-8").lower()
@@ -179,7 +179,7 @@ class Chargeur(unittest.TestCase):
 
     def test_modele_servi(self):
         servi = cat.modele_servi("contract", "texte", {"model": "nuextract3"}, env=ENV_CONTRAT)
-        self.assertEqual(servi, {"id": "nuextract3", "libelle": "NuExtract3", "identifiant": "nuextract3"})
+        self.assertEqual(servi, {"id": "nuextract3", "libelle": "Modèle précis", "identifiant": "nuextract3"})
         brut = cat.modele_servi("contract", "texte", {"model": "autre-deploiement"}, env=ENV_CONTRAT)
         self.assertEqual(brut, {"id": None, "libelle": "autre-deploiement", "identifiant": "autre-deploiement"})
         self.assertIsNone(cat.modele_servi("contract", "texte", {"model": None}, env=ENV_CONTRAT))

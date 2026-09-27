@@ -102,8 +102,8 @@ test("interface : un modele experimental le dit dans son option", () => {
   const fonction = /function libelleOptionModele\(m\) \{[\s\S]*?\n\}/.exec(source)[0];
   const libelle = (m) => vm.runInNewContext(`${fonction}; libelleOptionModele(${JSON.stringify(m)})`);
   const [defaut, alternative] = modelesProposes(DEUX_TEXTE);
-  assert.equal(libelle(defaut), "LFM2.5 2.6B — Rapide");
-  assert.equal(libelle(alternative), "NuExtract3 — expérimental (Précis mais lent — plusieurs minutes)");
+  assert.equal(libelle(defaut), "Modèle rapide — Bon équilibre entre vitesse et précision");
+  assert.equal(libelle(alternative), "Modèle précis — expérimental (Plus lent — plusieurs minutes)");
 });
 
 test("interface : selecteur visible a partir de deux ; modele envoye des qu'un modele est propose pour la voie du fichier", () => {
@@ -136,7 +136,7 @@ test("voie texte : 800 lignes -> modele choisi envoye pour cet appel ; 801 -> re
   assert.equal(appels[0].payload.model_profile, "store:lfm2.5-2.6b");
   assert.deepEqual(master.source.modele, {
     voie: "texte", demande: "lfm25_2_6b",
-    servi: { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" },
+    servi: { id: "lfm25_2_6b", libelle: "Modèle rapide" },
   });
 
   const refus = docie();
@@ -157,7 +157,7 @@ test("voie texte : un .docx part avec le modele choisi ; le modele servi est cel
   const master = await importerCv(CV_DOCX, "cv.docx", { env: DEUX_TEXTE, fetchImpl, modele: "nuextract3" });
   assert.equal(appels[0].payload.model_profile, "store:nuextract3");
   assert.equal(master.source.modele.demande, "nuextract3");
-  assert.equal(master.source.modele.servi.libelle, "LFM2.5 2.6B", "jamais le libelle demande a la place de la reponse");
+  assert.equal(master.source.modele.servi.libelle, "Modèle rapide", "jamais le libelle demande a la place de la reponse");
 });
 
 // ── Voie fichier : pages ───────────────────────────────────────────────────
@@ -166,7 +166,7 @@ test("voie fichier : 8 pages -> agent du modele choisi ; 9 pages ou illisible ->
   const { appels, fetchImpl } = docie();
   const master = await importerCv(pdfPages(8), "cv.pdf", { env: DEUX_AGENT, fetchImpl, modele: "nuextract3" });
   assert.match(appels[0].url, /\/v1\/agents\/agent_nu\/chat\/completions$/);
-  assert.deepEqual(master.source.modele.servi, { id: "nuextract3", libelle: "NuExtract3" });
+  assert.deepEqual(master.source.modele.servi, { id: "nuextract3", libelle: "Modèle précis" });
 
   for (const contenu of [pdfPages(9), Buffer.from("%PDF-1.4 illisible")]) {
     const refus = docie();
@@ -200,7 +200,7 @@ test("refus nommes : modele non configure, DocIE inactif, format sans voie DocIE
   const { appels, fetchImpl } = docie();
   const nonConfigure = await rejet(importerCv(texte(10), "cv.txt",
     { env: { ...BASE, DOCIE_MODELE_LFM25_2_6B: "store:lfm2.5-2.6b" }, fetchImpl, modele: "nuextract3" }));
-  assert.deepEqual(mapperErreur(nonConfigure), { code: "modele_non_propose", message: "Modèle NuExtract3 non proposé pour : CV." });
+  assert.deepEqual(mapperErreur(nonConfigure), { code: "modele_non_propose", message: "Modèle précis non proposé pour : CV." });
 
   const inactif = await rejet(importerCv(texte(10), "cv.txt",
     { env: { ...DEUX_TEXTE, DOCIE_EXTRACTION_ENABLED: "false" }, fetchImpl, modele: "lfm25_2_6b" }));
@@ -221,7 +221,7 @@ test("resultat partiel (#203) : signale par champ pour un modele choisi, et auss
   const sans = await importerCv(texte(20), "cv.txt", { env: DEUX_TEXTE, fetchImpl: docie({ avertissements: [boucle] }).fetchImpl });
   assert.equal(sans.quality.warnings.filter((w) => w === "docie_resultat_partiel:skills:boucle").length, 1);
   assert.equal(sans.source.modele.demande, null);
-  assert.equal(sans.source.modele.servi.libelle, "NuExtract3", "modele servi enregistre, choix ou non");
+  assert.equal(sans.source.modele.servi.libelle, "Modèle précis", "modele servi enregistre, choix ou non");
 });
 
 // ── Routes ─────────────────────────────────────────────────────────────────
@@ -253,7 +253,7 @@ test("routes : GET /api/modeles ; `modele` transmis seulement s'il est choisi ; 
   const srv = await demarrer({
     importerCv: async (...args) => { appels.push(args); return { identity: {} }; },
     choixModele: {
-      modelesProposes: () => [{ id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "defaut" }],
+      modelesProposes: () => [{ id: "lfm25_2_6b", libelle: "Modèle rapide", description: "Bon équilibre entre vitesse et précision", role: "defaut" }],
       offresParVoie: () => ({ texte: ["lfm25_2_6b"], agent: [] }),
     },
   });
@@ -262,7 +262,7 @@ test("routes : GET /api/modeles ; `modele` transmis seulement s'il est choisi ; 
     choixModele: { modelesProposes: () => { throw new Error("DOCIE_MODELE_X"); }, offresParVoie: () => ({}) },
   });
   try {
-    const attendu = { modeles: [{ id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "defaut" }],
+    const attendu = { modeles: [{ id: "lfm25_2_6b", libelle: "Modèle rapide", description: "Bon équilibre entre vitesse et précision", role: "defaut" }],
       voies: { texte: ["lfm25_2_6b"], agent: [] } };
     assert.deepEqual(await (await fetch(srv.base + "/api/modeles")).json(), attendu);
     assert.deepEqual(await (await fetch(srv.base + "/api/modeles?tache=resume")).json(), attendu);

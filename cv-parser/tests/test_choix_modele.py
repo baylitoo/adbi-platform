@@ -126,13 +126,13 @@ class Offre(unittest.TestCase):
         html = rendre("index.html", modeles=modeles, modeles_erreur="")
         self.assertIn('id="modeleSelect"', html)
         self.assertNotRegex(html, r'id="modeleSelect" style="[^"]*" hidden')
-        self.assertIn('<option value="lfm25_2_6b" selected>LFM2.5 2.6B — Rapide</option>', html)
+        self.assertIn('<option value="lfm25_2_6b" selected>Modèle rapide — Bon équilibre entre vitesse et précision</option>', html)
         # Alternative du CV marquée expérimentale dans le catalogue (DocIE : aucune
         # lecture réelle réussie d'un CV riche en listes depuis la PR #522).
         self.assertEqual([m["experimental"] for m in modeles], [False, True])
-        self.assertIn('<option value="nuextract3">NuExtract3 — expérimental (Précis mais lent — plusieurs minutes)</option>', html)
+        self.assertIn('<option value="nuextract3">Modèle précis — expérimental (Plus lent — plusieurs minutes)</option>', html)
         cv = {"id": "cv-1", "name": "A", "title": "B", "contact": {}, "ext": ".pdf"}
-        self.assertIn("NuExtract3 — expérimental (", rendre("cv_detail.html", cv=cv, linked_cvs=[], modeles=modeles, modeles_erreur=""))
+        self.assertIn("Modèle précis — expérimental (", rendre("cv_detail.html", cv=cv, linked_cvs=[], modeles=modeles, modeles_erreur=""))
 
     def test_alternative_seule_configuree_proposee_seule(self):
         with environnement(DOCIE_MODELE_NUEXTRACT3="store:nuextract3"):
@@ -158,12 +158,12 @@ class Offre(unittest.TestCase):
     def test_ecran_de_fiche_selecteur_selon_la_voie_du_fichier(self):
         cv = {"id": "cv-7", "name": "Alice", "title": "Data", "contact": {}, "ext": ".pdf",
               "modele_extraction": {"voie": "texte", "demande": None,
-                                    "servi": {"id": "nuextract3", "libelle": "NuExtract3", "identifiant": "x"}}}
+                                    "servi": {"id": "nuextract3", "libelle": "Modèle précis", "identifiant": "x"}}}
         with environnement(**DEUX_TEXTE):
             deux = choix_modele.modeles_proposes(".pdf")
         html = rendre("cv_detail.html", cv=cv, linked_cvs=[], modeles=deux, modeles_erreur="")
         self.assertIn('id="modeleSelect"', html)
-        self.assertIn("Lu par NuExtract3", html)
+        self.assertIn("Lu par Modèle précis", html)
         self.assertNotIn('id="modeleSelect" hidden', html)
         html = rendre("cv_detail.html", cv=cv, linked_cvs=[], modeles=deux[:1], modeles_erreur="")
         self.assertIn('id="modeleSelect" hidden', html)
@@ -208,14 +208,14 @@ class Limites(unittest.TestCase):
 
     def test_modele_non_configure_ou_inconnu_refuse_jamais_le_defaut(self):
         with environnement(DOCIE_MODELE_LFM25_2_6B="store:lfm2.5-2.6b"):
-            for modele, nom in (("nuextract3", "NuExtract3"), ("gpt-9", "demandé")):
+            for modele, nom in (("nuextract3", "Modèle précis"), ("gpt-9", "demandé")):
                 with self.assertRaises(tu.ErreurTache) as ctx:
                     choix_modele.Choix(modele).verifier(".pdf")
                 self.assertEqual(ctx.exception.code, "modele_non_propose")
                 self.assertIn(nom, str(ctx.exception))
 
     def test_refus_nomme_traverse_la_tache(self):
-        erreur = tu.ErreurTache("LFM2.5 2.6B n'est pas proposé au-delà de 800 lignes non vides (document : 801).",
+        erreur = tu.ErreurTache("Modèle rapide n'est pas proposé au-delà de 800 lignes non vides (document : 801).",
                                 code="limite")
         self.assertEqual(tu.mapper_erreur(erreur), {"code": "limite", "message": str(erreur)})
 
@@ -319,7 +319,7 @@ class ModeleServi(unittest.TestCase):
         self.assertIsInstance(appels[0]["choix"], choix_modele.Choix)
         self.assertEqual(fiche["modele_extraction"], {
             "voie": "texte", "demande": "nuextract3",
-            "servi": {"id": "lfm25_2_6b", "libelle": "LFM2.5 2.6B"},
+            "servi": {"id": "lfm25_2_6b", "libelle": "Modèle rapide"},
             "partiel": [], "troncature_possible": None})
 
     def test_sans_choix_modele_servi_enregistre_aussi(self):
@@ -329,7 +329,7 @@ class ModeleServi(unittest.TestCase):
             fiche = self.process_cv()("cv.docx")
         self.assertEqual(appels, [{}], "aucun choix transmis à l'extraction")
         self.assertEqual(fiche["modele_extraction"]["demande"], None)
-        self.assertEqual(fiche["modele_extraction"]["servi"]["libelle"], "NuExtract3")
+        self.assertEqual(fiche["modele_extraction"]["servi"]["libelle"], "Modèle précis")
 
     def test_voie_agent_agent_appele(self):
         appels = []
@@ -418,7 +418,7 @@ class Routes(Montage):
         self.assertEqual(list(Path(self.dossier.name).iterdir()), [], "fichier déposé retiré")
 
     def test_choix_explicite_refus_du_catalogue_code_limite(self):
-        erreur = tu.ErreurTache("LFM2.5 2.6B n'est pas proposé au-delà de 800 lignes non vides (document : 900).",
+        erreur = tu.ErreurTache("Modèle rapide n'est pas proposé au-delà de 800 lignes non vides (document : 900).",
                                 code="limite")
         lanceur = self.monter_avec(erreur=erreur)
         tache = self.poster_modele("lfm25_2_6b").get_json()["tache"]
@@ -440,12 +440,12 @@ class Routes(Montage):
 
     def test_choix_reussi_modele_servi_dans_la_synthese(self):
         fiche = Base.fiche(modele_extraction={"voie": "texte", "demande": "nuextract3",
-                                              "servi": {"id": "nuextract3", "libelle": "NuExtract3", "identifiant": "s"}})
+                                              "servi": {"id": "nuextract3", "libelle": "Modèle précis", "identifiant": "s"}})
         lanceur = self.monter_avec(fiche=fiche)
         tache = self.poster_modele("nuextract3").get_json()["tache"]
         lanceur.jouer()
         resultat = self.suivre(tache).get_json()["resultat"]
-        self.assertEqual(resultat["parse_summary"]["modele"], "NuExtract3")
+        self.assertEqual(resultat["parse_summary"]["modele"], "Modèle précis")
         self.assertEqual(self.enregistrees[resultat["id"]]["modele_extraction"]["servi"]["id"], "nuextract3")
 
     def test_isolation_inchangee_avec_un_choix(self):
@@ -461,7 +461,7 @@ class Routes(Montage):
         existante = {**Base.fiche(), "id": "origine", "filename": "vieux.pdf", "ext": ".pdf",
                      "empreinte": hashlib.sha256(contenu).hexdigest(), "llm_enriched": True,
                      "bilan_adbi": {"exploitable": True},
-                     "modele_extraction": {"servi": {"id": "lfm25_2_6b", "libelle": "LFM2.5 2.6B"}}}
+                     "modele_extraction": {"servi": {"id": "lfm25_2_6b", "libelle": "Modèle rapide"}}}
         self.monter_avec(existantes={"origine": existante})
         self.assertEqual(self.poster_modele(contenu=contenu).status_code, 200, "sans choix : cache inchangé")
         self.assertEqual(self.poster_modele("lfm25_2_6b", contenu=contenu).status_code, 200)

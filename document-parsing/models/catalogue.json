@@ -22,22 +22,22 @@
   },
   "modeles": {
     "lfm25_2_6b": {
-      "libelle": "LFM2.5 2.6B",
-      "description": "Rapide",
+      "libelle": "Modèle rapide",
+      "description": "Bon équilibre entre vitesse et précision",
       "store": "lfm2.5-2.6b",
       "etiquettes": ["extraction", "chat"],
       "limites": { "texte": { "lignes_non_vides_max": 800 } }
     },
     "nuextract3": {
-      "libelle": "NuExtract3",
-      "description": "Précis mais lent — plusieurs minutes",
+      "libelle": "Modèle précis",
+      "description": "Plus lent — plusieurs minutes",
       "store": "nuextract3",
       "etiquettes": ["extraction"],
       "limites": { "agent": { "pages_max": 8 } }
     },
     "lfm25_350m": {
-      "libelle": "LFM2.5 350M",
-      "description": "Très rapide — documents simples",
+      "libelle": "Modèle très rapide",
+      "description": "Documents simples uniquement",
       "store": "lfm2.5-350m",
       "etiquettes": ["extraction"],
       "limites": { "texte": { "lignes_non_vides_max": 800 } }

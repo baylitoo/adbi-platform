@@ -138,7 +138,7 @@ test("RIB (voie texte, modèle choisi) : `partiel` à côté du modèle servi et
   const res = await analyzeDocument({ mimeType: "application/pdf", dataBase64: (await pdf(texte)).toString("base64"), items: [{ id: "rib" }], modele: "lfm25_2_6b" },
     { env, fetchImpl, analyzeLocal: localInterdit() });
   assert.deepEqual(res.partiel, [{ champ: "iban", raison: "forme_invalide" }]);
-  assert.deepEqual(res.modele, { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" });
+  assert.deepEqual(res.modele, { id: "lfm25_2_6b", libelle: "Modèle rapide" });
   assert.equal(res.controleIbanBic.iban.statut, "absent");
 });
 
@@ -174,7 +174,7 @@ test("contrat (agent, sans choix) : `partiel` avec la clé contrats ; (texte, Nu
     { env: { ...BASE, DOCIE_MODELE_NUEXTRACT3: "store:nuextract3" }, fetchImpl: texte.fetchImpl, coucheTexteUtilisable: async () => ({ ok: true, texte: "Clause\n".repeat(801) }) });
   assert.equal(t.troncaturePossible, true);
   assert.equal(Object.hasOwn(t, "partiel"), false);
-  assert.deepEqual(t.modele, { id: "nuextract3", libelle: "NuExtract3" });
+  assert.deepEqual(t.modele, { id: "nuextract3", libelle: "Modèle précis" });
 });
 
 test("métadonnées absentes (réponse d'avant #203, bridge simulé) et analyse locale : sortie inchangée, aucune clé ajoutée", async () => {
@@ -266,8 +266,8 @@ test("checklist, modèle choisi : champ du verdict perdu -> ⛔ « lecture non r
   assert.equal(u.el.className, "chk-doc-status err");
   assert.equal(u.el.textContent, "⛔ Lecture non retenue — résultat partiel du modèle choisi sur : Date de délivrance (à vérifier sur le document)");
   assert.equal(u.lignes.length, 1);
-  const r = rendrePartiel({ partiel: [{ champ: "iban", raison: "forme_invalide" }, { champ: "bic", raison: "boucle" }], choixModele: true, modele: { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" } }, "rib");
-  assert.equal(r.el.textContent, "⛔ Lecture non retenue — résultat partiel du modèle choisi sur : IBAN, BIC (à vérifier sur le document) — lu par LFM2.5 2.6B");
+  const r = rendrePartiel({ partiel: [{ champ: "iban", raison: "forme_invalide" }, { champ: "bic", raison: "boucle" }], choixModele: true, modele: { id: "lfm25_2_6b", libelle: "Modèle rapide" } }, "rib");
+  assert.equal(r.el.textContent, "⛔ Lecture non retenue — résultat partiel du modèle choisi sur : IBAN, BIC (à vérifier sur le document) — lu par Modèle rapide");
   for (const [res, piece] of [
     [{ partiel: [{ champ: "bank_name", raison: "boucle" }], choixModele: true }, "rib"],
     [{ partiel: [{ champ: "declared_payroll", raison: "valeur_abandonnee" }], choixModele: true }, "urssaf"],
@@ -343,7 +343,7 @@ test("analyserRib (code réel) : modèle choisi + IBAN perdu -> ⛔ ; sans choix
   }
   const base = { companyName: "X", nameMatches: null, titulaireCompte: "X", iban: "FR14 2004 1010 0505 0001 3M02 606", bic: "BNPAFRPP", nomBanque: "",
     issues: [], controleIbanBic: { iban: { statut: "valide" }, bic: { statut: "valide" } } };
-  const choisi = await rib({ ...base, partiel: [{ champ: "iban", raison: "forme_invalide" }], modele: { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" } });
+  const choisi = await rib({ ...base, partiel: [{ champ: "iban", raison: "forme_invalide" }], modele: { id: "lfm25_2_6b", libelle: "Modèle rapide" } });
   assert.equal(choisi.el.className, "chk-doc-status err");
   assert.ok(choisi.el.textContent.startsWith("⛔ Lecture non retenue — résultat partiel du modèle choisi sur : IBAN"));
   assert.equal(choisi.res.choixModele, true);
@@ -438,10 +438,10 @@ test("contrat sans choix : lignes en tête de liste, ligne d'état ⚠️ qui le
 
 test("contrat, modèle choisi : ligne d'état ⛔, import BLOQUÉ tant que le champ perdu n'est pas modifié, puis accepté et démarqué", async () => {
   const m = modal();
-  await m.preremplir(RESULTAT({ ...PARTIEL_TJM, modele: { id: "nuextract3", libelle: "NuExtract3" } }));
+  await m.preremplir(RESULTAT({ ...PARTIEL_TJM, modele: { id: "nuextract3", libelle: "Modèle précis" } }));
   const st = m.elements.impPreremplirStatus;
   assert.equal(st.className, "status err");
-  assert.equal(st.textContent, "⛔ Résultat partiel du modèle choisi — à ressaisir avant import : TJM (€ HT / jour) (3 avertissements ci-dessous) — lu par NuExtract3");
+  assert.equal(st.textContent, "⛔ Résultat partiel du modèle choisi — à ressaisir avant import : TJM (€ HT / jour) (3 avertissements ci-dessous) — lu par Modèle précis");
   assert.equal(await m.importer(), false, "aucun appel d'import");
   assert.equal(m.elements.impStatus.className, "status err");
   assert.equal(m.elements.impStatus.textContent, "Échec : import bloqué — résultat partiel du modèle choisi, champ(s) à ressaisir : TJM (€ HT / jour).");
@@ -465,7 +465,7 @@ test("contrat, modèle choisi : partiel ET clé SIREN invalide sur le même cham
   assert.equal(await m.importer(), false);
 
   const t = modal();
-  await t.preremplir(RESULTAT({ modele: { id: "nuextract3", libelle: "NuExtract3" }, troncaturePossible: true }));
+  await t.preremplir(RESULTAT({ modele: { id: "nuextract3", libelle: "Modèle précis" }, troncaturePossible: true }));
   assert.equal(t.elements.impPreremplirStatus.className, "status warn");
   assert.equal(await t.importer(), true);
 });
