@@ -519,7 +519,7 @@
       {% if hub_url %}<a href="{{ hub_url }}" target="_top" class="nav-link">← Hub</a>{% endif %}
       <a href="/needs"    class="nav-link">Besoins</a>
       <a href="/rapprochement" class="nav-link">Rapprochement</a>
-      <a href="/settings" class="nav-link">⚙ Paramètres</a>
+      <a href="/settings" class="nav-link">Paramètres</a>
     </nav>
   </div>
   <div class="header-right">
@@ -672,7 +672,7 @@
 
       <div class="parse-summary" id="parseSummary" style="display:none">
         <div class="parse-summary-card">
-          <div class="mode-pill" id="modePill">📄 Digital</div>
+          <div class="mode-pill" id="modePill">Digital</div>
           <div class="parse-name" id="parseName"></div>
           <div class="parse-stats" id="parseStats"></div>
           <a class="btn-open-dossier" id="openDossierBtn" href="#">Ouvrir le dossier →</a>
@@ -687,7 +687,7 @@
         <span class="kbd-hint">/</span>
       </div>
       <input class="sb-search" id="searchInput" type="text"
-             placeholder="🔍  Nom, titre, techno, ville…" />
+             placeholder="Nom, titre, techno, ville…" />
       <div class="filter-btns mode-recherche" id="modeRechercheBtns">
         <button class="filter-btn active" data-val="classique" onclick="setModeRecherche(this)">Classique</button>
         <button class="filter-btn" data-val="semantique" id="btnSemantique" onclick="setModeRecherche(this)" disabled
@@ -925,7 +925,7 @@ function showParseSummary(data) {
   // antérieur à #151 (la voie agent du pont rend déjà "docie-bridge") ; il
   // n'était pas visible parce que le drapeau est éteint par défaut.
   const isDocie = String(s.mode || '').startsWith('docie');
-  document.getElementById('modePill').textContent  = isDocie ? '📄 Document analysé' : isDigital ? '📄 PDF digital' : '🔍 PDF scanné · OCR';
+  document.getElementById('modePill').textContent  = isDocie ? 'Document analysé' : isDigital ? 'PDF digital' : 'PDF scanné · OCR';
   document.getElementById('modePill').className    = 'mode-pill ' + (isDigital || isDocie ? 'digital' : 'scanned');
   document.getElementById('parseName').textContent = s.name || data.name || '';
   let statsHtml = `${s.experiences} expérience${s.experiences>1?'s':''} · ${s.skills} compétence${s.skills>1?'s':''} · ${s.education} formation${s.education>1?'s':''}`;
@@ -1375,7 +1375,7 @@ function renderCards(list) {
     const parts = [];
     if (cv.title)            parts.push(hlText(cv.title, q));
     if (cv.years_experience) parts.push(`${cv.years_experience} an${cv.years_experience>1?'s':''}`);
-    if (cv.location)         parts.push(`📍 ${esc(cv.location)}`);
+    if (cv.location)         parts.push(esc(cv.location));
     const sub = parts.join('  ·  ');
 
     const langBadge = cv.language==='en' ? `<span class="lang-badge">🇬🇧 EN</span>` : '';
@@ -1422,7 +1422,7 @@ function renderGrid(list, grid) {
     const parts = [];
     if (cv.title)            parts.push(hlText(cv.title, q));
     if (cv.years_experience) parts.push(`${cv.years_experience} an${cv.years_experience>1?'s':''}`);
-    if (cv.location)         parts.push(`📍 ${esc(cv.location)}`);
+    if (cv.location)         parts.push(esc(cv.location));
 
     const skills    = cv.skills_flat||[];
     const topSkills = skills.slice(0,5);
@@ -1463,19 +1463,19 @@ function renderActiveChips() {
   const bar = document.getElementById('activeChips');
   const chips = [];
   if (activeFilters.q)
-    chips.push(`<span class="active-chip">🔍 "${esc(activeFilters.q)}"
+    chips.push(`<span class="active-chip">"${esc(activeFilters.q)}"
       <button class="rm-chip" onclick="document.getElementById('searchInput').value='';applyFilters()">×</button></span>`);
   for (const t of activeFilters.techs)
-    chips.push(`<span class="active-chip">⚙️ ${esc(t)}
+    chips.push(`<span class="active-chip">${esc(t)}
       <button class="rm-chip" onclick="toggleTech('${esc(t)}')">×</button></span>`);
   if (activeFilters.location)
-    chips.push(`<span class="active-chip">📍 ${esc(activeFilters.location)}
+    chips.push(`<span class="active-chip">${esc(activeFilters.location)}
       <button class="rm-chip" onclick="document.getElementById('locationInput').value='';applyFilters()">×</button></span>`);
   if (activeFilters.seniority)
-    chips.push(`<span class="active-chip">👤 ${activeFilters.seniority}
+    chips.push(`<span class="active-chip">${activeFilters.seniority}
       <button class="rm-chip" onclick="setSeniority(document.querySelector('#seniorityBtns .filter-btn'))">×</button></span>`);
   if (activeFilters.minExp > 0)
-    chips.push(`<span class="active-chip">📅 ${activeFilters.minExp}+ ans
+    chips.push(`<span class="active-chip">${activeFilters.minExp}+ ans
       <button class="rm-chip" onclick="setMinExp(document.querySelector('#expBtns .filter-btn'))">×</button></span>`);
   bar.innerHTML = chips.join('');
 }
@@ -1491,7 +1491,7 @@ async function deleteCV(id, btn) {
   const nm  = row?.querySelector('.cv-row-name, .cv-card-name')?.textContent?.trim() || 'ce CV';
 
   const confirmed = await showConfirm({
-    icon:    '🗑️',
+    icon:    '⚠️',
     title:   'Supprimer le CV ?',
     message: `"${nm}" sera supprimé définitivement. Cette action est irréversible.`,
     confirm: 'Supprimer',

@@ -498,7 +498,7 @@ class EtiquetteTransportTests(unittest.TestCase):
     def test_la_pastille_reste_pilotee_par_isDocie(self):
         """Sans ça, corriger `isDocie` ne corrigerait plus rien : c'est lui qui
         choisit le libellé ET la classe CSS."""
-        self.assertIn("isDocie ? '📄 Document analysé'", self.SOURCE)
+        self.assertIn("isDocie ? 'Document analysé'", self.SOURCE)
         self.assertIn("(isDigital || isDocie ? 'digital' : 'scanned')", self.SOURCE)
 
 

@@ -236,15 +236,15 @@
 </div>
 
 <div class="page">
-  <div class="page-title">⚙️ Paramètres</div>
+  <div class="page-title">Paramètres</div>
   <div class="page-sub">Gérez votre profil, les utilisateurs et suivez l'activité de la plateforme.</div>
 
   <!-- TABS -->
   <div class="tabs" id="tabsRow">
-    <button class="tab-btn active" onclick="switchTab('profil')">👤 Mon profil</button>
-    <button class="tab-btn" onclick="switchTab('users')" id="tabBtnUsers" style="display:none">👥 Utilisateurs</button>
-    <button class="tab-btn" onclick="switchTab('activity')" id="tabBtnActivity" style="display:none">📊 Activité</button>
-    <button class="tab-btn" onclick="switchTab('llm')" id="tabBtnLlm" style="display:none">🤖 API &amp; LLM</button>
+    <button class="tab-btn active" onclick="switchTab('profil')">Mon profil</button>
+    <button class="tab-btn" onclick="switchTab('users')" id="tabBtnUsers" style="display:none">Utilisateurs</button>
+    <button class="tab-btn" onclick="switchTab('activity')" id="tabBtnActivity" style="display:none">Activité</button>
+    <button class="tab-btn" onclick="switchTab('llm')" id="tabBtnLlm" style="display:none">Services d'IA</button>
   </div>
 
   <!-- ── TAB: MON PROFIL ── -->
@@ -357,7 +357,7 @@
       </div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn-ghost" onclick="testLlm()" id="btnTestLlm">🧪 Tester la connexion</button>
+        <button class="btn-ghost" onclick="testLlm()" id="btnTestLlm">Tester la connexion</button>
       </div>
 
       <!-- Test result -->
@@ -380,7 +380,7 @@
       <div id="chaineListe"></div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
-        <button class="btn-primary" onclick="enregistrerChaine()">💾 Enregistrer l'ordre</button>
+        <button class="btn-primary" onclick="enregistrerChaine()">Enregistrer l'ordre</button>
         <button class="btn-ghost" onclick="reinitChaine()">↺ Revenir au défaut</button>
       </div>
     </div>
@@ -526,9 +526,9 @@ async function loadUsers() {
       <td><span class="active-badge ${u.active !== false ? 'active-yes' : 'active-no'}">${u.active !== false ? 'Actif' : 'Inactif'}</span></td>
       <td>
         <div class="stat-mini">
-          <span>🔑 <strong>${u.logins}</strong> connexions</span>
-          <span>📄 <strong>${u.cv_uploads}</strong> CVs</span>
-          <span>🎯 <strong>${u.matches}</strong> matchings</span>
+          <span><strong>${u.logins}</strong> connexions</span>
+          <span><strong>${u.cv_uploads}</strong> CV</span>
+          <span><strong>${u.matches}</strong> rapprochements</span>
         </div>
       </td>
       <td style="font-size:12px;color:var(--muted)">${lastSeen}</td>
@@ -616,11 +616,15 @@ async function loadActivity() {
     return;
   }
 
-  const icons = { login: '🔑', cv_upload: '📄', match_run: '🎯' };
+  const icons = {
+    login: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>',
+    cv_upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+    match_run: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+  };
   const labels = {
     login:     e => `<strong>${e.user_email}</strong> s'est connecté`,
     cv_upload: e => `<strong>${e.user_email}</strong> a importé un CV${e.detail?.name ? ' — ' + e.detail.name : ''}`,
-    match_run: e => `<strong>${e.user_email}</strong> a lancé un matching${e.detail?.results ? ' (' + e.detail.results + ' résultats)' : ''}`,
+    match_run: e => `<strong>${e.user_email}</strong> a lancé un rapprochement${e.detail?.results ? ' (' + e.detail.results + ' résultats)' : ''}`,
   };
 
   container.innerHTML = events.map(e => {
@@ -698,7 +702,7 @@ async function testLlm() {
     res.style.background = 'var(--adbi-erreur-fond)'; res.style.color = 'var(--adbi-erreur)'; res.style.border = '1px solid var(--adbi-erreur-bord)';
     res.textContent = '❌ Erreur réseau : serveur injoignable.';
   }
-  btn.disabled = false; btn.textContent = '🧪 Tester la connexion';
+  btn.disabled = false; btn.textContent = 'Tester la connexion';
   chargerModelesDocie();
 }
 

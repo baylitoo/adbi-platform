@@ -454,7 +454,7 @@
         <textarea id="f_notes" placeholder="Informations complémentaires…" style="min-height:50px"></textarea>
       </div>
 
-      <button class="btn-submit" onclick="createNeed()">✚ Enregistrer le besoin</button>
+      <button class="btn-submit" onclick="createNeed()">Enregistrer le besoin</button>
     </div>
   </div>
 
@@ -546,7 +546,7 @@ function renderNeeds() {
   document.getElementById('needCount').textContent = `${_allNeeds.length} besoin(s)`;
 
   if (!needs.length) {
-    container.innerHTML = `<div class="empty"><div class="empty-icon">📋</div>Aucun besoin trouvé.<br>Utilisez le formulaire pour créer votre premier besoin client.</div>`;
+    container.innerHTML = `<div class="empty">Aucun besoin trouvé.<br>Utilisez le formulaire pour créer votre premier besoin client.</div>`;
     return;
   }
 
@@ -565,9 +565,9 @@ function renderNeeds() {
       const marge = vente - achat;
       const margePct = vente > 0 ? (marge / vente * 100) : 0;
       priceHtml = `<div class="need-price-row">
-        ${achat ? `<span class="price-chip chip-achat">🛒 ${achat}€/j achat</span>` : ''}
-        ${vente ? `<span class="price-chip chip-vente">💰 ${vente}€/j vente</span>` : ''}
-        ${(achat && vente) ? `<span class="price-chip chip-marge${marge < 0 ? ' neg' : ''}">📊 ${marge >= 0 ? '+' : ''}${marge.toFixed(0)}€/j (${margePct.toFixed(1)}%)</span>` : ''}
+        ${achat ? `<span class="price-chip chip-achat">Achat ${achat} €/j</span>` : ''}
+        ${vente ? `<span class="price-chip chip-vente">Vente ${vente} €/j</span>` : ''}
+        ${(achat && vente) ? `<span class="price-chip chip-marge${marge < 0 ? ' neg' : ''}">Marge ${marge >= 0 ? '+' : ''}${marge.toFixed(0)} €/j (${margePct.toFixed(1)} %)</span>` : ''}
       </div>`;
     }
 
@@ -583,21 +583,21 @@ function renderNeeds() {
           </div>
         </div>
         <div class="need-meta">
-          ${n.client   ? `<span>🏢 ${n.client}</span>` : ''}
-          ${n.sector   ? `<span>🏷 ${n.sector}</span>` : ''}
-          ${n.seniority ? `<span>📊 ${n.seniority}</span>` : ''}
-          ${n.location  ? `<span>📍 ${n.location}</span>` : ''}
-          ${n.contract_type && n.contract_type !== 'Tous' ? `<span>📝 ${n.contract_type}</span>` : ''}
-          ${n.start_date ? `<span>📅 ${n.start_date}</span>` : ''}
-          ${n.budget    ? `<span>💼 ${n.budget}</span>` : ''}
+          ${n.client   ? `<span>${n.client}</span>` : ''}
+          ${n.sector   ? `<span>${n.sector}</span>` : ''}
+          ${n.seniority ? `<span>${n.seniority}</span>` : ''}
+          ${n.location  ? `<span>${n.location}</span>` : ''}
+          ${n.contract_type && n.contract_type !== 'Tous' ? `<span>${n.contract_type}</span>` : ''}
+          ${n.start_date ? `<span>Début : ${n.start_date}</span>` : ''}
+          ${n.budget    ? `<span>Budget : ${n.budget}</span>` : ''}
         </div>
         ${priceHtml}
         <div style="margin-top:8px">${reqTags}${bonusTags}</div>
         <div class="need-actions">
-          ${isActive ? `<button class="btn-sm btn-match" onclick="goMatch('${n.id}')">🎯 Lancer le matching</button>` : ''}
-          <button class="btn-sm btn-view" onclick="viewResults('${n.id}')">📋 Résultats</button>
+          ${isActive ? `<button class="btn-sm btn-match" onclick="goMatch('${n.id}')">Lancer le rapprochement</button>` : ''}
+          <button class="btn-sm btn-view" onclick="viewResults('${n.id}')">Résultats</button>
           <button class="btn-toggle-active ${toggleCls}" onclick="toggleActive('${n.id}', ${isActive})">${toggleLbl}</button>
-          <button class="btn-sm btn-del" onclick="deleteNeed('${n.id}')">🗑</button>
+          <button class="btn-sm btn-del" onclick="deleteNeed('${n.id}')">Supprimer</button>
         </div>
       </div>`;
   }).join('');
