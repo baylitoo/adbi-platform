@@ -475,8 +475,7 @@ app.post("/api/search", async (req, res) => {
 // deux mais relève de la voie VISION du catalogue (tâche `cni`, prérequis :
 // contrôle des chiffres de la MRZ, lib/mrz.js).
 //
-// L'attestation fiscale n'a pas encore de bouton dans la checklist (#269) :
-// elle n'est atteignable que par cette route.
+// L'attestation fiscale a son bouton dans la checklist (#269, ajouterAnalyseFiscale).
 app.post("/api/document/analyze", async (req, res) => {
   try { res.json(await analyzeDocument(req.body || {})); }
   catch (e) { console.error(e); auth.repondreErreur(res, e, 400); }

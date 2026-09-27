@@ -591,6 +591,8 @@ function buildChecklist() {
 
     // RIB (#170, #194) : analyse du document, IBAN et BIC contrôlés côté serveur.
     if (it.id === "rib") ajouterAnalyseRib(item, it);
+    // Attestation fiscale (#269) : champs lus et contrôles, sans verdict de validité à 6 mois.
+    if (it.id === "fiscale") ajouterAnalyseFiscale(item, it);
 
     host.appendChild(item);
   });
@@ -984,6 +986,129 @@ function renderRibResult(el, res) {
   }
   el.className = "chk-doc-status ok";
   el.textContent = "✅ " + ligne + luPar;
+}
+
+// Attestation de régularité fiscale (#269) : même chemin que le RIB, sans `dateField` (la règle des 6 mois ne s'y applique pas).
+function ajouterAnalyseFiscale(item, it) {
+  const row = document.createElement("div");
+  row.className = "chk-date";
+  const status = document.createElement("div");
+  status.className = "chk-doc-status";
+  const ufile = document.createElement("input");
+  ufile.type = "file";
+  ufile.accept = "image/*,application/pdf";
+  ufile.hidden = true;
+  const ubtn = document.createElement("button");
+  ubtn.type = "button";
+  ubtn.className = "btn-up";
+  ubtn.textContent = "Analyser l'attestation";
+  ubtn.title = "Lit la société, le SIREN/SIRET, le service des impôts et la date de délivrance, et contrôle le SIREN/SIRET";
+  ubtn.addEventListener("click", () => ufile.click());
+  ufile.addEventListener("change", () => { if (ufile.files[0]) analyserFiscale(it, ufile.files[0], status, ubtn); ufile.value = ""; });
+  row.appendChild(ubtn);
+  const selModele = document.createElement("select");
+  selModele.className = "tpl-select hidden";
+  selModele.title = "Modèle d'extraction";
+  selModele.dataset.modeleSelecteur = "1";
+  remplirSelecteurModeles(selModele, "fiscale");
+  row.appendChild(selModele);
+  row.appendChild(ufile);
+  item.appendChild(row);
+  item.appendChild(status);
+  const saved = state.dateState[it.id];
+  if (saved && typeof saved === "object") {
+    renderFiscaleResult(status, saved);
+    renderResultatPartiel(status, saved, it.id);
+  }
+}
+
+async function analyserFiscale(it, fileObj, statusEl, btn) {
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = "Analyse…";
+  statusEl.textContent = "Analyse de l'attestation…";
+  statusEl.className = "chk-doc-status";
+  const ligneItem = statusEl.parentNode;
+  const selModele = ligneItem && ligneItem.querySelector("[data-modele-selecteur]");
+  const modele = selModele && selModele.options.length ? selModele.value : "";
+  try {
+    const dataBase64 = await fileToBase64(fileObj);
+    const r = await fetch("/api/document/analyze", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mimeType: fileObj.type || "application/octet-stream",
+        dataBase64,
+        items: [{ id: it.id, label: it.label }],
+        expectedName: state.values.stNom || "",
+        ...(modele ? { modele } : {}),
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || messageHttp(r.status));
+    const res = fiscaleRetenue(d, fileObj.name);
+    state.dateState[it.id] = res;
+    renderFiscaleResult(statusEl, res);
+    renderResultatPartiel(statusEl, res, it.id);
+  } catch (e) {
+    statusEl.textContent = "Erreur : " + e.message;
+    statusEl.className = "chk-doc-status err";
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+
+// Ce qui est gardé (enregistré avec le contrat) : champs lus, contrôles, alertes ; la mention du moteur interne est traduite.
+function fiscaleRetenue(d, fileName) {
+  const issues = Array.isArray(d.issues) ? d.issues : [];
+  const res = {
+    fileName, companyName: d.companyName || "", nameMatches: d.nameMatches, isValid: d.isValid !== false,
+    issuedDate: d.issuedDate || "", dateSituation: d.dateSituation || "",
+    siren: d.siren || "", siret: d.siret || "", serviceImpots: d.serviceImpots || "", mentionRegularite: d.mentionRegularite || "",
+    controleSirenSiret: d.controleSirenSiret || null,
+    nonValidee: issues.some((i) => /^DocIE n'a pas validé/.test(i)),
+    alertes: issues.filter((i) => !/^DocIE n'a pas validé/.test(i) && !/ne correspond pas au sous-traitant/.test(i)),
+  };
+  if (d.modele) res.modele = d.modele;
+  if (Array.isArray(d.partiel) && d.partiel.length) res.partiel = d.partiel;
+  if (d.troncaturePossible === true) res.troncaturePossible = true;
+  if (Object.prototype.hasOwnProperty.call(d, "modele")) res.choixModele = true;
+  return res;
+}
+
+// Une ligne d'état, puis les champs lus et les alertes ; `dateSituation` absente est normale (variantes de l'attestation).
+function renderFiscaleResult(el, res) {
+  const dateFr = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) ? d.split("-").reverse().join("/") : d;
+  const luPar = res.modele && res.modele.libelle ? " — lu par " + res.modele.libelle : "";
+  el.innerHTML = "";
+  if (res.nameMatches === false) {
+    el.className = "chk-doc-status err";
+    el.textContent = "⛔ Attestation au nom de « " + (res.companyName || "?") + " » — ce n'est PAS le sous-traitant saisi (« " + (state.values.stNom || "") + " »)" + luPar;
+    return;
+  }
+  if (!res.companyName && !res.siren && !res.siret) {
+    el.className = "chk-doc-status err";
+    el.textContent = "⛔ " + (res.alertes[0] || "Attestation illisible : fournir un PDF texte ou une image nette.") + luPar;
+    return;
+  }
+  const douteux = res.nonValidee || res.alertes.length > 0;
+  el.className = "chk-doc-status " + (douteux ? "warn" : "ok");
+  el.textContent = (douteux ? "⚠️ " : "✅ ") + "Attestation de régularité fiscale" + (res.companyName ? " — " + res.companyName + (res.nameMatches === true ? " ✓" : "") : "") +
+    (res.issuedDate ? " — délivrée le " + dateFr(res.issuedDate) : "") + luPar;
+  const sous = (texte, alerte) => {
+    const n = document.createElement("div");
+    n.className = alerte ? "chk-date-status warn" : "cand-sub";
+    n.textContent = texte;
+    el.appendChild(n);
+  };
+  const lus = [
+    res.serviceImpots ? "Service des impôts : " + res.serviceImpots : "",
+    res.dateSituation ? "Situation au " + dateFr(res.dateSituation) : "",
+    res.mentionRegularite ? "Mention : " + res.mentionRegularite : "",
+  ].filter(Boolean);
+  if (lus.length) sous(lus.join(" · "), false);
+  const ligne = CONTRATS_KBIS_CHAMPS.ligneControle(res.controleSirenSiret);
+  if (ligne && !ligne.alerte) sous(ligne.texte, false);
+  if (res.nonValidee) sous("⚠ Extraction non validée par le moteur : vérifiez l'attestation à la main.", true);
+  res.alertes.forEach((a) => sous("⚠ " + a, true));
 }
 
 /* ------------------------------------------------------------------ */
