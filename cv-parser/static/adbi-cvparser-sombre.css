@@ -748,9 +748,9 @@ input:focus {
   color: var(--adbi-sur-accent);
 }
 
-/* Icônes de section de la fiche CV, elles aussi colorées en `style=""`. */
-.sec-icon[style],
-.pv-head-icon[style] {
+/* Icônes de section de la fiche CV : dégradé de la charte, encre qui suit le thème. */
+.sec-icon,
+.pv-head-icon {
   background: var(--adbi-degrade) !important;
   color: var(--adbi-sur-accent) !important;
 }
@@ -1181,4 +1181,32 @@ mark.hl {
   .logo-text {
     animation: none;
   }
+}
+
+/* ══ 10. CLASSES À JETONS — remplacent les couleurs autrefois posées en `style=""` ══ */
+.pv-tag.pv-tag-ok {
+  background: var(--adbi-ok-fond) !important;
+  color: var(--adbi-ok) !important;
+  border-color: var(--adbi-ok-bord) !important;
+}
+.tbtn.tbtn-neutre {
+  background: var(--adbi-surface-3);
+  color: var(--adbi-text1);
+  border: none;
+}
+.sk-pied {
+  border-top: 1px solid var(--adbi-border);
+  padding-top: 10px;
+  display: flex;
+  justify-content: space-between;
+}
+.stat-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--adbi-textm);
+}
+.cv-card-vide {
+  font-size: 11px;
+  color: var(--adbi-textm);
 }

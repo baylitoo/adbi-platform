@@ -620,7 +620,7 @@
     {% if cv.skills %}
     <div class="pv-card">
       <div class="pv-head">
-        <div class="pv-head-icon" style="background:#0891B2"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+        <div class="pv-head-icon"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
         <span class="pv-head-title">Compétences techniques</span>
         <span class="pv-head-count">{{ cv.skills|length }}</span>
       </div>
@@ -639,12 +639,12 @@
     {% if cv.interests %}
     <div class="pv-card">
       <div class="pv-head">
-        <div class="pv-head-icon" style="background:#16A34A"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
+        <div class="pv-head-icon"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
         <span class="pv-head-title">Compétences fonctionnelles</span>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;padding:12px 14px">
         {% for item in cv.interests %}
-        <span class="pv-tag" style="background:#F0FDF4;color:#15803D;border-color:#BBF7D0">{{ item }}</span>
+        <span class="pv-tag pv-tag-ok">{{ item }}</span>
         {% endfor %}
       </div>
     </div>
@@ -654,7 +654,7 @@
     {% if cv.experience %}
     <div class="pv-card">
       <div class="pv-head">
-        <div class="pv-head-icon" style="background:#DC2626"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg></div>
+        <div class="pv-head-icon"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg></div>
         <span class="pv-head-title">Expériences</span>
         <span class="pv-head-count">{{ cv.experience|length }}</span>
       </div>
@@ -701,7 +701,7 @@
     {% if cv.education %}
     <div class="pv-card">
       <div class="pv-head">
-        <div class="pv-head-icon" style="background:#D97706"><svg viewBox="0 0 24 24"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg></div>
+        <div class="pv-head-icon"><svg viewBox="0 0 24 24"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg></div>
         <span class="pv-head-title">Formations</span>
         <span class="pv-head-count">{{ cv.education|length }}</span>
       </div>
@@ -721,7 +721,7 @@
     {% if cv.languages %}
     <div class="pv-card">
       <div class="pv-head">
-        <div class="pv-head-icon" style="background:#059669"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg></div>
+        <div class="pv-head-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg></div>
         <span class="pv-head-title">Langues</span>
         <span class="pv-head-count">{{ cv.languages|length }}</span>
       </div>
@@ -746,7 +746,7 @@
     <div class="sec-card">
       <div class="sec-head" onclick="toggle(this)">
         <div class="sec-head-left">
-          <div class="sec-icon" style="background:#2563EB">
+          <div class="sec-icon">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
           </div>
           <span class="sec-title">Présentation</span>
@@ -776,7 +776,7 @@
     <div class="sec-card">
       <div class="sec-head" onclick="toggle(this)">
         <div class="sec-head-left">
-          <div class="sec-icon" style="background:#7C3AED">
+          <div class="sec-icon">
             <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
           </div>
           <span class="sec-title">Caractéristiques</span>
@@ -800,7 +800,7 @@
     <div class="sec-card">
       <div class="sec-head" onclick="toggle(this)">
         <div class="sec-head-left">
-          <div class="sec-icon" style="background:#0891B2">
+          <div class="sec-icon">
             <svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
           </div>
           <span class="sec-title">Compétences techniques</span>
@@ -831,7 +831,7 @@
     <div class="sec-card">
       <div class="sec-head" onclick="toggle(this)">
         <div class="sec-head-left">
-          <div class="sec-icon" style="background:#059669">
+          <div class="sec-icon">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>
           </div>
           <span class="sec-title">Langues</span>
@@ -861,7 +861,7 @@
     <div class="sec-card">
       <div class="sec-head" onclick="toggle(this)">
         <div class="sec-head-left">
-          <div class="sec-icon" style="background:#16A34A">
+          <div class="sec-icon">
             <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
           </div>
           <span class="sec-title">Compétences fonctionnelles</span>
@@ -887,7 +887,7 @@
     <div class="sec-card">
       <div class="sec-head" onclick="toggle(this)">
         <div class="sec-head-left">
-          <div class="sec-icon" style="background:#D97706">
+          <div class="sec-icon">
             <svg viewBox="0 0 24 24"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
           </div>
           <span class="sec-title">Formations</span>
@@ -924,7 +924,7 @@
     <div class="sec-card">
       <div class="sec-head" onclick="toggle(this)">
         <div class="sec-head-left">
-          <div class="sec-icon" style="background:#DC2626">
+          <div class="sec-icon">
             <svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
           </div>
           <span class="sec-title">Expériences</span>
@@ -1000,7 +1000,7 @@
     <div class="sec-card">
       <div class="sec-head" onclick="toggle(this)">
         <div class="sec-head-left">
-          <div class="sec-icon" style="background:#7C3AED">
+          <div class="sec-icon">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
           </div>
           <span class="sec-title">Certifications</span>
@@ -1055,7 +1055,7 @@
     <div class="modal-warn">⚠️ Cette action traduit et <strong>écrase</strong> le contenu actuel du CV. Sauvegardez d'abord si nécessaire.</div>
     <p>L'IA va traduire l'intégralité du contenu (descriptions, compétences, formations…) en anglais en conservant la structure JSON.</p>
     <div class="modal-actions">
-      <button class="tbtn tbtn-ghost" onclick="closeModal('modalTranslate')" style="background:#F1F5F9;color:#334155;border:none">Annuler</button>
+      <button class="tbtn tbtn-neutre" onclick="closeModal('modalTranslate')">Annuler</button>
       <button class="tbtn tbtn-teal" onclick="doTranslate()">🌐 Traduire en anglais</button>
     </div>
   </div>
@@ -1068,7 +1068,7 @@
     <p>Collez la fiche de poste ci-dessous. L'IA va réorganiser et reformuler le CV pour maximiser la pertinence.</p>
     <textarea id="jobPostingInput" placeholder="Collez ici la description du poste (titre, missions, compétences requises…)"></textarea>
     <div class="modal-actions">
-      <button class="tbtn tbtn-ghost" onclick="closeModal('modalAdapt')" style="background:#F1F5F9;color:#334155;border:none">Annuler</button>
+      <button class="tbtn tbtn-neutre" onclick="closeModal('modalAdapt')">Annuler</button>
       <button class="tbtn tbtn-amber" onclick="doAdapt()">🎯 Adapter le CV</button>
     </div>
   </div>
