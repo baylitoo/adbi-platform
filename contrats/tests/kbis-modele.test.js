@@ -478,7 +478,7 @@ test("route /api/document/analyze : PDF texte + LFM2.5 2.6B et scan + NuExtract3
   const app = express();
   app.use(express.json({ limit: "30mb" }));
   // eslint-disable-next-line no-new-func
-  new Function("app", "analyzeDocument", "console", routeAnalyse())(app, analyzeDocument, { error: () => {} });
+  new Function("app", "analyzeDocument", "console", "auth", routeAnalyse())(app, analyzeDocument, { error: () => {} }, require("../../auth/auth-adbi"));
   const serveur = await new Promise((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
   try {
     const port = serveur.address().port;

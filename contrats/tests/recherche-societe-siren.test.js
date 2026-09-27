@@ -199,7 +199,7 @@ test("route POST /api/lookup (vrai gestionnaire de server.js, source gouv.fr ép
   const app = express();
   app.use(express.json());
   // eslint-disable-next-line no-new-func
-  new Function("app", "getCompany", routeLookup())(app, getCompany);
+  new Function("app", "getCompany", "auth", routeLookup())(app, getCompany, require("../../auth/auth-adbi"));
   const serveur = await new Promise((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
   try {
     await avecConfiguration(DEFAUT, () => avecFetchBouchon(async (appels) => {

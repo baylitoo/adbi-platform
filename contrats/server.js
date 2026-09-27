@@ -360,7 +360,7 @@ app.post("/api/export/docx", async (req, res) => {
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     res.setHeader("Content-Disposition", `attachment; filename="${fileBase(values)}.docx"`);
     res.send(buf);
-  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); auth.repondreErreur(res, e); }
 });
 
 app.post("/api/export/pdf", async (req, res) => {
@@ -372,7 +372,7 @@ app.post("/api/export/pdf", async (req, res) => {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${fileBase(values)}.pdf"`);
     res.send(buf);
-  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); auth.repondreErreur(res, e); }
 });
 
 app.post("/api/export/zip", async (req, res) => {
@@ -399,7 +399,7 @@ app.post("/api/export/zip", async (req, res) => {
     arch.append(docx, { name: `${base}.docx` });
     arch.append(checkPdf, { name: `Checklist_documents_${(values.stNom || "ST").replace(/[^a-zA-Z0-9]+/g, "_")}.pdf` });
     arch.finalize();
-  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); auth.repondreErreur(res, e); }
 });
 
 // ---------- Personnalisation des modèles (Paramètres → Modèles de contrat) ----------
@@ -422,12 +422,12 @@ app.get("/api/templates-perso/:type", (req, res) => {
         .map((b, i) => ({ i, t: b.t, original: b.x, texte: eff.blocks[i].x, modifie: eff.blocks[i].x !== b.x }))
         .filter((b) => typeof b.original === "string"),
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 app.post("/api/templates-perso/:type", exigerCodeParametres, async (req, res) => {
   try { res.json(await templatesPerso.sauver(req.params.type, req.body || {})); }
-  catch (e) { res.status(400).json({ error: e.message }); }
+  catch (e) { auth.repondreErreur(res, e, 400); }
 });
 
 // Retour complet au modèle d'origine pour ce type.
@@ -435,7 +435,7 @@ app.delete("/api/templates-perso/:type", exigerCodeParametres, async (req, res) 
   try {
     await templatesPerso.reinitialiser(req.params.type);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 // ---------- Recherche société (gouv.fr / Pappers / INSEE) ----------
@@ -449,17 +449,17 @@ app.post("/api/parametres/verifier", (req, res) => {
 
 app.post("/api/settings", exigerCodeParametres, (req, res) => {
   try { res.json(saveSettings(req.body || {})); }
-  catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+  catch (e) { console.error(e); auth.repondreErreur(res, e); }
 });
 
 app.post("/api/lookup", async (req, res) => {
   try { res.json(await getCompany(req.body && req.body.q)); }
-  catch (e) { res.status(e.status || 400).json({ error: e.message }); }
+  catch (e) { auth.repondreErreur(res, e, 400); }
 });
 
 app.post("/api/search", async (req, res) => {
   try { res.json({ results: await searchCompanies(req.body && req.body.q) }); }
-  catch (e) { res.status(400).json({ error: e.message }); }
+  catch (e) { auth.repondreErreur(res, e, 400); }
 });
 
 // Analyse des pièces (Kbis/URSSAF...) — LOCALE par défaut (pdf-parse +
@@ -479,7 +479,7 @@ app.post("/api/search", async (req, res) => {
 // elle n'est atteignable que par cette route.
 app.post("/api/document/analyze", async (req, res) => {
   try { res.json(await analyzeDocument(req.body || {})); }
-  catch (e) { console.error(e); res.status(400).json({ error: e.message }); }
+  catch (e) { console.error(e); auth.repondreErreur(res, e, 400); }
 });
 
 // ── Frein sur les appels amont des connecteurs de signature ─────────────────
@@ -536,7 +536,7 @@ app.get("/api/test/:provider", async (req, res) => {
       return res.json(await avecCacheEtPlafond("zoho", "test:zoho", () => fournisseurs.externe("zoho").verifier()));
     }
     res.json(await testProvider(req.params.provider));
-  } catch (e) { res.status(e.status || 500).json({ ok: false, message: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e, 500, "message", { ok: false }); }
 });
 
 // Référentiels (clients + valideurs CRA + lieux, managers)
@@ -548,7 +548,7 @@ app.post("/api/referentiels", (req, res) => {
     // la lecture et cet envoi — on renvoie l'état courant pour que le client
     // se resynchronise, plutôt que d'écraser silencieusement son travail.
     if (e.code === "REF_CONFLICT") return res.status(409).json({ error: e.message, referentiels: e.actuel });
-    console.error(e); res.status(500).json({ error: e.message });
+    console.error(e); auth.repondreErreur(res, e);
   }
 });
 
@@ -575,7 +575,7 @@ app.get("/api/fichiers/:base", (req, res) => {
       return { nom, taille: st.size, modifieLe: st.mtime.toISOString() };
     }).sort((a, b) => b.modifieLe.localeCompare(a.modifieLe));
     res.json(rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 app.get("/api/fichiers/:base/:nom", (req, res) => {
@@ -682,8 +682,8 @@ app.post("/api/signatures", async (req, res) => {
         );
         return res.status(500).json({
           error: "Le document a été envoyé pour signature chez " + actif + " (référence " + env.idExterne +
-            ") et les invitations sont déjà parties, mais l'enregistrement dans ADBI Contrats a échoué (" +
-            eSauvegarde.message + "). Ne relancez pas l'envoi : contactez un administrateur avec cette référence.",
+            ") et les invitations sont déjà parties, mais l'enregistrement dans ADBI Contrats a échoué." +
+            " Ne relancez pas l'envoi : contactez un administrateur avec cette référence.",
         });
       }
       res.json({
@@ -692,9 +692,9 @@ app.post("/api/signatures", async (req, res) => {
         envoiAuto: { envoye: true, destinataire: demande.signataires[0].email, fournisseur: actif },
       });
     } catch (e) {
-      res.status(502).json({ error: "Connecteur " + actif + " : " + e.message + " — vérifie la clé et le mode dans Paramètres → Signature électronique (bouton Tester)." });
+      res.status(502).json({ error: "Connecteur " + actif + " : " + auth.messagePublic(e) + " — vérifie la clé et le mode dans Paramètres → Signature électronique (bouton Tester)." });
     }
-  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); auth.repondreErreur(res, e); }
 });
 
 // ── Verrou par demande (issue #55) ───────────────────────────────────────────
@@ -789,7 +789,7 @@ app.post("/api/signatures/:id/synchroniser", async (req, res) => {
     const d = await synchroniserDemandeExterneParId(id);
     if (!d) return res.status(404).json({ error: "Demande introuvable" });
     res.json({ ok: true, demande: vueDemande(d) });
-  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e, 502); }
 });
 
 // ── File des webhooks dont le TRAITEMENT a échoué ────────────────────────────
@@ -954,7 +954,7 @@ app.post("/webhooks/signature", async (req, res) => {
 app.post("/api/zoho/echanger-code", exigerCodeParametres, async (req, res) => {
   try {
     res.json(await fournisseurs.externe("zoho").echangerCode(req.body && req.body.code));
-  } catch (e) { res.status(400).json({ ok: false, message: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e, 400, "message", { ok: false }); }
 });
 
 // Suivi : liste des demandes (sans les images).
@@ -964,7 +964,7 @@ app.get("/api/signatures", async (req, res) => {
   // Bornée comme /api/contrats (listerContrats) : voir le commentaire de
   // chargerDemandes() dans lib/db.pg.js.
   try { res.json((await db.chargerDemandes(200)).map(vueDemande)); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  catch (e) { auth.repondreErreur(res, e); }
 });
 
 // Certificat de signature — document séparé du contrat signé.
@@ -983,7 +983,7 @@ app.get("/api/signatures/:id/certificat", async (req, res) => {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${d.base}__CERTIFICAT.pdf"`);
     res.send(buf);
-  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); auth.repondreErreur(res, e); }
 });
 
 // Suppression d'une demande : la ligne disparaît du suivi et les liens cessent
@@ -995,7 +995,7 @@ app.delete("/api/signatures/:id", async (req, res) => {
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
     await db.supprimerDemande(id);
     res.json({ ok: true, corbeille: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 // ---------- Corbeille : consultation, restauration sélective, purge ----------
@@ -1010,7 +1010,7 @@ app.get("/api/corbeille", async (req, res) => {
       return { id: l.id, type: l.type, libelle, supprimeLe: l.supprimeLe };
     });
     res.json(out);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 // Restaure la SÉLECTION : chaque élément retrouve sa table d'origine.
@@ -1020,7 +1020,7 @@ app.post("/api/corbeille/restaurer", exigerCodeParametres, async (req, res) => {
     if (!ids.length) return res.status(400).json({ error: "Rien à restaurer." });
     const { restaures } = await db.restaurerCorbeille(ids);
     res.json({ ok: true, restaures });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 // Purge DÉFINITIVE d'une sélection de la corbeille (après double confirmation côté interface).
@@ -1030,7 +1030,7 @@ app.post("/api/corbeille/purger", exigerCodeParametres, async (req, res) => {
     if (!ids.length) return res.status(400).json({ error: "Rien à purger." });
     const { purges } = await db.purgerCorbeille(ids);
     res.json({ ok: true, purges });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 // Pour une demande EXTERNE, le document de référence est l'archive téléchargée
@@ -1063,7 +1063,7 @@ app.get("/api/signatures/:id/pdf", async (req, res) => {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${d.base}${d.statut === "complete" ? "__SIGNE" : ""}.pdf"`);
     res.send(buf);
-  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); auth.repondreErreur(res, e); }
 });
 
 // (Les routes « côté signataire » — page /signer/<jeton>, API de signature
@@ -1088,7 +1088,7 @@ app.post("/api/save", async (req, res) => {
       numero: c.numero, type, sousTraitant: c.sousTraitant, clientFinal: c.clientFinal, payload: req.body,
     });
     res.json({ ok: true, id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 // Modification d'un contrat existant (bouton « Enregistrer » en mode édition).
@@ -1103,7 +1103,7 @@ app.put("/api/contracts/:id", async (req, res) => {
     });
     if (!ok) return res.status(404).json({ error: "Contrat introuvable" });
     res.json({ ok: true, id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 app.get("/api/contracts", async (req, res) => {
@@ -1123,7 +1123,7 @@ app.get("/api/contracts", async (req, res) => {
       };
     });
     res.json(out);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 app.get("/api/contracts/:id", async (req, res) => {
@@ -1133,7 +1133,7 @@ app.get("/api/contracts/:id", async (req, res) => {
     const c = await db.obtenirContrat(id);
     if (!c) return res.status(404).json({ error: "introuvable" });
     res.json(c.payload);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 // Aperçu PDF d'un contrat de l'historique (la « loupe ») : régénéré depuis le payload.
@@ -1149,7 +1149,7 @@ app.get("/api/contracts/:id/pdf", async (req, res) => {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${fileBase(values)}.pdf"`);
     res.send(buf);
-  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error(e); auth.repondreErreur(res, e); }
 });
 
 // Décode un fichier envoyé en dataURL ({nom, contenu}) — PDF uniquement, 25 Mo max.
@@ -1181,7 +1181,7 @@ app.post("/api/contracts/:id/signe", async (req, res) => {
     }
     await db.marquerSigne(id, date);
     res.json({ ok: true, signe: date, fichier: fichierArchive });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e, 400); }
 });
 
 // Retire la mention « signé » (le PDF déjà archivé, lui, reste dans le dossier).
@@ -1191,7 +1191,7 @@ app.delete("/api/contracts/:id/signe", async (req, res) => {
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
     await db.retirerSigne(id);
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 // IMPORT d'un contrat EXISTANT (créé hors application) dans le dossier :
@@ -1234,7 +1234,7 @@ app.post("/api/contracts/importer", async (req, res) => {
       fichierArchive = path.basename(archiverFichier(base, base + (signe ? "__SIGNE-IMPORTE.pdf" : "__IMPORTE.pdf"), f.buf));
     }
     res.json({ ok: true, id, fichier: fichierArchive });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e, 400); }
 });
 
 // Cycle de vie : clôturer / rouvrir un contrat (alertes de fin de mission).
@@ -1245,7 +1245,7 @@ app.patch("/api/contracts/:id/statut", async (req, res) => {
     const statut = req.body.statut === "clos" ? "clos" : "";
     await db.definirStatutContrat(id, statut);
     res.json({ ok: true, statut });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 // Suppression — unitaire et groupée (sélection dans l'historique).
@@ -1258,7 +1258,7 @@ app.delete("/api/contracts/:id", async (req, res) => {
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Identifiant invalide." });
     await db.supprimerContrats([id]);
     res.json({ ok: true, corbeille: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 app.post("/api/contracts/supprimer", async (req, res) => {
@@ -1267,7 +1267,7 @@ app.post("/api/contracts/supprimer", async (req, res) => {
     if (!ids.length) return res.status(400).json({ error: "Aucun contrat sélectionné." });
     const { supprimes } = await db.supprimerContrats(ids);
     res.json({ ok: true, supprimes, corbeille: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { auth.repondreErreur(res, e); }
 });
 
 // Fin de chaîne : route inconnue et erreur imprévue, en français et à la charte ; le détail reste dans le journal.

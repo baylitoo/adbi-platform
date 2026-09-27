@@ -82,13 +82,13 @@
     const appel = ++dernierAppel;
     try {
       const r = await fetch("/api/references" + (filtre ? "?q=" + encodeURIComponent(filtre) : ""));
-      if (!r.ok) throw new Error("Erreur " + r.status);
+      if (!r.ok) throw new Error("le serveur n'a pas répondu correctement.");
       const donnees = await r.json();
       // Une frappe rapide lance plusieurs requêtes : seule la dernière compte,
       // sinon un résultat périmé peut s'afficher après le bon.
       if (appel === dernierAppel) dessiner(donnees, filtre);
     } catch (err) {
-      compte.textContent = "Registre indisponible : " + err.message;
+      compte.textContent = "Registre indisponible : " + (err instanceof TypeError ? "Serveur injoignable : vérifiez votre connexion." : err.message);
     }
   }
 

@@ -229,7 +229,7 @@ app.get("/api/cvs", async (req, res) => {
     res.json(await db.search(req.query.q));
   } catch (e) {
     console.error("[cvs:list]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -240,7 +240,7 @@ app.get("/api/cvs/:id", async (req, res) => {
     res.json(r);
   } catch (e) {
     console.error("[cvs:get]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -253,7 +253,7 @@ app.post("/api/cvs", async (req, res) => {
     res.json(await db.save({ id: id || crypto.randomUUID(), hash, master, options }));
   } catch (e) {
     console.error("[save]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -263,7 +263,7 @@ app.delete("/api/cvs/:id", async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error("[cvs:delete]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -279,7 +279,7 @@ app.post("/api/onepager", (req, res) => {
     res.json(build(master, options || {}));
   } catch (e) {
     console.error("[onepager]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -303,7 +303,7 @@ app.post("/api/export/pptx", async (req, res) => {
     res.send(buffer);
   } catch (e) {
     console.error("[pptx]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -361,7 +361,7 @@ app.post("/api/export/livret", async (req, res) => {
     res.send(buffer);
   } catch (e) {
     console.error("[livret]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -427,7 +427,7 @@ app.post("/api/matching", async (req, res) => {
     });
   } catch (e) {
     console.error("[matching]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 
@@ -507,7 +507,7 @@ app.post("/api/badges", (req, res) => {
     res.json({ cle, editeur, libelle });
   } catch (e) {
     console.error("[badges]", e);
-    res.status(500).json({ error: e.message });
+    auth.repondreErreur(res, e);
   }
 });
 

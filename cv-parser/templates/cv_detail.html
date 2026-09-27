@@ -1283,7 +1283,7 @@ async function telechargerDossier(format) {
     const r = await fetch(`/api/cvs/${CV_ID}/dossier.${format}`, { credentials: 'include' });
     if (!r.ok) {
       const e = await r.json().catch(() => ({}));
-      throw new Error(e.error || `HTTP ${r.status}`);
+      throw new Error(e.error || "le serveur n'a pas répondu correctement.");
     }
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
@@ -1299,7 +1299,7 @@ async function telechargerDossier(format) {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
     showToast(`✓ Dossier ${format.toUpperCase()} téléchargé`);
   } catch (e) {
-    alert('❌ Génération impossible : ' + e.message);
+    alert('❌ Génération impossible : ' + (e instanceof TypeError ? 'serveur injoignable, vérifiez votre connexion.' : e.message));
   } finally {
     btn.disabled = false;
     btn.classList.remove('tbtn-loading');
@@ -1461,7 +1461,7 @@ async function checkApiStatus() {
   try {
     const d = await fetch('/api/status').then(r => r.json());
     if (d.api_ok) { dot.className = 'api-dot ok'; label.textContent = 'API OK'; document.getElementById('apiBadge').title = `Modèle : ${d.model}`; }
-    else { dot.className = 'api-dot err'; label.textContent = 'API KO'; document.getElementById('apiBadge').title = d.error || `HTTP ${d.http}`; }
+    else { dot.className = 'api-dot err'; label.textContent = 'API KO'; document.getElementById('apiBadge').title = d.error || 'Service indisponible'; }
   } catch { dot.className = 'api-dot err'; label.textContent = 'API KO'; }
 }
 checkApiStatus();
@@ -1491,7 +1491,7 @@ async function relancerAnalyse(btn) {
   } catch (e) {
     btn.innerHTML = texte;
     btn.disabled = false;
-    alert('Ré-analyse impossible : ' + e.message);
+    alert('Ré-analyse impossible : ' + (e instanceof TypeError ? 'serveur injoignable, vérifiez votre connexion.' : e.message));
   }
 }
 </script>

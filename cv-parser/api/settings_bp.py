@@ -2,6 +2,7 @@
 settings_bp.py — Paramétrage, gestion utilisateurs, invitations, activité, profil.
 """
 import secrets
+import traceback
 from datetime import datetime, timezone, timedelta
 
 from flask import Blueprint, request, jsonify, make_response
@@ -180,8 +181,9 @@ def accept_invite():
     try:
         create_user(email=inv["email"], password=password,
                     full_name=name, role=inv["role"])
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        traceback.print_exc()
+        return jsonify({"error": "Création du compte impossible, réessayez dans quelques instants."}), 500
 
     mark_invite_used(token)
     return jsonify({"success": True, "email": inv["email"]})

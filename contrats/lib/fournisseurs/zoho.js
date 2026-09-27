@@ -16,6 +16,7 @@
 const fs = require("fs");
 const path = require("path");
 const { DELAI_HTTP_MS, DELAI_UPLOAD_MS, delaiSignal, messageDelai } = require("../httpDelai");
+const { messagePublic } = require("../../../auth/auth-adbi");
 
 const SECRETS_PATH = path.join(__dirname, "..", "..", "data", "secrets.json");
 
@@ -119,7 +120,7 @@ async function verifier() {
     await appel("/requests?page_from=1&page_size=1");
     return { ok: true, message: "Connexion Zoho Sign réussie (région " + config().region + ")." };
   } catch (e) {
-    return { ok: false, message: e.message };
+    return { ok: false, message: messagePublic(e) };
   }
 }
 

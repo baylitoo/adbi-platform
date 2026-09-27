@@ -155,9 +155,7 @@ def handle_llm_indisponible(e):
     print(f"[LLM] indisponible : {e}")
     return jsonify({
         "error": "Tous les services de langage sont momentanément indisponibles.",
-        "detail": str(e),
-        "conseil": ("Vérifiez que la passerelle d'inférence interne (ADBI_LLM_BASE_URL) "
-                    "est configurée et joignable, ou réessayez dans quelques instants."),
+        "conseil": "Réessayez dans quelques instants ; si le problème persiste, contactez un administrateur.",
     }), 503
 
 
@@ -3041,9 +3039,11 @@ Réponds selon les consignes. N'ajoute pas de blabla inutile, sois professionnel
             "message": message_text,
             "updated_cv": updated_cv
         })
-    except Exception as e:
+    except LLMIndisponible:
+        raise
+    except Exception:
         traceback.print_exc()
-        return jsonify({"error": f"Erreur lors de l'appel à l'IA : {str(e)}"}), 500
+        return jsonify({"error": "L'assistant n'a pas pu traiter la demande, réessayez dans quelques instants."}), 500
 
 
 @app.route("/api/cvs/<cv_id>/export")
@@ -3257,9 +3257,11 @@ def api_rapprochement():
     try:
         sortie = rapprochement.classer(description, identifiants, appel_llm=llm_chat,
                                        appels_llm=llm_cascade.chat_plusieurs)
-    except Exception as e:
+    except LLMIndisponible:
+        raise
+    except Exception:
         traceback.print_exc()
-        return jsonify({"error": f"Rapprochement impossible : {e}"}), 500
+        return jsonify({"error": "Rapprochement impossible, réessayez dans quelques instants."}), 500
 
     return jsonify(sortie)
 
@@ -3348,9 +3350,9 @@ def telecharger_dossier(cv_id, format_sortie):
             flux = export_dossier.en_word(cv, pastilles, savoir)
             type_mime = ("application/vnd.openxmlformats-officedocument"
                          ".wordprocessingml.document")
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
-        return jsonify({"error": f"Génération du dossier impossible : {e}"}), 500
+        return jsonify({"error": "Génération du dossier impossible, réessayez dans quelques instants."}), 500
 
     return send_file(flux, mimetype=type_mime, as_attachment=True,
                      download_name=export_dossier.nom_fichier(cv, "." + format_sortie))
@@ -3759,9 +3761,11 @@ def translate_cv(cv_id):
         if not m:
             raise RuntimeError("No JSON object found in LLM response")
         translated = json.loads(m.group(0))
-    except Exception as e:
+    except LLMIndisponible:
+        raise
+    except Exception:
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Traduction impossible, réessayez dans quelques instants."}), 500
 
     # ── Create a new DB entry (copy of original) with translated content ──
     new_id = str(uuid.uuid4())
@@ -3858,9 +3862,11 @@ def enrich_cv_endpoint(cv_id):
             cv["enriched"] = True
             cvstore_pg.save_cv(cv_id, cv)
             return jsonify({"success": True})
-        except Exception as e:
+        except LLMIndisponible:
+            raise
+        except Exception:
             traceback.print_exc()
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "Enrichissement impossible, réessayez dans quelques instants."}), 500
 
 
 @app.route("/api/cvs/<cv_id>/adapt", methods=["POST"])
@@ -3909,9 +3915,11 @@ def adapt_cv(cv_id):
             cv["adapted_to_job"] = True
             cvstore_pg.save_cv(cv_id, cv)
             return jsonify({"success": True})
-        except Exception as e:
+        except LLMIndisponible:
+            raise
+        except Exception:
             traceback.print_exc()
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "Adaptation du CV impossible, réessayez dans quelques instants."}), 500
 
 
 if __name__ == "__main__":

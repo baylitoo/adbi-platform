@@ -719,7 +719,7 @@ async function genererProtege(toutMasquer) {
     li.appendChild(window.COFFRE.lienTelechargement(nomSortie, blob, true));
   } catch (err) {
     li.className = "erreur";
-    etatTexte.textContent = err.message;
+    etatTexte.textContent = (err instanceof TypeError ? "Serveur injoignable : vérifiez votre connexion." : err.message);
   }
 }
 
@@ -802,7 +802,7 @@ async function genererDocx(toutMasquer) {
     li.appendChild(window.COFFRE.lienTelechargement(sortie.nom, sortie.blob, true));
   } catch (err) {
     li.className = "erreur";
-    etatTexte.textContent = err.message;
+    etatTexte.textContent = (err instanceof TypeError ? "Serveur injoignable : vérifiez votre connexion." : err.message);
   }
 }
 
@@ -850,12 +850,12 @@ function nouveauFichier(fichiers) {
   const word = fichiers.find((f) => /[.]docx$/i.test(f.name));
   if (pdf) {
     analyserFichierPdf(pdf).catch((err) => {
-      afficherErreurDepot("Analyse impossible : " + err.message);
+      afficherErreurDepot("Analyse impossible : " + (err instanceof TypeError ? "Serveur injoignable : vérifiez votre connexion." : err.message));
       afficherEtape("depot");
     });
   } else if (word) {
     analyserFichierDocx(word).catch((err) => {
-      afficherErreurDepot("Analyse impossible : " + err.message);
+      afficherErreurDepot("Analyse impossible : " + (err instanceof TypeError ? "Serveur injoignable : vérifiez votre connexion." : err.message));
       afficherEtape("depot");
     });
   } else {

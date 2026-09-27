@@ -4,6 +4,23 @@
 
 "use strict";
 
+// Erreurs montrables : texte français selon le statut HTTP, jamais le code brut ni le message anglais du navigateur.
+function messageHttp(statut) {
+  if (statut === 401) return "Session expirée : rechargez la page pour vous reconnecter.";
+  if (statut === 403) return "Accès refusé.";
+  if (statut === 404) return "Élément introuvable.";
+  if (statut === 413) return "Fichier trop volumineux.";
+  if (statut === 429) return "Trop de demandes : réessayez dans un instant.";
+  if (statut >= 500) return "Le serveur a rencontré une erreur : réessayez dans quelques instants.";
+  return "La demande n'a pas abouti.";
+}
+if (typeof window !== "undefined" && typeof window.fetch === "function") {
+  const fetchNatif = window.fetch.bind(window);
+  window.fetch = (...args) => fetchNatif(...args).catch((e) => {
+    throw e && e.name === "AbortError" ? e : new Error("Serveur injoignable : vérifiez votre connexion.");
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /* État                                                                */
 /* ------------------------------------------------------------------ */
@@ -143,7 +160,7 @@ function setStatus(msg, kind) {
 /* ------------------------------------------------------------------ */
 async function getJSON(url) {
   const r = await fetch(url);
-  if (!r.ok) throw new Error("HTTP " + r.status);
+  if (!r.ok) throw new ErrormessageHttp(r.status);
   return r.json();
 }
 
@@ -178,7 +195,7 @@ async function exportBlob(endpoint, fallbackName) {
     body: JSON.stringify(payload()),
   });
   if (!r.ok) {
-    let msg = "Erreur " + r.status;
+    let msg = messageHttp(r.status);
     try { const j = await r.json(); if (j.error) msg = j.error; } catch (e) {}
     throw new Error(msg);
   }
@@ -605,7 +622,7 @@ async function analyzeChecklistDoc(it, fileObj, statusEl, btn) {
       }),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    if (!r.ok) throw new Error(d.error || messageHttp(r.status));
     const res = { issuedDate: d.issuedDate || "", companyName: d.companyName || "", nameMatches: d.nameMatches, fileName: fileObj.name };
     if (d.modele) res.modele = d.modele;
     // Kbis : on garde aussi les champs officiels lus par DocIE (SIREN, SIRET,
@@ -848,7 +865,7 @@ async function analyserRib(it, fileObj, statusEl, btn) {
       }),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    if (!r.ok) throw new Error(d.error || messageHttp(r.status));
     const res = ribRetenu(d, fileObj.name);
     state.dateState[it.id] = res;
     renderRibResult(statusEl, res);
@@ -1098,7 +1115,7 @@ async function zohoEchangerCode() {
       body: JSON.stringify({ code }),
     });
     const j = await r.json();
-    if (!r.ok || !j.ok) throw new Error(j.message || "Erreur " + r.status);
+    if (!r.ok || !j.ok) throw new Error(j.message || messageHttp(r.status));
     $("#setZohoCode").value = "";
     st.textContent = "🟢 " + j.message; st.style.color = "var(--ok)";
     await loadSettings();
@@ -1358,7 +1375,7 @@ async function persistRef() {
     refreshRefLists();
     throw new Error((body && body.error) || "Référentiel modifié entre-temps — page resynchronisée, réessaie ton changement.");
   }
-  if (!r.ok) throw new Error("HTTP " + r.status);
+  if (!r.ok) throw new ErrormessageHttp(r.status);
   state.ref = await r.json();
 }
 
@@ -1699,7 +1716,7 @@ function buildContractRefBar() {
     try {
       const r = await fetch("/api/contracts/" + sel.value);
       const payload = await r.json();
-      if (!r.ok) throw new Error(payload.error || ("HTTP " + r.status));
+      if (!r.ok) throw new Error(payload.error || messageHttp(r.status));
       applyContractRef(payload);
       const t = CONTRAT_TYPE_LABELS[payload.type] || payload.type;
       msg.textContent = "✓ " + t + " repris : " + ((payload.values && payload.values.numeroContrat) || "");
@@ -1821,7 +1838,7 @@ async function runLookup(q, msg, btn, list, profile) {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ q }),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+    if (!r.ok) throw new Error(d.error || messageHttp(r.status));
     const results = d.results || [];
     if (!results.length) { msg.textContent = "Aucune société trouvée."; msg.className = "lookup-msg err"; return; }
     if (results.length === 1) { selectCompany(results[0], msg, list, profile); return; }
@@ -1966,7 +1983,7 @@ async function saveSettings() {
     const r = await fetch("/api/settings", {
       method: "POST", headers: { "Content-Type": "application/json", ...enteteCode() }, body: JSON.stringify(body),
     });
-    if (!r.ok) throw new Error("HTTP " + r.status);
+    if (!r.ok) throw new ErrormessageHttp(r.status);
     await loadSettings();
     st.textContent = "✓ Clés enregistrées."; st.style.color = "var(--ok)";
   } catch (e) {
@@ -2329,7 +2346,7 @@ async function ficheEntreprise(nom, siren) {
       body: JSON.stringify({ q: siren || nom }),
     });
     const e = await r.json();
-    if (!r.ok || e.error) throw new Error(e.error || "Erreur " + r.status);
+    if (!r.ok || e.error) throw new Error(e.error || messageHttp(r.status));
     const ligne = (ico, label, val) => val ? '<div class="ent-ligne"><span class="ent-ico">' + ico + '</span><span class="ent-label">' + label + "</span><b>" + escapeHtml(String(val)) + "</b></div>" : "";
     const etabs = (e.etablissements || []).slice(0, 4).map((x) =>
       '<li>' + (x.estSiege ? "🏛 Siège — " : "📍 ") + escapeHtml(x.adresse || x.ville || x.siret) + (x.actif ? "" : " <i>(fermé)</i>") + "</li>").join("");
@@ -2596,7 +2613,7 @@ async function supprimerSelectionHist() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids }),
     });
-    if (!r.ok) throw new Error("HTTP " + r.status);
+    if (!r.ok) throw new ErrormessageHttp(r.status);
     setStatus(ids.length + " contrat(s) déplacé(s) dans la corbeille (restaurables dans Paramètres).", "ok");
   } catch (e) { setStatus("Erreur suppression : " + e.message, "err"); }
   loadHistory();
@@ -2666,7 +2683,7 @@ async function createSignRequest() {
       })),
     });
     const d = await r.json();
-    if (!r.ok || d.error) throw new Error(d.error || "Erreur " + r.status);
+    if (!r.ok || d.error) throw new Error(d.error || messageHttp(r.status));
     renderSignLinks(d.demande, d.envoiAuto);
     $("#signStep1").classList.add("hidden");
     $("#signStep2").classList.remove("hidden");
@@ -2766,7 +2783,7 @@ function carteDemande(d) {
       try {
         const r = await fetch("/api/signatures/" + d.id + "/synchroniser", { method: "POST" });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok) { alert(j.error || "Erreur " + r.status); ev.target.disabled = false; return; }
+        if (!r.ok) { alert(j.error || messageHttp(r.status)); ev.target.disabled = false; return; }
         rafraichirSuivi();
       } catch (e) { ev.target.disabled = false; }
     }, true);
@@ -2849,7 +2866,7 @@ async function corbRestaurer() {
     body: JSON.stringify({ ids }),
   });
   const j = await r.json().catch(() => ({}));
-  st.textContent = r.ok ? "♻ " + j.restaures + " élément(s) restauré(s) — retrouve-les dans l'Historique / Signatures." : (j.error || "Erreur " + r.status);
+  st.textContent = r.ok ? "♻ " + j.restaures + " élément(s) restauré(s) — retrouve-les dans l'Historique / Signatures." : (j.error || messageHttp(r.status));
   st.className = "status " + (r.ok ? "ok" : "err");
   loadCorbeille();
   loadHistory();
@@ -2866,7 +2883,7 @@ async function corbPurger() {
     body: JSON.stringify({ ids }),
   });
   const j = await r.json().catch(() => ({}));
-  st.textContent = r.ok ? j.purges + " élément(s) supprimé(s) définitivement." : (j.error || "Erreur " + r.status);
+  st.textContent = r.ok ? j.purges + " élément(s) supprimé(s) définitivement." : (j.error || messageHttp(r.status));
   st.className = "status " + (r.ok ? "ok" : "err");
   loadCorbeille();
 }
@@ -2913,7 +2930,7 @@ async function validerSigneExterne() {
       body: JSON.stringify({ date: $("#signeDate").value, fichier }),
     });
     const j = await r.json();
-    if (!r.ok || j.error) throw new Error(j.error || "Erreur " + r.status);
+    if (!r.ok || j.error) throw new Error(j.error || messageHttp(r.status));
     $("#signeModal").classList.add("hidden");
     setStatus("Contrat " + (SIGNE_CIBLE.numero || "") + " marqué signé" + (j.fichier ? " — PDF archivé dans le dossier." : "."), "ok");
     loadHistory();
@@ -3068,7 +3085,7 @@ async function validerImport() {
       }),
     });
     const j = await r.json();
-    if (!r.ok || j.error) throw new Error(j.error || "Erreur " + r.status);
+    if (!r.ok || j.error) throw new Error(j.error || messageHttp(r.status));
     $("#importModal").classList.add("hidden");
     CONTRATS_IMPORT_CHAMPS.IDS_A_VIDER.forEach((id) => {
       const el = document.getElementById(id);
@@ -3127,7 +3144,7 @@ async function preremplirImportDepuisPdf() {
         $("#impModele") && $("#impModele").options.length ? { modele: $("#impModele").value } : {})),
     });
     const depart = await r.json();
-    if (!r.ok) throw new Error(depart.error || ("HTTP " + r.status));
+    if (!r.ok) throw new Error(depart.error || messageHttp(r.status));
     let d = null, echecsReseau = 0;
     for (let n = 0; n < MAX_INTERROGATIONS && !d; n++) {
       await new Promise((ok) => setTimeout(ok, INTERVALLE_MS));
@@ -3140,7 +3157,7 @@ async function preremplirImportDepuisPdf() {
         if (++echecsReseau >= MAX_ECHECS_RESEAU) throw new Error("serveur injoignable pendant l'extraction.");
         continue;
       }
-      if (!rt.ok) throw new Error(t.error || ("HTTP " + rt.status));
+      if (!rt.ok) throw new Error(t.error || messageHttp(rt.status));
       if (t.etat === "terminee") d = t.resultat || {};
       else if (t.etat === "echec") throw new Error((t.erreur && t.erreur.message) || "extraction en échec.");
       else if (t.etape === "en_attente") st.textContent = "⏳ En attente d'une extraction libre" + (t.position ? " (position " + t.position + ")" : "") + "…";
@@ -3452,7 +3469,7 @@ async function tplSauver() {
       body: JSON.stringify({ meta, blocs }),
     });
     const j = await r.json();
-    if (!r.ok || j.error) throw new Error(j.error || "Erreur " + r.status);
+    if (!r.ok || j.error) throw new Error(j.error || messageHttp(r.status));
     await loadTplEditor();
     $("#tplStatus").textContent = j.blocsModifies || j.metaModifiees
       ? "Modèle enregistré : " + j.blocsModifies + " bloc(s) et " + j.metaModifiees + " métadonnée(s) personnalisés — aperçu et exports à jour."
@@ -3580,7 +3597,7 @@ function wire() {
         body: JSON.stringify(payload()),
       });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+      if (!r.ok) throw new Error(d.error || messageHttp(r.status));
       if (state.editing) {
         state.editing.numero = state.values.numeroContrat || state.values.numeroAvenant || "";
         majBandeauEdition();
@@ -3605,7 +3622,7 @@ function wire() {
         body: JSON.stringify(payload()),
       });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error || "HTTP " + r.status);
+      if (!r.ok) throw new Error(d.error || messageHttp(r.status));
       if (d.id) state.editing = { id: d.id, numero: state.values.numeroContrat || state.values.numeroAvenant || "" };
       majBandeauEdition();
       setStatus("Copie enregistr\u00E9e comme nouveau contrat.", "ok");

@@ -360,7 +360,7 @@ test("route /api/document/analyze : 350M choisi, IBAN mal lu -> drapeau de garde
   const app = express();
   app.use(express.json({ limit: "30mb" }));
   // eslint-disable-next-line no-new-func
-  new Function("app", "analyzeDocument", "console", routeAnalyse())(app, analyzeDocument, console);
+  new Function("app", "analyzeDocument", "console", "auth", routeAnalyse())(app, analyzeDocument, console, require("../../auth/auth-adbi"));
   const serveur = await new Promise((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
   try {
     const { status, body } = await poster(serveur.address().port, await corpsRib({ modele: "lfm25_350m" }));

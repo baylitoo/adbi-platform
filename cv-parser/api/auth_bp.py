@@ -292,7 +292,7 @@ def patch_user(user_id: str):
         user = update_user(user_id, body)
         return jsonify(user)
     except (KeyError, ValueError) as e:
-        return jsonify({"error": str(e)}), 404 if "introuvable" in str(e) else 400
+        return jsonify({"error": e.args[0] if e.args else str(e)}), 404 if "introuvable" in str(e) else 400
 
 
 # ── Delete user (superuser only) ──────────────────────────────────────────────
@@ -306,4 +306,4 @@ def remove_user(user_id: str):
         delete_user(user_id)
         return jsonify({"ok": True})
     except KeyError as e:
-        return jsonify({"error": str(e)}), 404
+        return jsonify({"error": e.args[0] if e.args else str(e)}), 404

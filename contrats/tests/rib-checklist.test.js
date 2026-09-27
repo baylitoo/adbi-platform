@@ -171,7 +171,7 @@ test("route /api/document/analyze (DocIE mocké au bridge) : IBAN mal lu contrô
   const app = express();
   app.use(express.json({ limit: "30mb" }));
   // eslint-disable-next-line no-new-func
-  new Function("app", "analyzeDocument", "console", routeAnalyse())(app, analyzeDocument, console);
+  new Function("app", "analyzeDocument", "console", "auth", routeAnalyse())(app, analyzeDocument, console, require("../../auth/auth-adbi"));
   const serveur = await new Promise((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
   try {
     const pdf = await pdfTexte("RELEVE D'IDENTITE BANCAIRE\nIBAN : FR14 2004 1010 0505 0001 3M02 607\nBIC : BNPAFRPP");

@@ -63,6 +63,25 @@ function avertissementAcces(env) {
     + "à réserver au poste local, jamais à un déploiement exposé.";
 }
 
+const MESSAGE_INTERNE = "Erreur interne du serveur, réessayez dans quelques instants.";
+
+/** Texte montrable d'une erreur : le message d'une Error levée exprès, sinon un texte fixe (base, système, bogue). */
+function messagePublic(e) {
+  const technique = !(e instanceof Error) || e instanceof TypeError || e instanceof ReferenceError
+    || e instanceof SyntaxError || e instanceof RangeError || e.errno !== undefined || e.syscall !== undefined
+    || e.severity !== undefined || (typeof e.code === "string" && /^[0-9A-Z]{5}$/.test(e.code))
+    || typeof e.message !== "string" || !e.message.trim();
+  return technique ? MESSAGE_INTERNE : e.message;
+}
+
+/** Répond une erreur en JSON : texte montrable, détail technique au journal seulement. */
+function repondreErreur(res, e, statut = 500, cle = "error", extra = {}) {
+  const message = messagePublic(e);
+  if (message === MESSAGE_INTERNE) console.error("[erreur]", e && e.stack || e);
+  const code = e && Number.isInteger(e.status) ? e.status : statut;
+  return res.status(message === MESSAGE_INTERNE && code < 500 ? 500 : code).json({ [cle]: message, ...extra });
+}
+
 /** `/api/...` -> réponse JSON ; tout le reste -> réponse HTML (core/auth.py:142). */
 function estApi(chemin) {
   return typeof chemin === "string" && chemin.startsWith("/api/");
@@ -230,4 +249,7 @@ module.exports = {
   garde,
   pageReconnexion,
   pageMessage,
+  MESSAGE_INTERNE,
+  messagePublic,
+  repondreErreur,
 };

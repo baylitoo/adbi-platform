@@ -25,7 +25,7 @@ async function attendreAnalyse(tache, suivi) {
       if (++echecsReseau >= ANALYSE_MAX_ECHECS_RESEAU) throw new Error("Serveur injoignable pendant l'analyse");
       continue;
     }
-    if (!r.ok) throw new Error(t.error || `Suivi de l'analyse impossible (HTTP ${r.status})`);
+    if (!r.ok) throw new Error(t.error || "Suivi de l'analyse impossible, réessayez dans quelques instants.");
     if (t.etat === 'terminee') return t.resultat;
     if (t.etat === 'echec') throw new Error((t.erreur && t.erreur.message) || 'Analyse impossible');
     if (suivi) suivi(t);
