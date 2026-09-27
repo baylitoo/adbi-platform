@@ -261,6 +261,24 @@ def _preuves(evidence, table):
     return preuves
 
 
+def _pdf_voie_texte(path, choix):
+    """Vrai si chaque page du PDF porte du texte ET que le modèle choisi est servi en voie texte pour ce texte (limites comprises)."""
+    if choix is None:
+        return False
+    from choix_modele import ErreurTache
+    try:
+        pages = docie_client.pages_document(path)
+    except DocIEError:
+        return False
+    if not pages or any(not t.strip() for _, t in pages):
+        return False
+    try:
+        choix.pour_texte("\n".join(t for _, t in pages))
+    except ErreurTache:
+        return False
+    return True
+
+
 def extract_resume(file_path, progress=None, *, session=None, choix=None):
     """Même contrat que docie_client.extract_resume : renvoie (data, metadata).
 
@@ -277,9 +295,9 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
     servait qu'une de ses deux surfaces, et sa voie texte — pourtant écrite,
     testée, et déjà employée par contrats — n'était atteinte par personne ici.
 
-    Un PDF à couche texte relèverait lui aussi de la voie texte ; il y reste
-    volontairement inéligible tant que le sélecteur de modèles ne sait pas
-    prédire la voie PAR FICHIER (voir le commentaire du corps).
+    Un PDF dont chaque page porte une couche texte prend la voie texte quand le
+    modèle choisi y est servi pour ce document (#271, `_pdf_voie_texte`) ;
+    sinon, scan ou modèle de vision seulement, il reste sur la voie agent.
 
     `metadata` porte `transport` ("docie-bridge") et `voie` ("texte" ou
     "agent"), que l'appelant ne peut pas déduire du transport.
@@ -294,23 +312,8 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
     suffixe = path.suffix.lower()
     mime_type = _MIME_BY_SUFFIX.get(suffixe)
 
-    # Voie TEXTE pour le DOCX, et pour lui seul. C'est EXACTEMENT ce que prédit
-    # choix_modele.voie_pour(".docx") -> "texte" : un modèle explicitement
-    # choisi a donc déjà été validé POUR CETTE VOIE par app.py
-    # (Choix.verifier) avant d'arriver ici, et pour_texte() ci-dessous ne peut
-    # pas le refuser après coup.
-    #
-    # Un PDF à couche texte relève de la même voie et n'y va PAS, délibérément :
-    # le pont actif, voie_pour(".pdf") rend "agent" (premier test de la
-    # fonction, _EXT_BRIDGE avant _EXT_TEXTE), donc le sélecteur ne propose que
-    # des modèles de la voie agent pour un PDF. L'y router ferait appeler
-    # pour_texte() sur un Choix validé pour la voie agent : un modèle
-    # vision-seul serait refusé (`modele_non_propose`) là où il fonctionnait.
-    # Le faire proprement demande une prédiction PAR FICHIER côté sélecteur,
-    # comme contrats a dû l'écrire pour le Kbis (#194, preparerSelecteurKbis).
-    # Hors de cette PR : c'est un changement d'interface, pas de transport.
-    # DOCX : voie texte. Suffixe inconnu du pont : la même voie le refuse, nommé (texte_document).
-    if suffixe == ".docx" or mime_type is None:
+    # DOCX et suffixe inconnu : voie texte (refus nommé par texte_document) ; PDF à couche texte : voie texte si le modèle choisi y est servi (#271).
+    if suffixe == ".docx" or mime_type is None or (suffixe == ".pdf" and _pdf_voie_texte(path, choix)):
         return extraire_texte(path, progress, session=session, choix=choix)
 
     docie_bridge = _load_bridge()
