@@ -466,7 +466,7 @@ def _pertinence_docie(need: dict, cvs: list[tuple[str, dict]]) -> tuple[dict | N
 # POINT D'ENTRÉE
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_matching(need: dict, limit: int = 50, ids: list[str] | None = None) -> list[dict]:
+def run_matching(need: dict, limit: int = 50, ids: list[str] | None = None, mode: str = "classique") -> list[dict]:
     """
     Calcule le score de chaque candidat de la CVthèque vs le besoin.
     Retourne la liste triée du meilleur au moins bon.
@@ -480,8 +480,17 @@ def run_matching(need: dict, limit: int = 50, ids: list[str] | None = None) -> l
         retenus = [i for i in ids if i in db]
         db = {i: db[i] for i in retenus}
     results = []
-    # Titre + missions (30 pts) : pertinence du reranker DocIE quand un est prêt, sinon difflib/mots-clés.
-    semantique, raison = _pertinence_docie(need, list(db.items())) if db else (None, "aucun_cv")
+    # Mode sémantique : titre + missions (30 pts) par similarité des vecteurs DocIE ; lève semantique.Indisponible.
+    proximite, modele = {}, None
+    if mode == "semantique" and db:
+        from core import semantique as vecteurs
+        requete = _requete_besoin(need)
+        if requete:
+            classement, modele = vecteurs.rechercher(requete, db)
+            proximite = {r["id"]: max(0.0, min(1.0, r["score"])) for r in classement}
+    # Mode classique : pertinence du reranker DocIE quand un est prêt, sinon difflib/mots-clés.
+    semantique, raison = (None, "mode_semantique") if mode == "semantique" else (
+        _pertinence_docie(need, list(db.items())) if db else (None, "aucun_cv"))
 
     for cid, cv in db.items():
         candidate_skills = _get_skills_flat(cv)
@@ -489,7 +498,11 @@ def run_matching(need: dict, limit: int = 50, ids: list[str] | None = None) -> l
         seniority_score   = _score_seniority(need, cv)
         avail_score       = _score_availability(cv)
         bonus_score, maluses = _score_bonus(need, cv)
-        if semantique and cid in semantique["scores"]:
+        if cid in proximite:
+            title_score   = round(proximite[cid] * WEIGHTS["title"], 2)
+            mission_score = round(proximite[cid] * WEIGHTS["missions"], 2)
+            origine = {"source": "semantique", "modele": modele, "proximite": round(proximite[cid], 3)}
+        elif semantique and cid in semantique["scores"]:
             pertinence = semantique["scores"][cid]
             title_score   = round(pertinence * WEIGHTS["title"], 2)
             mission_score = round(pertinence * WEIGHTS["missions"], 2)

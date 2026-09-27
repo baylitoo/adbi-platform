@@ -144,7 +144,7 @@ EXTRAIT.date_debut = "2026-10-01";
 
 function reponse(corps = {}) {
   return {
-    id: "resp_abc", object: "response", status: "completed", model: "gpt-4.1-nano-2025-04-14",
+    id: "resp_abc", object: "response", status: "completed", model: "gpt-6-luna-2026-05-18",
     output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify(EXTRAIT), annotations: [] }] }],
     usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
     ...corps,
@@ -161,7 +161,7 @@ function simuler(corps, statut = 200) {
 const extraire = (texte, options) => oa.extraireViaOpenAI(texte, { mode: "rapide", dynamicSchema: CONTRAT, env: ENV, ...options });
 const sansCle = (e) => !JSON.stringify({ message: e.message, code: e.code, status: e.status, stack: e.stack }).includes(CLE);
 
-test("requête, mode rapide : POST /v1/responses, store:false, schéma strict, gpt-4.1-nano, AUCUN bloc reasoning", async () => {
+test("requête, mode rapide : POST /v1/responses, store:false, schéma strict, gpt-6-luna, reasoning.effort = none", async () => {
   const { appels, fetchImpl } = simuler(reponse());
   await extraire("Contrat ACME", { fetchImpl });
   assert.equal(appels.length, 1);
@@ -171,8 +171,8 @@ test("requête, mode rapide : POST /v1/responses, store:false, schéma strict, g
   assert.equal(options.redirect, "manual");
   assert.equal(options.headers.Authorization, "Bearer " + CLE);
   assert.equal(body.store, false);
-  assert.equal(body.model, "gpt-4.1-nano");
-  assert.ok(!Object.hasOwn(body, "reasoning"), "jamais de reasoning en mode rapide");
+  assert.equal(body.model, "gpt-6-luna");
+  assert.deepEqual(body.reasoning, { effort: "none" });
   assert.deepEqual(body.text.format, { type: "json_schema", name: "adbi_contract", strict: true, schema: oa.schemaOpenAI(CONTRAT).schema });
   assert.deepEqual(body.input, [{ role: "user", content: [{ type: "input_text", text: "Contrat ACME" }] }]);
   assert.equal(body.max_output_tokens, oa.MAX_OUTPUT_TOKENS);
@@ -180,22 +180,22 @@ test("requête, mode rapide : POST /v1/responses, store:false, schéma strict, g
   assert.ok(!JSON.stringify(body).includes(CLE));
 });
 
-test("requête, mode raisonnement : gpt-5-nano avec reasoning.effort = low, rien d'autre dans le bloc", async () => {
-  const { appels, fetchImpl } = simuler(reponse({ model: "gpt-5-nano-2025-08-07" }));
+test("requête, mode raisonnement : gpt-6-luna avec reasoning.effort = low, rien d'autre dans le bloc", async () => {
+  const { appels, fetchImpl } = simuler(reponse());
   const r = await extraire("Contrat", { mode: "raisonnement", fetchImpl });
-  assert.equal(appels[0].body.model, "gpt-5-nano");
+  assert.equal(appels[0].body.model, "gpt-6-luna");
   assert.deepEqual(appels[0].body.reasoning, { effort: "low" });
   assert.equal(appels[0].body.store, false);
   assert.equal(r.metadata.mode, "raisonnement");
 });
 
 test("modèles : défauts, surcharges permises, noms hors liste du mode -> configuration nommant la variable seule", async () => {
-  assert.equal(oa.configurationOpenAI(ENV, "rapide").modele, "gpt-4.1-nano");
-  assert.equal(oa.configurationOpenAI(ENV, "raisonnement").modele, "gpt-5-nano");
-  const mini = simuler(reponse({ model: "gpt-4.1-mini-2025-04-14" }));
-  await extraire("x", { env: { ...ENV, OPENAI_MODELE_RAPIDE: " gpt-4.1-mini " }, fetchImpl: mini.fetchImpl });
-  assert.equal(mini.appels[0].body.model, "gpt-4.1-mini");
-  assert.ok(!Object.hasOwn(mini.appels[0].body, "reasoning"));
+  assert.equal(oa.configurationOpenAI(ENV, "rapide").modele, "gpt-6-luna");
+  assert.equal(oa.configurationOpenAI(ENV, "raisonnement").modele, "gpt-6-luna");
+  const mini = simuler(reponse());
+  await extraire("x", { env: { ...ENV, OPENAI_MODELE_RAPIDE: " gpt-6-luna " }, fetchImpl: mini.fetchImpl });
+  assert.equal(mini.appels[0].body.model, "gpt-6-luna");
+  assert.deepEqual(mini.appels[0].body.reasoning, { effort: "none" });
   // Le mode vient du catalogue, jamais du nom : un modèle à raisonnement en
   // mode rapide (ou l'inverse) est refusé, jamais « corrigé ».
   const refus = [
@@ -253,12 +253,12 @@ test("résultat normalisé : forme du bridge, sans_preuve, modèle SERVI (pas le
   const { elapsed_ms, ...meta } = r.metadata;
   assert.ok(Number.isInteger(elapsed_ms) && elapsed_ms >= 0);
   assert.deepEqual(meta, {
-    request_id: "resp_abc", fournisseur: "openai", mode: "rapide", model: "gpt-4.1-nano-2025-04-14", agent: null,
+    request_id: "resp_abc", fournisseur: "openai", mode: "rapide", model: "gpt-6-luna-2026-05-18", agent: null,
     sans_preuve: true, field_confidence: null, validation: null, usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
     prompt_profile: null, partiel: [], blocs_texte: null, troncature_possible: false, schema_reported: false,
   });
   // Un autre modèle que la famille demandée : refus nommé, jamais accepté.
-  for (const model of ["gpt-4o-2024-08-06", "gpt-4.1-nano2", "gpt-4.1-mini-2025-04-14", null]) {
+  for (const model of ["gpt-4o-2024-08-06", "gpt-6-luna2", "gpt-4.1-mini-2025-04-14", null]) {
     await assert.rejects(extraire("x", { fetchImpl: simuler(reponse({ model })).fetchImpl }), (e) => e.code === "schema", String(model));
   }
 });

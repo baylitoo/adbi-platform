@@ -142,7 +142,7 @@ function toutesLesOffres(env, options = {}) {
 test("externes : OpenAI rapide puis raisonnement, APRÈS défaut et alternative, sur les 6 tâches ouvertes en voie texte", () => {
   for (const tache of TACHES_EXTERNES) {
     const offres = cat.modelesOfferts(tache, "texte", { env: { ...ENV_DOCIE_COMPLET, OPENAI_API_KEY: CLE }, externes: true });
-    assert.deepEqual(offres.map((o) => o.role), ["defaut", "alternative", "externe", "externe"], tache);
+    assert.deepEqual(offres.map((o) => o.role), ["defaut", "alternative", "externe", "externe", "externe", "externe"], tache);
     const [rapide, raisonnement] = offres.slice(2);
     assert.deepEqual([rapide.id, rapide.identifiant, rapide.mode, rapide.fournisseur, rapide.variable],
       ["openai_rapide", "rapide", "rapide", "openai", "OPENAI_API_KEY"]);
@@ -189,13 +189,13 @@ test("CV : offres OpenAI sur la voie TEXTE seulement ; toute autre tâche ou voi
   for (const tache of Object.keys(c.taches)) {
     for (const voie of ["texte", "agent", "chat"]) {
       const externes = cat.modelesOfferts(tache, voie, { env, externes: true }).filter((o) => o.role === "externe" || o.id.startsWith("openai"));
-      assert.equal(externes.length, voie === "texte" && TACHES_EXTERNES.includes(tache) ? 2 : 0, tache + "/" + voie);
+      assert.equal(externes.length, voie === "texte" && TACHES_EXTERNES.includes(tache) ? 4 : 0, tache + "/" + voie);
     }
   }
   // Le CV est ouvert sur la voie TEXTE seulement : un scan part en vision chez
   // DocIE, et le fournisseur ne déclare que `texte` (catalogue.json).
-  assert.deepEqual(ids(cat.modelesOfferts("resume", "texte", { env, externes: true })).slice(-2),
-    ["openai_rapide", "openai_raisonnement"]);
+  assert.deepEqual(ids(cat.modelesOfferts("resume", "texte", { env, externes: true })).slice(-4),
+    ["openai_rapide", "openai_raisonnement", "openai_moyen", "openai_eleve"]);
   assert.ok(!Object.hasOwn(c.taches.resume.voies.agent, "externes"));
   assert.equal(cat.choisirModele("resume", "texte", { env, modele: "openai_rapide", externes: true }).identifiant, "rapide");
   // Sans l'option `externes`, un consommateur pas encore câblé ne voit toujours rien.
@@ -234,7 +234,7 @@ test("externes : modes du catalogue = modes du transport (document-parsing/bridg
 test("modeleServi : OpenAI rapproché par fournisseur + mode, modèle servi rapporté tel quel ; jamais confondu avec DocIE", () => {
   const env = { OPENAI_API_KEY: CLE, DOCIE_MODELE_LFM25_2_6B: "rapide" };
   assert.deepEqual(cat.modeleServi("rib", "texte", { env, metadata: { fournisseur: "openai", mode: "raisonnement", model: "gpt-5-nano-2025-08-07" } }),
-    { id: "openai_raisonnement", libelle: "OpenAI raisonnement — externe (hors ADBI)", identifiant: "gpt-5-nano-2025-08-07" });
+    { id: "openai_raisonnement", libelle: "OpenAI raisonnement faible — externe (hors ADBI)", identifiant: "gpt-5-nano-2025-08-07" });
   // Sans clé : nom brut, jamais le libellé d'un modèle non configuré.
   assert.deepEqual(cat.modeleServi("rib", "texte", { env: {}, metadata: { fournisseur: "openai", mode: "rapide", model: "gpt-4.1-nano-2025-04-14" } }),
     { id: null, libelle: "gpt-4.1-nano-2025-04-14", identifiant: "gpt-4.1-nano-2025-04-14" });

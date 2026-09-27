@@ -400,6 +400,20 @@ def texte_document(path):
     raise DocIEError("La voie texte accepte PDF texte et DOCX uniquement.")
 
 
+def pages_document(path):
+    """[(numéro de page ou None, texte)] : pages d'un PDF à couche texte, un seul bloc pour un DOCX ; mêmes refus que texte_document."""
+    path = Path(path)
+    if path.suffix.lower() == ".pdf":
+        from pypdf import PdfReader
+        try:
+            pages = [page.extract_text() or "" for page in PdfReader(path).pages]
+        except Exception:
+            raise DocIEError("PDF illisible ou protégé. Fournissez un PDF texte ou un DOCX.") from None
+        return [(n, t) for n, t in enumerate(pages, start=1)]
+    texte, _raison = texte_document(path)
+    return [(None, texte)]
+
+
 def repli_possible(exc):
     """Un échec DocIE autorise-t-il un second essai chez un fournisseur externe ?
 

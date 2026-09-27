@@ -282,7 +282,7 @@ def modele_servi(tache: str, voie: str, metadata: Mapping[str, Any] | None,
     fournisseur = (metadata or {}).get("fournisseur")
     if fournisseur is not None:
         # Modèle externe : rapproché par fournisseur + mode, jamais par le nom
-        # servi (gpt-5-nano-2025-08-07 ne ressemble à aucun identifiant).
+        # servi (gpt-6-luna-2026-05-18 ne ressemble à aucun identifiant).
         for o in modeles_configures(tache, voie, env, catalogue, externes=True):
             if o["role"] == "externe" and o["fournisseur"] == fournisseur and o["mode"] == (metadata or {}).get("mode"):
                 return {"id": o["id"], "libelle": o["libelle"], "identifiant": brut}

@@ -85,12 +85,12 @@ test("avec clé : les quatre pièces câblées gagnent les deux modes, toujours 
   for (const tache of PIECES) {
     const offres = choix.offresPubliques(tache, { env: AVEC_CLE });
     assert.deepEqual(offres.filter((o) => o.role === "externe").map((o) => o.id),
-      ["openai_rapide", "openai_raisonnement"], tache);
+      ["openai_rapide", "openai_raisonnement", "openai_moyen", "openai_eleve"], tache);
     // Ce qui protège réellement l'utilisateur : le navigateur présélectionne
     // `modeles[0]` (app.js::remplirSelecteurModeles), donc un externe ne doit
     // JAMAIS être premier — sinon le texte partirait hors ADBI sans choix.
     assert.notEqual(offres[0].role, "externe", tache + " : un externe est présélectionné");
-    assert.deepEqual(offres.slice(-2).map((o) => o.role), ["externe", "externe"], tache + " : externes pas en dernier");
+    assert.deepEqual(offres.slice(-4).map((o) => o.role), ["externe", "externe", "externe", "externe"], tache + " : externes pas en dernier");
   }
 });
 
@@ -101,7 +101,7 @@ test("avec clé : les quatre pièces câblées gagnent les deux modes, toujours 
 test("le transport externe est résolvable depuis lib/, et expose les deux modes", () => {
   const transport = require(path.join(RACINE, "document-parsing", "bridge", "openai-responses.js"));
   assert.equal(typeof transport.extraireViaOpenAI, "function");
-  assert.deepEqual(Object.keys(transport.MODES).sort(), ["raisonnement", "rapide"]);
+  assert.deepEqual(Object.keys(transport.MODES).sort(), ["eleve", "moyen", "raisonnement", "rapide"]);
   // Les modes du catalogue sont ceux du transport : c'est ce qui rend
   // `choisi.mode` directement utilisable, sans table de correspondance.
   const modes = choix.offresPubliques("urssaf", { env: AVEC_CLE }).filter((o) => o.role === "externe").map((o) => o.id);
@@ -111,7 +111,7 @@ test("le transport externe est résolvable depuis lib/, et expose les deux modes
 test("avec clé : les deux modes sont proposés, après les modèles DocIE, jamais en défaut", () => {
   const offres = choix.offresPubliques("urssaf", { env: AVEC_CLE, voie: "texte" });
   const externes = offres.filter((o) => o.role === "externe");
-  assert.deepEqual(externes.map((o) => o.id), ["openai_rapide", "openai_raisonnement"]);
+  assert.deepEqual(externes.map((o) => o.id), ["openai_rapide", "openai_raisonnement", "openai_moyen", "openai_eleve"]);
   // Toujours après le défaut et l'alternative : le navigateur présélectionne
   // modeles[0], donc un externe ne peut pas devenir le choix par défaut.
   assert.equal(offres[0].role, "defaut");

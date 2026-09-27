@@ -122,7 +122,7 @@ EXTRAIT["st_nom"] = "ACME SAS"
 
 
 def reponse(**corps):
-    base = {"id": "resp_abc", "object": "response", "status": "completed", "model": "gpt-4.1-nano-2025-04-14",
+    base = {"id": "resp_abc", "object": "response", "status": "completed", "model": "gpt-6-luna-2026-05-18",
             "output": [{"type": "message", "role": "assistant",
                         "content": [{"type": "output_text", "text": json.dumps(EXTRAIT), "annotations": []}]}],
             "usage": {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30}}
@@ -165,8 +165,8 @@ class Transport(unittest.TestCase):
         self.assertIs(appel.kwargs["allow_redirects"], False)
         corps = appel.kwargs["json"]
         self.assertIs(corps["store"], False)
-        self.assertEqual(corps["model"], "gpt-4.1-nano")
-        self.assertNotIn("reasoning", corps)
+        self.assertEqual(corps["model"], "gpt-6-luna")
+        self.assertEqual(corps["reasoning"], {"effort": "none"})
         self.assertEqual(corps["text"]["format"], {"type": "json_schema", "name": "adbi_contract", "strict": True,
                                                    "schema": oa.schema_openai(CONTRAT)["schema"]})
         self.assertEqual(corps["input"], [{"role": "user", "content": [{"type": "input_text", "text": "Contrat ACME"}]}])
@@ -174,20 +174,20 @@ class Transport(unittest.TestCase):
         self.assertIn("untrusted data", corps["instructions"])
 
     def test_requete_mode_raisonnement(self):
-        session = session_simulee(reponse(model="gpt-5-nano-2025-08-07"))
+        session = session_simulee(reponse())
         resultat = extraire(session=session, mode="raisonnement")
         corps = session.post.call_args.kwargs["json"]
-        self.assertEqual(corps["model"], "gpt-5-nano")
+        self.assertEqual(corps["model"], "gpt-6-luna")
         self.assertEqual(corps["reasoning"], {"effort": "low"})
         self.assertEqual(resultat["metadata"]["mode"], "raisonnement")
 
     def test_modeles_defauts_surcharges_et_refus(self):
-        self.assertEqual(oa.configuration_openai(ENV, "rapide")["modele"], "gpt-4.1-nano")
-        self.assertEqual(oa.configuration_openai(ENV, "raisonnement")["modele"], "gpt-5-nano")
-        session = session_simulee(reponse(model="gpt-4.1-mini-2025-04-14"))
-        extraire(session=session, env={**ENV, "OPENAI_MODELE_RAPIDE": "gpt-4.1-mini"})
-        self.assertEqual(session.post.call_args.kwargs["json"]["model"], "gpt-4.1-mini")
-        self.assertNotIn("reasoning", session.post.call_args.kwargs["json"])
+        self.assertEqual(oa.configuration_openai(ENV, "rapide")["modele"], "gpt-6-luna")
+        self.assertEqual(oa.configuration_openai(ENV, "raisonnement")["modele"], "gpt-6-luna")
+        session = session_simulee(reponse())
+        extraire(session=session, env={**ENV, "OPENAI_MODELE_RAPIDE": " gpt-6-luna "})
+        self.assertEqual(session.post.call_args.kwargs["json"]["model"], "gpt-6-luna")
+        self.assertEqual(session.post.call_args.kwargs["json"]["reasoning"], {"effort": "none"})
         for mode, variable, valeur in (("rapide", "OPENAI_MODELE_RAPIDE", "gpt-5-nano"),
                                        ("raisonnement", "OPENAI_MODELE_RAISONNEMENT", "gpt-4.1-nano"),
                                        ("raisonnement", "OPENAI_MODELE_RAISONNEMENT", "gpt-5")):
@@ -226,7 +226,7 @@ class Transport(unittest.TestCase):
         self.assertEqual(resultat["schema_name"], "contract")
         self.assertEqual(resultat["result"], EXTRAIT)
         self.assertEqual(meta, {"request_id": "resp_abc", "fournisseur": "openai", "mode": "rapide",
-                                "model": "gpt-4.1-nano-2025-04-14", "agent": None, "sans_preuve": True,
+                                "model": "gpt-6-luna-2026-05-18", "agent": None, "sans_preuve": True,
                                 "field_confidence": None, "validation": None,
                                 "usage": {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30},
                                 "prompt_profile": None, "partiel": [], "blocs_texte": None,

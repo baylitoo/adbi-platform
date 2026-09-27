@@ -37,6 +37,7 @@ def launch_match(need_id: str):
     except (TypeError, ValueError):
         limit = 50
     limit = max(1, min(limit, 500))
+    mode = "semantique" if request.args.get("mode") == "semantique" else "classique"
 
     if not _matching_semaphore.acquire(blocking=False):
         return jsonify({
@@ -46,7 +47,15 @@ def launch_match(need_id: str):
             )
         }), 503
     try:
-        results = run_matching(need, limit=limit)
+        results = run_matching(need, limit=limit, mode=mode)
+    except Exception as exc:
+        if type(exc).__name__ == "Indisponible":
+            return jsonify({"error": str(exc), "raison": getattr(exc, "raison", None)}), 409
+        from docie_bridge_extraction import _load_bridge
+        traduit = getattr(exc, "code", None) and _load_bridge().message_erreur(exc)
+        if not traduit:
+            raise
+        return jsonify({"error": traduit["message"], "code": traduit["code"]}), 502
     finally:
         _matching_semaphore.release()
 
@@ -56,7 +65,7 @@ def launch_match(need_id: str):
         u = get_current_user()
         if u:
             log_event("match_run", u["sub"], u.get("email",""),
-                      {"need_id": need_id, "results": len(results)})
+                      {"need_id": need_id, "results": len(results), "mode": mode})
     except Exception:
         pass
 

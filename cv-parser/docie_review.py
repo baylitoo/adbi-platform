@@ -264,6 +264,19 @@ def _texte_docie(entree):
     return str(entree or "").strip()
 
 
+def preuves_fiche(data, preuves):
+    """{chemin DocIE: [{page, extrait}]} -> mêmes preuves aux chemins de la fiche (missions retriées) ; intraduisibles écartées."""
+    if not isinstance(preuves, dict):
+        return {}
+    positions = positions_apres_tri(data)
+    sortie = {}
+    for chemin_docie, lues in preuves.items():
+        chemin = _chemin_fiche(chemin_docie, positions)
+        if chemin and isinstance(lues, list):
+            sortie.setdefault(chemin, []).extend(l for l in lues if isinstance(l, dict))
+    return sortie
+
+
 def revue_docie(data, metadata):
     """{"needs_review": [chemins de la fiche], "warnings": [messages]}.
 

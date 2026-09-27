@@ -516,6 +516,7 @@
       <span class="brand-name">adbi<span>.cv</span></span>
     </a>
     <nav style="display:flex;gap:4px;margin-left:12px">
+      {% if hub_url %}<a href="{{ hub_url }}" target="_top" class="nav-link">← Hub</a>{% endif %}
       <a href="/needs"    class="nav-link">Besoins</a>
       <a href="/rapprochement" class="nav-link">Rapprochement</a>
       <a href="/settings" class="nav-link">⚙ Paramètres</a>

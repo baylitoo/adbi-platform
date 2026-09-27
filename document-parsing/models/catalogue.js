@@ -308,7 +308,7 @@ function modeleServi(tache, voie, { env = process.env, metadata = {}, catalogue 
   if (typeof brut !== "string" || !brut.trim()) return null;
   if ((metadata || {}).fournisseur != null) {
     // Modèle externe : rapproché par fournisseur + mode, jamais par le nom servi
-    // (gpt-5-nano-2025-08-07 ne ressemble à aucun identifiant du catalogue).
+    // (gpt-6-luna-2026-05-18 ne ressemble à aucun identifiant du catalogue).
     for (const o of modelesConfigures(tache, voie, { env, catalogue, externes: true })) {
       if (o.role === "externe" && o.fournisseur === metadata.fournisseur && o.mode === metadata.mode) {
         return { id: o.id, libelle: o.libelle, identifiant: brut };
