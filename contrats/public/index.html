@@ -22,7 +22,7 @@
       <button class="nav-item" data-view="historique"><span class="ico-anim">☰</span>  Historique</button>
       <button class="nav-item" data-view="signatures"><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:14px;height:14px"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span> Signatures</button>
       <button class="nav-item" data-view="referentiels">Référentiels</button>
-      <button class="nav-item" data-view="parametres">Parametres</button>
+      <button class="nav-item" data-view="parametres">Paramètres</button>
     </nav>
     <div class="type-pick">
       <label>Type de contrat</label>
@@ -162,7 +162,7 @@
           <label id="impInitialWrap" class="hidden">N° du contrat initial<input id="impInitial" type="text" placeholder="ex : 02-09-2026" list="dl-contrats" /></label>
           <label>Sous-traitant / co-contractant *<input id="impSt" type="text" placeholder="ex : ADCONSI" /></label>
           <label>Client final<input id="impClient" type="text" placeholder="ex : THALES" /></label>
-          <label>Consultant<input id="impConsultant" type="text" placeholder="ex : Amine OUKLI" /></label>
+          <label>Consultant<input id="impConsultant" type="text" placeholder="ex : Jean DUPONT" /></label>
           <label>TJM (€ HT / jour)<input id="impTjm" type="number" placeholder="ex : 500" /></label>
           <label>Date de début<input id="impDebut" type="date" /></label>
           <label>Date de fin<input id="impFin" type="date" /></label>
@@ -241,7 +241,7 @@
             <div class="sign-partie">
               <h3><span class="rang-badge deux">2e à signer</span> ADBI (Client)</h3>
               <label>Nom du signataire<input id="sp1nom" type="text" /></label>
-              <label>Email<input id="sp1email" type="email" placeholder="ex : aoukli@adbi.fr" /></label>
+              <label>Email<input id="sp1email" type="email" placeholder="ex : prenom.nom@adbi.fr" /></label>
             </div>
           </div>
           <label class="sign-echeance">⏰ Délai : à signer avant le
@@ -359,8 +359,8 @@
                 <input id="setZohoCode" type="text" autocomplete="off" placeholder="généré avec la portée ZohoSign.documents.ALL" />
                 <button type="button" id="btnZohoEchanger" class="btn">Échanger le code</button>
               </span>
-              <span class="muted zoho-aide">1) Enregistre client ID + secret ci-dessus · 2) API console Zoho → Self Client →
-                Generate Code (portée <code>ZohoSign.documents.ALL</code>) · 3) colle le code ici → le refresh token est stocké sur ce poste.</span>
+              <span class="muted zoho-aide">1) Enregistrez le client ID et le secret ci-dessus · 2) API console Zoho → Self Client →
+                Generate Code (portée <code>ZohoSign.documents.ALL</code>) · 3) collez le code ici : le refresh token est conservé sur le serveur.</span>
             </label>
           </div>
         </div>
@@ -376,7 +376,7 @@
         <div class="panel-head"><h2><span class="ico-anim">🗑</span> Corbeille — restaurer des éléments supprimés</h2>
           <button id="corbRafraichir" class="btn btn-ghost">Rafraîchir</button></div>
         <p class="muted set-intro">Chaque suppression (contrat de l'historique, demande de signature) arrive ici
-          au lieu d'être perdue. Coche ce que tu veux récupérer puis « Restaurer » — une demande de signature
+          au lieu d'être perdue. Cochez les éléments à récupérer puis « Restaurer » — une demande de signature
           restaurée réactive ses liens d'origine. La purge définitive demande une double confirmation.</p>
         <div id="corbListe" class="corb-liste"></div>
         <p id="corbVide" class="muted hidden">La corbeille est vide.</p>
@@ -390,9 +390,9 @@
       <!-- Éditeur des modèles de contrat : texte des articles, titres, en-tête, pied -->
       <div class="panel settings-panel">
         <div class="panel-head"><h2><span class="ico-anim">📝</span> Modèles de contrat — modifier le texte</h2></div>
-        <p class="muted set-intro">Modifie ici le texte du modèle (articles, titres, en-tête, pied de page) :
-          l'aperçu et tous les exports (PDF, Word, signature) utiliseront ta version.
-          Conserve les variables <code>{{…}}</code> (elles sont remplacées par les valeurs du formulaire)
+        <p class="muted set-intro">Modifiez ici le texte du modèle (articles, titres, en-tête, pied de page) :
+          l'aperçu et tous les exports (PDF, Word, signature) utiliseront votre version.
+          Conservez les variables <code>{{…}}</code> (elles sont remplacées par les valeurs du formulaire)
           et le gras <code>**…**</code>. Les blocs personnalisés sont marqués et réversibles un par un (↺).
           <b>Évite de modifier un modèle pendant qu'une demande de signature est en cours</b> (le document
           régénéré changerait).</p>

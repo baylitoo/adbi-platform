@@ -1104,7 +1104,7 @@ function majEtatConnecteur() {
 async function zohoEchangerCode() {
   const code = $("#setZohoCode").value.trim();
   const st = $("#setStatus");
-  if (!code) { st.textContent = "Colle d'abord le code généré dans l'API console Zoho."; st.style.color = "var(--accent)"; return; }
+  if (!code) { st.textContent = "Collez d'abord le code généré dans l'API console Zoho."; st.style.color = "var(--accent)"; return; }
   const btn = $("#btnZohoEchanger");
   btn.disabled = true;
   st.textContent = "Échange du code…"; st.style.color = "var(--muted)";
@@ -1233,7 +1233,7 @@ function buildSoustraitantProfiles() {
   saveBtn.title = "Ajouter ce sous-traitant au référentiel réutilisable";
   saveBtn.addEventListener("click", async () => {
     const nom = (state.values.stNom || "").trim();
-    if (!nom) { setStatus("Renseigne d'abord la raison sociale du sous-traitant.", "err"); return; }
+    if (!nom) { setStatus("Renseignez d'abord la raison sociale du sous-traitant.", "err"); return; }
     const fiche = {};
     CHAMPS_SOUSTRAITANT.forEach(([champ, cle]) => { fiche[cle] = (state.values[champ] || "").trim(); });
     state.ref.soustraitants = state.ref.soustraitants || [];
@@ -1283,7 +1283,7 @@ function buildSignataireProfiles() {
   saveBtn.title = "Ajouter ce signataire au référentiel réutilisable";
   saveBtn.addEventListener("click", async () => {
     const nom = (state.values.stSignataireNom || "").trim();
-    if (!nom) { setStatus("Renseigne d'abord le nom du signataire.", "err"); return; }
+    if (!nom) { setStatus("Renseignez d'abord le nom du signataire.", "err"); return; }
     const qualite = (state.values.stSignataireQualite || "").trim();
     state.ref.signataires = state.ref.signataires || [];
     if (!state.ref.signataires.some((s) => String(s.nom).toLowerCase() === nom.toLowerCase())) {
@@ -1373,7 +1373,7 @@ async function persistRef() {
     if (body && body.referentiels) state.ref = body.referentiels;
     renderReferentiels();
     refreshRefLists();
-    throw new Error((body && body.error) || "Référentiel modifié entre-temps — page resynchronisée, réessaie ton changement.");
+    throw new Error((body && body.error) || "Référentiel modifié entre-temps — page resynchronisée, refaites votre modification.");
   }
   if (!r.ok) throw new ErrormessageHttp(r.status);
   state.ref = await r.json();
@@ -1411,7 +1411,7 @@ async function saveRefEntry(key) {
     }
     {
       const clientName = String(state.values.clientFinal || "").trim();
-      if (!clientName) { setStatus("Renseigne d'abord le client final.", "err"); return; }
+      if (!clientName) { setStatus("Renseignez d'abord le client final.", "err"); return; }
       let c = findRefClient(clientName);
       if (!c) { c = { nom: clientName, craValidateurs: [], lieux: [] }; state.ref.clients.push(c); }
       const field = key === "craValidePar" ? "craValidateurs" : "lieux";
@@ -1708,7 +1708,7 @@ function buildContractRefBar() {
       o.textContent = (CONTRAT_TYPE_LABELS[c.type] || c.type) + " · " + (c.numero || "?") + " — " + (c.sousTraitant || c.clientFinal || "");
       sel.appendChild(o);
     });
-    if (sel.options.length <= 1) { msg.textContent = "Aucun contrat dans l’Historique. Enregistre d’abord le contrat initial."; msg.className = "lookup-msg"; }
+    if (sel.options.length <= 1) { msg.textContent = "Aucun contrat dans l’Historique. Enregistrez d’abord le contrat initial."; msg.className = "lookup-msg"; }
   }).catch(() => {});
   sel.addEventListener("change", async () => {
     if (!sel.value) return;
@@ -2859,14 +2859,14 @@ function corbSelection() {
 async function corbRestaurer() {
   const ids = corbSelection();
   const st = $("#corbStatus");
-  if (!ids.length) { st.textContent = "Coche d'abord ce que tu veux restaurer."; st.className = "status err"; return; }
+  if (!ids.length) { st.textContent = "Cochez d'abord les éléments à restaurer."; st.className = "status err"; return; }
   const r = await fetch("/api/corbeille/restaurer", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...enteteCode() },
     body: JSON.stringify({ ids }),
   });
   const j = await r.json().catch(() => ({}));
-  st.textContent = r.ok ? "♻ " + j.restaures + " élément(s) restauré(s) — retrouve-les dans l'Historique / Signatures." : (j.error || messageHttp(r.status));
+  st.textContent = r.ok ? "♻ " + j.restaures + " élément(s) restauré(s) — à retrouver dans l'Historique / Signatures." : (j.error || messageHttp(r.status));
   st.className = "status " + (r.ok ? "ok" : "err");
   loadCorbeille();
   loadHistory();
@@ -2875,7 +2875,7 @@ async function corbRestaurer() {
 async function corbPurger() {
   const ids = corbSelection();
   const st = $("#corbStatus");
-  if (!ids.length) { st.textContent = "Coche d'abord ce que tu veux purger."; st.className = "status err"; return; }
+  if (!ids.length) { st.textContent = "Cochez d'abord les éléments à supprimer définitivement."; st.className = "status err"; return; }
   if (!doubleConfirmation(ids.length + " élément(s) DÉFINITIVEMENT (il n'y aura plus AUCUN moyen de les restaurer)")) return;
   const r = await fetch("/api/corbeille/purger", {
     method: "POST",
@@ -2897,7 +2897,7 @@ function lirePdf(input) {
   return new Promise((resolve, reject) => {
     const f = input.files && input.files[0];
     if (!f) return resolve(null);
-    if (f.type !== "application/pdf") return reject(new Error("Choisis un fichier PDF."));
+    if (f.type !== "application/pdf") return reject(new Error("Choisissez un fichier PDF."));
     if (f.size > 25 * 1024 * 1024) return reject(new Error("PDF trop lourd (25 Mo max)."));
     const lecteur = new FileReader();
     lecteur.onload = () => resolve({ nom: f.name, contenu: lecteur.result });
@@ -3075,7 +3075,7 @@ async function validerImport() {
       return el ? el.value : "";
     });
     const fichier = await lirePdf($("#impFichier"));
-    if (!fichier) throw new Error("Choisis le PDF du contrat à importer.");
+    if (!fichier) throw new Error("Choisissez le PDF du contrat à importer.");
     const r = await fetch("/api/contracts/importer", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3123,7 +3123,7 @@ async function preremplirImportDepuisPdf() {
   const st = $("#impPreremplirStatus");
   const btn = $("#impPreremplir");
   const f = $("#impFichier").files && $("#impFichier").files[0];
-  if (!f) { st.textContent = "Choisis d'abord le PDF du contrat."; st.className = "status err"; return; }
+  if (!f) { st.textContent = "Choisissez d'abord le PDF du contrat."; st.className = "status err"; return; }
   if ($("#impType").value !== "sous-traitance") {
     st.textContent = "Pré-remplissage disponible uniquement pour une convention de sous-traitance.";
     st.className = "status err";

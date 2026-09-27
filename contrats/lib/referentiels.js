@@ -60,7 +60,7 @@ function ecrireAtomique(contenu) {
 // plutôt que d'écraser silencieusement son ajout/suppression — voir issue #84.
 class ConflitReferentiel extends Error {
   constructor(actuel) {
-    super("Le référentiel a été modifié entre-temps par quelqu'un d'autre — recharge et réessaie.");
+    super("Le référentiel a été modifié entre-temps par quelqu'un d'autre — rechargez la page et réessayez.");
     this.code = "REF_CONFLICT";
     this.actuel = actuel;
   }
