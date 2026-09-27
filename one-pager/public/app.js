@@ -872,7 +872,7 @@ $("#btn-badge-supprimer").addEventListener("click", async () => {
   const cle = $("#select-badge").value;
   if (!cle) return;
   const nom = libelleBadge(cle);
-  if (!confirm(`Supprimer « ${nom} » de la bibliothèque ?\n\nL'image est effacée du disque. Les dossiers déjà exportés ne changent pas.`)) return;
+  if (!await adbiConfirmer({ titre: `Supprimer « ${nom} »`, message: "L'image est retirée de la bibliothèque. Les dossiers déjà exportés ne changent pas.", confirmer: "Supprimer" })) return;
 
   try {
     const r = await fetch("/api/badges?cle=" + encodeURIComponent(cle), { method: "DELETE" });
@@ -1203,7 +1203,7 @@ $("#btn-pptx").addEventListener("click", async () => {
     if (!r.ok) throw new Error((await r.json()).error || "Export impossible.");
     telecharger(await r.blob(), `One-pager-${nomFichier()}.pptx`);
   } catch (e) {
-    alert(e instanceof TypeError ? "Serveur injoignable : vérifiez votre connexion." : e.message);
+    notice(e instanceof TypeError ? "Serveur injoignable : vérifiez votre connexion." : e.message, "erreur");
   } finally {
     b.disabled = false;
     b.textContent = "PowerPoint";
@@ -1280,7 +1280,7 @@ $("#corps-histo").addEventListener("click", async (ev) => {
   const suppr = ev.target.closest("[data-suppr]");
   if (suppr) {
     const nom = suppr.closest("tr").querySelector(".fort").textContent;
-    if (!confirm(`Retirer « ${nom} » de l'historique ?\n\nLe fichier d'origine n'est pas touché.`)) return;
+    if (!await adbiConfirmer({ titre: `Retirer « ${nom} » de l'historique`, message: "Le fichier d'origine n'est pas touché.", confirmer: "Retirer" })) return;
     await fetch("/api/cvs/" + suppr.dataset.suppr, { method: "DELETE" });
     chargerHistorique();
     return;

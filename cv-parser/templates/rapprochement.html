@@ -190,6 +190,8 @@
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='adbi-theme.css') }}"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='adbi-cvparser-sombre.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dialogues.css') }}"/>
+  <script src="{{ url_for('static', filename='dialogues.js') }}" defer></script>
 </head>
 <body>
 
@@ -457,7 +459,7 @@ function terminerChargement() {
 async function lancer() {
   const btn = document.getElementById('btnLancer');
   const description = document.getElementById('description').value.trim();
-  if (description.length < 30) { alert('La fiche de poste est trop courte.'); return; }
+  if (description.length < 30) { adbiNotifier('La fiche de poste est trop courte (30 caractères au moins).', 'warn'); return; }
 
   btn.disabled = true;
   btn.textContent = 'Analyse en cours…';
@@ -498,7 +500,7 @@ async function lancer() {
   } catch (e) {
     clearInterval(chrono);
     document.getElementById('carteTravail').hidden = true;
-    alert('❌ ' + (e instanceof TypeError ? 'Serveur injoignable, vérifiez votre connexion.' : e.message));
+    adbiNotifier(e instanceof TypeError ? 'Serveur injoignable, vérifiez votre connexion.' : e.message);
   } finally {
     btn.disabled = false;
     btn.textContent = 'Comparer et classer';

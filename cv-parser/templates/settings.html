@@ -187,6 +187,8 @@
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='adbi-theme.css') }}"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='adbi-cvparser-sombre.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dialogues.css') }}"/>
+  <script src="{{ url_for('static', filename='dialogues.js') }}" defer></script>
 </head>
 <body>
 
@@ -567,7 +569,7 @@ async function toggleActive(userId, currentlyActive) {
 }
 
 async function deleteUserConfirm(userId, name) {
-  if (!confirm(`Supprimer le compte de ${name} ?`)) return;
+  if (!await adbiConfirmer({ titre: 'Supprimer le compte', message: `Le compte de ${name} sera supprimé.`, confirmer: 'Supprimer' })) return;
   const r = await fetch(`/api/settings/users/${userId}`, { method: 'DELETE', credentials: 'include' });
   if (r.ok) { showToast('Utilisateur supprimé'); loadUsers(); }
 }
