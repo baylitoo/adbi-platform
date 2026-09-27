@@ -443,6 +443,8 @@
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='adbi-theme.css') }}"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='adbi-cvparser-sombre.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dialogues.css') }}"/>
+  <script src="{{ url_for('static', filename='dialogues.js') }}" defer></script>
 </head>
 <body>
 
@@ -1262,7 +1264,9 @@ async function saveAll() {
   } catch { showToast('❌ Erreur de sauvegarde'); }
 }
 
-function confirmReset() { if (confirm('Réinitialiser tous les champs ?')) location.reload(); }
+async function confirmReset() {
+  if (await adbiConfirmer({ titre: 'Réinitialiser la fiche', message: 'Les modifications non enregistrées seront perdues.', confirmer: 'Réinitialiser' })) location.reload();
+}
 
 /**
  * Télécharge le dossier de compétences ADBI, en PDF ou en Word.
@@ -1299,7 +1303,7 @@ async function telechargerDossier(format) {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
     showToast(`✓ Dossier ${format.toUpperCase()} téléchargé`);
   } catch (e) {
-    alert('❌ Génération impossible : ' + (e instanceof TypeError ? 'serveur injoignable, vérifiez votre connexion.' : e.message));
+    adbiNotifier('Génération impossible : ' + (e instanceof TypeError ? 'serveur injoignable, vérifiez votre connexion.' : e.message));
   } finally {
     btn.disabled = false;
     btn.classList.remove('tbtn-loading');
@@ -1491,7 +1495,7 @@ async function relancerAnalyse(btn) {
   } catch (e) {
     btn.innerHTML = texte;
     btn.disabled = false;
-    alert('Ré-analyse impossible : ' + (e instanceof TypeError ? 'serveur injoignable, vérifiez votre connexion.' : e.message));
+    adbiNotifier('Ré-analyse impossible : ' + (e instanceof TypeError ? 'serveur injoignable, vérifiez votre connexion.' : e.message));
   }
 }
 </script>

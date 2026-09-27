@@ -1,0 +1,91 @@
+/* Boîtes de dialogue et notifications à la charte (dialogues.js) : jetons --adbi-* uniquement. */
+.adbi-dialogue-fond {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--adbi-bg) 72%, transparent);
+}
+.adbi-dialogue {
+  width: min(440px, 100%);
+  padding: 22px;
+  background: var(--adbi-surface);
+  color: var(--adbi-text1);
+  border: 1px solid var(--adbi-border);
+  border-radius: var(--adbi-r-lg);
+  box-shadow: var(--adbi-sh-lg);
+  font-family: var(--adbi-police);
+}
+.adbi-dialogue-titre {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--adbi-text1);
+}
+.adbi-dialogue-texte {
+  margin: 0 0 18px;
+  color: var(--adbi-text2);
+  line-height: 1.5;
+  white-space: pre-line;
+}
+.adbi-dialogue-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.adbi-dialogue-bouton {
+  padding: 9px 16px;
+  border: 1px solid var(--adbi-border);
+  border-radius: var(--adbi-r-md);
+  background: var(--adbi-surface-2);
+  color: var(--adbi-text1);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.adbi-dialogue-bouton:hover {
+  border-color: var(--adbi-border-fort);
+}
+.adbi-dialogue-bouton.principal {
+  background: var(--adbi-accent);
+  border-color: var(--adbi-accent);
+  color: var(--adbi-sur-accent);
+}
+.adbi-dialogue-bouton.danger {
+  background: var(--adbi-erreur);
+  border-color: var(--adbi-erreur);
+  color: var(--adbi-sur-etat);
+}
+.adbi-notes {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+}
+.adbi-note {
+  padding: 12px 14px;
+  background: var(--adbi-surface);
+  color: var(--adbi-text1);
+  border: 1px solid var(--adbi-border);
+  border-left: 4px solid var(--adbi-accent);
+  border-radius: var(--adbi-r-md);
+  box-shadow: var(--adbi-sh);
+  font-family: var(--adbi-police);
+  line-height: 1.45;
+}
+.adbi-note.err {
+  border-left-color: var(--adbi-erreur);
+}
+.adbi-note.warn {
+  border-left-color: var(--adbi-attention);
+}
+.adbi-note.ok {
+  border-left-color: var(--adbi-ok);
+}

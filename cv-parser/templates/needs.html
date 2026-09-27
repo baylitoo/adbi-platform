@@ -252,6 +252,8 @@
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='adbi-theme.css') }}"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='adbi-cvparser-sombre.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dialogues.css') }}"/>
+  <script src="{{ url_for('static', filename='dialogues.js') }}" defer></script>
 </head>
 <body>
 
@@ -659,7 +661,7 @@ async function toggleActive(id, currentlyActive) {
 }
 
 async function deleteNeed(id) {
-  if (!confirm('Supprimer ce besoin définitivement ?')) return;
+  if (!await adbiConfirmer({ titre: 'Supprimer ce besoin', message: 'Le besoin sera supprimé définitivement.', confirmer: 'Supprimer' })) return;
   await fetch(`/api/needs/${id}`, { method: 'DELETE', credentials: 'include' });
   showToast('Besoin supprimé');
   loadNeeds();

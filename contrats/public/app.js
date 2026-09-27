@@ -2325,7 +2325,7 @@ async function creerAvenantDepuis(r) {
 // Clôture / réouverture d'un contrat (les alertes de fin s'arrêtent une fois clos).
 async function basculerCloture(r) {
   const clos = r.statut === "clos";
-  if (!clos && !window.confirm("Clôturer le contrat " + (r.numero || "") + " ?\nIl restera dans l’historique (marqué 🔒) et ses alertes de fin s’arrêteront.")) return;
+  if (!clos && !await adbiConfirmer({ titre: "Clôturer le contrat " + (r.numero || ""), message: "Il restera dans l’historique, marqué clos, et ses alertes de fin s’arrêteront.", confirmer: "Clôturer", danger: false })) return;
   await fetch("/api/contracts/" + r.id + "/statut", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -2426,14 +2426,14 @@ function ligneContrat(r, estAvenantRattache, demandes) {
   const bDesigner = tr.querySelector(".pop-designer");
   if (bDesigner) bDesigner.addEventListener("click", async () => {
     fermerMenusHist();
-    if (!window.confirm("Retirer la mention « signé » du contrat " + (r.numero || "") + " ?\n(Le PDF déjà archivé reste dans le dossier.)")) return;
+    if (!await adbiConfirmer({ titre: "Retirer la mention « signé »", message: "Contrat " + (r.numero || "") + " : le PDF déjà archivé reste dans le dossier.", confirmer: "Retirer" })) return;
     await fetch("/api/contracts/" + r.id + "/signe", { method: "DELETE" });
     loadHistory();
   });
   tr.querySelector(".pop-cloture").addEventListener("click", () => { fermerMenusHist(); basculerCloture(r); });
   tr.querySelector(".pop-suppr").addEventListener("click", async () => {
     fermerMenusHist();
-    if (!doubleConfirmation("le contrat " + (r.numero || "") + " de l’historique")) return;
+    if (!await doubleConfirmation("le contrat " + (r.numero || "") + " de l’historique")) return;
     await fetch("/api/contracts/" + r.id, { method: "DELETE" });
     setStatus("Contrat " + (r.numero || "") + " déplacé dans la corbeille (restaurable dans Paramètres).", "ok");
     loadHistory();
@@ -2606,7 +2606,7 @@ async function loadHistory() {
 async function supprimerSelectionHist() {
   const ids = [...document.querySelectorAll("#histBody .sel-contrat:checked")].map((c) => c.value);
   if (!ids.length) return;
-  if (!doubleConfirmation(ids.length + " contrat(s) de l’historique")) return;
+  if (!await doubleConfirmation(ids.length + " contrat(s) de l’historique")) return;
   try {
     const r = await fetch("/api/contracts/supprimer", {
       method: "POST",
@@ -2783,7 +2783,7 @@ function carteDemande(d) {
       try {
         const r = await fetch("/api/signatures/" + d.id + "/synchroniser", { method: "POST" });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok) { alert(j.error || messageHttp(r.status)); ev.target.disabled = false; return; }
+        if (!r.ok) { adbiNotifier(j.error || messageHttp(r.status)); ev.target.disabled = false; return; }
         rafraichirSuivi();
       } catch (e) { ev.target.disabled = false; }
     }, true);
@@ -2794,7 +2794,7 @@ function carteDemande(d) {
     addBtn(ico("certificat") + (externe ? " Dossier de preuve" : " Certificat de signature"), "a", "/api/signatures/" + d.id + "/certificat");
   }
   addBtn(ico("corbeille") + " Supprimer", "b", async () => {
-    if (!doubleConfirmation("la demande de signature SIG-" + d.id + " (les liens cesseront de fonctionner)")) return;
+    if (!await doubleConfirmation("la demande de signature SIG-" + d.id + " (ses liens cesseront de fonctionner)")) return;
     await fetch("/api/signatures/" + d.id, { method: "DELETE" });
     setStatus("Demande SIG-" + d.id + " déplacée dans la corbeille (restaurable dans Paramètres).", "ok");
     rafraichirSuivi();
@@ -2822,11 +2822,11 @@ function badgeSignature(demandes) {
 /* Corbeille + double confirmation des suppressions sensibles           */
 /* ------------------------------------------------------------------ */
 
-// Suppression SENSIBLE = deux confirmations successives, en insistant.
-// L'élément part ensuite dans la corbeille (restaurable dans Paramètres).
-function doubleConfirmation(quoi) {
-  if (!window.confirm("Supprimer " + quoi + " ?\n\nL'élément partira dans la CORBEILLE (restaurable dans Paramètres → Corbeille).")) return false;
-  return window.confirm("⚠️ DERNIÈRE CONFIRMATION\n\nÊtes-vous VRAIMENT sûr de supprimer " + quoi + " ?");
+// Suppression SENSIBLE = deux confirmations successives ; `definitif` : purge sans corbeille.
+async function doubleConfirmation(quoi, { definitif = false } = {}) {
+  const suite = definitif ? "Cette suppression est définitive : aucune restauration ne sera possible." : "L'élément ira dans la corbeille, restaurable depuis Paramètres → Corbeille.";
+  if (!await adbiConfirmer({ titre: "Supprimer " + quoi, message: suite, confirmer: "Continuer" })) return false;
+  return adbiConfirmer({ titre: "Confirmer la suppression", message: "Voulez-vous vraiment supprimer " + quoi + " ?", confirmer: "Supprimer" });
 }
 
 async function loadCorbeille() {
@@ -2876,7 +2876,7 @@ async function corbPurger() {
   const ids = corbSelection();
   const st = $("#corbStatus");
   if (!ids.length) { st.textContent = "Cochez d'abord les éléments à supprimer définitivement."; st.className = "status err"; return; }
-  if (!doubleConfirmation(ids.length + " élément(s) DÉFINITIVEMENT (il n'y aura plus AUCUN moyen de les restaurer)")) return;
+  if (!await doubleConfirmation(ids.length + " élément(s) de la corbeille", { definitif: true })) return;
   const r = await fetch("/api/corbeille/purger", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...enteteCode() },
@@ -3485,7 +3485,7 @@ async function tplSauver() {
 
 async function tplToutReinitialiser() {
   if (!TPL_EDIT.data || TPL_EDIT.data.stub) return;
-  if (!window.confirm("Revenir au modèle d'origine pour « " + $("#tplType").selectedOptions[0].textContent + " » ?\nToutes les personnalisations de texte de ce type seront supprimées.")) return;
+  if (!await adbiConfirmer({ titre: "Revenir au modèle d'origine", message: "« " + $("#tplType").selectedOptions[0].textContent + " » : toutes les personnalisations de texte de ce type seront supprimées.", confirmer: "Rétablir l'original" })) return;
   await fetch("/api/templates-perso/" + TPL_EDIT.type, { method: "DELETE", headers: enteteCode() });
   await loadTplEditor();
   $("#tplStatus").textContent = "Modèle d'origine restauré.";
