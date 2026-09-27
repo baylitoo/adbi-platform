@@ -72,6 +72,14 @@ const ICONES = {
   dossier: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
   corbeille: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   certificat: '<circle cx="12" cy="8" r="6"/><path d="M15.5 13 17 22l-5-3-5 3 1.5-9"/>',
+  calendrier: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  personne: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  personnes: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  epingle: '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
+  euro: '<path d="M4 10h12"/><path d="M4 14h9"/><path d="M19 6a7.7 7.7 0 0 0-5.2-2A7.9 7.9 0 0 0 6 12c0 4.4 3.5 8 7.8 8 2 0 3.8-.8 5.2-2"/>',
+  balance: '<path d="M12 3v18"/><path d="M7 21h10"/><path d="M3 7h18"/><path d="m6 7-3 8a3 3 0 0 0 6 0z"/><path d="m18 7-3 8a3 3 0 0 0 6 0z"/>',
+  diese: '<line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/>',
+  etiquette: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>',
   courrier: '<path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22,6 12,13 2,6"/>',
 };
 function ico(nom, taille) {
@@ -524,7 +532,7 @@ function buildChecklist() {
       const ubtn = document.createElement("button");
       ubtn.type = "button";
       ubtn.className = "btn-up";
-      ubtn.textContent = "📎 Analyser le document (OCR)";
+      ubtn.textContent = "Analyser le document";
       ubtn.title = "Analyse le document et remplit la date de délivrance";
       ubtn.addEventListener("click", () => ufile.click());
       ufile.addEventListener("change", () => { if (ufile.files[0]) analyzeChecklistDoc(it, ufile.files[0], status, ubtn); ufile.value = ""; });
@@ -598,7 +606,7 @@ function isoOf(d) {
 async function analyzeChecklistDoc(it, fileObj, statusEl, btn) {
   const old = btn.textContent;
   btn.disabled = true; btn.textContent = "Analyse…";
-  statusEl.textContent = "🔎 Analyse du document…";
+  statusEl.textContent = "Analyse du document…";
   statusEl.className = "chk-doc-status";
   const ligneItem = statusEl.parentNode;
   const selModele = ligneItem && ligneItem.querySelector("[data-modele-selecteur]");
@@ -720,7 +728,7 @@ function renderPropositionKbis(host, res, annonce) {
   const libelle = (cle) => (state.fields.find((f) => f.key === cle) || {}).label || cle;
   const choix = K.choixParDefaut(prop);
 
-  host.appendChild(noeud("div", "lookup-msg", "📋 Lu sur le Kbis — à relire avant de reporter dans le contrat" +
+  host.appendChild(noeud("div", "lookup-msg", "Lu sur le Kbis — à relire avant de reporter dans le contrat" +
     (prop.nomVerifie ? "" : " (raison sociale du sous-traitant non saisie : rien ne vérifie que ce Kbis est le sien)")));
 
   prop.champs.forEach((c) => {
@@ -820,7 +828,7 @@ function ajouterAnalyseRib(item, it) {
   const ubtn = document.createElement("button");
   ubtn.type = "button";
   ubtn.className = "btn-up";
-  ubtn.textContent = "📎 Analyser le RIB";
+  ubtn.textContent = "Analyser le RIB";
   ubtn.title = "Lit le titulaire, l'IBAN et le BIC, et contrôle l'IBAN";
   ubtn.addEventListener("click", () => ufile.click());
   ufile.addEventListener("change", () => { if (ufile.files[0]) analyserRib(it, ufile.files[0], status, ubtn); ufile.value = ""; });
@@ -846,7 +854,7 @@ function ajouterAnalyseRib(item, it) {
 async function analyserRib(it, fileObj, statusEl, btn) {
   const old = btn.textContent;
   btn.disabled = true; btn.textContent = "Analyse…";
-  statusEl.textContent = "🔎 Analyse du RIB…";
+  statusEl.textContent = "Analyse du RIB…";
   statusEl.className = "chk-doc-status";
   const ligneItem = statusEl.parentNode;
   const selModele = ligneItem && ligneItem.querySelector("[data-modele-selecteur]");
@@ -1073,7 +1081,7 @@ async function validerCodeParametres() {
     $("#codeModal").classList.add("hidden");
     showView("parametres");
   } catch (e) {
-    st.textContent = "🔴 " + e.message;
+    st.textContent = e.message;
     st.className = "status err";
     $("#codeInput").select();
   }
@@ -1117,10 +1125,10 @@ async function zohoEchangerCode() {
     const j = await r.json();
     if (!r.ok || !j.ok) throw new Error(j.message || messageHttp(r.status));
     $("#setZohoCode").value = "";
-    st.textContent = "🟢 " + j.message; st.style.color = "var(--ok)";
+    st.textContent = j.message; st.style.color = "var(--ok)";
     await loadSettings();
   } catch (e) {
-    st.textContent = "🔴 " + e.message; st.style.color = "var(--accent)";
+    st.textContent = e.message; st.style.color = "var(--accent)";
   }
   btn.disabled = false;
 }
@@ -1582,7 +1590,7 @@ function renderReferentiels() {
   (state.ref.soustraitants || []).forEach((e, i) => {
     const row = document.createElement("div");
     row.className = "ref-row";
-    row.innerHTML = '<span class="ref-main">🏢 ' + escapeHtml(e.nom) + "</span>" +
+    row.innerHTML = '<span class="ref-main">' + ico("immeuble") + ' ' + escapeHtml(e.nom) + "</span>" +
       '<span class="ref-sub">' + escapeHtml([e.formeJuridique, e.siren && "SIREN " + e.siren, e.representant].filter(Boolean).join(" · ") || "—") + "</span>";
     const del = document.createElement("button");
     del.className = "ref-del"; del.textContent = "✕"; del.title = "Supprimer";
@@ -1603,7 +1611,7 @@ function renderReferentiels() {
   const search = document.createElement("input");
   search.type = "text";
   search.className = "ref-input ref-search";
-  search.placeholder = "🔎 Rechercher un client par nom…";
+  search.placeholder = "Rechercher un client par nom…";
   search.value = refClientQuery;
   cSec.appendChild(search);
 
@@ -1679,15 +1687,15 @@ function buildRecapAvenant() {
     '<div class="recap-titre">ⓘ Repris du contrat initial <b>' + escapeHtml(p.numero || "") + "</b> — à titre informatif " +
     '<span class="muted">(modifiez les champs ci-dessous si la situation a changé)</span></div>' +
     '<div class="recap-volets">' +
-    '<div class="recap-volet"><h4>📄 Le contrat</h4>' +
-    ligne("🗓️", "Début", dFr(p.dateDebut)) +
-    ligne("⏰", "Fin du contrat", dFr(p.dateFin) + (finBientot === "echu" ? " — échu" : finBientot === "bientot" ? " — bientôt !" : ""), finBientot ? "alerte" : "") +
-    ligne("💶", "TJM", p.tjm ? p.tjm + " € HT / jour" : "") +
+    '<div class="recap-volet"><h4>' + ico("document") + ' Le contrat</h4>' +
+    ligne(ico("calendrier"), "Début", dFr(p.dateDebut)) +
+    ligne(ico("horloge"), "Fin du contrat", dFr(p.dateFin) + (finBientot === "echu" ? " — échu" : finBientot === "bientot" ? " — bientôt !" : ""), finBientot ? "alerte" : "") +
+    ligne(ico("euro"), "TJM", p.tjm ? p.tjm + " € HT / jour" : "") +
     "</div>" +
-    '<div class="recap-volet"><h4>👥 Les personnes</h4>' +
-    ligne("🏢", "Client final", p.clientFinal) +
-    ligne("🤝", "Sous-traitant", p.stNom) +
-    ligne("👤", "Consultant", p.consultant) +
+    '<div class="recap-volet"><h4>' + ico("personnes") + ' Les personnes</h4>' +
+    ligne(ico("immeuble"), "Client final", p.clientFinal) +
+    ligne(ico("personnes"), "Sous-traitant", p.stNom) +
+    ligne(ico("personne"), "Consultant", p.consultant) +
     "</div>" +
     "</div>";
   return boite;
@@ -2245,7 +2253,7 @@ function majSelectionHist() {
   const coches = document.querySelectorAll("#histBody .sel-contrat:checked");
   const btn = $("#histDelSel");
   btn.classList.toggle("hidden", coches.length === 0);
-  btn.textContent = "🗑 Supprimer la sélection (" + coches.length + ")";
+  btn.textContent = "Supprimer la sélection (" + coches.length + ")";
   const tous = document.querySelectorAll("#histBody .sel-contrat");
   $("#histAll").checked = tous.length > 0 && coches.length === tous.length;
 }
@@ -2349,16 +2357,16 @@ async function ficheEntreprise(nom, siren) {
     if (!r.ok || e.error) throw new Error(e.error || messageHttp(r.status));
     const ligne = (ico, label, val) => val ? '<div class="ent-ligne"><span class="ent-ico">' + ico + '</span><span class="ent-label">' + label + "</span><b>" + escapeHtml(String(val)) + "</b></div>" : "";
     const etabs = (e.etablissements || []).slice(0, 4).map((x) =>
-      '<li>' + (x.estSiege ? "🏛 Siège — " : "📍 ") + escapeHtml(x.adresse || x.ville || x.siret) + (x.actif ? "" : " <i>(fermé)</i>") + "</li>").join("");
+      '<li>' + (x.estSiege ? ico("immeuble") + " Siège — " : ico("epingle") + " ") + escapeHtml(x.adresse || x.ville || x.siret) + (x.actif ? "" : " <i>(fermé)</i>") + "</li>").join("");
     $("#entCorps").innerHTML =
       '<div class="ent-etat ' + (e.etat === "active" ? "ok" : "ko") + '">' + (e.etat === "active" ? "● En activité" : "■ Cessée") + "</div>" +
-      ligne("🏢", "Raison sociale", e.stNom) +
-      ligne("⚖️", "Forme juridique", e.formeJuridique) +
-      ligne("👤", "Dirigeant", e.stRepresentant + (e.qualite ? " — " + e.qualite : "")) +
-      ligne("🔢", "SIREN", e.stSiren) +
-      ligne("🏷", "SIRET (siège)", e.stSiret) +
-      ligne("📍", "Adresse", e.stAdresse) +
-      (e.etablissementsTotal != null ? ligne("🏬", "Établissements", e.etablissementsTotal + (e.etablissementsFermes ? " (dont " + e.etablissementsFermes + " fermés)" : "")) : "") +
+      ligne(ico("immeuble"), "Raison sociale", e.stNom) +
+      ligne(ico("balance"), "Forme juridique", e.formeJuridique) +
+      ligne(ico("personne"), "Dirigeant", e.stRepresentant + (e.qualite ? " — " + e.qualite : "")) +
+      ligne(ico("diese"), "SIREN", e.stSiren) +
+      ligne(ico("etiquette"), "SIRET (siège)", e.stSiret) +
+      ligne(ico("epingle"), "Adresse", e.stAdresse) +
+      (e.etablissementsTotal != null ? ligne(ico("immeuble"), "Établissements", e.etablissementsTotal + (e.etablissementsFermes ? " (dont " + e.etablissementsFermes + " fermés)" : "")) : "") +
       (etabs ? '<ul class="ent-etabs">' + etabs + "</ul>" : "") +
       '<p class="ent-source">Source : ' + escapeHtml(e._source || "annuaire public") + " — " +
       '<a href="https://annuaire-entreprises.data.gouv.fr/entreprise/' + encodeURIComponent(e.stSiren || "") + '" target="_blank" rel="noopener">fiche complète ↗</a></p>';
@@ -2378,7 +2386,7 @@ function ligneContrat(r, estAvenantRattache, demandes) {
   const icone = r.statut === "clos" ? ico("cadenas") : r.type === "avenant" ? ico("avenant") : ico("document");
   const prefixe = estAvenantRattache ? '<span class="av-lien">└</span> ' : "";
   const alerte = alerteFin(r);
-  const badge = r.statut === "clos" ? '<span class="badge-fin clos">🔒 clôturé</span>'
+  const badge = r.statut === "clos" ? '<span class="badge-fin clos">' + ico("cadenas") + ' clôturé</span>'
     : alerte ? '<span class="badge-fin ' + alerte.niveau + '">⏰ ' + alerte.texte + "</span>" : "";
   // Signé HORS application (mention cochée, PDF en pièce jointe dans le dossier) :
   // badge vert seulement si aucune demande de signature app ne raconte déjà l'histoire.
@@ -2460,8 +2468,8 @@ function renderFinAlertes(rows) {
       (r.dateFin ? " (fin le " + r.dateFin.split("-").reverse().join("/") + ")" : "") +
       " — prolonger par avenant ou clôturer ?</span>" +
       '<span class="fin-acts">' +
-      '<button class="btn btn-primary f-avenant">➕ Créer l’avenant</button>' +
-      '<button class="btn f-cloturer">🔒 Clôturer</button>' +
+      '<button class="btn btn-primary f-avenant">Créer l’avenant</button>' +
+      '<button class="btn f-cloturer">' + ico("cadenas") + ' Clôturer</button>' +
       "</span>";
     div.querySelector(".f-avenant").addEventListener("click", () => creerAvenantDepuis(r));
     div.querySelector(".f-cloturer").addEventListener("click", () => basculerCloture(r));
@@ -2701,7 +2709,7 @@ function renderSignLinks(demande, envoiAuto) {
   // les relances et le code de vérification — ici on récapitule l'ordre.
   const ban = document.createElement("div");
   ban.className = "envoi-banniere ok";
-  ban.innerHTML = "📨 <b>Enveloppe créée chez " + escapeHtml((envoiAuto && envoiAuto.fournisseur) || demande.fournisseur || "le fournisseur") + "</b> — " +
+  ban.innerHTML = ico("courrier") + " <b>Enveloppe créée chez " + escapeHtml((envoiAuto && envoiAuto.fournisseur) || demande.fournisseur || "le fournisseur") + "</b> — " +
     "l'invitation part au 1er signataire, le 2e est invité dès la 1re signature (relances automatiques). " +
     "À la fin : PDF signé + dossier de preuve, récupérés par « Synchroniser » ou automatiquement via webhook.";
   box.appendChild(ban);
@@ -2714,7 +2722,7 @@ function renderSignLinks(demande, envoiAuto) {
       escapeHtml(s.role + " — " + (s.nom || "")) + "</div>" +
       '<div class="mail">' + escapeHtml(s.email) +
       (premier ? " — invitation envoyée par e-mail" : " — sera invité après la 1re signature") + "</div>" +
-      (s.url ? '<div class="acts"><a class="btn" href="' + s.url + '" target="_blank" rel="noopener">✍ Ouvrir la page de signature</a></div>' : "");
+      (s.url ? '<div class="acts"><a class="btn" href="' + s.url + '" target="_blank" rel="noopener">' + ico("plume") + ' Ouvrir la page de signature</a></div>' : "");
     box.appendChild(row);
   });
 }
@@ -2753,7 +2761,7 @@ function carteDemande(d) {
   it.innerHTML =
     '<div class="ligne1"><span class="ref">SIG-' + d.id + " — " + escapeHtml(d.numero || "") + "</span>" +
     "<span>" + escapeHtml(d.titre || "") + "</span>" +
-    (aVous ? '<span class="badge-etat a-vous-badge">✍ À vous de signer</span>'
+    (aVous ? '<span class="badge-etat a-vous-badge">' + ico("plume") + ' À vous de signer</span>'
            : '<span class="badge-etat ' + d.statut + '">' + (ETATS[d.statut] || d.statut) + "</span>") +
     (externe ? '<span class="chip-fournisseur" title="Demande gérée par le tiers de confiance">via ' + escapeHtml(d.fournisseur) + "</span>" : "") +
     echBadge +
@@ -2778,7 +2786,7 @@ function carteDemande(d) {
   // Synchronisation : statut chez le fournisseur + téléchargement du PDF signé
   // et du dossier de preuve à la fin (relances/délais gérés par le fournisseur).
   if (externe && d.statut === "envoyee") {
-    addBtn("🔄 Synchroniser le statut", "b", async (ev) => {
+    addBtn("Synchroniser le statut", "b", async (ev) => {
       ev.target.disabled = true;
       try {
         const r = await fetch("/api/signatures/" + d.id + "/synchroniser", { method: "POST" });
@@ -2866,7 +2874,7 @@ async function corbRestaurer() {
     body: JSON.stringify({ ids }),
   });
   const j = await r.json().catch(() => ({}));
-  st.textContent = r.ok ? "♻ " + j.restaures + " élément(s) restauré(s) — à retrouver dans l'Historique / Signatures." : (j.error || messageHttp(r.status));
+  st.textContent = r.ok ? j.restaures + " élément(s) restauré(s) — à retrouver dans l'Historique / Signatures." : (j.error || messageHttp(r.status));
   st.className = "status " + (r.ok ? "ok" : "err");
   loadCorbeille();
   loadHistory();
@@ -3131,7 +3139,7 @@ async function preremplirImportDepuisPdf() {
   }
   const old = btn.textContent;
   btn.disabled = true; btn.textContent = "Extraction…";
-  st.textContent = "🔎 Extraction (inférence interne) en cours…";
+  st.textContent = "Extraction (inférence interne) en cours…";
   st.className = "status";
   // Marques d'un pré-remplissage précédent : elles ne valent plus.
   marquerChampsImportAVerifier([]);
@@ -3161,7 +3169,7 @@ async function preremplirImportDepuisPdf() {
       if (t.etat === "terminee") d = t.resultat || {};
       else if (t.etat === "echec") throw new Error((t.erreur && t.erreur.message) || "extraction en échec.");
       else if (t.etape === "en_attente") st.textContent = "⏳ En attente d'une extraction libre" + (t.position ? " (position " + t.position + ")" : "") + "…";
-      else st.textContent = "🔎 Extraction (inférence interne) en cours…";
+      else st.textContent = "Extraction (inférence interne) en cours…";
     }
     if (!d) throw new Error("extraction trop longue : abandon du suivi après 30 minutes.");
     const v = d.values || {};
@@ -3287,7 +3295,7 @@ async function loadVueSignatures() {
     const signees = rows.filter((d) => d.statut === "complete").length;
     stats.innerHTML =
       '<span class="stat-chip attente">⏳ ' + enCours.length + " en attente</span>" +
-      (aVous ? '<span class="stat-chip avous">✍ ' + aVous + " à vous de signer</span>" : "") +
+      (aVous ? '<span class="stat-chip avous">' + ico("plume") + ' ' + aVous + " à vous de signer</span>" : "") +
       (expirees ? '<span class="stat-chip expiree">⏰ ' + expirees + " expirée(s)</span>" : "") +
       '<span class="stat-chip ok">✔ ' + signees + " signée(s)</span>";
     const liste = $("#listeSignatures");
@@ -3337,7 +3345,7 @@ async function toggleFichiers(tr, base) {
     fichiers.forEach((f) => {
       const a = document.createElement("a");
       a.href = "/api/fichiers/" + encodeURIComponent(base) + "/" + encodeURIComponent(f.nom);
-      a.textContent = "📎 " + f.nom;
+      a.textContent = f.nom;
       const meta = document.createElement("span");
       meta.className = "meta";
       meta.textContent = Math.max(1, Math.round(f.taille / 1024)) + " Ko";

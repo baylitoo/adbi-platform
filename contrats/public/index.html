@@ -19,8 +19,8 @@
   <aside class="sidebar">
     <div class="brand"><img src="/logo-adbi.png" class="logo-img" alt="ADBI" /><span class="brand-sub">Générateur de contrats</span></div>
     <nav class="nav">
-      <button class="nav-item active" data-view="editeur"><span class="ico-anim">✎</span>  Éditeur</button>
-      <button class="nav-item" data-view="historique"><span class="ico-anim">☰</span>  Historique</button>
+      <button class="nav-item active" data-view="editeur"><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span> Éditeur</button>
+      <button class="nav-item" data-view="historique"><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> Historique</button>
       <button class="nav-item" data-view="signatures"><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:14px;height:14px"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span> Signatures</button>
       <button class="nav-item" data-view="referentiels">Référentiels</button>
       <button class="nav-item" data-view="parametres">Paramètres</button>
@@ -50,7 +50,7 @@
             <div class="panel-head"><h3>Checklist documents</h3>
               <div class="chk-head-actions">
                 <span id="checkCount" class="badge soft">0 / 0</span>
-                <button id="btnMail" class="btn btn-ghost"><span class="ico-anim">✉️</span> Mail de demande</button>
+                <button id="btnMail" class="btn btn-ghost"><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span> Mail de demande</button>
               </div></div>
             <div id="docAlerts" class="doc-alerts hidden"></div>
             <div id="checklist" class="checklist"></div>
@@ -66,7 +66,7 @@
 
         <div class="col-preview">
           <div id="editBanner" class="edit-banner hidden">
-            <span>✎ Modification du contrat <b class="edit-num"></b> — « Enregistrer » met à jour cette ligne de l'historique.</span>
+            <span>Modification du contrat <b class="edit-num"></b> — « Enregistrer » met à jour cette ligne de l'historique.</span>
             <span class="edit-acts">
               <button id="editSaveNew" class="btn btn-ghost" type="button">Enregistrer comme nouveau</button>
               <button id="editQuit" class="btn btn-ghost" type="button" title="Quitter le mode modification">✕</button>
@@ -94,7 +94,7 @@
         <div class="panel-head"><h2><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:18px;height:18px"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span> Historique des contrats</h2>
           <span class="head-acts">
             <button id="btnImporter" class="btn">⬆ Importer</button>
-            <input id="histFiltre" class="hist-filtre" type="search" placeholder="🔍 Filtrer (n°, entreprise, client…)" />
+            <input id="histFiltre" class="hist-filtre" type="search" placeholder="Filtrer (n°, entreprise, client…)" />
             <button id="histDelSel" class="btn btn-danger hidden"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:13px;height:13px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Supprimer la sélection</button>
             <button id="refreshHist" class="btn btn-ghost">Rafraîchir</button>
           </span></div>
@@ -117,7 +117,7 @@
         <div id="signStats" class="sign-stats"></div>
         <div id="listeSignatures"></div>
         <p id="signVide" class="muted hidden">Aucune demande de signature pour le moment —
-          envoyez un contrat en signature depuis l'éditeur (bouton « ✍ Signature »),
+          envoyez un contrat en signature depuis l'éditeur (bouton « Signature »),
           ou importez un contrat déjà signé ailleurs.</p>
       </div>
     </section>
@@ -126,7 +126,7 @@
     <div id="codeModal" class="modal-overlay hidden">
       <div class="modal modal-code">
         <div class="modal-head">
-          <h2>🔒 Paramètres protégés</h2>
+          <h2><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span> Paramètres protégés</h2>
           <button id="codeClose" class="modal-x" type="button">×</button>
         </div>
         <p class="muted modal-intro">L'accès aux Paramètres (clés API des connecteurs, modèles de contrat,
@@ -184,7 +184,7 @@
           <div id="impAutresGrille" class="import-grille"></div>
         </details>
         <div class="modal-actions">
-          <button id="impPreremplir" class="btn-up" type="button" title="Extrait les champs ci-dessus depuis le PDF via l'inférence interne (relecture obligatoire avant import)">🪄 Pré-remplir depuis le PDF</button>
+          <button id="impPreremplir" class="btn-up" type="button" title="Extrait les champs ci-dessus depuis le PDF via l'inférence interne (relecture obligatoire avant import)">Pré-remplir depuis le PDF</button>
           <!-- Modèle d'extraction (#194) : rempli par app.js depuis /api/modeles, masqué s'il n'y a qu'un modèle. -->
           <select id="impModele" class="tpl-select hidden" title="Modèle d'extraction du pré-remplissage"></select>
           <span id="impPreremplirStatus" class="status"></span>
@@ -201,7 +201,7 @@
     <div id="signeModal" class="modal-overlay hidden">
       <div class="modal">
         <div class="modal-head">
-          <h2>✔ Marquer « signé » — <span id="signeNumero"></span></h2>
+          <h2>Marquer « signé » — <span id="signeNumero"></span></h2>
           <button id="signeClose" class="modal-x" type="button">×</button>
         </div>
         <p class="muted modal-intro">Ce contrat a été signé HORS de l'application (papier, autre outil).
@@ -214,7 +214,7 @@
           </label>
         </div>
         <div class="modal-actions">
-          <button id="signeValider" class="btn btn-primary" type="button">✔ Cocher la mention signé</button>
+          <button id="signeValider" class="btn btn-primary" type="button">Cocher la mention signé</button>
           <span id="signeStatus" class="status"></span>
         </div>
       </div>
@@ -258,7 +258,7 @@
           <p class="muted modal-intro">Demande créée chez le tiers de confiance — rien d'autre à faire :
             les invitations et les relances partent automatiquement.</p>
           <div id="signLinks"></div>
-          <p class="muted modal-note">Suivi, synchronisation et documents finaux dans l'onglet <b>✍ Signatures</b>
+          <p class="muted modal-note">Suivi, synchronisation et documents finaux dans l'onglet <b>Signatures</b>
             (et sur la ligne du contrat dans l'Historique).</p>
           <div class="modal-actions">
             <button id="signDone" class="btn btn-primary" type="button">Terminer</button>
@@ -304,7 +304,7 @@
             </select>
           </label>
           <div class="set-row">
-            <span>Source gratuite par défaut <em id="setGouvState" class="set-state ok">🟢 sans clé</em>
+            <span>Source gratuite par défaut <em id="setGouvState" class="set-state ok">sans clé</em>
               <button type="button" class="set-test" data-provider="gouv">Tester</button></span>
             <div class="muted set-hint">API officielle « Recherche d'entreprises » (annuaire-entreprises.data.gouv.fr) — fonctionne sans aucune configuration. Pas besoin de clé.</div>
           </div>
@@ -374,7 +374,7 @@
 
       <!-- Corbeille : tout ce qui a été supprimé, restaurable à la sélection -->
       <div class="panel settings-panel">
-        <div class="panel-head"><h2><span class="ico-anim">🗑</span> Corbeille — restaurer des éléments supprimés</h2>
+        <div class="panel-head"><h2><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span> Corbeille — restaurer des éléments supprimés</h2>
           <button id="corbRafraichir" class="btn btn-ghost">Rafraîchir</button></div>
         <p class="muted set-intro">Chaque suppression (contrat de l'historique, demande de signature) arrive ici
           au lieu d'être perdue. Cochez les éléments à récupérer puis « Restaurer » — une demande de signature
@@ -382,15 +382,15 @@
         <div id="corbListe" class="corb-liste"></div>
         <p id="corbVide" class="muted hidden">La corbeille est vide.</p>
         <div class="modal-actions">
-          <button id="corbRestaurer" class="btn btn-primary" type="button">♻ Restaurer la sélection</button>
-          <button id="corbPurger" class="btn btn-danger" type="button">🗑 Supprimer définitivement la sélection</button>
+          <button id="corbRestaurer" class="btn btn-primary" type="button">Restaurer la sélection</button>
+          <button id="corbPurger" class="btn btn-danger" type="button">Supprimer définitivement la sélection</button>
           <span id="corbStatus" class="status"></span>
         </div>
       </div>
 
       <!-- Éditeur des modèles de contrat : texte des articles, titres, en-tête, pied -->
       <div class="panel settings-panel">
-        <div class="panel-head"><h2><span class="ico-anim">📝</span> Modèles de contrat — modifier le texte</h2></div>
+        <div class="panel-head"><h2><span class="ico-anim"><svg class="ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span> Modèles de contrat — modifier le texte</h2></div>
         <p class="muted set-intro">Modifiez ici le texte du modèle (articles, titres, en-tête, pied de page) :
           l'aperçu et tous les exports (PDF, Word, signature) utiliseront votre version.
           Conservez les variables <code>{{…}}</code> (elles sont remplacées par les valeurs du formulaire)
@@ -399,7 +399,7 @@
           régénéré changerait).</p>
         <div class="tpl-toolbar">
           <select id="tplType" class="tpl-select"></select>
-          <input id="tplFiltre" type="search" class="hist-filtre" placeholder="🔍 Chercher un article, un mot…" />
+          <input id="tplFiltre" type="search" class="hist-filtre" placeholder="Chercher un article, un mot…" />
           <button id="tplSave" class="btn btn-primary">Enregistrer le modèle</button>
           <button id="tplResetAll" class="btn btn-danger">↺ Tout réinitialiser</button>
         </div>
