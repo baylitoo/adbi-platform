@@ -605,7 +605,7 @@
          sinon le panneau promettrait un secours impossible. #}
       {% if modeles | selectattr('role', 'equalto', 'externe') | first %}
       <details class="fallback" id="fallbackBloc">
-        <summary>Fallback</summary>
+        <summary>Si l'analyse échoue</summary>
         <div class="fallback-corps">
           <label class="fallback-choix">
             <input type="radio" name="fallback" value="" checked>

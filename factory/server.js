@@ -625,9 +625,11 @@ const serveur = http.createServer(async (req, rep) => {
 
   if (chemin === "/api/llm/chaine" && req.method === "GET") {
     const modeles = await modelesChaineLlm();
+    const utilisateur = auth.garde(req, process.env).utilisateur;
     return repondreJson(rep, 200, {
       configure: !!LLM_BASE_URL && modeles.length > 0,
       modeles,
+      admin: !!utilisateur && utilisateur.role === "superuser",
     });
   }
 
@@ -636,7 +638,7 @@ const serveur = http.createServer(async (req, rep) => {
   }
 
   if (chemin === "/api/llm/tester" && req.method === "POST") {
-    if (!LLM_BASE_URL) return repondreJson(rep, 200, { ok: false, erreur: "Passerelle non configurée (ADBI_LLM_BASE_URL)." });
+    if (!LLM_BASE_URL) return repondreJson(rep, 200, { ok: false, erreur: "Service d'IA non configuré." });
     let corps;
     try {
       corps = await lireCorpsJson(req);

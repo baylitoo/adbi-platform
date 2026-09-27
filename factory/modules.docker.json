@@ -54,7 +54,7 @@
       "id": "cv-parser",
       "nom": "ADBI Parser",
       "accroche": "Extraction structurée de CV",
-      "detail": "Extraction structurée via DocIE, base de compétences, recherche de profils et rapprochement avec les besoins.",
+      "detail": "Extraction structurée des CV, base de compétences, recherche de profils et rapprochement avec les besoins.",
       "tags": ["Sourcing", "Base CV"],
       "icone": "parser",
       "type": "service",
