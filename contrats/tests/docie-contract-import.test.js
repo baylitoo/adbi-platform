@@ -128,7 +128,7 @@ test("mapContractResult: cas nominal — dates ISO/FR normalisées, montant EUR,
   assert.equal(mapped.values.dateFin, "2026-12-31");
   assert.equal(mapped.values.tjm, "450");
   assert.equal(mapped.values.delaiPaiement, "45");
-  assert.ok(mapped.warnings.some((w) => /extraction_notes/.test(w) && /lieu_execution/.test(w)));
+  assert.ok(mapped.warnings.some((w) => /^Note d'extraction : /.test(w) && /lieu_execution/.test(w)));
   // Champs sans équivalent DocIE : vides, jamais inventés.
   assert.equal(mapped.values.stEmail, undefined); // non émis du tout (voir GAP)
 });
@@ -289,8 +289,8 @@ test("intégration réelle du bridge partagé, fixture RAW non déballée (fetch
 test("mapContractResult: validation DocIE -> avertissements reportés (parité avec contract_to_contrats.py, #179 A1)", () => {
   const validation = { valid: false, errors: ["tjm hors bornes plausibles"], warnings: ["low overall confidence"] };
   const mapped = mapContractResult(NOMINAL_RESULT, { validation });
-  assert.ok(mapped.warnings.includes("DocIE validation.warnings: low overall confidence"));
-  assert.ok(mapped.warnings.includes("DocIE validation.errors: tjm hors bornes plausibles"));
+  assert.ok(mapped.warnings.includes("Avertissement de validation : low overall confidence"));
+  assert.ok(mapped.warnings.includes("Erreur de validation : tjm hors bornes plausibles"));
   // `validation` absente (agent qui n'en émet pas) : aucun avertissement
   // fabriqué, et surtout aucun plantage.
   assert.ok(!mapContractResult(NOMINAL_RESULT).warnings.some((w) => /validation/.test(w)));
@@ -430,7 +430,7 @@ test("extractContractValues: la validation du pont traverse jusqu'aux avertissem
   const body = { dataBase64: Buffer.from("%PDF-1.4 fake").toString("base64"), mimeType: "application/pdf" };
   const result = await extractContractValues(body, { env, extractDocument });
   assert.equal(result.requestId, "req-43");
-  assert.ok(result.warnings.includes("DocIE validation.warnings: low overall confidence"));
+  assert.ok(result.warnings.includes("Avertissement de validation : low overall confidence"));
 });
 
 // #194 (liste retenue, « échouer bruyamment ») : chaque cas du jeu d'essai

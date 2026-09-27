@@ -351,7 +351,7 @@
 
       <div style="font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:16px">
         Le modèle utilisé est le premier actif de la chaîne ci-dessous, qui suit le
-        store DocIE : il n'y a plus de modèle à saisir ici.
+        catalogue de la plateforme d'inférence interne : il n'y a plus de modèle à saisir ici.
       </div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -370,7 +370,7 @@
         Les modèles sont essayés <strong>dans l'ordre</strong> : le premier qui répond fournit
         la réponse. Un modèle en panne ou à court de quota est simplement sauté — l'analyse
         ne s'arrête plus pour autant.<br>
-        La liste suit <strong>le store DocIE</strong> : tout modèle de chat prêt y apparaît de
+        La liste suit <strong>le catalogue de la plateforme d'inférence interne</strong> : tout modèle de chat prêt y apparaît de
         lui-même, un modèle arrêté en disparaît. Ici on ne règle que l'ordre et l'activation ;
         adresse et clé de la passerelle restent côté serveur (variables d'environnement).
       </div>
@@ -385,9 +385,9 @@
 
     <!-- Modèles disponibles sur DocIE -->
     <div class="card">
-      <div class="card-title">Modèles disponibles sur DocIE</div>
+      <div class="card-title">Modèles de l'inférence interne</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.55">
-        Lu en direct sur le store DocIE : ce qui est déployé, et s'il est prêt à servir.
+        Lu en direct sur le catalogue de la plateforme d'inférence interne : ce qui est déployé, et s'il est prêt à servir.
         Un modèle prêt est proposé de lui-même dans les sélecteurs d'extraction et dans la
         chaîne ci-dessus ; aucune variable à poser. Rafraîchi toutes les 5 minutes, par
         « Tester la connexion », ou à la demande.
@@ -726,8 +726,8 @@ async function chargerModelesDocie() {
   try {
     const r = await fetch('/api/settings/docie/modeles', { credentials: 'include' });
     const d = await r.json();
-    if (!r.ok || d.error) zone.innerHTML = `<div class="empty-state">${escDocie(d.error || 'DocIE injoignable')}</div>`;
-    else if (!d.modeles.length) zone.innerHTML = '<div class="empty-state">Aucun modèle dans le store DocIE</div>';
+    if (!r.ok || d.error) zone.innerHTML = `<div class="empty-state">${escDocie(d.error || "Plateforme d'inférence interne injoignable")}</div>`;
+    else if (!d.modeles.length) zone.innerHTML = "<div class=\"empty-state\">Aucun modèle dans le catalogue de la plateforme d'inférence interne</div>";
     else zone.innerHTML = d.modeles.map(ligneModeleDocie).join('');
   } catch (e) {
     zone.innerHTML = `<div class="empty-state">Erreur réseau : ${escDocie(e.message)}</div>`;
@@ -752,7 +752,7 @@ async function chargerChaine() {
 function dessinerChaine() {
   const zone = document.getElementById('chaineListe');
   if (!_chaine.length) {
-    zone.innerHTML = '<div class="empty-state">Aucun modèle de chat prêt sur DocIE — ' +
+    zone.innerHTML = "<div class=\"empty-state\">Aucun modèle de chat prêt sur la plateforme d'inférence interne — " +
                      'la chaîne se remplit dès qu\'un modèle est démarré.</div>';
     return;
   }
@@ -774,7 +774,7 @@ function dessinerChaine() {
 
       <div style="flex:1;min-width:220px">
         <div style="font-weight:700;font-size:13px">${escDocie(e.nom)}
-          ${e.decouvert ? '<span style="font-size:10px;font-weight:700;color:var(--muted);margin-left:6px">découvert sur DocIE</span>' : ''}
+          ${e.decouvert ? '<span style="font-size:10px;font-weight:700;color:var(--muted);margin-left:6px">découvert sur l\'inférence interne</span>' : ''}
         </div>
         <code style="font-size:11px;color:var(--muted)">${escDocie(e.modele)}</code>
       </div>

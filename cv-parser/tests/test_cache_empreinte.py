@@ -41,7 +41,7 @@ REPONSE_DOCIE = (
 SOURCE_APP = (RACINE / "app.py").read_text(encoding="utf-8")
 
 # Phrase posée par app.py::process_cv quand DocIE signale quelque chose.
-AVERTISSEMENT = "DocIE signale des champs à vérifier. Relisez la fiche extraite."
+AVERTISSEMENT = "La plateforme d'inférence interne signale des champs à vérifier. Relisez la fiche extraite."
 
 
 def _de_app(noms):
