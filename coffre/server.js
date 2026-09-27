@@ -503,8 +503,8 @@ const TYPES = {
 function servirFichier(rep, chemin) {
   fs.readFile(chemin, (err, contenu) => {
     if (err) {
-      rep.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-      rep.end("Introuvable");
+      rep.writeHead(404, { "Content-Type": "text/html; charset=utf-8" });
+      rep.end(auth.pageMessage("Page introuvable", "Cette page n'existe pas ou a été déplacée."));
       return;
     }
     rep.writeHead(200, {
@@ -522,15 +522,14 @@ function servirFichier(rep, chemin) {
 // archives. cv-parser reste le SEUL emetteur d'identite de la plateforme ; ici
 // on ne fait que VERIFIER, avec le meme secret. Le coffre ne signe rien.
 //
-// Un seul chemin reste public :
+// Chemins publics :
 //   /api/sante -- sonde du conteneur (coffre/Dockerfile). Un 401 y serait lu
 //                 comme un echec et Coolify redemarrerait le coffre en boucle.
 //
-// Et un seul : contrairement a factory, aucune ressource statique n'a besoin
-// d'etre exemptee, parce que la page rendue a un visiteur non authentifie est
-// autonome (styles en ligne, aucune police, aucune feuille externe).
+// Plus la charte (thème, police), dont la page de reconnexion a besoin avant toute session.
 function cheminPublic(chemin) {
-  return chemin === "/api/sante";
+  return chemin === "/api/sante"
+    || chemin === "/adbi-theme.css" || chemin === "/adbi-theme.js" || chemin.startsWith("/fonts/");
 }
 
 /** Renvoie true si la reponse a ete ecrite (visiteur refuse). */
@@ -542,16 +541,16 @@ function refuserSiNonAuthentifie(req, rep, chemin) {
   if (decision.api) {
     // Une API repond en JSON : le front appelle tout par fetch(), il ne doit
     // pas recevoir du HTML la ou il attend des donnees.
-    return repondreJson(rep, 401, { erreur: "Non authentifie" }), true;
+    return repondreJson(rep, 401, { erreur: "Non authentifié" }), true;
   }
   if (!FACTORY_URL) {
     // Sans URL de hub, aucune cible de reconnexion n'est fabricable : on le dit
     // plutot que de renvoyer vers une page qui n'existe pas ici.
     rep.writeHead(401, {
-      "Content-Type": "text/plain; charset=utf-8",
+      "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
     });
-    rep.end("Non authentifie");
+    rep.end(auth.pageMessage("Session expirée", "Rouvrez la plateforme ADBI pour vous reconnecter."));
     return true;
   }
   // Page : le coffre est un module affiche en <iframe>. Rediriger sur place
@@ -796,15 +795,15 @@ const serveur = http.createServer(async (req, rep) => {
     }
 
     if (chemin.startsWith("/api/")) {
-      return repondreJson(rep, 404, { erreur: "Route inconnue" });
+      return repondreJson(rep, 404, { erreur: "Ressource introuvable." });
     }
 
     // ── Fichiers statiques ──
     const relatif = chemin === "/" ? "/index.html" : chemin;
     const cible = path.join(PUBLIC, path.normalize(relatif).replace(/^[\\/]+/, ""));
     if (!cible.startsWith(PUBLIC)) {
-      rep.writeHead(403);
-      return rep.end("Interdit");
+      rep.writeHead(403, { "Content-Type": "text/html; charset=utf-8" });
+      return rep.end(auth.pageMessage("Accès refusé", "Cette ressource n'est pas accessible."));
     }
     return servirFichier(rep, cible);
   } catch (err) {

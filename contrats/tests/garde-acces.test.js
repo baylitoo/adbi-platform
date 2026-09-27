@@ -94,10 +94,10 @@ test("aucune route n'est enregistree avant le garde", () => {
 
 // ── Surface publique ─────────────────────────────────────────────────────────
 
-test("cheminPublic expose exactement deux chemins", () => {
+test("cheminPublic expose deux chemins, plus la charte de la page de reconnexion", () => {
   assert.match(
     SERVEUR,
-    /function cheminPublic\(chemin\) \{\s*return chemin === "\/api\/sante" \|\| chemin === "\/webhooks\/signature";\s*\}/,
+    /function cheminPublic\(chemin\) \{\s*return chemin === "\/api\/sante" \|\| chemin === "\/webhooks\/signature"\s*\|\| chemin === "\/adbi-theme\.css" \|\| chemin === "\/adbi-theme\.js" \|\| chemin\.startsWith\("\/fonts\/"\);\s*\}/,
     "la liste d'exemption n'est pas exactement { /api/sante, /webhooks/signature }"
   );
 });
@@ -126,7 +126,7 @@ test("/webhooks/signature reste joignable : c'est un rappel entrant", () => {
 // ── Forme du refus ───────────────────────────────────────────────────────────
 
 test("une API refusee repond 401 JSON", () => {
-  assert.match(SERVEUR, /return res\.status\(401\)\.json\(\{ erreur: "Non authentifie" \}\);/);
+  assert.match(SERVEUR, /return res\.status\(401\)\.json\(\{ erreur: "Non authentifié" \}\);/);
 });
 
 test("une page refusee renvoie le NIVEAU SUPERIEUR vers le hub", () => {
@@ -141,7 +141,7 @@ test("une page refusee renvoie le NIVEAU SUPERIEUR vers le hub", () => {
 
 test("sans URL de hub, le refus reste un refus", () => {
   assert.match(SERVEUR, /if \(!FACTORY_URL\)/, "cas FACTORY_URL vide non traite");
-  assert.match(SERVEUR, /\.send\("Non authentifie"\)/, "pas de refus en clair");
+  assert.match(SERVEUR, /\.send\(auth\.pageMessage\("Session expirée"/, "pas de refus en clair");
 });
 
 // ── Le verrou existant n'a pas ete remplace ──────────────────────────────────

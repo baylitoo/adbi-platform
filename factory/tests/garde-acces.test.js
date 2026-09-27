@@ -246,7 +246,7 @@ test("une page refusee redirige vers la connexion de cv-parser, avec next", () =
 });
 
 test("une API refusee repond 401 JSON, pas du HTML de connexion", () => {
-  assert.match(SERVEUR, /repondreJson\(rep, 401, \{ erreur: "Non authentifie" \}\)/);
+  assert.match(SERVEUR, /repondreJson\(rep, 401, \{ erreur: "Non authentifié" \}\)/);
 });
 
 test("le voyant IA n'est plus une route publique", () => {

@@ -90,16 +90,12 @@ test("aucune route n'est enregistree avant le garde", () => {
 
 // ── Surface publique ─────────────────────────────────────────────────────────
 
-test("cheminPublic n'expose QUE /api/sante", () => {
-  /*
-   * contrats exempte aussi /webhooks/signature (rappel entrant Yousign/Zoho).
-   * one-pager n'a pas d'equivalent : toutes ses routes sont sous /api/. Une
-   * exemption de plus ici ouvrirait un chemin pour rien.
-   */
+test("cheminPublic n'expose que /api/sante et la charte de la page de reconnexion", () => {
+  // Aucun webhook ici, contrairement à contrats : seule la charte s'ajoute à la sonde.
   assert.match(
     SERVEUR,
-    /function cheminPublic\(chemin\) \{\s*return chemin === "\/api\/sante";\s*\}/,
-    "cheminPublic doit n'exempter que /api/sante"
+    /function cheminPublic\(chemin\) \{\s*return chemin === "\/api\/sante"\s*\|\| chemin === "\/adbi-theme\.css" \|\| chemin === "\/adbi-theme\.js" \|\| chemin\.startsWith\("\/fonts\/"\);\s*\}/,
+    "cheminPublic doit n'exempter que /api/sante et la charte"
   );
 });
 
@@ -113,7 +109,7 @@ test("la sonde reste joignable sans session", () => {
 // ── Forme du refus ───────────────────────────────────────────────────────────
 
 test("une API refusee repond 401 JSON", () => {
-  assert.match(SERVEUR, /return res\.status\(401\)\.json\(\{ erreur: "Non authentifie" \}\);/);
+  assert.match(SERVEUR, /return res\.status\(401\)\.json\(\{ erreur: "Non authentifié" \}\);/);
 });
 
 test("une page refusee renvoie le NIVEAU SUPERIEUR vers le hub", () => {
@@ -125,7 +121,7 @@ test("une page refusee renvoie le NIVEAU SUPERIEUR vers le hub", () => {
 
 test("sans URL de hub, le refus reste un refus", () => {
   assert.match(SERVEUR, /if \(!FACTORY_URL\)/, "cas FACTORY_URL vide non traite");
-  assert.match(SERVEUR, /\.send\("Non authentifie"\)/, "pas de refus en clair");
+  assert.match(SERVEUR, /\.send\(auth\.pageMessage\("Session expirée"/, "pas de refus en clair");
 });
 
 // ── Image : DEUX pannes invisibles, empilees ─────────────────────────────────

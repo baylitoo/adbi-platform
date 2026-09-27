@@ -187,27 +187,37 @@ function garde(req, env, options) {
  * d'une heure, sans rien dire. On renvoie donc le NIVEAU SUPÉRIEUR vers le
  * hub, qui sait renouveler la session.
  */
+const echapperHtml = (t) => String(t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+/** Page de service à la charte (thème et police servis sans session), pour un refus, une reconnexion ou une page introuvable. */
+function pageMessage(titre, message, { lien = null, script = "" } = {}) {
+  const action = lien ? `<p><a class="adbi-message-lien" href="${echapperHtml(lien.href)}">${echapperHtml(lien.texte)}</a></p>` : "";
+  return `<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${echapperHtml(titre)} — ADBI</title>
+<script src="/adbi-theme.js"></script><link rel="stylesheet" href="/adbi-theme.css">
+<style>
+  .adbi-message { max-width: 32rem; margin: 18vh auto 0; padding: 2rem; background: var(--adbi-surface); border: 1px solid var(--adbi-border); border-radius: var(--adbi-r-lg); box-shadow: var(--adbi-sh); }
+  .adbi-message h1 { margin: 0 0 .5rem; font-size: 1.2rem; color: var(--adbi-text1); }
+  .adbi-message p { margin: 0; color: var(--adbi-text2); line-height: 1.5; }
+  .adbi-message-lien { display: inline-block; margin-top: 1rem; color: var(--adbi-accent); font-weight: 600; }
+</style></head>
+<body><main class="adbi-message"><h1>${echapperHtml(titre)}</h1><p>${echapperHtml(message)}</p>${action}</main>${script}</body></html>`;
+}
+
 function pageReconnexion(urlFactory, idModule) {
   const cible =
     String(urlFactory || "").replace(/\/+$/, "") +
     "/module.html?m=" +
     encodeURIComponent(String(idModule || ""));
-  // JSON.stringify échappe guillemets, barres obliques inverses et U+2028/9 :
-  // `cible` vient d'une variable d'environnement et d'un identifiant de module,
-  // jamais d'un champ utilisateur, mais l'échappement ne se discute pas.
+  // JSON.stringify échappe guillemets, barres obliques inverses et U+2028/9 ; la cible ne vient jamais d'un champ utilisateur.
   const cibleJs = JSON.stringify(cible);
-  return `<!doctype html>
-<html lang="fr"><meta charset="utf-8">
-<title>Session expiree</title>
-<body style="font:14px system-ui;padding:2rem">
-<p>Session expiree. Reconnexion en cours...</p>
-<script>
+  const script = `<script>
   var cible = ${cibleJs};
   try { if (window.top !== window.self) { window.top.location = cible; } else { window.location = cible; } }
   catch (e) { window.location = cible; }
-</script>
-<noscript><a href="${cible.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}">Se reconnecter</a></noscript>
-</body></html>`;
+</script>`;
+  return pageMessage("Session expirée", "Reconnexion en cours…", { lien: { href: cible, texte: "Se reconnecter" }, script });
 }
 
 module.exports = {
@@ -219,4 +229,5 @@ module.exports = {
   jetonDeRequete,
   garde,
   pageReconnexion,
+  pageMessage,
 };
