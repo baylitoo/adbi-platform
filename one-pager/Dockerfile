@@ -24,6 +24,8 @@ COPY --chown=node:node one-pager/ ./
 # N'est utilise que si DOCIE_EXTRACTION_ENABLED=true ; son absence ne bloque
 # pas le demarrage du service (voir lib/docie-extract.js#chargerBridge).
 COPY --chown=node:node document-parsing/bridge/docie-bridge.js /document-parsing/bridge/docie-bridge.js
+# Transport OpenAI des modèles externes (lib/docie-extract.js) : requiert ./docie-bridge, copié juste au-dessus.
+COPY --chown=node:node document-parsing/bridge/openai-responses.js /document-parsing/bridge/openai-responses.js
 # Definition du schema « adbi_resume », envoyee avec le texte sur la voie
 # /v1/extract/text (issue #180) : `schema_name` seul ne resout que le registre
 # integre de DocIE, un schema personnalise doit voyager avec sa definition.

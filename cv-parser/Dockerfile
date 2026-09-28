@@ -13,6 +13,8 @@ COPY . .
 # extraction.py) ; absent, le client DocIE historique (docie_client.py)
 # reste le chemin par défaut.
 COPY --from=bridge docie_bridge.py .
+# Transport OpenAI des modèles externes (docie_client._charger_openai) : importe docie_bridge, copié juste au-dessus.
+COPY --from=bridge openai_responses.py .
 # Table de synonymes de compétences partagée avec one-pager (#177 lignes G/H) :
 # contexte de build additionnel `fixtures` (document-parsing/fixtures/, voir
 # docker-compose*.yml). skills_normalizer.py la lit AU CHARGEMENT DU MODULE, et
