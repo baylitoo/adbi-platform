@@ -542,9 +542,9 @@
 
     <!-- Tab navigation -->
     <div class="tab-nav">
-      <button class="tab-btn active" data-tab="profil"   onclick="switchTab('profil')">👤 Profil</button>
-      <button class="tab-btn"        data-tab="modifier" onclick="switchTab('modifier')">✏️ Modifier</button>
-      <button class="tab-btn"        data-tab="pdf"      onclick="switchTab('pdf')">📄 Aperçu PDF</button>
+      <button class="tab-btn active" data-tab="profil"   onclick="switchTab('profil')">Profil</button>
+      <button class="tab-btn"        data-tab="modifier" onclick="switchTab('modifier')">Modifier</button>
+      <button class="tab-btn"        data-tab="pdf"      onclick="switchTab('pdf')">Aperçu PDF</button>
     </div>
 
     {# ── Ce dont DocIE doute (issue #172) ──────────────────────────────────
@@ -603,9 +603,9 @@
           {% if cv.years_experience %}
           <span class="ph-badge exp"{% if libelles_anciennete.get(cv.get('anciennete_source')) %} title="{{ libelles_anciennete.get(cv.get('anciennete_source')) }}"{% endif %}>{{ cv.years_experience }} an{{ 's' if cv.years_experience|int > 1 else '' }} d'expérience</span>
           {% endif %}
-          {% if c.location %}<span class="ph-badge">📍 {{ c.location }}</span>{% endif %}
-          {% if c.email %}<span class="ph-badge">✉️ {{ c.email }}</span>{% endif %}
-          {% if c.phone %}<span class="ph-badge">📞 {{ c.phone }}</span>{% endif %}
+          {% if c.location %}<span class="ph-badge">{{ c.location }}</span>{% endif %}
+          {% if c.email %}<span class="ph-badge">{{ c.email }}</span>{% endif %}
+          {% if c.phone %}<span class="ph-badge">{{ c.phone }}</span>{% endif %}
         </div>
       </div>
       {% if cv.years_experience %}
@@ -665,7 +665,7 @@
         <div class="pv-exp-hdr">
           <div class="pv-exp-left">
             <div class="pv-exp-company">{{ company }}{% if exp.location %} — {{ exp.location }}{% endif %}</div>
-            {% if exp.client %}<div class="pv-exp-client">🏢 Client : {{ exp.client }}</div>{% endif %}
+            {% if exp.client %}<div class="pv-exp-client">Client : {{ exp.client }}</div>{% endif %}
             {% if role %}<div class="pv-exp-role">{{ role }}</div>{% endif %}
           </div>
           {% if exp.period %}<div class="pv-exp-period">{{ exp.period }}</div>{% endif %}
@@ -689,7 +689,7 @@
           </div>
           {% endif %}
           {% if exp.env_technique %}
-          <div class="pv-env">🛠 {{ exp.env_technique }}</div>
+          <div class="pv-env">Environnement : {{ exp.env_technique }}</div>
           {% endif %}
         </div>
       </div>
@@ -1040,7 +1040,7 @@
 <!-- ══ PROGRESS MODAL ══ -->
 <div class="prog-overlay" id="progOverlay">
   <div class="prog-box">
-    <div class="prog-icon" id="progIcon">⚙️</div>
+    <div class="prog-icon" id="progIcon"></div>
     <div class="prog-title" id="progTitle">Traitement en cours…</div>
     <div class="prog-sub" id="progSub">L'IA analyse votre CV</div>
     <div class="prog-track"><div class="prog-bar" id="progBar"></div></div>
@@ -1051,12 +1051,12 @@
 <!-- ══ MODALS ══ -->
 <div class="modal-overlay" id="modalTranslate" onclick="closeModal('modalTranslate')">
   <div class="modal-box" onclick="event.stopPropagation()">
-    <h3>🌐 Traduire le CV en anglais</h3>
+    <h3>Traduire le CV en anglais</h3>
     <div class="modal-warn">⚠️ Cette action traduit et <strong>écrase</strong> le contenu actuel du CV. Sauvegardez d'abord si nécessaire.</div>
     <p>L'IA va traduire l'intégralité du contenu (descriptions, compétences, formations…) en anglais en conservant la structure JSON.</p>
     <div class="modal-actions">
       <button class="tbtn tbtn-neutre" onclick="closeModal('modalTranslate')">Annuler</button>
-      <button class="tbtn tbtn-teal" onclick="doTranslate()">🌐 Traduire en anglais</button>
+      <button class="tbtn tbtn-teal" onclick="doTranslate()">Traduire en anglais</button>
     </div>
   </div>
 </div>
@@ -1064,12 +1064,12 @@
 
 <div class="modal-overlay" id="modalAdapt" onclick="closeModal('modalAdapt')">
   <div class="modal-box" onclick="event.stopPropagation()">
-    <h3>🎯 Adapter à une fiche de poste</h3>
+    <h3>Adapter à une fiche de poste</h3>
     <p>Collez la fiche de poste ci-dessous. L'IA va réorganiser et reformuler le CV pour maximiser la pertinence.</p>
     <textarea id="jobPostingInput" placeholder="Collez ici la description du poste (titre, missions, compétences requises…)"></textarea>
     <div class="modal-actions">
       <button class="tbtn tbtn-neutre" onclick="closeModal('modalAdapt')">Annuler</button>
-      <button class="tbtn tbtn-amber" onclick="doAdapt()">🎯 Adapter le CV</button>
+      <button class="tbtn tbtn-amber" onclick="doAdapt()">Adapter le CV</button>
     </div>
   </div>
 </div>
@@ -1369,7 +1369,7 @@ function endProgress(ok, msg) {
 /* ── LLM ACTIONS ── */
 async function doTranslate() {
   closeModal('modalTranslate');
-  startProgress('🌐', 'Traduction FR → EN', 'L\'IA traduit le contenu du CV…');
+  startProgress('', 'Traduction FR → EN', 'L\'IA traduit le contenu du CV…');
   try {
     const r = await fetch(`/api/cvs/${CV_ID}/translate`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -1390,7 +1390,7 @@ async function doAdapt() {
   const jp = document.getElementById('jobPostingInput').value.trim();
   if (!jp) { showToast('⚠️ Collez une fiche de poste d\'abord'); return; }
   closeModal('modalAdapt');
-  startProgress('🎯', 'Adaptation au poste', 'L\'IA aligne le CV avec la fiche de poste…');
+  startProgress('', 'Adaptation au poste', 'L\'IA aligne le CV avec la fiche de poste…');
   try {
     const r = await fetch(`/api/cvs/${CV_ID}/adapt`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},

@@ -1210,3 +1210,10 @@ mark.hl {
   font-size: 11px;
   color: var(--adbi-textm);
 }
+.prog-icon:empty {
+  display: none;
+}
+.act-icon svg {
+  width: 15px;
+  height: 15px;
+}
