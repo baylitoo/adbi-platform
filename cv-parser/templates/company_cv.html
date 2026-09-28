@@ -231,9 +231,10 @@
         <div class="cand-exp">{{ cv.years_experience }} ans d'expérience</div>
         {% endif %}
         {% set cparts = [] %}
-        {% if c.location %}{% set cparts = cparts + ['📍 ' ~ c.location] %}{% endif %}
-        {% if c.email   %}{% set cparts = cparts + ['✉ '  ~ c.email]    %}{% endif %}
-        {% if c.phone   %}{% set cparts = cparts + ['☎ '  ~ c.phone]    %}{% endif %}
+        {# Coordonnées en texte seul : un pictogramme émoji s'imprime différemment selon le lecteur PDF. #}
+        {% if c.location %}{% set cparts = cparts + [c.location] %}{% endif %}
+        {% if c.email   %}{% set cparts = cparts + [c.email]    %}{% endif %}
+        {% if c.phone   %}{% set cparts = cparts + [c.phone]    %}{% endif %}
         {% if cparts %}
         <div class="cand-contact">{{ cparts | join('   ·   ') }}</div>
         {% endif %}
