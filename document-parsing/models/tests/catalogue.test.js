@@ -234,7 +234,7 @@ test("externes : modes du catalogue = modes du transport (document-parsing/bridg
 test("modeleServi : OpenAI rapproché par fournisseur + mode, modèle servi rapporté tel quel ; jamais confondu avec DocIE", () => {
   const env = { OPENAI_API_KEY: CLE, DOCIE_MODELE_LFM25_2_6B: "rapide" };
   assert.deepEqual(cat.modeleServi("rib", "texte", { env, metadata: { fournisseur: "openai", mode: "raisonnement", model: "gpt-5-nano-2025-08-07" } }),
-    { id: "openai_raisonnement", libelle: "OpenAI raisonnement faible — externe (hors ADBI)", identifiant: "gpt-5-nano-2025-08-07" });
+    { id: "openai_raisonnement", libelle: "Modèle externe (hors ADBI) — raisonnement léger", identifiant: "gpt-5-nano-2025-08-07" });
   // Sans clé : nom brut, jamais le libellé d'un modèle non configuré.
   assert.deepEqual(cat.modeleServi("rib", "texte", { env: {}, metadata: { fournisseur: "openai", mode: "rapide", model: "gpt-4.1-nano-2025-04-14" } }),
     { id: null, libelle: "gpt-4.1-nano-2025-04-14", identifiant: "gpt-4.1-nano-2025-04-14" });

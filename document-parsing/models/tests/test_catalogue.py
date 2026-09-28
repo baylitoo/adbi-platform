@@ -270,7 +270,7 @@ class Externes(unittest.TestCase):
         env = {"OPENAI_API_KEY": CLE, "DOCIE_MODELE_LFM25_2_6B": "rapide"}
         meta = {"fournisseur": "openai", "mode": "raisonnement", "model": "gpt-5-nano-2025-08-07"}
         self.assertEqual(cat.modele_servi("rib", "texte", meta, env=env),
-                         {"id": "openai_raisonnement", "libelle": "OpenAI raisonnement faible — externe (hors ADBI)",
+                         {"id": "openai_raisonnement", "libelle": "Modèle externe (hors ADBI) — raisonnement léger",
                           "identifiant": "gpt-5-nano-2025-08-07"})
         self.assertEqual(cat.modele_servi("rib", "texte", meta, env={})["id"], None)
         self.assertEqual(cat.modele_servi("rib", "texte", {"model": "rapide"}, env=env)["id"], "lfm25_2_6b")
