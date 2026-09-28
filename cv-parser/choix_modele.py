@@ -101,6 +101,28 @@ def voie_pour(ext):
     return None
 
 
+def voies_pour(ext):
+    """Voies possibles pour ce format : un PDF, pont actif, peut prendre la voie texte s'il porte une couche texte (#271)."""
+    voie = voie_pour(ext)
+    if voie is None:
+        return []
+    if voie == "agent" and str(ext or "").lower() in _EXT_TEXTE:
+        return ["agent", "texte"]
+    return [voie]
+
+
+def _offres_format(catalogue, store, ext):
+    """Offres pour un format : sa voie ; pour un PDF pont actif, s'y ajoutent les seuls modèles EXTERNES de la voie texte (#271)."""
+    voies = voies_pour(ext)
+    offres = []
+    for voie in voies:
+        externes_seuls = voie == "texte" and len(voies) > 1
+        for o in catalogue.modeles_offerts(TACHE, voie, externes=(voie == "texte" and EXTERNES), store=store):
+            if not externes_seuls or o.get("fournisseur"):
+                offres.append(o)
+    return offres
+
+
 def modeles_proposes(ext=None):
     """Modèles du sélecteur, défaut d'abord : [{id, libelle, description, role}].
 
@@ -109,18 +131,13 @@ def modeles_proposes(ext=None):
     sur une seule voie est vérifié sur le fichier réel au moment de l'envoi.
     Les limites ne sont pas évaluées ici (document inconnu).
     """
-    voies = []
-    for e in ([ext] if ext else [".pdf", ".docx"]):
-        voie = voie_pour(e)
-        if voie and voie not in voies:
-            voies.append(voie)
-    if not voies:
+    if not any(voies_pour(e) for e in ([ext] if ext else [".pdf", ".docx"])):
         return []
     catalogue = charger()
     store = store_pret()
     vus = {}
-    for voie in voies:
-        for offre in catalogue.modeles_offerts(TACHE, voie, externes=(voie == "texte" and EXTERNES), store=store):
+    for e in ([ext] if ext else [".pdf", ".docx"]):
+        for offre in _offres_format(catalogue, store, e):
             vus.setdefault(offre["id"], {"id": offre["id"], "libelle": offre["libelle"],
                                          "description": offre["description"], "role": offre["role"],
                                          "experimental": offre.get("experimental") is True})
@@ -136,13 +153,14 @@ def offres_par_format():
     store = None
     offres = {}
     for ext in (".pdf", ".docx"):
-        voie = voie_pour(ext)
-        if voie is None:
-            offres[ext] = []
+        offres[ext] = []
+        if not voies_pour(ext):
             continue
         catalogue = catalogue or charger()
         store = store_pret() if store is None else store
-        offres[ext] = [o["id"] for o in catalogue.modeles_offerts(TACHE, voie, externes=(voie == "texte" and EXTERNES), store=store)]
+        for o in _offres_format(catalogue, store, ext):
+            if o["id"] not in offres[ext]:
+                offres[ext].append(o["id"])
     return offres
 
 
@@ -185,12 +203,18 @@ class Choix:
         return (self.offre or {}).get("mode") if self.est_externe else None
 
     def verifier(self, ext):
-        """Avant tout travail : le modèle est-il proposé pour la voie de ce fichier ?"""
-        voie = voie_pour(ext)
-        if voie is None:
+        """Avant tout travail : le modèle est-il proposé sur l'une des voies possibles de ce fichier ?"""
+        voies = voies_pour(ext)
+        if not voies:
             # Même message que le catalogue pour un modèle non configuré.
             return self._choisir("__aucune__", None)
-        return self._choisir(voie, None)
+        premiere = None
+        for voie in voies:
+            try:
+                return self._choisir(voie, None)
+            except ErreurTache as exc:
+                premiere = premiere or exc
+        raise premiere
 
     def pour_texte(self, texte):
         return self._choisir("texte", {"lignes_non_vides": charger().compter_lignes_non_vides(texte)})

@@ -232,6 +232,10 @@ var CONTRATS_IMPORT_CHAMPS = (function () {
       urssaf_agency: "Organisme", employee_count: "Effectif", declared_payroll: "Masse salariale",
     },
     rib: { account_holder: "Titulaire", iban: "IBAN", bic: "BIC", bank_name: "Banque" },
+    fiscale: {
+      company_name: "Société", siren: "SIREN", siret: "SIRET", tax_office: "Service des impôts",
+      situation_date: "Date de situation", regularity_statement: "Mention de régularité", issued_date: "Date de délivrance",
+    },
     kbis: {
       company_name: "Dénomination", siren: "SIREN", siret_siege: "SIRET du siège", legal_form: "Forme juridique",
       share_capital: "Capital social", registration_date: "Date d'immatriculation", rcs_number: "RCS",
@@ -248,6 +252,7 @@ var CONTRATS_IMPORT_CHAMPS = (function () {
   var CHAMPS_VERDICT = {
     urssaf: ["company_name", "issued_date", "siren", "siret"],
     rib: ["account_holder", "iban", "bic"],
+    fiscale: ["company_name", "issued_date", "siren", "siret"],
     kbis: ["company_name", "issued_date", "siren", "siret_siege"],
   };
 
