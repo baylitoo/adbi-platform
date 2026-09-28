@@ -263,7 +263,7 @@ def map_resume(response, expected_schema="resume"):
     data["interests"] = [str(v.get("interest") or "") if isinstance(v, dict) else str(v)
                          for v in interests if v is not None]
     if not any(data.get(k) for k in ("name", "title", "experience", "education", "skills")):
-        raise DocIEError("La plateforme d'inférence interne n'a extrait aucune donnée du CV. Vérifiez le modèle et l'OCR.")
+        raise DocIEError("Aucune donnée extraite du CV : vérifiez le document (texte lisible) et le modèle choisi.")
     return data
 
 

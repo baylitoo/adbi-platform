@@ -109,7 +109,7 @@ class DocIEClientTests(unittest.TestCase):
         """Ce que la tolérance ne coûte PAS : une réponse d'un autre schéma
         ne survit pas aux contrôles de structure, faute d'un seul champ de CV."""
         kbis = {"result": {"siren": "123456789", "denomination": "Numelia SAS"}}
-        with self.assertRaisesRegex(DocIEError, "aucune donnée"):
+        with self.assertRaisesRegex(DocIEError, "Aucune donnée"):
             map_resume(kbis)
 
     def test_docx_uses_text_contract_including_tables(self):
