@@ -327,7 +327,15 @@ def extract_resume(file_path, progress=None, *, session=None, choix=None):
 
     options = {}
     if choix is not None:
-        options["agent"] = choix.pour_agent(_compter_pages(content, mime_type))
+        try:
+            options["agent"] = choix.pour_agent(_compter_pages(content, mime_type))
+        except Exception as exc:
+            # Modèle servi seulement en voie texte (externe compris) sur un PDF sans couche texte : le dire, pas « non proposé ».
+            if suffixe == ".pdf" and getattr(exc, "code", None) == "modele_non_propose":
+                from choix_modele import ErreurTache
+                raise ErreurTache("PDF scanné (sans couche texte) : ce modèle ne lit que du texte. "
+                                  "Choisissez un modèle interne pour analyser ce document.", code="modele_non_propose") from None
+            raise
 
     try:
         bridge_result = docie_bridge.extract_document(content, mime_type, kind="resume", session=session, **options)
