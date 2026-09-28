@@ -33,12 +33,12 @@ function faux(extra = {}) {
 }
 
 const OFFRES_CONTRAT = [
-  { id: "nuextract3", libelle: "NuExtract3", description: "Précis mais lent — plusieurs minutes", role: "defaut", experimental: false, lignesMax: null },
-  { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "alternative", experimental: false, lignesMax: 800 },
+  { id: "nuextract3", libelle: "Modèle précis", description: "Plus lent — plusieurs minutes", role: "defaut", experimental: false, lignesMax: null },
+  { id: "lfm25_2_6b", libelle: "Modèle rapide", description: "Bon équilibre entre vitesse et précision", role: "alternative", experimental: false, lignesMax: 800 },
 ];
 const OFFRES_URSSAF = [
-  { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "defaut", experimental: false, lignesMax: 800 },
-  { id: "lfm25_350m", libelle: "LFM2.5 350M", description: "Très rapide — documents simples", role: "alternative", experimental: false, lignesMax: 800 },
+  { id: "lfm25_2_6b", libelle: "Modèle rapide", description: "Bon équilibre entre vitesse et précision", role: "defaut", experimental: false, lignesMax: 800 },
+  { id: "lfm25_350m", libelle: "Modèle très rapide", description: "Documents simples uniquement", role: "alternative", experimental: false, lignesMax: 800 },
 ];
 
 async function remplir(offres) {
@@ -59,8 +59,8 @@ test("sélecteur : deux modèles -> visible, défaut présélectionné, libellé
   const { sel, demandes } = await remplir(OFFRES_CONTRAT);
   assert.deepEqual(demandes, ["/api/modeles?tache=contract"]);
   assert.deepEqual(sel.options.map((o) => [o.value, o.textContent]), [
-    ["nuextract3", "NuExtract3 — Précis mais lent — plusieurs minutes"],
-    ["lfm25_2_6b", "LFM2.5 2.6B — Rapide (800 lignes au plus)"],
+    ["nuextract3", "Modèle précis — Plus lent — plusieurs minutes"],
+    ["lfm25_2_6b", "Modèle rapide — Bon équilibre entre vitesse et précision (800 lignes au plus)"],
   ]);
   assert.equal(sel.value, "nuextract3");
   assert.equal(sel.classList.contains("hidden"), false);
@@ -79,7 +79,7 @@ test("sélecteur : un seul modèle -> masqué mais valorisé ; aucun, ou lecture
 
 test("sélecteur URSSAF : plafond commun aux deux modèles -> non affiché", async () => {
   const { sel } = await remplir(OFFRES_URSSAF);
-  assert.deepEqual(sel.options.map((o) => o.textContent), ["LFM2.5 2.6B — Rapide", "LFM2.5 350M — Très rapide — documents simples"]);
+  assert.deepEqual(sel.options.map((o) => o.textContent), ["Modèle rapide — Bon équilibre entre vitesse et précision", "Modèle très rapide — Documents simples uniquement"]);
 });
 
 // --- pré-remplissage de contrat ------------------------------------------------
@@ -119,9 +119,9 @@ const TERMINEE = (modele) => rep(200, { etat: "terminee", resultat: { values: { 
 
 test("pré-remplissage : modèle choisi envoyé, modèle servi affiché discrètement dans la ligne d'état", async () => {
   const sel = { options: [{}, {}], value: "lfm25_2_6b" };
-  const { corps, statut } = await preremplir(sel, TERMINEE({ id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" }));
+  const { corps, statut } = await preremplir(sel, TERMINEE({ id: "lfm25_2_6b", libelle: "Modèle rapide" }));
   assert.equal(corps.modele, "lfm25_2_6b");
-  assert.equal(statut.textContent, "✓ Champs pré-remplis depuis le PDF — à relire avant import — lu par LFM2.5 2.6B");
+  assert.equal(statut.textContent, "✓ Champs pré-remplis depuis le PDF — à relire avant import — lu par Modèle rapide");
 });
 
 test("pré-remplissage sans modèle proposé (sélecteur vide ou absent) : corps et ligne d'état d'avant", async () => {
@@ -171,11 +171,11 @@ async function analyser({ selecteur, reponse }) {
 test("URSSAF : modèle choisi envoyé, « lu par » affiché et gardé avec le résultat", async () => {
   const { corps, servi, state } = await analyser({
     selecteur: { options: [{}, {}], value: "lfm25_350m" },
-    reponse: rep(200, { issuedDate: "2026-03-04", modele: { id: "lfm25_350m", libelle: "LFM2.5 350M" } }),
+    reponse: rep(200, { issuedDate: "2026-03-04", modele: { id: "lfm25_350m", libelle: "Modèle très rapide" } }),
   });
   assert.equal(corps.modele, "lfm25_350m");
-  assert.equal(servi.textContent, "lu par LFM2.5 350M");
-  assert.deepEqual(state.dateState.urssaf.modele, { id: "lfm25_350m", libelle: "LFM2.5 350M" });
+  assert.equal(servi.textContent, "lu par Modèle très rapide");
+  assert.deepEqual(state.dateState.urssaf.modele, { id: "lfm25_350m", libelle: "Modèle très rapide" });
 });
 
 test("URSSAF sans sélecteur rempli : aucun `modele` envoyé ; échec d'un modèle choisi : erreur affichée, « lu par » effacé", async () => {

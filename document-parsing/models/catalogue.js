@@ -268,8 +268,8 @@ function choisirModele(tache, voie, { env = process.env, document = null, modele
     // Un modèle externe refusé n'est pas nommé : sans clé, le message reste
     // celui d'avant (#194, sortie inchangée sans OPENAI_API_KEY).
     const nom = Object.hasOwn(catalogue.modeles, String(modele)) && !catalogue.modeles[modele].fournisseur
-      ? catalogue.modeles[modele].libelle : "demandé";
-    throw new CatalogueError("modele_non_propose", `Modèle ${nom} non proposé pour : ${t.libelle}.`);
+      ? catalogue.modeles[modele].libelle : "Modèle demandé";
+    throw new CatalogueError("modele_non_propose", `${nom} non proposé pour : ${t.libelle}.`);
   }
   const refus = refusParLimite(offre.id, voie, document, { catalogue });
   if (refus) throw new CatalogueError("limite", refus.message, refus);

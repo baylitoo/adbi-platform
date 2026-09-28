@@ -110,7 +110,7 @@ test("GET /api/modeles?tache=rib : deux modèles -> 2.6B par défaut puis 350M ;
     const r = await deux.modeles();
     assert.equal(r.status, 200);
     assert.deepEqual(JSON.parse(r.texte).modeles.map((m) => [m.id, m.role, m.libelle]),
-      [["lfm25_2_6b", "defaut", "LFM2.5 2.6B"], ["lfm25_350m", "alternative", "LFM2.5 350M"]]);
+      [["lfm25_2_6b", "defaut", "Modèle rapide"], ["lfm25_350m", "alternative", "Modèle très rapide"]]);
     assert.ok(!r.texte.includes("store:"));
     assert.deepEqual(JSON.parse((await un.modeles()).texte).modeles.map((m) => m.id), ["lfm25_2_6b"]);
     assert.deepEqual(JSON.parse((await rien.modeles()).texte), { tache: "rib", modeles: [] });
@@ -161,12 +161,12 @@ test("RIB + 350M choisi : store: envoyé, modèle servi rendu, contrôle IBAN/BI
   const r350 = await analyzeDocument(await corpsRib({ modele: "lfm25_350m" }), { env, fetchImpl: petit.fetchImpl, analyzeLocal: localInterdit().analyzeLocal });
   assert.equal(petit.appels[0].url, "https://docie.example.test/v1/extract/text");
   assert.equal(petit.appels[0].corps.model_profile, "store:lfm2.5-350m");
-  assert.deepEqual(r350.modele, { id: "lfm25_350m", libelle: "LFM2.5 350M" });
+  assert.deepEqual(r350.modele, { id: "lfm25_350m", libelle: "Modèle très rapide" });
   assert.equal(r350.controleIbanBicExige, true);
 
   const defaut = docie(() => reponseRib("lfm2.5-2.6b"));
   const r26 = await analyzeDocument(await corpsRib({ modele: "lfm25_2_6b" }), { env, fetchImpl: defaut.fetchImpl, analyzeLocal: localInterdit().analyzeLocal });
-  assert.deepEqual(r26.modele, { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" });
+  assert.deepEqual(r26.modele, { id: "lfm25_2_6b", libelle: "Modèle rapide" });
   assert.equal(Object.hasOwn(r26, "controleIbanBicExige"), false);
 });
 
@@ -219,8 +219,8 @@ test("ajouterAnalyseRib : sélecteur de modèle rempli pour la tâche rib, masqu
 
 test("remplirSelecteurModeles(rib) : un seul modèle -> masqué mais valorisé ; deux -> visible, défaut présélectionné", async () => {
   const OFFRES = [
-    { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "defaut", lignesMax: 800 },
-    { id: "lfm25_350m", libelle: "LFM2.5 350M", description: "Très rapide — documents simples", role: "alternative", lignesMax: 800 },
+    { id: "lfm25_2_6b", libelle: "Modèle rapide", description: "Bon équilibre entre vitesse et précision", role: "defaut", lignesMax: 800 },
+    { id: "lfm25_350m", libelle: "Modèle très rapide", description: "Documents simples uniquement", role: "alternative", lignesMax: 800 },
   ];
   for (const [offres, cache, valeur] of [[OFFRES.slice(0, 1), true, "lfm25_2_6b"], [OFFRES, false, "lfm25_2_6b"]]) {
     const demandes = [];
@@ -242,7 +242,7 @@ test("remplirSelecteurModeles(rib) : un seul modèle -> masqué mais valorisé ;
 const analyse = (surcharge = {}, extra = {}) =>
   Object.assign(mapRibResult(Object.assign({ document_type: "rib", account_holder: "SUND INDUSTRY SYSTEM", iban: IBAN_OK, bic: "BNPAFRPP",
     bank_name: "BANQUE EXEMPLE" }, surcharge), { expectedName: "Sund Industry System", items: ITEMS }).analysis, extra);
-const PETIT = { modele: { id: "lfm25_350m", libelle: "LFM2.5 350M" }, controleIbanBicExige: true };
+const PETIT = { modele: { id: "lfm25_350m", libelle: "Modèle très rapide" }, controleIbanBicExige: true };
 
 async function analyserDansNavigateur({ reponse, status = 200, selecteur = null }) {
   const envois = [];
@@ -263,13 +263,13 @@ async function analyserDansNavigateur({ reponse, status = 200, selecteur = null 
 
 test("analyserRib : modèle choisi envoyé, « lu par » dans la ligne d'état et gardé avec le résultat", async () => {
   const { el, corps, ctx } = await analyserDansNavigateur({
-    reponse: analyse({}, { modele: { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" } }),
+    reponse: analyse({}, { modele: { id: "lfm25_2_6b", libelle: "Modèle rapide" } }),
     selecteur: { options: [{}, {}], value: "lfm25_2_6b" },
   });
   assert.equal(corps.modele, "lfm25_2_6b");
   assert.equal(el.className, "chk-doc-status ok");
-  assert.equal(el.textContent, "✅ Titulaire : SUND INDUSTRY SYSTEM ✓ — IBAN " + IBAN_OK + " (clé valide) — BIC BNPAFRPP — BANQUE EXEMPLE — lu par LFM2.5 2.6B");
-  assert.deepEqual(JSON.parse(JSON.stringify(ctx.state.dateState.rib.modele)), { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" });
+  assert.equal(el.textContent, "✅ Titulaire : SUND INDUSTRY SYSTEM ✓ — IBAN " + IBAN_OK + " (clé valide) — BIC BNPAFRPP — BANQUE EXEMPLE — lu par Modèle rapide");
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.state.dateState.rib.modele)), { id: "lfm25_2_6b", libelle: "Modèle rapide" });
   assert.equal(Object.hasOwn(ctx.state.dateState.rib, "controleExige"), false);
 });
 
@@ -296,7 +296,7 @@ test("garde du 350M : IBAN mal lu -> ⛔ « lecture non retenue », jamais ✅ n
   assert.equal(el.className, "chk-doc-status err");
   assert.ok(el.textContent.startsWith("⛔ Titulaire : SUND INDUSTRY SYSTEM ✓ — IBAN « " + IBAN_FAUX + " » : clé de contrôle invalide (modulo 97)"), el.textContent);
   assert.ok(el.textContent.includes("lecture non retenue : ce modèle n'est admis qu'avec un IBAN et un BIC contrôlés valides"));
-  assert.ok(el.textContent.endsWith(" — lu par LFM2.5 350M"));
+  assert.ok(el.textContent.endsWith(" — lu par Modèle très rapide"));
 });
 
 test("garde du 350M : BIC douteux ou absent -> ⛔ (⚠️ avec le modèle par défaut, comme #209)", async () => {
@@ -317,7 +317,7 @@ test("garde du 350M : réponse sans contrôle IBAN/BIC -> ⛔, jamais le ⚠️ 
   assert.ok(el.textContent.startsWith("⛔ Titulaire : SUND INDUSTRY SYSTEM ✓ — IBAN et BIC non contrôlés — lecture non retenue"));
   const ok = await analyserDansNavigateur({ reponse: analyse({}, PETIT) });
   assert.equal(ok.el.className, "chk-doc-status ok");
-  assert.equal(ok.el.textContent, "✅ Titulaire : SUND INDUSTRY SYSTEM ✓ — IBAN " + IBAN_OK + " (clé valide) — BIC BNPAFRPP — BANQUE EXEMPLE — lu par LFM2.5 350M");
+  assert.equal(ok.el.textContent, "✅ Titulaire : SUND INDUSTRY SYSTEM ✓ — IBAN " + IBAN_OK + " (clé valide) — BIC BNPAFRPP — BANQUE EXEMPLE — lu par Modèle très rapide");
 });
 
 // ---------------------------------------------------------------------------

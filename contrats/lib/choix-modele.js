@@ -82,7 +82,7 @@ class ErreurChoixModele extends Error {
 // (Kbis, #194) : « échouer bruyamment » nomme la voie qui marche, au lieu de
 // renvoyer à une saisie manuelle.
 function messageScanVision(libelles) {
-  return "Document scanné : ce modèle ne lit que le texte. Choisissez " + libelles.join(" ou ") + " (lecture d'image) pour l'analyser.";
+  return "Document scanné : ce modèle ne lit que le texte. Choisissez « " + libelles.join(" » ou « ") + " » (lecture d'image) pour l'analyser.";
 }
 
 /** Voies admises pour une tâche à sélecteur ([] si la tâche n'en a pas). */

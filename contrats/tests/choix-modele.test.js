@@ -80,8 +80,8 @@ const TEXTE_CONTRAT = [
 test("offres publiques : défaut d'abord, plafond de lignes, aucun identifiant réel", () => {
   const offres = choix.offresPubliques("contract", { env: MODELES_CONTRAT });
   assert.deepEqual(offres, [
-    { id: "nuextract3", libelle: "NuExtract3", description: "Précis mais lent — plusieurs minutes", role: "defaut", experimental: false, lignesMax: null },
-    { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "alternative", experimental: false, lignesMax: 800 },
+    { id: "nuextract3", libelle: "Modèle précis", description: "Plus lent — plusieurs minutes", role: "defaut", experimental: false, lignesMax: null },
+    { id: "lfm25_2_6b", libelle: "Modèle rapide", description: "Bon équilibre entre vitesse et précision", role: "alternative", experimental: false, lignesMax: 800 },
   ]);
   assert.ok(!JSON.stringify(offres).includes("store:"));
   assert.deepEqual(choix.offresPubliques("urssaf", { env: MODELES_URSSAF }).map((o) => [o.id, o.role]),
@@ -145,8 +145,8 @@ test("GET /api/modeles?tache=contract : octet pour octet, aucun modèle externe 
     const rendu = await (await srv.modeles("contract")).text();
     assert.equal(rendu,
       '{"tache":"contract","modeles":[' +
-      '{"id":"nuextract3","libelle":"NuExtract3","description":"Précis mais lent — plusieurs minutes","role":"defaut","experimental":false,"lignesMax":null},' +
-      '{"id":"lfm25_2_6b","libelle":"LFM2.5 2.6B","description":"Rapide","role":"alternative","experimental":false,"lignesMax":800}]}');
+      '{"id":"nuextract3","libelle":"Modèle précis","description":"Plus lent — plusieurs minutes","role":"defaut","experimental":false,"lignesMax":null},' +
+      '{"id":"lfm25_2_6b","libelle":"Modèle rapide","description":"Bon équilibre entre vitesse et précision","role":"alternative","experimental":false,"lignesMax":800}]}');
     assert.ok(!/openai/i.test(rendu), "un modèle externe est proposé sans clé");
   } finally {
     await srv.fermer();
@@ -206,7 +206,7 @@ test("contrat + NuExtract3 choisi : voie texte (jamais l'agent), store: envoyé,
   // Sans cette assertion, `langue: "fr"` peut disparaître de
   // docie-contract-import.js sans qu'un seul test rougisse.
   assert.equal(appels[0].corps.language, "fr");
-  assert.deepEqual(res.modele, { id: "nuextract3", libelle: "NuExtract3" });
+  assert.deepEqual(res.modele, { id: "nuextract3", libelle: "Modèle précis" });
   assert.equal(res.requestId, "req-contrat-texte");
   assert.equal(res.values.stNom, "SUND INDUSTRY SYSTEM");
   assert.equal(res.values.tjm, "450");
@@ -220,7 +220,7 @@ test("contrat : 800 lignes non vides -> LFM2.5 2.6B proposé et envoyé ; 801 ->
   const a800 = docie(() => reponseContratTexte("lfm2.5-2.6b"));
   const r800 = await extractContractValues({ ...body, modele: "lfm25_2_6b" }, { env, fetchImpl: a800.fetchImpl, coucheTexteUtilisable: couche(800) });
   assert.equal(a800.appels[0].corps.model_profile, "store:lfm2.5-2.6b");
-  assert.deepEqual(r800.modele, { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" });
+  assert.deepEqual(r800.modele, { id: "lfm25_2_6b", libelle: "Modèle rapide" });
 
   const a801 = docie(() => { throw new Error("DocIE ne doit pas être appelé"); });
   await assert.rejects(
@@ -264,7 +264,7 @@ test("modèle servi : ce que DocIE rapporte, pas ce qui a été demandé", async
     { id: null, libelle: "deploiement-inconnu" });
   const lfm = docie(() => reponseContratTexte("store:lfm2.5-2.6b"));
   assert.deepEqual((await extractContractValues(body, { env, fetchImpl: lfm.fetchImpl, coucheTexteUtilisable: couche })).modele,
-    { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" });
+    { id: "lfm25_2_6b", libelle: "Modèle rapide" });
   const muet = docie(() => reponseContratTexte(null));
   assert.equal((await extractContractValues(body, { env, fetchImpl: muet.fetchImpl, coucheTexteUtilisable: couche })).modele, null);
 });
@@ -331,7 +331,7 @@ test("URSSAF + 350M choisi : store: envoyé, modèle servi dans l'analyse", asyn
   const body = { mimeType: "application/pdf", dataBase64: (await pdfTexte(TEXTE_URSSAF)).toString("base64"), items: ITEMS_URSSAF, modele: "lfm25_350m" };
   const res = await analyzeDocument(body, { env, fetchImpl, analyzeLocal: localInterdit().analyzeLocal });
   assert.equal(appels[0].corps.model_profile, "store:lfm2.5-350m");
-  assert.deepEqual(res.modele, { id: "lfm25_350m", libelle: "LFM2.5 350M" });
+  assert.deepEqual(res.modele, { id: "lfm25_350m", libelle: "Modèle très rapide" });
   assert.equal(res.issuedDate, "2026-03-04");
 });
 

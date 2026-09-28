@@ -242,8 +242,8 @@ def choisir_modele(tache: str, voie: str, modele: str, env: Mapping[str, str] | 
     if offre is None:
         # Un modèle externe refusé n'est pas nommé : message d'avant, sans clé.
         connu = catalogue["modeles"].get(modele) if isinstance(modele, str) else None
-        nom = connu["libelle"] if connu and not connu.get("fournisseur") else "demandé"
-        raise CatalogueError("modele_non_propose", f"Modèle {nom} non proposé pour : {t['libelle']}.")
+        nom = connu["libelle"] if connu and not connu.get("fournisseur") else "Modèle demandé"
+        raise CatalogueError("modele_non_propose", f"{nom} non proposé pour : {t['libelle']}.")
     refus = refus_par_limite(offre["id"], voie, document, catalogue)
     if refus:
         raise CatalogueError("limite", refus["message"], refus)

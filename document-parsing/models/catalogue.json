@@ -22,50 +22,50 @@
   },
   "modeles": {
     "lfm25_2_6b": {
-      "libelle": "LFM2.5 2.6B",
-      "description": "Rapide",
+      "libelle": "Modèle rapide",
+      "description": "Bon équilibre entre vitesse et précision",
       "store": "lfm2.5-2.6b",
       "etiquettes": ["extraction", "chat"],
       "limites": { "texte": { "lignes_non_vides_max": 800 } }
     },
     "nuextract3": {
-      "libelle": "NuExtract3",
-      "description": "Précis mais lent — plusieurs minutes",
+      "libelle": "Modèle précis",
+      "description": "Plus lent — plusieurs minutes",
       "store": "nuextract3",
       "etiquettes": ["extraction"],
       "limites": { "agent": { "pages_max": 8 } }
     },
     "lfm25_350m": {
-      "libelle": "LFM2.5 350M",
-      "description": "Très rapide — documents simples",
+      "libelle": "Modèle très rapide",
+      "description": "Documents simples uniquement",
       "store": "lfm2.5-350m",
       "etiquettes": ["extraction"],
       "limites": { "texte": { "lignes_non_vides_max": 800 } }
     },
     "openai_rapide": {
-      "libelle": "OpenAI sans raisonnement — externe (hors ADBI)",
-      "description": "Service externe OpenAI, sans raisonnement, le plus rapide — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
+      "libelle": "Modèle externe (hors ADBI) — rapide",
+      "description": "OpenAI, résultat assuré, sans raisonnement, le plus rapide — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
       "etiquettes": ["extraction"],
       "fournisseur": "openai",
       "mode": "rapide"
     },
     "openai_raisonnement": {
-      "libelle": "OpenAI raisonnement faible — externe (hors ADBI)",
-      "description": "Service externe OpenAI, raisonnement faible, plus lent — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
+      "libelle": "Modèle externe (hors ADBI) — raisonnement léger",
+      "description": "OpenAI, résultat assuré, raisonnement léger, plus lent — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
       "etiquettes": ["extraction"],
       "fournisseur": "openai",
       "mode": "raisonnement"
     },
     "openai_moyen": {
-      "libelle": "OpenAI raisonnement moyen — externe (hors ADBI)",
-      "description": "Service externe OpenAI, raisonnement moyen, plus lent — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
+      "libelle": "Modèle externe (hors ADBI) — raisonnement moyen",
+      "description": "OpenAI, résultat assuré, raisonnement moyen, plus lent — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
       "etiquettes": ["extraction"],
       "fournisseur": "openai",
       "mode": "moyen"
     },
     "openai_eleve": {
-      "libelle": "OpenAI raisonnement élevé — externe (hors ADBI)",
-      "description": "Service externe OpenAI, raisonnement élevé, le plus lent et le plus coûteux — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
+      "libelle": "Modèle externe (hors ADBI) — raisonnement poussé",
+      "description": "OpenAI, résultat assuré, raisonnement poussé, le plus lent et le plus coûteux — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
       "etiquettes": ["extraction"],
       "fournisseur": "openai",
       "mode": "eleve"

@@ -27,10 +27,10 @@ test("défaut d'abord, identifiants résolus depuis l'environnement (après trim
     env: { DOCIE_MODELE_LFM25_2_6B: " store:lfm2.5-2.6b ", DOCIE_MODELE_NUEXTRACT3: "store:nuextract3" },
   });
   assert.deepEqual(offres.map((o) => [o.id, o.role, o.identifiant, o.variable, o.libelle]), [
-    ["nuextract3", "defaut", "store:nuextract3", "DOCIE_MODELE_NUEXTRACT3", "NuExtract3"],
-    ["lfm25_2_6b", "alternative", "store:lfm2.5-2.6b", "DOCIE_MODELE_LFM25_2_6B", "LFM2.5 2.6B"],
+    ["nuextract3", "defaut", "store:nuextract3", "DOCIE_MODELE_NUEXTRACT3", "Modèle précis"],
+    ["lfm25_2_6b", "alternative", "store:lfm2.5-2.6b", "DOCIE_MODELE_LFM25_2_6B", "Modèle rapide"],
   ]);
-  assert.equal(offres[0].description, "Précis mais lent — plusieurs minutes");
+  assert.equal(offres[0].description, "Plus lent — plusieurs minutes");
   assert.deepEqual(offres[1].limites, { lignes_non_vides_max: 800 });
 });
 
@@ -73,7 +73,7 @@ test("limite de pages (vision) : 8 -> proposé, 9 -> retiré", () => {
 
 test("choisirModele : jamais de substitution — non proposé, limite dépassée, identifiant du navigateur jamais recopié", () => {
   assert.throws(() => cat.choisirModele("contract", "texte", { env: { DOCIE_MODELE_NUEXTRACT3: "store:n" }, modele: "lfm25_2_6b" }),
-    (e) => e.name === "CatalogueError" && e.code === "modele_non_propose" && /LFM2\.5 2\.6B/.test(e.message));
+    (e) => e.name === "CatalogueError" && e.code === "modele_non_propose" && /Modèle rapide/.test(e.message));
   assert.throws(() => cat.choisirModele("contract", "texte", { env: ENV_CONTRAT, document: { lignesNonVides: 801 }, modele: "lfm25_2_6b" }),
     (e) => e.code === "limite" && /800/.test(e.message) && /801/.test(e.message));
   assert.throws(() => cat.choisirModele("contract", "texte", { env: ENV_CONTRAT, modele: "<img src=x>" }),
@@ -107,7 +107,7 @@ test("usage : un modèle sans l'étiquette de la tâche n'est jamais proposé, m
 
 test("modeleServi : rapproché avec ou sans store:, sinon nom brut, null si non rapporté", () => {
   assert.deepEqual(cat.modeleServi("contract", "texte", { env: ENV_CONTRAT, metadata: { model: "nuextract3" } }),
-    { id: "nuextract3", libelle: "NuExtract3", identifiant: "nuextract3" });
+    { id: "nuextract3", libelle: "Modèle précis", identifiant: "nuextract3" });
   assert.deepEqual(cat.modeleServi("contract", "texte", { env: ENV_CONTRAT, metadata: { model: "store:lfm2.5-2.6b" } }).id, "lfm25_2_6b");
   assert.deepEqual(cat.modeleServi("contract", "texte", { env: ENV_CONTRAT, metadata: { model: "autre" } }),
     { id: null, libelle: "autre", identifiant: "autre" });
@@ -234,7 +234,7 @@ test("externes : modes du catalogue = modes du transport (document-parsing/bridg
 test("modeleServi : OpenAI rapproché par fournisseur + mode, modèle servi rapporté tel quel ; jamais confondu avec DocIE", () => {
   const env = { OPENAI_API_KEY: CLE, DOCIE_MODELE_LFM25_2_6B: "rapide" };
   assert.deepEqual(cat.modeleServi("rib", "texte", { env, metadata: { fournisseur: "openai", mode: "raisonnement", model: "gpt-5-nano-2025-08-07" } }),
-    { id: "openai_raisonnement", libelle: "OpenAI raisonnement faible — externe (hors ADBI)", identifiant: "gpt-5-nano-2025-08-07" });
+    { id: "openai_raisonnement", libelle: "Modèle externe (hors ADBI) — raisonnement léger", identifiant: "gpt-5-nano-2025-08-07" });
   // Sans clé : nom brut, jamais le libellé d'un modèle non configuré.
   assert.deepEqual(cat.modeleServi("rib", "texte", { env: {}, metadata: { fournisseur: "openai", mode: "rapide", model: "gpt-4.1-nano-2025-04-14" } }),
     { id: null, libelle: "gpt-4.1-nano-2025-04-14", identifiant: "gpt-4.1-nano-2025-04-14" });

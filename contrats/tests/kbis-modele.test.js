@@ -165,7 +165,7 @@ test("modèle choisi : PDF texte -> voie texte avec CE modèle ; scan ou image +
     const d = docie();
     const r = await analyzeDocument(corps(buffer, { mimeType, modele: "nuextract3" }), { env, fetchImpl: d.fetchImpl, analyzeLocal: localCompte().analyzeLocal });
     assert.deepEqual(d.appels.map((a) => a.url), [urlAgent("kbis-nuextract3")], mimeType);
-    assert.deepEqual(r.modele, { id: "nuextract3", libelle: "NuExtract3" });
+    assert.deepEqual(r.modele, { id: "nuextract3", libelle: "Modèle précis" });
   }
 });
 
@@ -193,7 +193,7 @@ test("échouer bruyamment : scan + modèle de la voie texte -> `scan` ; > 8 page
   assert.equal(huit.appels.length, 1);
 });
 
-const MESSAGE_SCAN_VISION = "Document scanné : ce modèle ne lit que le texte. Choisissez NuExtract3 (lecture d'image) pour l'analyser.";
+const MESSAGE_SCAN_VISION = "Document scanné : ce modèle ne lit que le texte. Choisissez « Modèle précis » (lecture d'image) pour l'analyser.";
 
 test("`scan` du Kbis : lecture d'image configurée -> le message nomme NuExtract3 (libellé) ; absente ou fichier hors limite -> saisie manuelle", async () => {
   const avecVision = { ...BASE, ...MODELES_KBIS };
@@ -249,8 +249,8 @@ test("une même lecture par la voie texte et par la voie agent : analyses identi
     const viaAgent = await analyzeDocument(corps(await pdfScanne(), { modele: "nuextract3" }), { env, fetchImpl: a.fetchImpl });
     assert.equal(t.appels[0].url, URL_TEXTE, nom);
     assert.equal(a.appels[0].url, urlAgent("kbis-nuextract3"), nom);
-    assert.deepEqual(viaTexte.modele, { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" });
-    assert.deepEqual(viaAgent.modele, { id: "nuextract3", libelle: "NuExtract3" });
+    assert.deepEqual(viaTexte.modele, { id: "lfm25_2_6b", libelle: "Modèle rapide" });
+    assert.deepEqual(viaAgent.modele, { id: "nuextract3", libelle: "Modèle précis" });
     const sansModele = (x) => { const c = clone(x); delete c.modele; return c; };
     assert.deepEqual(sansModele(viaTexte), sansModele(viaAgent), nom);
     // Et identiques à la voie agent d'avant (aucun modèle, DOCIE_AGENT_KBIS).
@@ -308,7 +308,7 @@ test("GET /api/modeles?tache=kbis : voie texte (défaut) LFM2.5 2.6B puis NuExtr
     // pièces. Il vaut `false` ici : la voie AGENT ne peut recevoir aucun modèle
     // externe — le fournisseur ne déclare que la voie `texte` (catalogue.json),
     // et lib/choix-modele.js ne demande les externes que sur cette voie-là.
-    assert.deepEqual(JSON.parse(agent.texte), { tache: "kbis", voie: "agent", modeles: [{ id: "nuextract3", libelle: "NuExtract3", description: "Précis mais lent — plusieurs minutes", role: "defaut", experimental: false, lignesMax: null }] });
+    assert.deepEqual(JSON.parse(agent.texte), { tache: "kbis", voie: "agent", modeles: [{ id: "nuextract3", libelle: "Modèle précis", description: "Plus lent — plusieurs minutes", role: "defaut", experimental: false, lignesMax: null }] });
     for (const r of [defaut, texte, agent]) assert.ok(!/store:|kbis-nuextract3|kbis-historique/.test(r.texte));
     assert.equal((await srv.get("tache=kbis&voie=chat")).status, 400);
     assert.equal((await srv.get("tache=urssaf&voie=agent")).status, 400);
@@ -324,10 +324,10 @@ test("GET /api/modeles?tache=kbis : voie texte (défaut) LFM2.5 2.6B puis NuExtr
 
 const OFFRES = {
   texte: [
-    { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B", description: "Rapide", role: "defaut", lignesMax: 800 },
-    { id: "nuextract3", libelle: "NuExtract3", description: "Précis mais lent — plusieurs minutes", role: "alternative", lignesMax: null },
+    { id: "lfm25_2_6b", libelle: "Modèle rapide", description: "Bon équilibre entre vitesse et précision", role: "defaut", lignesMax: 800 },
+    { id: "nuextract3", libelle: "Modèle précis", description: "Plus lent — plusieurs minutes", role: "alternative", lignesMax: null },
   ],
-  agent: [{ id: "nuextract3", libelle: "NuExtract3", description: "Précis mais lent — plusieurs minutes", role: "defaut", lignesMax: null }],
+  agent: [{ id: "nuextract3", libelle: "Modèle précis", description: "Plus lent — plusieurs minutes", role: "defaut", lignesMax: null }],
 };
 
 function selecteur() {
@@ -376,7 +376,7 @@ test("voieKbisDuFichier : PDF (type ou nom) -> texte ; image ou inconnu -> agent
 
 test("sélecteur Kbis : PDF -> offres texte (visible, défaut) ; choix gardé sur la même voie ; photo -> NuExtract3 (masqué, envoyé) ; retour PDF -> défaut présélectionné", async () => {
   const lu = (id, libelle) => ({ issuedDate: "2026-09-04", nameMatches: true, modele: { id, libelle } });
-  const nav = navigateur(OFFRES, [lu("lfm25_2_6b", "LFM2.5 2.6B"), lu("nuextract3", "NuExtract3"), lu("nuextract3", "NuExtract3"), lu("lfm25_2_6b", "LFM2.5 2.6B")]);
+  const nav = navigateur(OFFRES, [lu("lfm25_2_6b", "Modèle rapide"), lu("nuextract3", "Modèle précis"), lu("nuextract3", "Modèle précis"), lu("lfm25_2_6b", "Modèle rapide")]);
   const sel = selecteur();
   // Remplissage initial (buildChecklist) : voie texte.
   await nav.ctx.remplirSelecteurModeles(sel, "kbis", "texte");
@@ -385,8 +385,8 @@ test("sélecteur Kbis : PDF -> offres texte (visible, défaut) ; choix gardé su
 
   const pdf1 = await analyserKbis(nav, sel, { type: "application/pdf", name: "kbis.pdf" });
   assert.equal(nav.envois[0].modele, "lfm25_2_6b");
-  assert.equal(pdf1.servi.textContent, "lu par LFM2.5 2.6B");
-  assert.deepEqual(clone(nav.ctx.state.dateState.kbis.modele), { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" });
+  assert.equal(pdf1.servi.textContent, "lu par Modèle rapide");
+  assert.deepEqual(clone(nav.ctx.state.dateState.kbis.modele), { id: "lfm25_2_6b", libelle: "Modèle rapide" });
   assert.equal(nav.ctx.state.dateState.kbis.choixModele, true);
 
   sel.value = "nuextract3"; // choix de l'utilisateur, même voie
@@ -397,7 +397,7 @@ test("sélecteur Kbis : PDF -> offres texte (visible, défaut) ; choix gardé su
   assert.equal(sel.dataset.voie, "agent");
   assert.equal(nav.envois[2].modele, "nuextract3");
   assert.equal(sel.classList.contains("hidden"), true, "un seul modèle en vision : masqué");
-  assert.equal(photo.servi.textContent, "lu par NuExtract3");
+  assert.equal(photo.servi.textContent, "lu par Modèle précis");
 
   await analyserKbis(nav, sel, { type: "application/pdf", name: "kbis3.pdf" });
   assert.equal(sel.dataset.voie, "texte");
@@ -487,8 +487,8 @@ test("route /api/document/analyze : PDF texte + LFM2.5 2.6B et scan + NuExtract3
     assert.deepEqual(d.appels.map((a) => a.url), [URL_TEXTE, urlAgent("kbis-nuextract3")]);
     assert.equal(texte.status, 200);
     assert.equal(vision.status, 200);
-    assert.deepEqual(texte.body.modele, { id: "lfm25_2_6b", libelle: "LFM2.5 2.6B" });
-    assert.deepEqual(vision.body.modele, { id: "nuextract3", libelle: "NuExtract3" });
+    assert.deepEqual(texte.body.modele, { id: "lfm25_2_6b", libelle: "Modèle rapide" });
+    assert.deepEqual(vision.body.modele, { id: "nuextract3", libelle: "Modèle précis" });
     assert.equal(texte.body.controleSirenSiret.siren.statut, "valide");
     const prop = (b) => K.proposer(K.extraire(b), b.nameMatches, {}, K.controleCompact(b));
     assert.deepEqual(prop(texte.body), prop(vision.body));
