@@ -54,7 +54,7 @@ async function rafraichirStore(env = process.env) {
 // texte, sinon agent) ; "texte" n'est ici que la voie affichée avant le dépôt
 // d'un fichier. Le navigateur peut demander les offres d'une voie précise
 // (VOIES_PAR_TYPE), jamais imposer la voie de l'extraction.
-const TACHES = Object.freeze({ contract: "texte", urssaf: "texte", rib: "texte", kbis: "texte" });
+const TACHES = Object.freeze({ contract: "texte", urssaf: "texte", rib: "texte", fiscale: "texte", kbis: "texte" });
 const VOIES_PAR_TYPE = Object.freeze({ kbis: Object.freeze(["texte", "agent"]) });
 
 // Messages constants : rien du texte amont ni de la valeur reçue n'en sort.

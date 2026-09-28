@@ -50,6 +50,7 @@ const choixModele = require("./choix-modele");
 // enregistrés côté Studio pour l'agent. Chargée paresseusement, seulement quand
 // un modèle est choisi.
 const SCHEMA_CONTRAT_PATH = path.join(__dirname, "..", "..", "document-parsing", "schemas", "contract.schema.json");
+const OPENAI_PATH = path.join(__dirname, "..", "..", "document-parsing", "bridge", "openai-responses.js");
 // Contrôle de clé du SIREN / SIRET (#194), écrit une seule fois pour les deux
 // mappings JS (portage de document-parsing/mappings/siren_siret.py).
 const { controlerSirenSiret, messagesSirenSiret } = require("./siren-siret");
@@ -470,6 +471,18 @@ async function extraireParModele(buffer, mime, modele, env, deps) {
   const lecture = await (deps.coucheTexteUtilisable || coucheTexteUtilisable)(buffer, mime);
   if (!lecture.ok) throw new choixModele.ErreurChoixModele("scan");
   const choisi = choixModele.choisirPourTexte(DOCIE_KIND, modele, lecture.texte, { env });
+  // Modèle EXTERNE choisi : le texte part chez le fournisseur, jamais à DocIE (`identifiant` est alors un mode, pas un profil).
+  if (choixModele.estExterne(choisi)) {
+    const { extraireViaOpenAI } = deps.extraireViaOpenAI ? deps : require(OPENAI_PATH);
+    const externe = await extraireViaOpenAI(lecture.texte, {
+      mode: choisi.mode, dynamicSchema: deps.dynamicSchema || require(SCHEMA_CONTRAT_PATH), env,
+      ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
+    });
+    const meta = externe.metadata || {};
+    return Object.assign({ requestId: meta.request_id || null }, mapContractResult(externe.result, { validation: meta.validation }), {
+      modele: choixModele.modeleServiPublic(DOCIE_KIND, meta, { env, voie: "texte" }),
+    }, signauxPartielsPublics(meta, { cles: CLES_CONTRATS }));
+  }
   const { extractText } = deps.extractText ? deps : loadBridge();
   const options = {
     kind: DOCIE_KIND,
