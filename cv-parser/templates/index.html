@@ -864,7 +864,7 @@ function skeletonGrid(n=6) {
           <div class="sk-line" style="width:65px;height:18px;border-radius:4px"></div>
           <div class="sk-line" style="width:45px;height:18px;border-radius:4px"></div>
         </div>
-        <div style="border-top:1px solid #EEF2F9;padding-top:10px;display:flex;justify-content:space-between">
+        <div class="sk-pied">
           <div class="sk-line" style="width:70px;height:10px"></div>
           <div style="display:flex;gap:5px">
             <div class="sk-line" style="width:55px;height:22px;border-radius:5px"></div>
@@ -932,12 +932,12 @@ function showParseSummary(data) {
   const t = s.timing || {};
   if (t.total_s) {
     const llmPct = t.llm_s ? Math.round(t.llm_s / t.total_s * 100) : 0;
-    statsHtml += `<br><span style="font-size:10px;color:#9AAFC8;display:block;margin-top:5px">
+    statsHtml += `<br><span class="stat-note">
       ⏱ Total <strong>${t.total_s}s</strong>${typeof t.llm_s === 'number' ? ` — LLM <strong>${t.llm_s}s</strong> (${llmPct}%)` : ''}</span>`;
   }
   // Modèle qui a réellement servi, lu dans la réponse DocIE (#194).
   if (s.modele) {
-    statsHtml += `<span style="font-size:10px;color:#9AAFC8;display:block;margin-top:3px">— lu par ${esc(s.modele)}</span>`;
+    statsHtml += `<span class="stat-note">— lu par ${esc(s.modele)}</span>`;
   }
   document.getElementById('parseStats').innerHTML = statsHtml;
   document.getElementById('openDossierBtn').href = `/cv/${data.id}`;
@@ -1442,7 +1442,7 @@ function renderGrid(list, grid) {
           <div class="cv-card-sub">${parts.join(' · ') || '—'}</div>
         </div>
       </div>
-      <div class="cv-card-techs">${techHTML||'<span style="font-size:11px;color:#9AAFC8">Aucune compétence</span>'}</div>
+      <div class="cv-card-techs">${techHTML||'<span class="cv-card-vide">Aucune compétence</span>'}</div>
       <div class="cv-card-footer">
         <div class="cv-card-date">${dateStr}</div>
         <div class="cv-card-actions" onclick="event.stopPropagation()">

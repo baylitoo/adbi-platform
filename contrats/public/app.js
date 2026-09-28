@@ -2128,7 +2128,7 @@ function renderPreview() {
   if (state.stub) {
     host.innerHTML = '<div class="cover"><img src="/logo-adbi.png" class="clogo-img" alt="ADBI" />' +
       '<div class="ctitle">' + escapeHtml(state.titre) + "</div>" +
-      '<p style="text-align:center;color:#888">Mod\u00E8le non encore disponible.<br>Fournissez le contrat type correspondant pour l\u2019activer.</p></div>';
+      '<p class="muted">Mod\u00E8le non encore disponible.<br>Fournissez le contrat type correspondant pour l\u2019activer.</p></div>';
   } else {
     host.innerHTML = html.join("\n");
   }
