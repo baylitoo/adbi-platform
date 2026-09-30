@@ -1,0 +1,9 @@
+/* Touches de la charte ADBI par-dessus Furo : titres, tableaux, cartes de l'accueil. */
+h1, h2, h3 { letter-spacing: -0.01em; }
+.sidebar-brand-text { font-weight: 700; }
+table.docutils { width: 100%; }
+table.docutils th { background: var(--color-background-secondary); }
+.adbi-cartes { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 1rem 0 1.5rem; }
+.adbi-cartes .adbi-carte { border: 1px solid var(--color-background-border); border-radius: 10px; padding: 12px 14px; background: var(--color-background-secondary); }
+.adbi-cartes .adbi-carte strong { color: var(--color-brand-primary); display: block; margin-bottom: 4px; }
+.mermaid { text-align: center; margin: 1rem 0; }
