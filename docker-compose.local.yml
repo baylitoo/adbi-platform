@@ -300,6 +300,8 @@ services:
         # Catalogue des modèles par action (#194) : `COPY --from=modeles` sans
         # condition, lu pour le choix du modèle. Voir cv-parser/Dockerfile.
         modeles: ./document-parsing/models
+        # Schéma de la fiche de poste, lu par la lecture du rapprochement.
+        schemas: ./document-parsing/schemas
     extra_hosts:
       - "host.docker.internal:host-gateway"
     container_name: adbi-cv-parser
