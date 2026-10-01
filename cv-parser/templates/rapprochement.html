@@ -137,6 +137,42 @@
     .ligne-modele select { font:inherit; color:var(--text); background:var(--card); border:1px solid var(--border);
       border-radius:8px; padding:6px 9px; max-width:100%; }
     .avis-externe { margin-top:6px; font-size:11px; line-height:1.45; color:var(--or); }
+
+    /* ── Assistant : tiroir latéral, conversation sur les profils classés ── */
+    .tete-resultats { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+    .tete-resultats .titre-carte { margin-bottom:0; }
+    .assistant { position:fixed; top:0; right:0; bottom:0; z-index:200; width:min(440px, 100vw);
+                 background:var(--card); border-left:1px solid var(--border); box-shadow:-12px 0 40px rgba(27,18,32,.18);
+                 display:flex; flex-direction:column; padding:18px 18px 14px; gap:10px;
+                 animation:entreeAssistant .22s ease-out both; }
+    .assistant[hidden] { display:none; }
+    @keyframes entreeAssistant { from { transform:translateX(24px); opacity:0; } }
+    .as-tete { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+    .as-titre { font-size:16px; font-weight:800; background:var(--degrade); -webkit-background-clip:text;
+                background-clip:text; color:transparent; width:fit-content; }
+    .as-contexte { font-size:11.5px; color:var(--muted); margin-top:3px; line-height:1.4; }
+    .as-fermer { background:none; border:none; cursor:pointer; color:var(--muted); font-size:16px; padding:4px; }
+    .as-fermer:hover { color:var(--blue); }
+    .as-fil { flex:1; overflow:auto; display:flex; flex-direction:column; gap:10px; padding:4px 2px; }
+    .as-bulle { max-width:92%; padding:10px 13px; border-radius:13px; font-size:13px; line-height:1.55; overflow-wrap:anywhere; }
+    .as-bulle.moi { align-self:flex-end; background:var(--degrade); color:#fff; border-bottom-right-radius:4px; }
+    .as-bulle.ia { align-self:flex-start; background:var(--adbi-surface-2, #F7F5FA); border:1px solid var(--border);
+                   color:var(--text); border-bottom-left-radius:4px; }
+    .as-bulle.ia ul { margin:4px 0 4px 16px; }
+    .as-bulle.erreur { align-self:flex-start; color:var(--faible); border:1px dashed var(--faible); background:transparent; }
+    .as-bulle .as-signe { display:block; margin-top:6px; font-size:10.5px; color:var(--muted); }
+    .as-attente { align-self:flex-start; display:flex; gap:4px; padding:12px 14px; }
+    .as-attente i { width:6px; height:6px; border-radius:50%; background:var(--blue); animation:attente 1s infinite ease-in-out; }
+    .as-attente i:nth-child(2) { animation-delay:.15s; } .as-attente i:nth-child(3) { animation-delay:.3s; }
+    @keyframes attente { 0%, 80%, 100% { opacity:.25; transform:translateY(0); } 40% { opacity:1; transform:translateY(-3px); } }
+    .as-vide { font-size:12.5px; color:var(--muted); line-height:1.5; }
+    .as-suggestions { display:flex; flex-wrap:wrap; gap:6px; }
+    .as-suggestions button { font:inherit; font-size:11.5px; padding:6px 10px; border-radius:999px; cursor:pointer;
+                             background:transparent; color:var(--text); border:1px solid var(--border); }
+    .as-suggestions button:hover { border-color:var(--blue); color:var(--blue); }
+    .as-saisie { display:flex; gap:8px; align-items:flex-end; }
+    .as-saisie textarea { min-height:0; height:auto; padding:9px 12px; font-size:13px; resize:none; }
+    @media (prefers-reduced-motion: reduce) { .assistant, .as-attente i { animation:none; } }
     .vide { padding:30px; text-align:center; color:var(--muted); font-size:13px; }
     /* Les écartés restent lisibles mais visiblement en retrait : on doit voir
        qui a été comparé sans confondre avec ce qu'on présentera au client. */
@@ -307,7 +343,10 @@
   </div>
 
   <div class="carte" id="carteResultats" hidden>
-    <div class="titre-carte"><i>3</i> Classement</div>
+    <div class="tete-resultats">
+      <div class="titre-carte"><i>3</i> Classement</div>
+      <button class="btn btn-p" id="btnAssistant" onclick="ouvrirAssistant()" hidden>✦ Discuter des profils</button>
+    </div>
     <div id="avertBesoin"></div>
     <table>
       <thead>
@@ -334,6 +373,30 @@
     </table>
   </div>
 </div>
+
+<aside class="assistant" id="assistant" aria-label="Assistant de rapprochement" hidden>
+  <div class="as-tete">
+    <div>
+      <div class="as-titre">Assistant</div>
+      <div class="as-contexte" id="asContexte"></div>
+    </div>
+    <button class="as-fermer" onclick="fermerAssistant()" aria-label="Fermer l'assistant">✕</button>
+  </div>
+  <div class="ligne-modele">
+    <label for="modeleAssistant">Modèle</label>
+    <select id="modeleAssistant" onchange="majAvisAssistant()"></select>
+  </div>
+  <div id="avisAssistant" class="avis-externe" role="status" hidden>
+    ⚠ Service externe (hors ADBI) : la fiche et les profils résumés — données personnelles de candidats —
+    seront envoyés hors d'ADBI, sans conservation par le fournisseur.
+  </div>
+  <div class="as-fil" id="asFil" aria-live="polite"></div>
+  <div class="as-suggestions" id="asSuggestions"></div>
+  <form class="as-saisie" onsubmit="envoyerQuestion(event)">
+    <textarea id="asQuestion" rows="2" placeholder="Posez une question sur ces profils…"></textarea>
+    <button class="btn btn-p" id="asEnvoyer">Envoyer</button>
+  </form>
+</aside>
 
 <script>
 let CVS = [];
@@ -409,11 +472,24 @@ async function chargerModeles() {
   const d = await fetch('/api/rapprochement/modeles', { credentials: 'include' })
     .then(r => r.ok ? r.json() : {}).catch(() => ({}));
   const offres = d.lecture || [];
+  OFFRES_ASSISTANT = d.assistant || [];
+  PROFILS_MAX = d.profils_max || 5;
+  document.getElementById('modeleAssistant').innerHTML = optionsModeles(OFFRES_ASSISTANT);
+  majAvisAssistant();
   const sel = document.getElementById('modeleLecture');
-  sel.innerHTML = offres.map(o => `<option value="${echapper(o.id)}"${o.externe ? ' data-externe="1"' : ''}>
-    ${echapper(o.libelle)} — ${o.experimental ? 'expérimental' : echapper(o.description)}</option>`).join('');
+  sel.innerHTML = optionsModeles(offres);
   document.getElementById('ligneModele').hidden = offres.length < 2;
   majAvisExterne();
+}
+
+function optionsModeles(offres) {
+  return offres.map(o => `<option value="${echapper(o.id)}"${o.externe ? ' data-externe="1"' : ''}>
+    ${echapper(o.libelle)} — ${o.experimental ? 'expérimental' : echapper(o.description)}</option>`).join('');
+}
+
+function majAvisAssistant() {
+  const o = document.getElementById('modeleAssistant').selectedOptions[0];
+  document.getElementById('avisAssistant').hidden = !(o && o.dataset.externe === '1');
 }
 
 function majAvisExterne() {
@@ -531,6 +607,7 @@ async function lancer() {
 function afficher(d) {
   const seuil = d.seuil ?? 80;
   document.getElementById('carteResultats').hidden = false;
+  preparerAssistant(d);
 
   // D'où viennent les critères : une lecture locale ne se lit pas comme celle d'un modèle.
   const b = d.besoin || {};
@@ -602,6 +679,100 @@ const CRITERES = [['skills', 'compétences', 35], ['title', 'titre', 20], ['seni
 function detailScore(sc) {
   return CRITERES.map(([cle, nom, max]) => `${nom} ${Math.round(sc[cle] ?? 0)}/${max}`).join(' · ');
 }
+
+/* ——— Assistant : l'historique vit dans la page ; le serveur relit les profils à chaque question ——— */
+let OFFRES_ASSISTANT = [], PROFILS_MAX = 5, CONTEXTE = null, HISTO = [], EN_COURS = false;
+
+function preparerAssistant(d) {
+  const profils = (d.resultats || []).slice(0, PROFILS_MAX);
+  CONTEXTE = { besoin: d.besoin || {}, description: document.getElementById('description').value.trim(),
+               cv_ids: profils.map(r => r.candidate_id), noms: profils.map(r => r.candidate_name || 'sans nom') };
+  HISTO = [];
+  fermerAssistant();
+  document.getElementById('btnAssistant').hidden = !profils.length || !OFFRES_ASSISTANT.length;
+}
+
+function ouvrirAssistant() {
+  if (!CONTEXTE) return;
+  const n = CONTEXTE.cv_ids.length;
+  document.getElementById('asContexte').textContent =
+    `${n} profil${n > 1 ? 's' : ''} les mieux classé${n > 1 ? 's' : ''} · ${CONTEXTE.besoin.title || 'fiche de poste'}`;
+  document.getElementById('assistant').hidden = false;
+  dessinerFil();
+  document.getElementById('asQuestion').focus();
+}
+
+function fermerAssistant() { document.getElementById('assistant').hidden = true; }
+
+function enrichir(texte) {
+  const lignes = echapper(texte).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').split('\n');
+  let html = '', liste = false;
+  for (const l of lignes) {
+    const puce = /^\s*(?:[-•*]|\d+[.)])\s+(.*)$/.exec(l);
+    if (puce) { html += (liste ? '' : '<ul>') + `<li>${puce[1]}</li>`; liste = true; continue; }
+    if (liste) { html += '</ul>'; liste = false; }
+    html += l.trim() ? l + '<br>' : '<br>';
+  }
+  return html + (liste ? '</ul>' : '');
+}
+
+function dessinerFil(erreur) {
+  const fil = document.getElementById('asFil');
+  fil.innerHTML = (HISTO.length ? '' : `<div class="as-vide">Interrogez l'assistant sur ces profils : comparaison, réserves à lever,
+      argumentaire client… Chaque question part au modèle choisi, avec la fiche et les profils.</div>`)
+    + HISTO.map(m => m.role === 'user'
+      ? `<div class="as-bulle moi">${echapper(m.content)}</div>`
+      : `<div class="as-bulle ia">${enrichir(m.content)}${m.modele ? `<span class="as-signe">${echapper(m.modele)}</span>` : ''}</div>`).join('')
+    + (EN_COURS ? '<div class="as-attente" aria-label="Réponse en cours"><i></i><i></i><i></i></div>' : '')
+    + (erreur ? `<div class="as-bulle erreur">${echapper(erreur)}</div>` : '');
+  fil.scrollTop = fil.scrollHeight;
+  const premier = CONTEXTE?.noms?.[0];
+  document.getElementById('asSuggestions').innerHTML = HISTO.length ? '' : [
+    'Comparez ces profils pour ce poste.',
+    'Qui pourrait démarrer le plus vite, et pourquoi ?',
+    premier ? `Rédigez un argumentaire client pour ${premier}.` : null,
+    'Quelles réserves dois-je lever en entretien ?',
+  ].filter(Boolean).map(q => `<button type="button" data-q="${echapper(q)}" onclick="poser(this.dataset.q)">${echapper(q)}</button>`).join('');
+  document.getElementById('asEnvoyer').disabled = EN_COURS;
+}
+
+function envoyerQuestion(e) {
+  e.preventDefault();
+  const champ = document.getElementById('asQuestion');
+  const q = champ.value.trim();
+  if (q) { champ.value = ''; poser(q); }
+}
+
+document.getElementById('asQuestion').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); envoyerQuestion(e); }
+});
+
+async function poser(question) {
+  if (EN_COURS || !CONTEXTE) return;
+  HISTO.push({ role: 'user', content: question });
+  EN_COURS = true;
+  dessinerFil();
+  let erreur = null;
+  try {
+    const r = await fetch('/api/rapprochement/assistant', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modele: document.getElementById('modeleAssistant').value || undefined,
+                             besoin: CONTEXTE.besoin, description: CONTEXTE.description, cv_ids: CONTEXTE.cv_ids,
+                             messages: HISTO.map(({ role, content }) => ({ role, content })) }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "L'assistant n'a pas répondu correctement.");
+    HISTO.push({ role: 'assistant', content: d.reponse, modele: d.modele });
+  } catch (e) {
+    HISTO.pop();
+    erreur = e instanceof TypeError ? 'Serveur injoignable, vérifiez votre connexion.' : e.message;
+  } finally {
+    EN_COURS = false;
+    dessinerFil(erreur);
+  }
+}
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fermerAssistant(); });
 
 chargerCvs();
 chargerModeles();

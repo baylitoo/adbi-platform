@@ -49,6 +49,7 @@ import export_dossier
 # Rapprochement fiche de poste → sélection de CV.
 from core import rapprochement
 import lecture_fiche
+import assistant_rapprochement
 
 # ── python-docx (Word export) — imported once at module level ─────────────────
 try:
@@ -3239,8 +3240,26 @@ def page_rapprochement():
 @app.route("/api/rapprochement/modeles")
 @require_auth
 def api_rapprochement_modeles():
-    """Modèles proposés pour lire la fiche de poste, défaut d'abord."""
-    return jsonify({"lecture": lecture_fiche.offres()})
+    """Modèles proposés pour lire la fiche de poste et pour l'assistant, défaut d'abord."""
+    return jsonify({"lecture": lecture_fiche.offres(), "assistant": assistant_rapprochement.offres(),
+                    "profils_max": assistant_rapprochement.PROFILS_MAX})
+
+
+@app.route("/api/rapprochement/assistant", methods=["POST"])
+@require_auth
+def api_rapprochement_assistant():
+    """Une réponse de l'assistant sur les profils classés ; l'historique vit dans la page, rien n'est conservé ici."""
+    data = request.json or {}
+    try:
+        texte, modele = assistant_rapprochement.repondre(
+            str(data.get("modele") or "").strip() or None, data.get("besoin"),
+            str(data.get("description") or ""), data.get("cv_ids") or [], data.get("messages") or [])
+    except assistant_rapprochement.AssistantIndisponible as exc:
+        return jsonify({"error": exc.public}), 400 if exc.code in ("input", "modele_non_propose") else 502
+    except Exception:
+        traceback.print_exc()
+        return jsonify({"error": "Assistant indisponible, réessayez dans quelques instants."}), 500
+    return jsonify({"reponse": texte, "modele": modele})
 
 
 def _demande_rapprochement():

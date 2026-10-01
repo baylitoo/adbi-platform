@@ -320,6 +320,68 @@ async function extraireViaOpenAI(texte, { mode, dynamicSchema, env = process.env
   return resultat;
 }
 
+const MAX_SORTIE_CONVERSATION = 4000;
+const MESSAGES_MAX = 40;
+
+function messagesConversation(instructions, messages) {
+  if (typeof instructions !== "string" || !instructions.trim() || instructions.includes("\u0000")) {
+    fail("input", "Conversation instructions must be non-empty text.");
+  }
+  if (!Array.isArray(messages) || messages.length < 1 || messages.length > MESSAGES_MAX) {
+    fail("input", "Conversation must hold between 1 and " + MESSAGES_MAX + " messages.");
+  }
+  let taille = Buffer.byteLength(instructions, "utf8");
+  const entree = messages.map((m) => {
+    const role = objet(m) ? m.role : null;
+    const texte = objet(m) ? m.content : null;
+    if (!["user", "assistant"].includes(role) || typeof texte !== "string" || !texte.trim() || texte.includes("\u0000")) {
+      fail("input", "Each message needs a user or assistant role and non-empty text.");
+    }
+    taille += Buffer.byteLength(texte, "utf8");
+    return { role, content: [{ type: role === "user" ? "input_text" : "output_text", text: texte }] };
+  });
+  if (messages[messages.length - 1].role !== "user") fail("input", "The last message must come from the user.");
+  if (taille > MAX_TEXT_BYTES) fail("input", "Conversation must not exceed 3.5 MiB for OpenAI.");
+  return entree;
+}
+
+function payloadConversation(instructions, entree, mode, modele) {
+  const payload = { model: modele, store: false, instructions, input: entree, max_output_tokens: MAX_SORTIE_CONVERSATION };
+  if (MODES[mode].raisonnement) payload.reasoning = { ...MODES[mode].raisonnement };
+  return payload;
+}
+
+/** Réponse texte de la Responses API -> {texte, metadata} ; mêmes codes que parseOpenAI. */
+function parseConversation(body, { mode, modele }) {
+  if (!objet(body)) fail("response", "Invalid OpenAI response.");
+  const servi = body.model;
+  if (typeof servi !== "string" || !(servi === modele || servi.startsWith(modele + "-"))) {
+    fail("schema", "OpenAI responded from an unexpected model.");
+  }
+  if (body.status === "incomplete") fail("incomplete", "OpenAI did not finish the answer (incomplete response).");
+  if (body.status !== "completed") fail("upstream", "OpenAI answer did not complete.");
+  const contenus = (Array.isArray(body.output) ? body.output : [])
+    .filter((item) => objet(item) && item.type === "message" && Array.isArray(item.content))
+    .flatMap((item) => item.content).filter(objet);
+  if (contenus.some((c) => c.type === "refusal")) fail("refusal", "The OpenAI model refused to answer.");
+  const texte = contenus.filter((c) => c.type === "output_text" && typeof c.text === "string").map((c) => c.text).join("");
+  if (!texte.trim()) fail("response", "OpenAI returned no answer text.");
+  return { texte, metadata: {
+    request_id: typeof body.id === "string" ? body.id : null,
+    fournisseur: "openai", mode, model: servi, usage: objet(body.usage) ? body.usage : null } };
+}
+
+/** Réponse libre d'OpenAI à une conversation [{role, content}] ; un appel, aucune conservation côté fournisseur. */
+async function converserViaOpenAI(instructions, messages, { mode, env = process.env, fetchImpl = fetch } = {}) {
+  const { url, key, timeout, modele } = configurationOpenAI(env || {}, mode);
+  const entree = messagesConversation(instructions, messages);
+  const { body, elapsed } = await posterOpenAI(url, key, payloadConversation(instructions, entree, mode, modele), timeout, fetchImpl);
+  const resultat = parseConversation(body, { mode, modele });
+  resultat.metadata.elapsed_ms = elapsed;
+  return resultat;
+}
+
 module.exports = { schemaOpenAI, ErreurSchema, CONSIGNE_DATE, CONSIGNE_NOMBRE, CONSIGNE_MONTANT, CONSIGNE_DEVISE,
   extraireViaOpenAI, configurationOpenAI, payloadOpenAI, parseOpenAI, MODES, INSTRUCTIONS,
-  MAX_TEXT_BYTES, MAX_OUTPUT_TOKENS, DocIEBridgeError };
+  MAX_TEXT_BYTES, MAX_OUTPUT_TOKENS, DocIEBridgeError,
+  converserViaOpenAI, payloadConversation, parseConversation, MAX_SORTIE_CONVERSATION, MESSAGES_MAX };

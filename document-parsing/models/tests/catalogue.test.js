@@ -183,13 +183,13 @@ test("sans clé, ou sans l'option `externes` : sortie des chargeurs identique oc
   assert.throws(() => cat.choisirModele("rib", "texte", { env: { OPENAI_API_KEY: CLE }, modele: "openai_rapide" }), (e) => e.code === "modele_non_propose");
 });
 
-test("CV : offres OpenAI sur la voie TEXTE seulement ; toute autre tâche ou voie, jamais", () => {
+test("CV : offres OpenAI sur la voie TEXTE, plus l'assistant du rapprochement ; toute autre tâche ou voie, jamais", () => {
   const env = { ...ENV_DOCIE_COMPLET, OPENAI_API_KEY: CLE };
   const c = cat.chargerCatalogue();
   for (const tache of Object.keys(c.taches)) {
     for (const voie of ["texte", "agent", "chat"]) {
       const externes = cat.modelesOfferts(tache, voie, { env, externes: true }).filter((o) => o.role === "externe" || o.id.startsWith("openai"));
-      assert.equal(externes.length, voie === "texte" && TACHES_EXTERNES.includes(tache) ? 4 : 0, tache + "/" + voie);
+      assert.equal(externes.length, (voie === "texte" && TACHES_EXTERNES.includes(tache)) || (tache === "rapprochement" && voie === "chat") ? 4 : 0, tache + "/" + voie);
     }
   }
   // Le CV est ouvert sur la voie TEXTE seulement : un scan part en vision chez

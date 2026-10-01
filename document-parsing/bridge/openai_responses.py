@@ -293,3 +293,73 @@ def extraire_via_openai(texte, *, mode, dynamic_schema, env=None, session=None):
                             schema_name=dynamic_schema["document_type"])
     resultat["metadata"]["elapsed_ms"] = elapsed
     return resultat
+
+
+MAX_SORTIE_CONVERSATION = 4000
+MESSAGES_MAX = 40
+
+
+def _messages_conversation(instructions, messages):
+    if not isinstance(instructions, str) or not instructions.strip() or "\x00" in instructions:
+        fail("input", "Conversation instructions must be non-empty text.")
+    if not isinstance(messages, list) or not 1 <= len(messages) <= MESSAGES_MAX:
+        fail("input", "Conversation must hold between 1 and " + str(MESSAGES_MAX) + " messages.")
+    entree, taille = [], len(instructions.encode("utf-8"))
+    for m in messages:
+        role = m.get("role") if isinstance(m, dict) else None
+        texte = m.get("content") if isinstance(m, dict) else None
+        if role not in ("user", "assistant") or not isinstance(texte, str) or not texte.strip() or "\x00" in texte:
+            fail("input", "Each message needs a user or assistant role and non-empty text.")
+        taille += len(texte.encode("utf-8"))
+        entree.append({"role": role, "content": [{"type": "input_text" if role == "user" else "output_text", "text": texte}]})
+    if messages[-1]["role"] != "user":
+        fail("input", "The last message must come from the user.")
+    if taille > MAX_TEXT_BYTES:
+        fail("input", "Conversation must not exceed 3.5 MiB for OpenAI.")
+    return entree
+
+
+def payload_conversation(instructions, entree, mode, modele):
+    payload = {"model": modele, "store": False, "instructions": instructions, "input": entree,
+               "max_output_tokens": MAX_SORTIE_CONVERSATION}
+    if MODES[mode]["raisonnement"]:
+        payload["reasoning"] = dict(MODES[mode]["raisonnement"])
+    return payload
+
+
+def parse_conversation(body, *, mode, modele):
+    """Réponse texte de la Responses API -> {texte, metadata} ; mêmes codes que parse_openai."""
+    if not isinstance(body, dict):
+        fail("response", "Invalid OpenAI response.")
+    servi = body.get("model")
+    if not isinstance(servi, str) or not (servi == modele or servi.startswith(modele + "-")):
+        fail("schema", "OpenAI responded from an unexpected model.")
+    if body.get("status") == "incomplete":
+        fail("incomplete", "OpenAI did not finish the answer (incomplete response).")
+    if body.get("status") != "completed":
+        fail("upstream", "OpenAI answer did not complete.")
+    sortie = body.get("output") if isinstance(body.get("output"), list) else []
+    contenus = [c for item in sortie
+                if isinstance(item, dict) and item.get("type") == "message" and isinstance(item.get("content"), list)
+                for c in item["content"] if isinstance(c, dict)]
+    if any(c.get("type") == "refusal" for c in contenus):
+        fail("refusal", "The OpenAI model refused to answer.")
+    texte = "".join(c["text"] for c in contenus if c.get("type") == "output_text" and isinstance(c.get("text"), str))
+    if not texte.strip():
+        fail("response", "OpenAI returned no answer text.")
+    return {"texte": texte, "metadata": {
+        "request_id": body.get("id") if isinstance(body.get("id"), str) else None,
+        "fournisseur": "openai", "mode": mode, "model": servi,
+        "usage": body.get("usage") if isinstance(body.get("usage"), dict) else None}}
+
+
+def converser_via_openai(instructions, messages, *, mode, env=None, session=None):
+    """Réponse libre d'OpenAI à une conversation [{role, content}] ; un appel, aucune conservation côté fournisseur."""
+    env = os.environ if env is None else env
+    conf = configuration_openai(env, mode)
+    entree = _messages_conversation(instructions, messages)
+    body, elapsed = _poster(conf["url"], conf["key"], payload_conversation(instructions, entree, mode, conf["modele"]),
+                            conf["timeout"], session)
+    resultat = parse_conversation(body, mode=mode, modele=conf["modele"])
+    resultat["metadata"]["elapsed_ms"] = elapsed
+    return resultat
