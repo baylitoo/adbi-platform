@@ -130,7 +130,7 @@ DOCIE_BLOCS_TEXTE_MAX = 800
 # allowlist alone. Neither is added on a reading of someone else's
 # configuration -- that is exactly how `image/webp` got here (#180).
 MIME_TYPES = {"application/pdf", "image/png", "image/jpeg"}
-SCHEMAS = {"resume": "adbi_resume", "contract": "contract", "kbis": "kbis", "urssaf": "urssaf", "rib": "rib"}
+SCHEMAS = {"resume": "adbi_resume", "contract": "contract", "kbis": "kbis", "urssaf": "urssaf", "rib": "rib", "fiche_de_poste": "fiche_de_poste"}
 # Blocs fournis par l'appelant (voie texte). Quand `ocr_blocks` voyage, DocIE ne
 # découpe plus rien : `extract/service.py:357` fait
 # `blocks = ocr_blocks if ocr_blocks is not None else text_to_blocks(text or "")`.
