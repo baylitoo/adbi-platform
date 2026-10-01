@@ -16,7 +16,10 @@ seul catalogue de modèles et une seule charte graphique.
 ## Documentation
 
 La documentation complète (architecture, modules, démarrage, déploiement,
-configuration, sécurité, décisions) est un site Sphinx dans `documentation/` :
+configuration, sécurité, décisions) est publiée à chaque poussée sur `master` :
+**https://baylitoo.github.io/adbi-platform/**
+
+Sources : site Sphinx dans `documentation/`. Pour la générer en local :
 
 ```bash
 pip install -r documentation/requirements.txt
