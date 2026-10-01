@@ -35,10 +35,17 @@ def _pont():
     return _load_bridge()
 
 
+_prepare = False
+
+
 def _preparer() -> None:
+    global _prepare
+    if _prepare:
+        return
     with get_conn() as con:
         for requete in _CREER:
             con.execute(requete)
+    _prepare = True
 
 
 def _modele() -> str:
@@ -56,12 +63,16 @@ def _modele() -> str:
     return modele
 
 
-def etat() -> dict:
-    """{disponible, modele?, raison?, message?} pour l'interface."""
+def etat(cvs: dict | None = None) -> dict:
+    """{disponible, modele?, raison?, message?, indexes?, total?} pour l'interface."""
     try:
-        return {"disponible": True, "modele": _modele()}
+        modele = _modele()
     except Indisponible as exc:
         return {"disponible": False, "raison": exc.raison, "message": str(exc)}
+    reponse = {"disponible": True, "modele": modele}
+    if cvs is not None:
+        reponse["indexes"], reponse["total"] = compter(cvs, modele)
+    return reponse
 
 
 def texte_cv(cv: dict) -> str:
@@ -73,6 +84,42 @@ def texte_cv(cv: dict) -> str:
     return "\n".join(str(p).strip() for p in parts if p and str(p).strip())
 
 
+def empreinte(texte: str) -> str:
+    return hashlib.sha256(texte.encode("utf-8")).hexdigest()
+
+
+def _connues(modele: str, ids: list[str] | None = None) -> dict:
+    with get_conn() as con:
+        if ids is None:
+            lignes = con.execute("SELECT cv_id, empreinte FROM cv_embeddings WHERE modele = %s", (modele,))
+        else:
+            lignes = con.execute("SELECT cv_id, empreinte FROM cv_embeddings WHERE modele = %s AND cv_id = ANY(%s)",
+                                 (modele, ids))
+        return {r["cv_id"]: r["empreinte"] for r in lignes.fetchall()}
+
+
+def compter(cvs: dict, modele: str) -> tuple[int, int]:
+    """(fiches indexées à jour, fiches ayant un texte indexable) pour `modele`."""
+    empreintes = {cid: empreinte(t) for cid, t in ((cid, texte_cv(cv)) for cid, cv in cvs.items()) if t}
+    connues = _connues(modele)
+    return sum(1 for cid, e in empreintes.items() if connues.get(cid) == e), len(empreintes)
+
+
+def etat_cv(cv: dict) -> dict:
+    """{etat: indexe | en_attente | indisponible, modele, message} pour une fiche."""
+    try:
+        modele = _modele()
+    except Indisponible as exc:
+        return {"etat": "indisponible", "modele": None, "message": str(exc)}
+    texte = texte_cv(cv)
+    if not texte:
+        return {"etat": "indisponible", "modele": modele,
+                "message": "Cette fiche ne contient pas encore de texte exploitable par la recherche sémantique."}
+    if _connues(modele, [cv["id"]]).get(cv["id"]) == empreinte(texte):
+        return {"etat": "indexe", "modele": modele, "message": "Profil indexé pour la recherche sémantique."}
+    return {"etat": "en_attente", "modele": modele, "message": "Indexation sémantique en attente."}
+
+
 def _vecteur(v: list[float]) -> str:
     return "[" + ",".join(repr(float(x)) for x in v) + "]"
 
@@ -80,10 +127,8 @@ def _vecteur(v: list[float]) -> str:
 def indexer(cvs: dict, modele: str) -> int:
     """Calcule les vecteurs manquants ou périmés (texte changé) pour `modele` ; renvoie leur nombre."""
     textes = {cid: texte_cv(cv) for cid, cv in cvs.items()}
-    empreintes = {cid: hashlib.sha256(t.encode("utf-8")).hexdigest() for cid, t in textes.items() if t}
-    with get_conn() as con:
-        connues = {r["cv_id"]: r["empreinte"] for r in con.execute(
-            "SELECT cv_id, empreinte FROM cv_embeddings WHERE modele = %s", (modele,)).fetchall()}
+    empreintes = {cid: empreinte(t) for cid, t in textes.items() if t}
+    connues = _connues(modele, list(empreintes))
     a_faire = [cid for cid, e in empreintes.items() if connues.get(cid) != e]
     pont = _pont()
     for debut in range(0, len(a_faire), LOT):
@@ -99,10 +144,9 @@ def indexer(cvs: dict, modele: str) -> int:
 
 
 def rechercher(q: str, cvs: dict) -> tuple[list[dict], str]:
-    """([{id, score}] du plus proche au plus lointain, modèle) ; score = similarité cosinus."""
+    """([{id, score}] du plus proche, modèle) ; seules les fiches déjà indexées y figurent (cosinus)."""
     q = (q or "").strip()[:REQUETE_MAX]
     modele = _modele()
-    indexer(cvs, modele)
     requete = _pont().embed([q], modele=modele)[0]
     with get_conn() as con:
         lignes = con.execute(

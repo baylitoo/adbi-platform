@@ -606,6 +606,7 @@
           {% if c.location %}<span class="ph-badge">{{ c.location }}</span>{% endif %}
           {% if c.email %}<span class="ph-badge">{{ c.email }}</span>{% endif %}
           {% if c.phone %}<span class="ph-badge">{{ c.phone }}</span>{% endif %}
+          <span class="ph-badge" id="badgeSemantique" hidden></span>
         </div>
       </div>
       {% if cv.years_experience %}
@@ -1094,6 +1095,27 @@ if (!LLM_ENRICHED) {
   }, 4000);
 }
 
+const LIBELLES_SEMANTIQUE = {
+  indexe: 'Indexé pour la recherche sémantique',
+  en_attente: 'Indexation sémantique en attente',
+  indisponible: 'Recherche sémantique indisponible',
+};
+let _semEssais = 0, _semMinuteur = null;
+async function etatSemantique(relance) {
+  const badge = document.getElementById('badgeSemantique');
+  if (relance) _semEssais = 0;
+  clearTimeout(_semMinuteur);
+  try {
+    const d = await fetch(`/api/cvs/${CV_ID}/semantique`, { credentials: 'include' }).then(r => r.json());
+    if (!LIBELLES_SEMANTIQUE[d.etat]) return;
+    badge.textContent = d.etat === 'indisponible' && d.message ? d.message : LIBELLES_SEMANTIQUE[d.etat];
+    badge.title = d.message || '';
+    badge.hidden = false;
+    if (d.etat === 'en_attente' && ++_semEssais <= 12) _semMinuteur = setTimeout(() => etatSemantique(false), 5000);
+  } catch (_) {}
+}
+etatSemantique(true);
+
 function toggle(hd) { hd.closest('.sec-card').classList.toggle('collapsed'); }
 
 function bindEmpty(root) {
@@ -1260,6 +1282,7 @@ async function saveAll() {
       document.getElementById('saveIndicator').classList.add('show');
       setTimeout(() => document.getElementById('saveIndicator').classList.remove('show'), 2500);
       showToast('✅ Modifications enregistrées');
+      etatSemantique(true);
     }
   } catch { showToast('❌ Erreur de sauvegarde'); }
 }

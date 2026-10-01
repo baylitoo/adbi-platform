@@ -693,6 +693,7 @@
         <button class="filter-btn" data-val="semantique" id="btnSemantique" onclick="setModeRecherche(this)" disabled
                 title="Vérification de la disponibilité…">Sémantique</button>
       </div>
+      <div class="sb-note" id="semantiqueCompte" hidden></div>
       <div class="sb-note" id="semantiqueNote" hidden></div>
     </div>
 
@@ -1249,7 +1250,13 @@ async function chargerEtatSemantique() {
     const d = await fetch('/api/search/semantique/etat', { credentials:'include' }).then(r => r.json());
     btn.disabled = !d.disponible;
     btn.title = d.disponible ? `Classement par sens (${d.modele})` : (d.message || 'Indisponible');
+    if (d.disponible) compteSemantique(d.indexes, d.total);
   } catch { btn.disabled = true; btn.title = 'Indisponible'; }
+}
+function compteSemantique(indexes, total) {
+  const n = document.getElementById('semantiqueCompte');
+  n.hidden = !Number.isFinite(total);
+  n.textContent = n.hidden ? '' : `${indexes}/${total} profils indexés`;
 }
 function setModeRecherche(btn) {
   if (btn.disabled) return;
@@ -1273,7 +1280,8 @@ async function lancerSemantique() {
     if (seq !== _semSeq) return;
     if (!r.ok) { _semantique = null; noteSemantique(d.error || 'Recherche sémantique indisponible.'); applyFilters(); return; }
     _semantique = new Map(d.resultats.map(x => [x.id, x.score]));
-    noteSemantique(`Classés par proximité de sens · ${d.modele}`);
+    compteSemantique(d.total - d.en_attente, d.total);
+    noteSemantique(`Classés par proximité de sens · ${d.modele}` + (d.en_attente ? ` · ${d.en_attente} profil(s) en attente d'indexation, absent(s) du classement` : ''));
   } catch { if (seq === _semSeq) { _semantique = null; noteSemantique('Recherche sémantique injoignable.'); } }
   applyFilters();
 }

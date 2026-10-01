@@ -86,7 +86,7 @@ from core.auth import (
 # (get_cv, list_cvs, delete_cv).
 from core.pg import init_schema, ping as _pg_ping
 from core.activity_pg import log_event as _log
-from core import cvstore_pg
+from core import cvstore_pg, indexation_semantique
 
 # ── Blueprints ────────────────────────────────────────────────────────────────
 from api.auth_bp      import auth_bp
@@ -124,6 +124,7 @@ app.register_blueprint(settings_bp)
 # comme Gunicorn.
 init_schema()                 # Crée les tables PostgreSQL si absentes (DATABASE_URL requise)
 ensure_default_superuser()    # Crée admin@adbi.fr si aucun utilisateur
+indexation_semantique.demarrer()  # Vecteurs des fiches remplis en tâche de fond, rattrapage compris
 
 if not AUTH_ACTIVE:
     print("[AUTH] ⚠ Authentification DÉSACTIVÉE (ADBI_AUTH != on) — "
@@ -2628,9 +2629,9 @@ def search_cvs():
 @app.route("/api/search/semantique/etat")
 @require_auth
 def etat_recherche_semantique():
-    """Disponibilité de la recherche sémantique (modèle d'embedding prêt sur DocIE + pgvector)."""
+    """Disponibilité de la recherche sémantique et nombre de fiches déjà indexées {indexes, total}."""
     from core import semantique
-    return jsonify(semantique.etat())
+    return jsonify(semantique.etat(cvstore_pg.list_cvs()))
 
 
 @app.route("/api/search/semantique")
@@ -2641,8 +2642,10 @@ def recherche_semantique():
     q = request.args.get("q", "").strip()
     if not q:
         return jsonify({"error": "Requête vide."}), 400
+    cvs = cvstore_pg.list_cvs()
     try:
-        resultats, modele = semantique.rechercher(q, cvstore_pg.list_cvs())
+        resultats, modele = semantique.rechercher(q, cvs)
+        indexes, total = semantique.compter(cvs, modele)
     except semantique.Indisponible as exc:
         return jsonify({"error": str(exc), "raison": exc.raison}), 409
     except Exception as exc:
@@ -2650,7 +2653,18 @@ def recherche_semantique():
         if not traduit:
             raise
         return jsonify({"error": traduit["message"], "code": traduit["code"]}), 502
-    return jsonify({"modele": modele, "resultats": resultats})
+    return jsonify({"modele": modele, "resultats": resultats, "en_attente": total - indexes, "total": total})
+
+
+@app.route("/api/cvs/<cv_id>/semantique")
+@require_auth
+def etat_semantique_cv(cv_id):
+    """{etat: indexe | en_attente | indisponible, modele, message} de la fiche."""
+    from core import semantique
+    cv = cvstore_pg.get_cv(cv_id)
+    if cv is None:
+        abort(404)
+    return jsonify(semantique.etat_cv(cv))
 
 
 # Champs liste relus par core/matcher.py pour CHAQUE CV de la CVthèque à
