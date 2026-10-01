@@ -320,8 +320,9 @@ def _messages_conversation(instructions, messages):
 
 
 def payload_conversation(instructions, entree, mode, modele):
+    raisonne = MODES[mode]["raisonnement"]["effort"] != "none"
     payload = {"model": modele, "store": False, "instructions": instructions, "input": entree,
-               "max_output_tokens": MAX_SORTIE_CONVERSATION}
+               "max_output_tokens": MAX_OUTPUT_TOKENS if raisonne else MAX_SORTIE_CONVERSATION}
     if MODES[mode]["raisonnement"]:
         payload["reasoning"] = dict(MODES[mode]["raisonnement"])
     return payload

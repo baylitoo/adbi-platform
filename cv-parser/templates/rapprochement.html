@@ -388,7 +388,7 @@
   </div>
   <div id="avisAssistant" class="avis-externe" role="status" hidden>
     ⚠ Service externe (hors ADBI) : la fiche et les profils résumés — données personnelles de candidats —
-    seront envoyés hors d'ADBI, sans conservation par le fournisseur.
+    seront envoyés hors d'ADBI, au fournisseur du modèle.
   </div>
   <div class="as-fil" id="asFil" aria-live="polite"></div>
   <div class="as-suggestions" id="asSuggestions"></div>
@@ -681,13 +681,15 @@ function detailScore(sc) {
 }
 
 /* ——— Assistant : l'historique vit dans la page ; le serveur relit les profils à chaque question ——— */
-let OFFRES_ASSISTANT = [], PROFILS_MAX = 5, CONTEXTE = null, HISTO = [], EN_COURS = false;
+let OFFRES_ASSISTANT = [], PROFILS_MAX = 5, CONTEXTE = null, HISTO = [], EN_COURS = false, GENERATION = 0;
 
 function preparerAssistant(d) {
   const profils = (d.resultats || []).slice(0, PROFILS_MAX);
   CONTEXTE = { besoin: d.besoin || {}, description: document.getElementById('description').value.trim(),
                cv_ids: profils.map(r => r.candidate_id), noms: profils.map(r => r.candidate_name || 'sans nom') };
   HISTO = [];
+  GENERATION++;
+  EN_COURS = false;
   fermerAssistant();
   document.getElementById('btnAssistant').hidden = !profils.length || !OFFRES_ASSISTANT.length;
 }
@@ -749,6 +751,7 @@ document.getElementById('asQuestion').addEventListener('keydown', (e) => {
 
 async function poser(question) {
   if (EN_COURS || !CONTEXTE) return;
+  const generation = GENERATION;
   HISTO.push({ role: 'user', content: question });
   EN_COURS = true;
   dessinerFil();
@@ -761,15 +764,16 @@ async function poser(question) {
                              messages: HISTO.map(({ role, content }) => ({ role, content })) }),
     });
     const d = await r.json().catch(() => ({}));
+    if (generation !== GENERATION) return;
     if (!r.ok) throw new Error(d.error || "L'assistant n'a pas répondu correctement.");
     HISTO.push({ role: 'assistant', content: d.reponse, modele: d.modele });
   } catch (e) {
+    if (generation !== GENERATION) return;
     HISTO.pop();
     erreur = e instanceof TypeError ? 'Serveur injoignable, vérifiez votre connexion.' : e.message;
-  } finally {
-    EN_COURS = false;
-    dessinerFil(erreur);
   }
+  EN_COURS = false;
+  dessinerFil(erreur);
 }
 
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fermerAssistant(); });

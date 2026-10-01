@@ -346,7 +346,9 @@ function messagesConversation(instructions, messages) {
 }
 
 function payloadConversation(instructions, entree, mode, modele) {
-  const payload = { model: modele, store: false, instructions, input: entree, max_output_tokens: MAX_SORTIE_CONVERSATION };
+  const raisonne = MODES[mode].raisonnement.effort !== "none";
+  const payload = { model: modele, store: false, instructions, input: entree,
+    max_output_tokens: raisonne ? MAX_OUTPUT_TOKENS : MAX_SORTIE_CONVERSATION };
   if (MODES[mode].raisonnement) payload.reasoning = { ...MODES[mode].raisonnement };
   return payload;
 }
