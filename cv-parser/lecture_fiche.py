@@ -30,7 +30,7 @@ def offres():
     """Modèles proposés pour lire une fiche, défaut d'abord ; liste vide si aucun."""
     try:
         catalogue = choix_modele.charger()
-        proposes = catalogue.modeles_offerts(TACHE, "texte", externes=True, store=choix_modele.store_pret())
+        proposes = catalogue.modeles_offerts(TACHE, "texte", externes=choix_modele.EXTERNES, store=choix_modele.store_pret())
     except Exception:
         return []
     return [{"id": o["id"], "libelle": o["libelle"], "description": o["description"], "role": o["role"],
@@ -69,14 +69,14 @@ def lire(description, modele=None):
     if not modele:
         proposes = offres()
         if not proposes:
-            raise LectureImpossible("aucun_modele", "Aucun modèle de lecture proposé : critères déduits localement.")
+            raise LectureImpossible("aucun_modele", "Aucun modèle de lecture proposé.")
         modele = proposes[0]["id"]
     catalogue = choix_modele.charger()
     try:
-        offre = catalogue.choisir_modele(TACHE, "texte", modele, externes=True, store=choix_modele.store_pret(),
+        offre = catalogue.choisir_modele(TACHE, "texte", modele, externes=choix_modele.EXTERNES, store=choix_modele.store_pret(),
                                          document={"lignes_non_vides": catalogue.compter_lignes_non_vides(texte)})
     except catalogue.CatalogueError as exc:
-        raise LectureImpossible(exc.code, str(exc)) from None
+        raise LectureImpossible(exc.code, "Modèle de lecture mal configuré côté serveur." if exc.code == "configuration" else str(exc)) from None
     cle = hashlib.sha256(f"{offre['id']}\0{texte}".encode("utf-8")).hexdigest()
     with _verrou:
         if cle in _cache:

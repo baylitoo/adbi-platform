@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import traceback
 
 from core.matcher import run_matching, _load_cv_db
 
@@ -146,10 +147,14 @@ def classer(description: str, identifiants: list, lire=None, progression=None) -
             brut, modele_lecture = lire(description)
             besoin = besoin_depuis_resultat(brut)
         except Exception as err:
-            erreur_lecture = getattr(err, "public", None) or "Lecture par le modèle impossible."
-            print(f"[RAPPROCHEMENT] lecture de la fiche impossible : {type(err).__name__}")
+            erreur_lecture = getattr(err, "public", None)
+            if not erreur_lecture:
+                erreur_lecture = "Lecture par le modèle impossible."
+                traceback.print_exc()
     source = f"modèle ({modele_lecture})" if besoin else "lecture locale"
     if not besoin or not (besoin.get("title") or besoin.get("required_skills")):
+        if besoin is not None:
+            erreur_lecture = f"{modele_lecture} n'a repéré ni intitulé ni compétences dans la fiche."
         besoin = besoin_de_secours(description, vocabulaire(_load_cv_db()))
         source, modele_lecture = "lecture locale", None
     dire("lecture", _resume_besoin(besoin))
