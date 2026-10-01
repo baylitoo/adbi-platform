@@ -30,6 +30,8 @@ COPY --from=fixtures competences_synonymes.json /document-parsing/fixtures/compe
 # fonctionne, mais aucun modèle n'est proposé (message à l'écran) et un choix
 # échoue. Les deux fichiers seulement : tests/ n'a rien à faire dans l'image.
 COPY --from=modeles catalogue.json catalogue.py /document-parsing/models/
+# Schéma de la fiche de poste (lecture_fiche.py), même chemin relatif que dans le dépôt.
+COPY --from=schemas fiche_de_poste.schema.json /document-parsing/schemas/
 
 ENV PYTHONUNBUFFERED=1
 ENV ADBI_HOTE=0.0.0.0

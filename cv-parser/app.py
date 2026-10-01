@@ -48,6 +48,8 @@ from llm_cascade import chat as llm_chat, LLMIndisponible
 import export_dossier
 # Rapprochement fiche de poste → sélection de CV.
 from core import rapprochement
+import lecture_fiche
+import assistant_rapprochement
 
 # ── python-docx (Word export) — imported once at module level ─────────────────
 try:
@@ -3235,74 +3237,80 @@ def page_rapprochement():
     return render_template("rapprochement.html", besoin_prerempli=besoin)
 
 
-@app.route("/api/rapprochement", methods=["POST"])
+@app.route("/api/rapprochement/modeles")
 @require_auth
-def api_rapprochement():
-    """
-    Classe une sélection de CV face à une fiche de poste collée à l'écran.
+def api_rapprochement_modeles():
+    """Modèles proposés pour lire la fiche de poste et pour l'assistant, défaut d'abord."""
+    return jsonify({"lecture": lecture_fiche.offres(), "assistant": assistant_rapprochement.offres(),
+                    "profils_max": assistant_rapprochement.PROFILS_MAX})
 
-    Diffère du matching existant sur deux points : l'entrée est un texte libre
-    plutôt qu'un besoin enregistré, et la comparaison porte sur les CV choisis
-    plutôt que sur toute la CVthèque.
-    """
+
+@app.route("/api/rapprochement/assistant", methods=["POST"])
+@require_auth
+def api_rapprochement_assistant():
+    """Une réponse de l'assistant sur les profils classés ; l'historique vit dans la page, rien n'est conservé ici."""
+    data = request.json or {}
+    try:
+        texte, modele = assistant_rapprochement.repondre(
+            str(data.get("modele") or "").strip() or None, data.get("besoin"),
+            str(data.get("description") or ""), data.get("cv_ids") or [], data.get("messages") or [])
+    except assistant_rapprochement.AssistantIndisponible as exc:
+        return jsonify({"error": exc.public}), 400 if exc.code in ("input", "modele_non_propose") else 502
+    except Exception:
+        traceback.print_exc()
+        return jsonify({"error": "Assistant indisponible, réessayez dans quelques instants."}), 500
+    return jsonify({"reponse": texte, "modele": modele})
+
+
+def _demande_rapprochement():
     data = request.json or {}
     description = str(data.get("description") or "").strip()
     identifiants = [str(i) for i in (data.get("cv_ids") or [])]
-
+    modele = str(data.get("modele") or "").strip() or None
     if len(description) < 30:
-        return jsonify({"error": "Fiche de poste trop courte pour être exploitée."}), 400
+        return None, (jsonify({"error": "Fiche de poste trop courte pour être exploitée."}), 400)
     if not identifiants:
-        return jsonify({"error": "Sélectionnez au moins un CV à comparer."}), 400
+        return None, (jsonify({"error": "Sélectionnez au moins un CV à comparer."}), 400)
+    return (description, identifiants, lambda texte: lecture_fiche.lire(texte, modele)), None
 
+
+@app.route("/api/rapprochement", methods=["POST"])
+@require_auth
+def api_rapprochement():
+    """Classe une sélection de CV face à une fiche de poste collée à l'écran."""
+    demande, refus = _demande_rapprochement()
+    if refus:
+        return refus
+    description, identifiants, lire = demande
     try:
-        sortie = rapprochement.classer(description, identifiants, appel_llm=llm_chat,
-                                       appels_llm=llm_cascade.chat_plusieurs)
-    except LLMIndisponible:
-        raise
+        sortie = rapprochement.classer(description, identifiants, lire=lire)
     except Exception:
         traceback.print_exc()
         return jsonify({"error": "Rapprochement impossible, réessayez dans quelques instants."}), 500
-
     return jsonify(sortie)
 
 
 @app.route("/api/rapprochement/flux", methods=["POST"])
 @require_auth
 def api_rapprochement_flux():
-    """
-    Le même classement, diffusé étape par étape.
-
-    Deux appels au modèle s'enchaînent ici : près d'une minute pendant laquelle
-    une requête classique ne renvoie rien. On émet donc une ligne JSON à chaque
-    étape franchie, la dernière portant le résultat complet — l'écran peut
-    ainsi dire ce qu'il fait au lieu de faire tourner une roue dans le vide.
-
-    Le classement tourne dans un fil séparé et dépose ses étapes dans une file :
-    un générateur ne peut pas produire depuis une fonction de rappel.
-    """
-    data = request.json or {}
-    description = str(data.get("description") or "").strip()
-    identifiants = [str(i) for i in (data.get("cv_ids") or [])]
-
-    if len(description) < 30:
-        return jsonify({"error": "Fiche de poste trop courte pour être exploitée."}), 400
-    if not identifiants:
-        return jsonify({"error": "Sélectionnez au moins un CV à comparer."}), 400
-
+    """Le même classement, diffusé étape par étape en NDJSON (lecture de la fiche, puis règles)."""
+    demande, refus = _demande_rapprochement()
+    if refus:
+        return refus
+    description, identifiants, lire = demande
     file_etapes = queue.Queue()
 
     def travailler():
         try:
             sortie = rapprochement.classer(
-                description, identifiants, appel_llm=llm_chat,
-                appels_llm=llm_cascade.chat_plusieurs,
+                description, identifiants, lire=lire,
                 progression=lambda etape, detail="": file_etapes.put(
                     {"etape": etape, "detail": detail}),
             )
             file_etapes.put({"fini": True, "resultat": sortie})
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
-            file_etapes.put({"erreur": f"Rapprochement impossible : {e}"})
+            file_etapes.put({"erreur": "Rapprochement impossible, réessayez dans quelques instants."})
 
     threading.Thread(target=travailler, daemon=True).start()
 

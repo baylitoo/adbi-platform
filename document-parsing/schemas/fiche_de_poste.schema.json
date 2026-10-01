@@ -1,0 +1,67 @@
+{
+  "document_type": "fiche_de_poste",
+  "fields": [
+    {
+      "name": "title",
+      "type": "string",
+      "description": "Intitule du poste tel qu'ecrit dans l'annonce",
+      "fields": []
+    },
+    {
+      "name": "required_skills",
+      "type": "list",
+      "description": "Technologies et competences exigees, une par entree, sans phrase",
+      "fields": [
+        {
+          "name": "skill",
+          "type": "string",
+          "description": null,
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "seniority",
+      "type": "string",
+      "description": "junior, confirme, senior ou expert, au vu de l'experience demandee ; vide si rien ne l'indique",
+      "fields": []
+    },
+    {
+      "name": "min_years",
+      "type": "string",
+      "description": "Nombre minimum d'annees d'experience demande, en chiffres ; vide si non precise",
+      "fields": []
+    },
+    {
+      "name": "location",
+      "type": "string",
+      "description": "Lieu de la mission ou du poste",
+      "fields": []
+    },
+    {
+      "name": "contract_type",
+      "type": "string",
+      "description": "CDI, freelance, portage, stage ou alternance ; vide si absent",
+      "fields": []
+    },
+    {
+      "name": "languages",
+      "type": "list",
+      "description": "Langues exigees",
+      "fields": [
+        {
+          "name": "language",
+          "type": "string",
+          "description": null,
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "remote",
+      "type": "string",
+      "description": "full, hybride ou sur site ; vide si absent",
+      "fields": []
+    }
+  ]
+}

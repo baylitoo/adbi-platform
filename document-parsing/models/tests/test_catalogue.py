@@ -29,6 +29,7 @@ TABLE_194 = {
     "fiscale": ("extraction", {"texte": ("lfm25_2_6b", "lfm25_350m")}),
     "rib": ("extraction", {"texte": ("lfm25_2_6b", "lfm25_350m")}),
     "cni": ("extraction", {"agent": ("nuextract3", None)}),
+    "fiche_de_poste": ("extraction", {"texte": ("lfm25_2_6b", "nuextract3")}),
     "remplissage_extraction": ("extraction", {"texte": ("lfm25_2_6b", None)}),
     "remplissage_redaction": ("chat", {"chat": ("lfm25_2_6b", None)}),
     "rapprochement": ("chat", {"chat": ("lfm25_2_6b", None)}),
@@ -64,7 +65,7 @@ class TableRetenue(unittest.TestCase):
         self.assertEqual(externes, {"openai_rapide": ("openai", "rapide"), "openai_raisonnement": ("openai", "raisonnement"),
                                     "openai_moyen": ("openai", "moyen"), "openai_eleve": ("openai", "eleve")})
         for m in externes:
-            self.assertEqual(self.c["modeles"][m]["etiquettes"], ["extraction"])
+            self.assertEqual(self.c["modeles"][m]["etiquettes"], ["extraction", "chat"])
             self.assertIn("externe (hors ADBI)", self.c["modeles"][m]["libelle"])
         self.assertEqual(self.c["modeles"]["lfm25_2_6b"]["etiquettes"], ["extraction", "chat"])
         self.assertEqual(self.c["modeles"]["nuextract3"]["etiquettes"], ["extraction"])
@@ -193,7 +194,7 @@ CLE = "sk-test-secret-catalogue"
 # propriétaire a tranché. Un CV reste la donnée d'un CANDIDAT et non d'une
 # entreprise : la contrepartie exigée est que l'utilisateur soit AVERTI, au
 # moment du choix, que le texte part chez un tiers — jamais par défaut.
-TACHES_EXTERNES = ("contract", "fiscale", "kbis", "resume", "rib", "urssaf")
+TACHES_EXTERNES = ("contract", "fiche_de_poste", "fiscale", "kbis", "resume", "rib", "urssaf")
 ENV_DOCIE_COMPLET = {
     "DOCIE_MODELE_NUEXTRACT3": "store:n3", "DOCIE_MODELE_LFM25_2_6B": "store:l26", "DOCIE_MODELE_LFM25_350M": "store:l350",
     "DOCIE_AGENT_RESUME_LFM25_2_6B": "a_l", "DOCIE_AGENT_RESUME_NUEXTRACT3": "a_n", "DOCIE_AGENT_KBIS_NUEXTRACT3": "k3",
@@ -214,9 +215,9 @@ class Externes(unittest.TestCase):
         c = cat.charger_catalogue()
         for tache, t in c["taches"].items():
             for voie, v in t["voies"].items():
-                attendu = [(m, True) for m in ("openai_rapide", "openai_raisonnement", "openai_moyen", "openai_eleve")] if (voie == "texte" and tache in TACHES_EXTERNES) else []
+                attendu = [(m, True) for m in ("openai_rapide", "openai_raisonnement", "openai_moyen", "openai_eleve")] if ((voie == "texte" and tache in TACHES_EXTERNES) or (tache, voie) == ("rapprochement", "chat")) else []
                 self.assertEqual([(e["modele"], e.get("experimental")) for e in v.get("externes") or []], attendu, f"{tache}/{voie}")
-        self.assertEqual(c["fournisseurs"], {"openai": {"variable": "OPENAI_API_KEY", "voies": ["texte"]}})
+        self.assertEqual(c["fournisseurs"], {"openai": {"variable": "OPENAI_API_KEY", "voies": ["texte", "chat"]}})
 
     def test_offerts_apres_docie_si_et_seulement_si_cle(self):
         for tache in TACHES_EXTERNES:

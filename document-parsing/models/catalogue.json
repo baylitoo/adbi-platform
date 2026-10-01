@@ -18,7 +18,7 @@
     "chat": "ADBI_LLM_MODELE_{MODELE}"
   },
   "fournisseurs": {
-    "openai": { "variable": "OPENAI_API_KEY", "voies": ["texte"] }
+    "openai": { "variable": "OPENAI_API_KEY", "voies": ["texte", "chat"] }
   },
   "modeles": {
     "lfm25_2_6b": {
@@ -45,28 +45,28 @@
     "openai_rapide": {
       "libelle": "Modèle externe (hors ADBI) — rapide",
       "description": "OpenAI, résultat assuré, sans raisonnement, le plus rapide — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
-      "etiquettes": ["extraction"],
+      "etiquettes": ["extraction", "chat"],
       "fournisseur": "openai",
       "mode": "rapide"
     },
     "openai_raisonnement": {
       "libelle": "Modèle externe (hors ADBI) — raisonnement léger",
       "description": "OpenAI, résultat assuré, raisonnement léger, plus lent — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
-      "etiquettes": ["extraction"],
+      "etiquettes": ["extraction", "chat"],
       "fournisseur": "openai",
       "mode": "raisonnement"
     },
     "openai_moyen": {
       "libelle": "Modèle externe (hors ADBI) — raisonnement moyen",
       "description": "OpenAI, résultat assuré, raisonnement moyen, plus lent — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
-      "etiquettes": ["extraction"],
+      "etiquettes": ["extraction", "chat"],
       "fournisseur": "openai",
       "mode": "moyen"
     },
     "openai_eleve": {
       "libelle": "Modèle externe (hors ADBI) — raisonnement poussé",
       "description": "OpenAI, résultat assuré, raisonnement poussé, le plus lent et le plus coûteux — le texte du document quitte ADBI ; aucune preuve ni confiance par champ : tout est à relire",
-      "etiquettes": ["extraction"],
+      "etiquettes": ["extraction", "chat"],
       "fournisseur": "openai",
       "mode": "eleve"
     }
@@ -191,6 +191,23 @@
         }
       }
     },
+    "fiche_de_poste": {
+      "libelle": "Fiche de poste",
+      "usage": "extraction",
+      "schema": "fiche_de_poste",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "Texte collé à l'écran du rapprochement." },
+          "alternative": { "modele": "nuextract3", "experimental": true },
+          "externes": [
+            { "modele": "openai_rapide", "experimental": true },
+            { "modele": "openai_raisonnement", "experimental": true },
+            { "modele": "openai_moyen", "experimental": true },
+            { "modele": "openai_eleve", "experimental": true }
+          ]
+        }
+      }
+    },
     "remplissage_extraction": {
       "libelle": "Remplissage interactif — extraction",
       "usage": "extraction",
@@ -216,8 +233,14 @@
       "usage": "chat",
       "voies": {
         "chat": {
-          "defaut": { "modele": "lfm25_2_6b", "condition": "Un seul modèle, response_format json_schema." },
-          "alternative": null
+          "defaut": { "modele": "lfm25_2_6b", "condition": "Assistant conversationnel sur les profils classés." },
+          "alternative": null,
+          "externes": [
+            { "modele": "openai_rapide", "experimental": true },
+            { "modele": "openai_raisonnement", "experimental": true },
+            { "modele": "openai_moyen", "experimental": true },
+            { "modele": "openai_eleve", "experimental": true }
+          ]
         }
       }
     },
