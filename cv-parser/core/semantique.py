@@ -128,6 +128,8 @@ def indexer(cvs: dict, modele: str) -> int:
     """Calcule les vecteurs manquants ou périmés (texte changé) pour `modele` ; renvoie leur nombre."""
     textes = {cid: texte_cv(cv) for cid, cv in cvs.items()}
     empreintes = {cid: empreinte(t) for cid, t in textes.items() if t}
+    if not empreintes:
+        return 0
     connues = _connues(modele, list(empreintes))
     a_faire = [cid for cid, e in empreintes.items() if connues.get(cid) != e]
     pont = _pont()
