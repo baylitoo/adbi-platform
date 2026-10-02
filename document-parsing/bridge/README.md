@@ -137,10 +137,16 @@ d'upload. Voir #180.
 Limites documentées par DocIE : 25 Mo d'upload, 26 Mo de corps, 1 000 000
 caractères de texte, **1 000 blocs OCR par document**, 20 000 caractères par
 bloc, 50 entrées de métadonnées, 8 pages (voie vision uniquement). Ce sont des
-**valeurs par défaut, propres à chaque déploiement** : un opérateur les change et
-rien côté DocIE (`/healthz`, `/readyz`, `/metrics`, `/v1/schemas`) ne publie
-celles en vigueur. Notre plafond de voie fichier est calculé pour tenir dans
-leurs 26 Mo de corps, base64 compris — mais il surveille la mauvaise dimension : un PDF dense de trois pages
+**valeurs par défaut, propres à chaque déploiement** : un opérateur les change, et
+DocIE publie celles en vigueur sur `GET /v1/capabilities` (#266).
+`capacites()` (même nom dans les deux portages) les relit avec un cache de 5 min, comme le store, et
+`limitesEffectives()` / `limites_effectives()` rend, sans appel réseau, les
+plafonds appliqués par les contrôles locaux : valeur publiée champ par champ,
+sinon la constante d'aujourd'hui. Les types MIME ne peuvent que se resserrer
+(intersection avec la liste ci-dessus, jamais d'ajout). Le pont n'appelle pas
+`capacites()` de lui-même : sans cet appel par un consommateur, les constantes
+s'appliquent. Notre plafond de voie fichier est calculé pour tenir dans
+le corps publié (26 Mo par défaut), base64 compris — mais il surveille la mauvaise dimension : un PDF dense de trois pages
 atteint 1 000 blocs à quelques mégaoctets, et aucun contrôle local ne peut le
 voir venir. Un refus pour dépassement revient donc après l'appel, sous l'une des
 formes déjà traitées : HTTP 413 → code `limits`, erreurs de `validation`

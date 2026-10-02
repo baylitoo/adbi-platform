@@ -61,6 +61,7 @@ import requests
 # La voie texte garde sa propre borne, inchangée : le texte n'y est pas encodé
 # en base64 (`{text, schema_name, ...}`), et le plafond de 1 000 000 caractères
 # de DocIE (défaut de déploiement, non vérifié ici) mord bien avant 20 MiB.
+# Repli seulement : la valeur publiée par GET /v1/capabilities prime (voir limites_effectives).
 DOCIE_MAX_REQUEST_BODY_BYTES = 26 * 1024 * 1024
 FILE_ENVELOPE_MAX_BYTES = 445
 MAX_DOCUMENT_BYTES = (DOCIE_MAX_REQUEST_BODY_BYTES - FILE_ENVELOPE_MAX_BYTES) // 4 * 3
@@ -130,6 +131,7 @@ DOCIE_BLOCS_TEXTE_MAX = 800
 # allowlist alone. Neither is added on a reading of someone else's
 # configuration -- that is exactly how `image/webp` got here (#180).
 MIME_TYPES = {"application/pdf", "image/png", "image/jpeg"}
+MIME_NOMS = {"application/pdf": "PDF", "image/png": "PNG", "image/jpeg": "JPEG"}
 SCHEMAS = {"resume": "adbi_resume", "contract": "contract", "kbis": "kbis", "urssaf": "urssaf", "rib": "rib"}
 # Blocs fournis par l'appelant (voie texte). Quand `ocr_blocks` voyage, DocIE ne
 # découpe plus rien : `extract/service.py:357` fait
@@ -141,6 +143,7 @@ SCHEMAS = {"resume": "adbi_resume", "contract": "contract", "kbis": "kbis", "urs
 # qui répond 413 : les vérifier ici, c'est refuser avant l'aller-retour.
 # Lecture du code DocIE (origin/dev-agents-milestone, pointe c8c010e) par la
 # session DocIE le 2026-09-16 ; aucun appel distant depuis ce dépôt.
+# Repli seulement : la valeur publiée par GET /v1/capabilities prime (voir limites_effectives).
 DOCIE_BLOCS_OCR_MAX = 1000
 DOCIE_BLOC_CARACTERES_MAX = 20000
 DOCIE_TEXTE_CARACTERES_MAX = 1000000
@@ -493,7 +496,7 @@ def compter_blocs_texte(text):
     return sum(1 for ligne in text.splitlines() if ligne.strip())
 
 
-def valider_blocs_ocr(blocs):
+def valider_blocs_ocr(blocs, limites=None):
     """Valide les `ocr_blocks` de l'appelant et rend la copie exacte à envoyer.
 
     Le pont reste un transport : il ne FABRIQUE aucun bloc (découper un DOCX ou
@@ -512,14 +515,15 @@ def valider_blocs_ocr(blocs):
     Rend (blocs_propres, octets) ; les caractères sont comptés ici, en points de
     code comme `len()` côté DocIE (le portage JS doit éviter `.length`).
     """
+    limites = limites_effectives() if limites is None else limites
     if not isinstance(blocs, list):
         fail("input", "ocr_blocks must be an array of OCR blocks.")
     # `[]` n'est PAS un repli sur `text` : `[] is not None`, donc DocIE extrait
     # de rien et répond 200 avec un résultat vide (extract/service.py:357).
     if not blocs:
         fail("input", "ocr_blocks must not be empty: DocIE then extracts from no block at all instead of falling back to the text.")
-    if len(blocs) > DOCIE_BLOCS_OCR_MAX:
-        fail("input", "ocr_blocks holds " + str(len(blocs)) + " blocks, beyond DocIE's " + str(DOCIE_BLOCS_OCR_MAX) + " per document.")
+    if len(blocs) > limites["blocs_ocr"]:
+        fail("input", "ocr_blocks holds " + str(len(blocs)) + " blocks, beyond DocIE's " + str(limites["blocs_ocr"]) + " per document.")
     vus = set()
     propres = []
     caracteres = 0
@@ -547,8 +551,8 @@ def valider_blocs_ocr(blocs):
         # utiles. Le portage JS ne peut pas utiliser trim() ici (﻿).
         if not texte.strip():
             fail("input", "Blank OCR block text" + ou + "; DocIE drops it from the prompt after it has taken one of its " + str(DOCIE_BLOCS_TEXTE_MAX) + " slots.")
-        if len(texte) > DOCIE_BLOC_CARACTERES_MAX:
-            fail("input", "OCR block text of " + str(len(texte)) + " characters" + ou + ", beyond DocIE's " + str(DOCIE_BLOC_CARACTERES_MAX) + ".")
+        if len(texte) > limites["bloc_caracteres"]:
+            fail("input", "OCR block text of " + str(len(texte)) + " characters" + ou + ", beyond DocIE's " + str(limites["bloc_caracteres"]) + ".")
         caracteres += len(texte)
         octets += len(texte.encode("utf-8"))
         propre = {"id": identifiant, "text": texte}
@@ -574,8 +578,8 @@ def valider_blocs_ocr(blocs):
                 fail("input", "OCR block bbox must carry the four finite numbers x0, y0, x1, y1" + ou + ".")
             propre["bbox"] = {cle: boite[cle] for cle in BBOX_CLES}
         propres.append(propre)
-    if caracteres > DOCIE_TEXTE_CARACTERES_MAX:
-        fail("input", "ocr_blocks total " + str(caracteres) + " characters, beyond DocIE's " + str(DOCIE_TEXTE_CARACTERES_MAX) + ".")
+    if caracteres > limites["texte_caracteres"]:
+        fail("input", "ocr_blocks total " + str(caracteres) + " characters, beyond DocIE's " + str(limites["texte_caracteres"]) + ".")
     return propres, octets
 
 
@@ -947,11 +951,12 @@ def extract_document(content, mime_type, *, kind="resume", agent=None, env=None,
     """
     env = os.environ if env is None else env
     endpoint, key, agent, timeout, tokens = configuration(kind, env, agent)
-    if not isinstance(content, bytes) or not 0 < len(content) <= MAX_DOCUMENT_BYTES:
-        fail("input", "Document must contain between 1 byte and " + str(MAX_DOCUMENT_BYTES)
-             + " bytes (DocIE's 26 MiB request body, base64 included).")
-    if mime_type not in MIME_TYPES:
-        fail("input", "Unsupported document MIME type; use PDF, PNG or JPEG.")
+    limites = limites_effectives()
+    if not isinstance(content, bytes) or not 0 < len(content) <= limites["document_octets"]:
+        fail("input", "Document must contain between 1 byte and " + str(limites["document_octets"])
+             + " bytes (DocIE's " + str(limites["corps_requete_octets"]) + "-byte request body, base64 included).")
+    if mime_type not in limites["types_mime"]:
+        fail("input", "Unsupported document MIME type; " + _types_acceptes(limites["types_mime"]) + ".")
     payload = file_payload(content, mime_type, agent, tokens)
     # Pas de `loading` ici : sur la voie agent, un modèle `store:` froid ne
     # répond pas 202 mais une 500 non rattrapée côté DocIE (#194). Un 202 y reste
@@ -1057,6 +1062,90 @@ def store_utilisable(*, env=None, session=None, maintenant=None):
         return list(_store_cache["modeles"])
     _store_cache.update(quand=maintenant, modeles=modeles)
     return list(modeles)
+
+
+def _entier_positif(valeur):
+    """Entier strictement positif sûr (même domaine que Number.isSafeInteger en JS), sinon None."""
+    if isinstance(valeur, bool) or not isinstance(valeur, (int, float)):
+        return None
+    if isinstance(valeur, float) and not (math.isfinite(valeur) and valeur.is_integer()):
+        return None
+    return int(valeur) if 0 < valeur <= 2 ** 53 - 1 else None
+
+
+def projeter_capacites(corps):
+    """Projection de GET /v1/capabilities : chaque plafond validé, ou None (repli sur la constante)."""
+    def bloc(cle):
+        return corps[cle] if isinstance(corps, dict) and isinstance(corps.get(cle), dict) else {}
+
+    upload, texte = bloc("upload"), bloc("text")
+    types = upload.get("allowed_mime_types")
+    corps_requete = _entier_positif(upload.get("max_request_body_bytes"))
+    return {
+        "corps_requete_octets": corps_requete if corps_requete is not None and corps_requete > FILE_ENVELOPE_MAX_BYTES else None,
+        "texte_caracteres": _entier_positif(texte.get("max_chars")),
+        "blocs_ocr": _entier_positif(texte.get("max_ocr_blocks")),
+        "bloc_caracteres": _entier_positif(texte.get("max_ocr_block_chars")),
+        "types_mime": sorted(set(types)) if isinstance(types, list) and types and all(isinstance(t, str) and t for t in types) else None,
+    }
+
+
+def lire_capacites(*, env=None, session=None, timeout=None):
+    """GET /v1/capabilities : plafonds publiés par CE déploiement DocIE, projetés."""
+    env = os.environ if env is None else env
+    base, key, delai = connection(env)
+    body = get_json(base + "/v1/capabilities", {"x-api-key": key}, key, min(delai, timeout or 30), session)
+    if not isinstance(body, dict):
+        fail("response", "DocIE returned invalid capabilities.")
+    return projeter_capacites(body)
+
+
+_capacites_cache = {"quand": None, "capacites": None}
+
+
+def capacites(*, env=None, session=None, maintenant=None):
+    """Plafonds publiés (cache 5 min par processus) ; DocIE injoignable ou non configuré : dernier relevé, sinon None."""
+    env = os.environ if env is None else env
+    maintenant = time.monotonic() if maintenant is None else maintenant
+    if _capacites_cache["quand"] is not None and maintenant - _capacites_cache["quand"] < STORE_CACHE_S:
+        return limites_effectives()
+    if not str(env.get("DOCIE_BASE_URL") or "").strip():
+        return limites_effectives()
+    try:
+        _capacites_cache.update(quand=maintenant, capacites=lire_capacites(env=env, session=session, timeout=STORE_TIMEOUT_S))
+    except DocIEBridgeError as exc:
+        print("[docie_bridge] capacités DocIE non relues (%s) : dernier relevé conservé" % exc.code, file=sys.stderr)
+        _capacites_cache["quand"] = maintenant
+    return limites_effectives()
+
+
+def limites_effectives():
+    """Plafonds appliqués par les contrôles locaux, sans appel réseau : relevé en cache champ par champ, sinon constante."""
+    c = _capacites_cache["capacites"] or {}
+
+    def champ(cle, repli):
+        return c.get(cle) if c.get(cle) is not None else repli
+
+    corps = champ("corps_requete_octets", DOCIE_MAX_REQUEST_BODY_BYTES)
+    # Intersection seulement : un type publié n'entre jamais ici (voir MIME_TYPES).
+    types = sorted(t for t in MIME_TYPES if c.get("types_mime") is None or t in c["types_mime"])
+    return {
+        "corps_requete_octets": corps,
+        "document_octets": (corps - FILE_ENVELOPE_MAX_BYTES) // 4 * 3,
+        "texte_caracteres": champ("texte_caracteres", DOCIE_TEXTE_CARACTERES_MAX),
+        "blocs_ocr": champ("blocs_ocr", DOCIE_BLOCS_OCR_MAX),
+        "bloc_caracteres": champ("bloc_caracteres", DOCIE_BLOC_CARACTERES_MAX),
+        "types_mime": types,
+        "releve": _capacites_cache["capacites"] is not None,
+    }
+
+
+def _types_acceptes(types):
+    """« use PDF, PNG or JPEG » sur les types effectifs, dans l'ordre historique."""
+    noms = [nom for mime, nom in MIME_NOMS.items() if mime in types]
+    if not noms:
+        return "this DocIE deployment accepts none of PDF, PNG or JPEG"
+    return "use " + (noms[0] if len(noms) == 1 else ", ".join(noms[:-1]) + " or " + noms[-1])
 
 
 def nom_store(selecteur):
@@ -1284,9 +1373,10 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, m
     # `len()` sur une `str` compte les points de code : c'est exactement la
     # règle de DocIE, et celle que le portage JS reproduit à la main.
     # Comparaison STRICTE : 1 000 000 passe, 1 000 001 échoue.
-    if len(text) > DOCIE_TEXTE_CARACTERES_MAX:
+    limites = limites_effectives()
+    if len(text) > limites["texte_caracteres"]:
         fail("input", "Document text of " + str(len(text)) + " characters, beyond DocIE's "
-             + str(DOCIE_TEXTE_CARACTERES_MAX) + ".")
+             + str(limites["texte_caracteres"]) + ".")
     payload = {"text": text, "schema_name": schema}
     if dynamic_schema is not None:
         if not isinstance(dynamic_schema, dict) or not dynamic_schema:
@@ -1304,7 +1394,7 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, m
     # de 40 Mio, refusé par DocIE après coup alors que c'est mesurable ici.
     blocs_fournis = ocr_blocks is not None
     if blocs_fournis:
-        propres, octets = valider_blocs_ocr(ocr_blocks)
+        propres, octets = valider_blocs_ocr(ocr_blocks, limites)
         if len(text.encode("utf-8")) + octets > MAX_TEXT_BYTES:
             fail("input", "Text and ocr_blocks together must stay under " + str(MAX_TEXT_BYTES) + " bytes.")
         payload["ocr_blocks"] = propres

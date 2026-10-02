@@ -49,6 +49,7 @@
 // La voie texte garde sa propre borne, inchangée : le texte n'y est pas encodé
 // en base64 (`{text, schema_name, ...}`), et le plafond de 1 000 000 caractères
 // de DocIE (défaut de déploiement, non vérifié ici) mord bien avant 20 MiB.
+// Repli seulement : la valeur publiée par GET /v1/capabilities prime (voir limitesEffectives).
 const DOCIE_MAX_REQUEST_BODY_BYTES = 26 * 1024 * 1024;
 const FILE_ENVELOPE_MAX_BYTES = 445;
 const MAX_DOCUMENT_BYTES = Math.floor((DOCIE_MAX_REQUEST_BODY_BYTES - FILE_ENVELOPE_MAX_BYTES) / 4) * 3;
@@ -119,6 +120,7 @@ const SEPARATEURS_LIGNE_PYTHON = /\r\n|[\n\v\f\r\x1c\x1d\x1e\x85\u2028\u2029]/;
 // qui r\u00e9pond 413 : les v\u00e9rifier ici, c'est refuser avant l'aller-retour.
 // Lecture du code DocIE (origin/dev-agents-milestone, pointe c8c010e) par la
 // session DocIE le 2026-09-16 ; aucun appel distant depuis ce d\u00e9p\u00f4t.
+// Repli seulement : la valeur publiée par GET /v1/capabilities prime (voir limitesEffectives).
 const DOCIE_BLOCS_OCR_MAX = 1000;
 const DOCIE_BLOC_CARACTERES_MAX = 20000;
 const DOCIE_TEXTE_CARACTERES_MAX = 1000000;
@@ -148,6 +150,7 @@ const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urs
 // on the allowlist alone. Neither is added on a reading of someone else's
 // configuration -- that is exactly how `image/webp` got here (#180).
 const MIME_TYPES = new Set(["application/pdf", "image/png", "image/jpeg"]);
+const MIME_NOMS = { "application/pdf": "PDF", "image/png": "PNG", "image/jpeg": "JPEG" };
 // A grounded field arrives as {value, ...} alongside at least one of these keys.
 // The logprob key is in the set on purpose: DocIE's logprob confidence adds it as
 // a fourth key, and an envelope test that ignores it lets a scalar reach the
@@ -456,13 +459,13 @@ function pointsDeCode(text) {
  * où chaque refus porte sa `preuve` — fichier:ligne côté DocIE, ou [J] quand
  * c'est notre jugement et non une contrainte de leur côté.
  */
-function validerBlocsOcr(blocs) {
+function validerBlocsOcr(blocs, limites = limitesEffectives()) {
   if (!Array.isArray(blocs)) fail("input", "ocr_blocks must be an array of OCR blocks.");
   // `[]` n'est PAS un repli sur `text` : `[] is not None`, donc DocIE extrait de
   // rien et répond 200 avec un résultat vide (extract/service.py:357).
   if (!blocs.length) fail("input", "ocr_blocks must not be empty: DocIE then extracts from no block at all instead of falling back to the text.");
-  if (blocs.length > DOCIE_BLOCS_OCR_MAX) {
-    fail("input", "ocr_blocks holds " + blocs.length + " blocks, beyond DocIE's " + DOCIE_BLOCS_OCR_MAX + " per document.");
+  if (blocs.length > limites.blocs_ocr) {
+    fail("input", "ocr_blocks holds " + blocs.length + " blocks, beyond DocIE's " + limites.blocs_ocr + " per document.");
   }
   const vus = new Set();
   const propres = [];
@@ -483,7 +486,7 @@ function validerBlocsOcr(blocs) {
     // n'ancre rien. Le refuser garde `blocs_texte` égal aux blocs utiles.
     if (LIGNE_BLANCHE_PYTHON.test(bloc.text)) fail("input", "Blank OCR block text" + ou + "; DocIE drops it from the prompt after it has taken one of its " + DOCIE_BLOCS_TEXTE_MAX + " slots.");
     const taille = pointsDeCode(bloc.text);
-    if (taille > DOCIE_BLOC_CARACTERES_MAX) fail("input", "OCR block text of " + taille + " characters" + ou + ", beyond DocIE's " + DOCIE_BLOC_CARACTERES_MAX + ".");
+    if (taille > limites.bloc_caracteres) fail("input", "OCR block text of " + taille + " characters" + ou + ", beyond DocIE's " + limites.bloc_caracteres + ".");
     caracteres += taille;
     octets += Buffer.byteLength(bloc.text, "utf8");
     const propre = { id: bloc.id, text: bloc.text };
@@ -510,8 +513,8 @@ function validerBlocsOcr(blocs) {
     }
     propres.push(propre);
   }
-  if (caracteres > DOCIE_TEXTE_CARACTERES_MAX) {
-    fail("input", "ocr_blocks total " + caracteres + " characters, beyond DocIE's " + DOCIE_TEXTE_CARACTERES_MAX + ".");
+  if (caracteres > limites.texte_caracteres) {
+    fail("input", "ocr_blocks total " + caracteres + " characters, beyond DocIE's " + limites.texte_caracteres + ".");
   }
   return { blocs: propres, octets };
 }
@@ -823,10 +826,11 @@ function filePayload(content, mimeType, agent, tokens) {
 // autorisés ici : voir perCallAgent().
 async function extractDocument(content, mimeType, { kind = "resume", agent: agentOverride = null, env = process.env, fetchImpl = fetch } = {}) {
   const { endpoint, key, agent, timeout, tokens } = configuration(kind, env, agentOverride);
-  if (!Buffer.isBuffer(content) || !content.length || content.length > MAX_DOCUMENT_BYTES) {
-    fail("input", "Document must contain between 1 byte and " + MAX_DOCUMENT_BYTES + " bytes (DocIE's 26 MiB request body, base64 included).");
+  const limites = limitesEffectives();
+  if (!Buffer.isBuffer(content) || !content.length || content.length > limites.document_octets) {
+    fail("input", "Document must contain between 1 byte and " + limites.document_octets + " bytes (DocIE's " + limites.corps_requete_octets + "-byte request body, base64 included).");
   }
-  if (!MIME_TYPES.has(mimeType)) fail("input", "Unsupported document MIME type; use PDF, PNG or JPEG.");
+  if (!limites.types_mime.includes(mimeType)) fail("input", "Unsupported document MIME type; " + typesAcceptes(limites.types_mime) + ".");
   const payload = filePayload(content, mimeType, agent, tokens);
   // Pas de `loading` ici : sur la voie agent, un modèle `store:` froid ne
   // répond pas 202 mais une 500 non rattrapée côté DocIE (#194). Un 202 y reste
@@ -914,9 +918,10 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, ocrBlo
   // Points de code, comme pour les blocs (voir pointsDeCode) : DocIE compte
   // `len()` sur une `str` Python. Comparaison STRICTE : 1 000 000 passe,
   // 1 000 001 échoue.
+  const limites = limitesEffectives();
   const caracteresTexte = pointsDeCode(text);
-  if (caracteresTexte > DOCIE_TEXTE_CARACTERES_MAX) {
-    fail("input", "Document text of " + caracteresTexte + " characters, beyond DocIE's " + DOCIE_TEXTE_CARACTERES_MAX + ".");
+  if (caracteresTexte > limites.texte_caracteres) {
+    fail("input", "Document text of " + caracteresTexte + " characters, beyond DocIE's " + limites.texte_caracteres + ".");
   }
   const payload = { text, schema_name: schema };
   if (dynamicSchema != null) {
@@ -932,7 +937,7 @@ async function extractText(text, { kind = "resume", dynamicSchema = null, ocrBlo
   // 40 Mio, refusé par DocIE après coup alors que c'est mesurable ici.
   let blocs, blocsFournis = false;
   if (ocrBlocks != null) {
-    const valides = validerBlocsOcr(ocrBlocks);
+    const valides = validerBlocsOcr(ocrBlocks, limites);
     if (Buffer.byteLength(text, "utf8") + valides.octets > MAX_TEXT_BYTES) {
       fail("input", "Text and ocr_blocks together must stay under " + MAX_TEXT_BYTES + " bytes.");
     }
@@ -1055,6 +1060,70 @@ async function storeUtilisable({ env = process.env, fetchImpl = fetch, maintenan
 // Dernier relevé sans appel réseau : pour les chargeurs synchrones, après un storeUtilisable() en amont.
 function storeUtilisableConnu() {
   return storeCache.modeles.slice();
+}
+
+// Projection de GET /v1/capabilities : chaque plafond validé, ou null (repli sur la constante).
+function projeterCapacites(corps) {
+  const bloc = (cle) => (object(corps) && object(corps[cle]) ? corps[cle] : {});
+  const entier = (v) => (Number.isSafeInteger(v) && v > 0 ? v : null);
+  const upload = bloc("upload"), texte = bloc("text");
+  const types = upload.allowed_mime_types;
+  const corpsRequete = entier(upload.max_request_body_bytes);
+  return {
+    corps_requete_octets: corpsRequete !== null && corpsRequete > FILE_ENVELOPE_MAX_BYTES ? corpsRequete : null,
+    texte_caracteres: entier(texte.max_chars),
+    blocs_ocr: entier(texte.max_ocr_blocks),
+    bloc_caracteres: entier(texte.max_ocr_block_chars),
+    types_mime: Array.isArray(types) && types.length && types.every((t) => typeof t === "string" && t) ? [...new Set(types)].sort() : null,
+  };
+}
+
+// GET /v1/capabilities : plafonds publiés par CE déploiement DocIE, projetés.
+async function lireCapacites({ env = process.env, fetchImpl = fetch, timeout = null } = {}) {
+  const { base, key, timeout: delai } = connection(env);
+  const body = await getJson(base + "/v1/capabilities", { "x-api-key": key }, key, Math.min(delai, timeout || 30), fetchImpl);
+  if (!object(body)) fail("response", "DocIE returned invalid capabilities.");
+  return projeterCapacites(body);
+}
+
+const capacitesCache = { quand: null, capacites: null };
+
+// Plafonds publiés (cache 5 min par processus) ; DocIE injoignable ou non configuré : dernier relevé, sinon null.
+async function capacites({ env = process.env, fetchImpl = fetch, maintenant = Date.now() } = {}) {
+  if (capacitesCache.quand !== null && maintenant - capacitesCache.quand < STORE_CACHE_MS) return limitesEffectives();
+  if (!String(env.DOCIE_BASE_URL || "").trim()) return limitesEffectives();
+  try {
+    Object.assign(capacitesCache, { quand: maintenant, capacites: await lireCapacites({ env, fetchImpl, timeout: STORE_TIMEOUT_S }) });
+  } catch (e) {
+    if (!(e instanceof DocIEBridgeError)) throw e;
+    console.error("[docie-bridge] capacités DocIE non relues (" + e.code + ") : dernier relevé conservé");
+    capacitesCache.quand = maintenant;
+  }
+  return limitesEffectives();
+}
+
+// Plafonds appliqués par les contrôles locaux, sans appel réseau : relevé en cache champ par champ, sinon constante.
+function limitesEffectives() {
+  const c = capacitesCache.capacites || {};
+  const corps = c.corps_requete_octets ?? DOCIE_MAX_REQUEST_BODY_BYTES;
+  // Intersection seulement : un type publié n'entre jamais ici (voir MIME_TYPES).
+  const types = [...MIME_TYPES].filter((t) => !c.types_mime || c.types_mime.includes(t)).sort();
+  return {
+    corps_requete_octets: corps,
+    document_octets: Math.floor((corps - FILE_ENVELOPE_MAX_BYTES) / 4) * 3,
+    texte_caracteres: c.texte_caracteres ?? DOCIE_TEXTE_CARACTERES_MAX,
+    blocs_ocr: c.blocs_ocr ?? DOCIE_BLOCS_OCR_MAX,
+    bloc_caracteres: c.bloc_caracteres ?? DOCIE_BLOC_CARACTERES_MAX,
+    types_mime: types,
+    releve: capacitesCache.capacites !== null,
+  };
+}
+
+// « use PDF, PNG or JPEG » sur les types effectifs, dans l'ordre historique.
+function typesAcceptes(types) {
+  const noms = Object.keys(MIME_NOMS).filter((t) => types.includes(t)).map((t) => MIME_NOMS[t]);
+  if (!noms.length) return "this DocIE deployment accepts none of PDF, PNG or JPEG";
+  return "use " + (noms.length === 1 ? noms[0] : noms.slice(0, -1).join(", ") + " or " + noms[noms.length - 1]);
 }
 
 // Nom de store visé par un sélecteur de modèle DocIE (`store:<nom>` ou nom nu) ; null sinon.
@@ -1187,7 +1256,7 @@ async function rerank(query, documents, { modele, topN = null, env = process.env
 }
 
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload, listStore, projeterStore,
-  storeUtilisable, storeUtilisableConnu, listAgents, projeterAgent, agentsUtilisables, agentsUtilisablesConnus, nomStore,
+  storeUtilisable, storeUtilisableConnu, capacites, projeterCapacites, limitesEffectives, listAgents, projeterAgent, agentsUtilisables, agentsUtilisablesConnus, nomStore,
   MESSAGES_ERREUR, messageErreur, fieldEvidence, rerank, rerankerPret, RERANK_DOCUMENTS_MAX, rediger, embed, embedderPret, EMBED_TEXTES_MAX,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
   DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
