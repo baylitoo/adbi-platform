@@ -20,7 +20,7 @@ trouvés (alias exacts de la table partagée fusionnée dans ALIASES, similarit�
 D'où viennent les compétences d'un besoin, toutes brutes :
   - templates/needs.html -> POST /api/needs (api/needs_bp.py) -> insert_need,
     stockées telles quelles en JSONB ; PATCH idem ;
-  - core/rapprochement.py::besoin_depuis_texte (fiche de poste lue par un
+  - core/rapprochement.py::besoin_depuis_resultat (fiche de poste lue par un
     modèle) -> run_matching, jamais stocké ;
   - scripts/migrer_vers_postgres.py (anciens besoins SQLite).
 Toutes passent par `_score_skills` / `_score_missions` : c'est là que la clé est
@@ -222,8 +222,8 @@ class RapprochementDepuisFicheDePosteTests(CVthequeSynthetique):
                 sys.modules.pop("core.matcher")
         rapprochement.run_matching = matcher.run_matching
         rapprochement._load_cv_db = matcher._load_cv_db
-        appel = lambda *a, **k: ('{"title":"Dev","required_skills":["google-cloud"]}', "test")
-        resultat = rapprochement.classer("Dev GCP", ["gcp", "csharp"], appel_llm=appel)
+        lire = lambda texte: ({"title": "Dev", "required_skills": ["google-cloud"]}, "test")
+        resultat = rapprochement.classer("Dev GCP", ["gcp", "csharp"], lire=lire)
         par_nom = {r["candidate_name"]: r["explanation"]["missing_skills"] for r in resultat["resultats"]}
         self.assertEqual(par_nom, {"GCP": [], "CSharp": ["google-cloud"]})
         sys.modules.pop("core.rapprochement", None)

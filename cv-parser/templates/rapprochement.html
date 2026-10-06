@@ -132,10 +132,11 @@
     ul.pts li::before { content:'•'; position:absolute; left:0; }
     ul.pts.forts li::before { color:var(--ok); }
     ul.pts.faibles li::before { color:var(--faible); }
-    .avis { margin-top:7px; padding-top:7px; border-top:1px dashed var(--border);
-            font-size:11.5px; color:var(--muted); font-style:italic; line-height:1.4; }
     .detail-score { font-size:10.5px; color:var(--muted); margin-top:5px; }
-    .discorde { color:var(--moyen); font-weight:700; }
+    .ligne-modele { display:flex; gap:9px; align-items:center; flex-wrap:wrap; margin-top:12px; font-size:12.5px; color:var(--muted); }
+    .ligne-modele select { font:inherit; color:var(--text); background:var(--card); border:1px solid var(--border);
+      border-radius:8px; padding:6px 9px; max-width:100%; }
+    .avis-externe { margin-top:6px; font-size:11px; line-height:1.45; color:var(--or); }
     .vide { padding:30px; text-align:center; color:var(--muted); font-size:13px; }
     /* Les écartés restent lisibles mais visiblement en retrait : on doit voir
        qui a été comparé sans confondre avec ce qu'on présentera au client. */
@@ -237,9 +238,9 @@
 <div class="page">
   <div class="entete-page">
     <h1>Rapprochement</h1>
-    <p class="sous">Collez une fiche de poste, choisissez les CV à confronter, obtenez un classement
-    argumenté — contact, points forts, réserves et score. Les règles pèsent 60 %, l'avis
-    des modèles 40 %.</p>
+    <p class="sous">Collez une fiche de poste, choisissez les CV à confronter : un modèle lit la fiche,
+    le moteur de règles classe les profils en quelques secondes — score reproductible, détaillé
+    critère par critère, points forts et réserves.</p>
   </div>
 
   <div class="carte">
@@ -254,6 +255,13 @@
 {% if besoin_prerempli.contract_type %}Contrat : {{ besoin_prerempli.contract_type }}{% endif %}
 {%- endif -%}
 </textarea>
+    <div class="ligne-modele" id="ligneModele" hidden>
+      <label for="modeleLecture">Lecture de la fiche par</label>
+      <select id="modeleLecture" onchange="majAvisExterne()"></select>
+    </div>
+    <div id="avisExterne" class="avis-externe" role="status" hidden>
+      ⚠ Service externe (hors ADBI) : le texte de la fiche de poste sera envoyé hors d'ADBI pour être lu.
+    </div>
   </div>
 
   <div class="carte">
@@ -397,15 +405,26 @@ function majCompte() {
 
 document.getElementById('filtre').addEventListener('input', dessinerListe);
 
-/* ——— Panneau de travail ———
-   Les quatre étapes correspondent à celles que `core/rapprochement.classer`
-   annonce réellement : rien n'est simulé, la barre n'avance que lorsque le
-   serveur a franchi le palier. */
+async function chargerModeles() {
+  const d = await fetch('/api/rapprochement/modeles', { credentials: 'include' })
+    .then(r => r.ok ? r.json() : {}).catch(() => ({}));
+  const offres = d.lecture || [];
+  const sel = document.getElementById('modeleLecture');
+  sel.innerHTML = offres.map(o => `<option value="${echapper(o.id)}"${o.externe ? ' data-externe="1"' : ''}>
+    ${echapper(o.libelle)} — ${o.experimental ? 'expérimental' : echapper(o.description)}</option>`).join('');
+  document.getElementById('ligneModele').hidden = offres.length < 2;
+  majAvisExterne();
+}
+
+function majAvisExterne() {
+  const o = document.getElementById('modeleLecture').selectedOptions[0];
+  document.getElementById('avisExterne').hidden = !(o && o.dataset.externe === '1');
+}
+
+/* Étapes annoncées par `core/rapprochement.classer` : la barre n'avance qu'au palier franchi. */
 const ETAPES = [
   ['lecture',     'Lecture de la fiche de poste',    'le modèle en extrait les critères'],
   ['comparaison', 'Comparaison aux CV choisis',      'moteur de règles, note sur 100'],
-  ['analyse',     'Analyse par plusieurs modèles',   'ils votent en parallèle, la note est moyennée'],
-  ['classement',  'Classement final',                '60 % règles, 40 % avis des modèles'],
 ];
 const CIRCONFERENCE = 119.4;
 let vueEtape = null, chrono = null;
@@ -462,7 +481,7 @@ async function lancer() {
   if (description.length < 30) { adbiNotifier('La fiche de poste est trop courte (30 caractères au moins).', 'warn'); return; }
 
   btn.disabled = true;
-  btn.textContent = 'Analyse en cours…';
+  btn.textContent = 'Classement en cours…';
   document.getElementById('carteResultats').hidden = true;
   document.getElementById('carteEcartes').hidden = true;
   demarrerChargement();
@@ -471,7 +490,8 @@ async function lancer() {
     const r = await fetch('/api/rapprochement/flux', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ description, cv_ids: [...choisis] }),
+      body: JSON.stringify({ description, cv_ids: [...choisis],
+                             modele: document.getElementById('modeleLecture').value || undefined }),
     });
     if (!r.ok) {
       const d = await r.json().catch(() => ({}));
@@ -512,27 +532,18 @@ function afficher(d) {
   const seuil = d.seuil ?? 80;
   document.getElementById('carteResultats').hidden = false;
 
-  // On dit d'où viennent les critères : un classement bâti sur une lecture
-  // locale, faute de modèle disponible, ne se lit pas comme un autre.
+  // D'où viennent les critères : une lecture locale ne se lit pas comme celle d'un modèle.
   const b = d.besoin || {};
+  const criteres = `<strong>${echapper(b.title || '—')}</strong>
+     ${b.seniority ? ' · ' + echapper(b.seniority) : ''}
+     ${b.min_years ? ' · ' + b.min_years + ' ans min' : ''}
+     ${(b.required_skills || []).length ? ' · ' + echapper(b.required_skills.join(', ')) : ''}`;
   document.getElementById('avertBesoin').innerHTML =
-    (d.source_besoin && d.source_besoin.startsWith('lecture locale')
-      ? `<div class="avert">Critères extraits sans modèle de langage (aucun service disponible) :
-         le classement s'appuie surtout sur l'intitulé et les mots-clés. Relancez plus tard
-         pour une lecture complète de la fiche.</div>`
-      : `<div class="compte" style="margin-bottom:12px">Critères retenus :
-         <strong>${echapper(b.title || '—')}</strong>
-         ${b.seniority ? ' · ' + echapper(b.seniority) : ''}
-         ${b.min_years ? ' · ' + b.min_years + ' ans min' : ''}
-         ${(b.required_skills || []).length ? ' · ' + echapper((b.required_skills || []).join(', ')) : ''}
-         <br>Score final : 60 % règles, 40 % avis des modèles
-         ${(d.modeles || []).length
-            ? ` — ${d.modeles.length} modèle${d.modeles.length > 1 ? 's' : ''} consulté${d.modeles.length > 1 ? 's' : ''}
-                en parallèle, note moyennée : <em>${echapper(d.modeles.map(m => m.split('/').pop()).join(', '))}</em>`
-            : ''}
-         ${d.source_avis && d.source_avis.startsWith('aucune')
-            ? ' — <strong>analyse indisponible, score sur les seules règles</strong>' : ''}</div>`)
-    + `<div class="compte" style="margin-bottom:12px">Seuil de classement :
+    (d.modele_lecture
+      ? `<div class="compte" style="margin-bottom:12px">Critères lus par ${echapper(d.modele_lecture)} : ${criteres}</div>`
+      : `<div class="avert">${d.erreur_lecture ? echapper(d.erreur_lecture) + ' ' : ''}Critères déduits localement
+         (intitulé, années, compétences déjà connues de la CVthèque) : ${criteres}</div>`)
+    + `<div class="compte" style="margin-bottom:12px">Score calculé par les règles, reproductible. Seuil de classement :
        <strong>${seuil}/100</strong> — en dessous, le profil est écarté.</div>`;
 
   const res = d.resultats || [];
@@ -575,27 +586,25 @@ function ligne(r) {
       ${r.phone ? echapper(r.phone) : ''}
       ${!r.email && !r.phone ? '—' : ''}
     </td>
-    <!-- L'analyse du modèle passe devant quand elle existe : elle explique,
-         là où les règles se contentent de constater. Les « weaknesses »
-         résument déjà les compétences manquantes, on ne les répète pas. -->
-    <td>${liste(r.ia?.forts?.length ? r.ia.forts : ex.strengths, 'forts')}</td>
-    <td>${liste(r.ia?.faibles?.length ? r.ia.faibles
-                : ((ex.weaknesses || []).length ? ex.weaknesses : ex.missing_skills), 'faibles')}
-        ${r.ia?.avis ? `<div class="avis">${echapper(r.ia.avis)}</div>` : ''}</td>
+    <td>${liste(ex.strengths, 'forts')}</td>
+    <td>${liste((ex.weaknesses || []).length ? ex.weaknesses : ex.missing_skills, 'faibles')}</td>
     <td>
       <div class="score ${classe}">${total}<span style="font-size:11px;color:var(--muted)">/100</span></div>
       <div class="jauge"><i style="width:${Math.min(100, total)}%"></i></div>
-      <div class="detail-score">règles ${r.score_regles ?? '—'}
-        · IA ${r.score_ia ?? '—'}${r.ia?.nb_modeles ? ` <span class="meta">(${r.ia.nb_modeles} mod.)</span>` : ''}
-        <!-- Un écart marqué entre modèles se signale : la moyenne seule
-             laisserait croire à un avis tranché là où ils se contredisent. -->
-        ${r.ia && (r.ia.score_max - r.ia.score_min) >= 20
-          ? `<br><span class="discorde">avis partagés ${r.ia.score_min}–${r.ia.score_max}</span>` : ''}</div>
+      <div class="detail-score">${detailScore(r.score || {})}</div>
     </td>
   </tr>`;
 }
 
+const CRITERES = [['skills', 'compétences', 35], ['title', 'titre', 20], ['seniority', 'séniorité', 15],
+                  ['missions', 'missions', 10], ['availability', 'disponibilité', 10], ['bonus', 'bonus', 10]];
+
+function detailScore(sc) {
+  return CRITERES.map(([cle, nom, max]) => `${nom} ${Math.round(sc[cle] ?? 0)}/${max}`).join(' · ');
+}
+
 chargerCvs();
+chargerModeles();
 </script>
 </body>
 </html>
