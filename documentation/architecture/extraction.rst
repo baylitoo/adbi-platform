@@ -11,7 +11,9 @@ Du dépôt au résultat
      tache --> ext{"Modèle<br/>externe ?"}
      ext -- oui --> oai["OpenAI<br/><small>texte seul, store:false</small>"]
      ext -- non --> txt{"Couche texte<br/>sur chaque page ?"}
-     txt -- "oui, et modèle servi en texte" --> vt["Voie texte<br/><small>blocs paginés → preuves</small>"]
+     txt -- "oui" --> vis{"Modèle de vision,<br/>PDF court ?"}
+     vis -- "non, et modèle servi en texte" --> vt["Voie texte<br/><small>blocs paginés → preuves</small>"]
+     vis -- oui --> va
      txt -- non --> va["Voie agent<br/><small>OCR ou vision</small>"]
      vt --> res["Résultat normalisé"]
      va --> res
@@ -25,6 +27,11 @@ Trois règles
    inutile, pas d'OCR distant, et des preuves ancrées sur un texte connu. Un
    scan part en voie agent, la seule qui lise une image. Le serveur tranche
    sur le fichier réel ; le navigateur ne peut pas connaître la couche texte.
+
+   Exception pour un modèle de vision (``vision_pages_max`` au catalogue,
+   6 pages pour NuExtract3) : un PDF court part en images même avec une couche
+   texte, car celle-ci peut être infidèle (colonnes, puces, glyphes perdus) ;
+   au-delà, la voie texte évite un rendu trop long.
 
 **Échouer bruyamment**
    Un modèle choisi n'est jamais remplacé. S'il ne convient pas --- limite de

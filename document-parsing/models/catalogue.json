@@ -9,6 +9,7 @@
     "`limites` d'un modèle : évaluées par les chargeurs (catalogue.js, catalogue.py) sur le document réel, pour toutes les tâches. `prerequis` : condition de déploiement ou de contrôle côté ADBI, lue par un humain, jamais évaluée ici.",
     "`experimental: true` sur une entrée de tâche : le modèle y est proposé mais signalé « expérimental » dans les sélecteurs (aucune lecture réelle réussie sur ce type de document) ; exposé par les deux chargeurs, jamais évalué ici.",
     "`externes` d'une voie : modèles HORS ADBI (champ `fournisseur` du modèle, variable et voies sous `fournisseurs`), toujours en plus du défaut et de l'alternative DocIE, jamais à leur place ni par défaut. Offerts si et seulement si la variable du fournisseur est non vide (OPENAI_API_KEY) ET le consommateur les demande (option `externes` des chargeurs). L'identifiant d'une offre externe est son `mode` de transport (document-parsing/bridge/openai-responses.js), jamais la clé.",
+    "`vision_pages_max` d'un modèle : un PDF de ce nombre de pages au plus part en images (voie agent) même s'il porte une couche texte, quand le modèle y est servi ; au-delà, la règle de la couche texte s'applique (cv-parser).",
     "Lu à l'exécution par contrats, cv-parser et one-pager (images Docker : COPY du catalogue et du chargeur, voir leurs Dockerfile)."
   ],
   "version": 1,
@@ -33,7 +34,8 @@
       "description": "Plus lent — plusieurs minutes",
       "store": "nuextract3",
       "etiquettes": ["extraction"],
-      "limites": { "agent": { "pages_max": 8 } }
+      "limites": { "agent": { "pages_max": 8 } },
+      "vision_pages_max": 6
     },
     "lfm25_350m": {
       "libelle": "Modèle très rapide",
