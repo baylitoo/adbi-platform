@@ -23,6 +23,8 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 
+from core.realisations import realisations
+
 RACINE = Path(__file__).parent
 IMAGES = RACINE / "static" / "adbi"
 
@@ -298,9 +300,8 @@ class Dossier:
         if contexte:
             self.etiquette_valeur("Contexte : ", contexte)
 
-        for morceau in str(exp.get("description") or "").split(" · "):
-            if morceau.strip():
-                self.puce(morceau.strip())
+        for morceau in realisations(exp):
+            self.puce(morceau)
 
         env = str(exp.get("env_technique") or "").strip()
         if env:
@@ -690,11 +691,10 @@ def en_word(cv: dict, pastilles: list, savoir_faire: list) -> BytesIO:
                 champ("Rôle : ", e["title"])
             if e.get("contexte"):
                 champ("Contexte : ", e["contexte"])
-            for morceau in str(e.get("description") or "").split(" · "):
-                if morceau.strip():
-                    p = doc.add_paragraph(style="List Bullet")
-                    p.paragraph_format.space_after = Pt(3)
-                    p.add_run(morceau.strip()).font.size = Pt(9.5)
+            for morceau in realisations(e):
+                p = doc.add_paragraph(style="List Bullet")
+                p.paragraph_format.space_after = Pt(3)
+                p.add_run(morceau).font.size = Pt(9.5)
             if e.get("env_technique"):
                 champ("Environnement technique : ", e["env_technique"])
 

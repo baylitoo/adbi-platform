@@ -77,11 +77,11 @@ class CheminsTests(unittest.TestCase):
 class RevueTests(unittest.TestCase):
     def test_champ_tronque_devient_a_verifier_sur_le_bon_chemin(self):
         data = {"name": "Camille Béranger",
-                "experience": [{"company": "Numelia", "description": "A · B"},
-                               {"company": "Studio Pixelia", "description": "C"}]}
+                "experience": [{"company": "Numelia", "achievements": ["A", "B"]},
+                               {"company": "Studio Pixelia", "achievements": ["C"]}]}
         revue = revue_docie(data, {"validation": {"valid": True, "errors": [], "warnings": []},
-                                   "field_confidence": {"experience[1].description": 0.5}})
-        self.assertEqual(revue["needs_review"], ["experience[1].description"])
+                                   "field_confidence": {"experience[1].achievements": 0.5}})
+        self.assertEqual(revue["needs_review"], ["experience[1].realisations"])
         self.assertEqual(revue["warnings"], [])
 
     def test_confiance_haute_ne_signale_rien_et_champ_vide_non_plus(self):
@@ -219,17 +219,18 @@ class FixtureReelleTests(unittest.TestCase):
         """DocIE plafonne à 0.5 la confiance d'un champ tronqué et joint
         l'avertissement correspondant : les deux doivent arriver au relecteur."""
         data = _fixture_data()
+        data["experience"][1]["achievements"] = [data["experience"][1].pop("description")]
         confiances = _confiances(json.loads(FIXTURE.read_text(encoding="utf-8"))["result"])
-        confiances["experience[1].description"] = 0.5
+        confiances["experience[1].achievements"] = 0.5
         validation = {"valid": True, "errors": [], "warnings": [
-            "experience[1].description truncated after 3 repeats: repetition loop detected"]}
+            "experience[1].achievements truncated after 3 repeats: repetition loop detected"]}
         revue = revue_docie(data, {"validation": validation, "field_confidence": confiances})
-        self.assertEqual(revue["needs_review"], ["experience[1].description"])
+        self.assertEqual(revue["needs_review"], ["experience[1].realisations"])
         self.assertEqual(revue["warnings"], [
-            "docie_avertissement:experience[1].description truncated after 3 repeats: repetition loop detected"])
+            "docie_avertissement:experience[1].achievements truncated after 3 repeats: repetition loop detected"])
         # Le champ marqué est bien rempli dans la fiche : c'est une valeur
         # PARTIELLE, pas une absence — invisible sans ce signal.
-        self.assertTrue(data["experience"][1]["description"])
+        self.assertTrue(data["experience"][1]["achievements"])
 
 
 class PerimerRevueTests(unittest.TestCase):
@@ -361,13 +362,13 @@ class GabaritTests(unittest.TestCase):
         return env.get_template("cv_detail.html").render(cv=cv, linked_cvs=[])
 
     def test_champ_peu_sur_est_marque_et_avertissement_affiche_verbatim(self):
-        avertissement = "experience[1].description truncated after 3 repeats: repetition loop detected"
+        avertissement = "experience[1].achievements truncated after 3 repeats: repetition loop detected"
         html = self._rendu({
             "id": "cv1", "name": "Camille Béranger", "title": "Développeuse",
             "contact": {"email": "camille@example.fr"},
-            "experience": [{"company": "Numelia", "title": "Dev", "description": "A"},
-                           {"company": "Studio Pixelia", "title": "Dev", "description": "B"}],
-            "docie_review": {"needs_review": ["experience[1].description", "contact.email"],
+            "experience": [{"company": "Numelia", "title": "Dev", "realisations": ["A"]},
+                           {"company": "Studio Pixelia", "title": "Dev", "realisations": ["B"]}],
+            "docie_review": {"needs_review": ["experience[1].realisations", "contact.email"],
                              "warnings": ["docie_avertissement:" + avertissement]},
         })
         self.assertIn("revue-docie", html)
@@ -397,10 +398,10 @@ class MarqueApresTriTests(unittest.TestCase):
     MISSIONS = [
         {"company": "Ancienne", "title": "Dev junior",
          "start_date": "Septembre 2019", "end_date": "Février 2022",
-         "description": "la plus ancienne, donnée en premier par DocIE"},
+         "achievements": ["la plus ancienne, donnée en premier par DocIE"]},
         {"company": "Recente", "title": "Dev senior",
          "start_date": "Mars 2022", "end_date": "Aujourd'hui",
-         "description": "la plus récente, donnée en second"},
+         "achievements": ["la plus récente, donnée en second"]},
     ]
 
     def test_la_permutation_est_celle_du_tri(self):
@@ -411,11 +412,11 @@ class MarqueApresTriTests(unittest.TestCase):
     def test_un_champ_peu_sur_de_la_mission_ancienne_est_marque_a_sa_nouvelle_place(self):
         revue = revue_docie(
             {"experience": self.MISSIONS},
-            {"validation": {}, "field_confidence": {"experience[0].description": 0.5}},
+            {"validation": {}, "field_confidence": {"experience[0].achievements": 0.5}},
         )
-        # Sans traduction, ce serait « experience[0].description », c'est-à-dire
+        # Sans traduction, ce serait « experience[0].realisations », c'est-à-dire
         # la mission « Recente » une fois la fiche triée : la mauvaise.
-        self.assertEqual(revue["needs_review"], ["experience[1].description"])
+        self.assertEqual(revue["needs_review"], ["experience[1].realisations"])
 
     def test_la_fiche_triee_porte_bien_la_mission_designee(self):
         """Le chemin marqué et la fiche rendue par normalize_cv_data concordent."""
@@ -448,7 +449,7 @@ class MarqueApresTriTests(unittest.TestCase):
         self.assertEqual([e["company"] for e in fiche["experience"]], ["Recente", "Ancienne"])
         revue = revue_docie(
             {"experience": self.MISSIONS},
-            {"validation": {}, "field_confidence": {"experience[0].description": 0.5}},
+            {"validation": {}, "field_confidence": {"experience[0].achievements": 0.5}},
         )
         index = int(revue["needs_review"][0].split("[")[1].split("]")[0])
         self.assertEqual(fiche["experience"][index]["company"], "Ancienne")
@@ -456,7 +457,7 @@ class MarqueApresTriTests(unittest.TestCase):
     def test_un_index_hors_liste_sort_en_avertissement_pas_en_fausse_position(self):
         revue = revue_docie(
             {"experience": self.MISSIONS},
-            {"validation": {}, "field_confidence": {"experience[7].description": 0.4}},
+            {"validation": {}, "field_confidence": {"experience[7].achievements": 0.4}},
         )
         self.assertEqual(revue["needs_review"], [])
 

@@ -259,9 +259,9 @@ body {
         </div>
         {% if e.title %}<div class="mission-champ"><b>Rôle :</b> {{ e.title }}</div>{% endif %}
         {% if e.contexte %}<div class="mission-champ"><b>Contexte :</b> {{ e.contexte }}</div>{% endif %}
-        {% if e.description %}
+        {% if e.realisations %}
           <ul class="puces">
-            {% for r in e.description.split(' · ') %}{% if r.strip() %}<li>{{ r.strip() }}</li>{% endif %}{% endfor %}
+            {% for r in e.realisations %}<li>{{ r }}</li>{% endfor %}
           </ul>
         {% endif %}
         {% if e.env_technique %}

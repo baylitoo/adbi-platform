@@ -326,7 +326,7 @@
 {% set ns = namespace(in_page=false, page_len=0) %}
 {% for exp in cv.experience %}
 {# Estimate rendered length for this experience #}
-{% set exp_text = (exp.title or '') ~ (exp.subtitle or '') ~ (exp.client or '') ~ (exp.contexte or '') ~ (exp.objectifs or '') ~ (exp.methodologie or '') ~ (exp.description or '') ~ (exp.env_technique or '') %}
+{% set exp_text = (exp.title or '') ~ (exp.subtitle or '') ~ (exp.client or '') ~ (exp.contexte or '') ~ (exp.objectifs or '') ~ (exp.methodologie or '') ~ ((exp.realisations or []) | join(' ')) ~ (exp.env_technique or '') %}
 {% set exp_len = exp_text | length %}
 {# Open a new page if none is open, or if current page is full #}
 {% if not ns.in_page or (ns.page_len + exp_len > CHAR_LIMIT) %}
@@ -384,14 +384,11 @@
       {% endif %}
 
       <!-- Réalisations -->
-      {% if exp.description %}
-      {% set bullets = exp.description.split(' · ') %}
-      {% if bullets | length > 1 or bullets[0].strip() %}
+      {% if exp.realisations %}
       <div class="real-title">Réalisations</div>
       <ul class="real-list">
-        {% for b in bullets %}{% if b.strip() %}<li>{{ b.strip() }}</li>{% endif %}{% endfor %}
+        {% for b in exp.realisations %}<li>{{ b }}</li>{% endfor %}
       </ul>
-      {% endif %}
       {% endif %}
 
       <!-- Environnement technique -->

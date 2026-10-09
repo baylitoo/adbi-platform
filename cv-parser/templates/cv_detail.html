@@ -680,11 +680,10 @@
           {% if exp.methodologie %}
           <div class="pv-field"><span class="pv-field-lbl">Méthodologie</span>{{ exp.methodologie }}</div>
           {% endif %}
-          {% if exp.description %}
-          {% set bullets = exp.description.split(' · ') %}
+          {% if exp.realisations %}
           <div><span class="pv-field-lbl">Réalisations</span>
             <ul class="pv-bullets">
-              {% for b in bullets %}{% if b.strip() %}<li>{{ b.strip() }}</li>{% endif %}{% endfor %}
+              {% for b in exp.realisations %}<li>{{ b }}</li>{% endfor %}
             </ul>
           </div>
           {% endif %}
@@ -966,7 +965,7 @@
             <div class="field-row"><span class="field-label">Lieu</span>
               <div class="field-val{{ ' a-verifier' if chemin_exp ~ 'location' in a_verifier }}"{{ preuve(chemin_exp ~ 'location') }} contenteditable="true" data-f="location" data-empty="{{ 'true' if not exp.location else 'false' }}" data-placeholder="Ville, pays">{{ exp.location or '' }}</div></div>
             <div class="field-row"><span class="field-label">Contexte</span>
-              <div class="field-val" contenteditable="true" data-f="contexte" data-empty="{{ 'true' if not exp.contexte else 'false' }}" data-placeholder="Secteur, client, environnement">{{ exp.contexte or '' }}</div></div>
+              <div class="field-val{{ ' a-verifier' if chemin_exp ~ 'contexte' in a_verifier }}"{{ preuve(chemin_exp ~ 'contexte') }} contenteditable="true" data-f="contexte" data-empty="{{ 'true' if not exp.contexte else 'false' }}" data-placeholder="Secteur, client, environnement">{{ exp.contexte or '' }}</div></div>
             <div class="field-row"><span class="field-label">Objectifs</span>
               <div class="field-val" contenteditable="true" data-f="objectifs" data-empty="{{ 'true' if not exp.objectifs else 'false' }}" data-placeholder="Objectifs et enjeux">{{ exp.objectifs or '' }}</div></div>
             <div class="field-row"><span class="field-label">Méthodologie</span>
@@ -974,13 +973,12 @@
             <div class="field-row"><span class="field-label">Env. technique</span>
               <div class="field-val{{ ' a-verifier' if chemin_exp ~ 'env_technique' in a_verifier }}"{{ preuve(chemin_exp ~ 'env_technique') }} contenteditable="true" data-f="env_technique" data-empty="{{ 'true' if not exp.env_technique else 'false' }}" data-placeholder="Technologies, frameworks">{{ exp.env_technique or '' }}</div></div>
             <div class="bullets-section">
-              <div class="bullets-label{{ ' a-verifier' if chemin_exp ~ 'description' in a_verifier }}"{{ preuve(chemin_exp ~ 'description') }}>Description</div>
-              <div data-f="description">
-                {% set bullets = exp.description.split(' · ') if exp.description else [] %}
-                {% for b in bullets %}{% if b.strip() %}
-                <div class="bullet-item"><div class="bullet-marker"></div><div class="bullet-text" contenteditable="true">{{ b.strip() }}</div></div>
-                {% endif %}{% endfor %}
-                {% if not exp.description %}
+              <div class="bullets-label{{ ' a-verifier' if chemin_exp ~ 'realisations' in a_verifier }}"{{ preuve(chemin_exp ~ 'realisations') }}>Réalisations</div>
+              <div data-f="realisations">
+                {% for b in exp.realisations or [] %}
+                <div class="bullet-item"><div class="bullet-marker"></div><div class="bullet-text" contenteditable="true">{{ b }}</div></div>
+                {% endfor %}
+                {% if not exp.realisations %}
                 <div class="bullet-item"><div class="bullet-marker"></div><div class="bullet-text" contenteditable="true"></div></div>
                 {% endif %}
                 <button class="btn-add-bullet" onclick="addBullet(this)">+ Ajouter une ligne</button>
@@ -1194,8 +1192,8 @@ function addExpCard() {
     ${fr('Objectifs','objectifs','Objectifs et enjeux')}
     ${fr('Méthodologie','methodologie','Agile, Scrum…')}
     ${fr('Env. technique','env_technique','Technologies, frameworks')}
-    <div class="bullets-section"><div class="bullets-label">Description</div>
-    <div data-f="description">
+    <div class="bullets-section"><div class="bullets-label">Réalisations</div>
+    <div data-f="realisations">
       <div class="bullet-item"><div class="bullet-marker"></div><div class="bullet-text" contenteditable="true"></div></div>
       <button class="btn-add-bullet" onclick="addBullet(this)">+ Ajouter une ligne</button>
     </div></div>`;
@@ -1214,9 +1212,9 @@ function collectData() {
   data.experience = [];
   document.querySelectorAll('.entry-card[data-section="experience"]').forEach(card => {
     const e = {};
-    card.querySelectorAll('[data-f][contenteditable]').forEach(el => { if (el.dataset.f !== 'description') e[el.dataset.f] = el.textContent.trim(); });
-    const dw = card.querySelector('[data-f="description"]');
-    if (dw) e.description = [...dw.querySelectorAll('.bullet-text')].map(b => b.textContent.trim()).filter(Boolean).join(' · ');
+    card.querySelectorAll('[data-f][contenteditable]').forEach(el => { e[el.dataset.f] = el.textContent.trim(); });
+    const dw = card.querySelector('[data-f="realisations"]');
+    if (dw) e.realisations = [...dw.querySelectorAll('.bullet-text')].map(b => b.textContent.trim()).filter(Boolean);
     if (e.company || e.title) data.experience.push(e);
   });
   data.education = [];

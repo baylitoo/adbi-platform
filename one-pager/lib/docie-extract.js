@@ -229,6 +229,17 @@ function decouperDescription(description) {
   return { context: seule, highlights: [] };
 }
 
+/** Contexte et realisations du schema (`context`, `achievements` en liste) ; ancienne `description` decoupee sinon. */
+function lireRealisations(brut) {
+  const liste = brut && Array.isArray(brut.achievements) ? brut.achievements : null;
+  if (!liste) return decouperDescription(brut && brut.description);
+  const highlights = liste
+    .map((v) => texte(v && typeof v === "object" ? (v.achievement ?? v.item) : v))
+    .map((l) => l.replace(/\s+/g, " ").replace(/^[\s•▪◦●○·\-–—*✓✔»›→]+\s*/, "").trim())
+    .filter(Boolean);
+  return { context: texte(brut && brut.context), highlights };
+}
+
 /**
  * « Cette mission est-elle toujours en cours ? » — liste de synonymes partagee.
  *
@@ -272,7 +283,7 @@ function mapperExperience(brut, index) {
   const start = startRaw ? N.parseMonthYear(startRaw) : null;
   const end = isCurrent ? null : (endRaw ? N.parseMonthYear(endRaw) : null);
 
-  const { context, highlights } = decouperDescription(brut && brut.description);
+  const { context, highlights } = lireRealisations(brut);
   const techStack = dedupe(
     splitList(texte(brut && brut.env_technique)).map((t) => taxo.canonical(t))
   );

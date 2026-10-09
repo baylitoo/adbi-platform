@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from psycopg.types.json import Jsonb
 
 from core.pg import get_conn, init_schema
+from core.realisations import normaliser_experience
 
 __all__ = [
     "init_db", "load_db", "save_db",
@@ -35,6 +36,30 @@ __all__ = [
 def init_db() -> None:
     init_schema()
     print("[DB] Schema PostgreSQL initialise (cvs).")
+    migrees = migrer_realisations()
+    if migrees:
+        print(f"[DB] Réalisations converties en liste sur {migrees} fiche(s).")
+
+
+def _normaliser(data: dict) -> bool:
+    changee = False
+    for exp in data.get("experience") or []:
+        if isinstance(exp, dict):
+            changee = normaliser_experience(exp) or changee
+    return changee
+
+
+def migrer_realisations() -> int:
+    """Réécrit une fois les fiches dont les réalisations sont encore une chaîne « a · b » ; idempotent, renvoie le nombre de fiches réécrites."""
+    with get_conn() as con:
+        rows = con.execute("SELECT id, data FROM cvs").fetchall()
+        changees = 0
+        for row in rows:
+            data = dict(row["data"])
+            if _normaliser(data):
+                con.execute("UPDATE cvs SET data = %s WHERE id = %s", (Jsonb(data), row["id"]))
+                changees += 1
+    return changees
 
 
 def _record(row: dict) -> dict:
@@ -42,6 +67,7 @@ def _record(row: dict) -> dict:
     JSONB `data` EST l'enregistrement (name, contact, experience...) ; id
     est garanti présent (comme la clé du dict côté JSON)."""
     data = dict(row["data"])
+    _normaliser(data)
     data["id"] = row["id"]
     return data
 

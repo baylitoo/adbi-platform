@@ -74,7 +74,8 @@ CHAMPS_EXPERIENCE = {
     "location": "location",
     "start_date": "period",
     "end_date": "period",
-    "description": "description",
+    "context": "contexte",
+    "achievements": "realisations",
     "env_technique": "env_technique",
 }
 
@@ -240,6 +241,9 @@ def _chemin_fiche(chemin_docie, positions=None):
     position devinée.
     """
     segments = _segments(chemin_docie)
+    # Une réalisation précise se marque sur la liste entière : son index ne survit pas au nettoyage des entrées vides.
+    if len(segments) > 3 and segments[0] == "experience" and segments[2] == "achievements":
+        segments = segments[:3]
     if len(segments) == 1 and segments[0] in CHAMPS_RACINE:
         return CHAMPS_RACINE[segments[0]]
     if len(segments) == 2 and segments[0] == "contact" and segments[1] in CHAMPS_CONTACT:

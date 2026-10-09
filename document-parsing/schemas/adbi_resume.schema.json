@@ -104,15 +104,28 @@
           "fields": []
         },
         {
-          "name": "description",
+          "name": "context",
           "type": "string",
-          "description": null,
+          "description": "Contexte de la mission en une ou deux phrases (projet, enjeu, client), sans les realisations ni la stack",
           "fields": []
+        },
+        {
+          "name": "achievements",
+          "type": "list",
+          "description": "Realisations ou taches de la mission, une par entree, recopiees telles qu'ecrites : une puce du CV = une entree",
+          "fields": [
+            {
+              "name": "achievement",
+              "type": "string",
+              "description": null,
+              "fields": []
+            }
+          ]
         },
         {
           "name": "env_technique",
           "type": "string",
-          "description": "Stack technique / environnement technologique de la mission",
+          "description": "Technologies et outils de la mission, separes par des virgules, sans phrase",
           "fields": []
         }
       ]
