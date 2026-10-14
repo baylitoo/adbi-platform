@@ -1106,8 +1106,8 @@ async function capacites({ env = process.env, fetchImpl = fetch, maintenant = Da
 function limitesEffectives() {
   const c = capacitesCache.capacites || {};
   const corps = c.corps_requete_octets ?? DOCIE_MAX_REQUEST_BODY_BYTES;
-  // Intersection seulement : un type publié n'entre jamais ici (voir MIME_TYPES).
-  const types = [...MIME_TYPES].filter((t) => !c.types_mime || c.types_mime.includes(t)).sort();
+  // La voie agent (data URI) ne lit pas upload.allowed_mime_types, réservé à l'envoi multipart : la liste locale reste la seule garde.
+  const types = [...MIME_TYPES].sort();
   return {
     corps_requete_octets: corps,
     document_octets: Math.floor((corps - FILE_ENVELOPE_MAX_BYTES) / 4) * 3,

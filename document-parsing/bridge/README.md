@@ -142,8 +142,11 @@ DocIE publie celles en vigueur sur `GET /v1/capabilities` (#266).
 `capacites()` (même nom dans les deux portages) les relit avec un cache de 5 min, comme le store, et
 `limitesEffectives()` / `limites_effectives()` rend, sans appel réseau, les
 plafonds appliqués par les contrôles locaux : valeur publiée champ par champ,
-sinon la constante d'aujourd'hui. Les types MIME ne peuvent que se resserrer
-(intersection avec la liste ci-dessus, jamais d'ajout). Le pont n'appelle pas
+sinon la constante d'aujourd'hui. Les types MIME, eux, ne suivent PAS
+`upload.allowed_mime_types` : cette liste ne vaut que pour l'envoi multipart
+(`POST /v1/extract/file`), la voie agent (data URI) ne la consulte pas (vérifié
+côté DocIE, `dev-agents-milestone`) ; la liste locale ci-dessus reste la seule
+garde de cette voie. Le pont n'appelle pas
 `capacites()` de lui-même : sans cet appel par un consommateur, les constantes
 s'appliquent. Notre plafond de voie fichier est calculé pour tenir dans
 le corps publié (26 Mo par défaut), base64 compris — mais il surveille la mauvaise dimension : un PDF dense de trois pages

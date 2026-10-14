@@ -1127,8 +1127,8 @@ def limites_effectives():
         return c.get(cle) if c.get(cle) is not None else repli
 
     corps = champ("corps_requete_octets", DOCIE_MAX_REQUEST_BODY_BYTES)
-    # Intersection seulement : un type publié n'entre jamais ici (voir MIME_TYPES).
-    types = sorted(t for t in MIME_TYPES if c.get("types_mime") is None or t in c["types_mime"])
+    # La voie agent (data URI) ne lit pas upload.allowed_mime_types, réservé à l'envoi multipart : la liste locale reste la seule garde.
+    types = sorted(MIME_TYPES)
     return {
         "corps_requete_octets": corps,
         "document_octets": (corps - FILE_ENVELOPE_MAX_BYTES) // 4 * 3,
