@@ -71,15 +71,16 @@ def _fiche_analysee():
 
     La confiance par champ est celle que DocIE plafonne à 0,5 quand il a dû
     tronquer une liste (issue #172) : le chemin cité par #175 lui-même,
-    « experience[1].description ». Le reste — `docie_review`, `parse_warning` —
+    « experience[1].achievements ». Le reste — `docie_review`, `parse_warning` —
     suit la chaîne réelle de process_cv, pas une valeur écrite à la main.
     """
     reponse = json.loads(REPONSE_DOCIE.read_text(encoding="utf-8"))
     reponse["schema_name"] = "adbi_resume"
     data = map_resume(reponse, expected_schema="adbi_resume")
+    data["experience"][1]["achievements"] = [data["experience"][1].pop("description")]
     metadata = {"event_id": reponse["request_id"], "model_profile": reponse["model_profile"],
                 "validation": reponse["validation"],
-                "field_confidence": {"experience[1].description": 0.5}}
+                "field_confidence": {"experience[1].achievements": 0.5}}
     revue = revue_docie(data, metadata)
     fiche = dict(data)
     fiche.update({

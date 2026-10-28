@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 
 from core.pg import get_conn
+from core.realisations import texte_realisations
 
 LOT = 32
 REQUETE_MAX = 500
@@ -69,7 +70,7 @@ def texte_cv(cv: dict) -> str:
     for exp in cv.get("experience") or []:
         if isinstance(exp, dict):
             parts += [exp.get("title"), exp.get("client"), exp.get("company"), exp.get("contexte"),
-                      exp.get("description"), exp.get("env_technique")]
+                      texte_realisations(exp), exp.get("env_technique")]
     return "\n".join(str(p).strip() for p in parts if p and str(p).strip())
 
 

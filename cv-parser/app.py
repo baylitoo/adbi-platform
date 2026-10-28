@@ -549,7 +549,7 @@ def split_bullets(bullets: list[str]) -> dict:
     objectifs = ""
     methodologie = ""
     env_technique = ""
-    description = []
+    realisations = []
 
     for b in bullets:
         s = b.strip()
@@ -575,14 +575,14 @@ def split_bullets(bullets: list[str]) -> dict:
         elif not contexte and len(s) > 80:
             contexte = s
         else:
-            description.append(s)
+            realisations.append(s)
 
     return {
         "contexte":     contexte,
         "objectifs":    objectifs,
         "methodologie": methodologie,
         "env_technique":env_technique,
-        "description":  " · ".join(description),
+        "realisations": realisations,
     }
 
 
@@ -830,11 +830,11 @@ def _safe(fn, *args, default=None):
 _CV_SYSTEM_PROMPT = """Tu es un expert en parsing de CVs professionnels.
 Réponds UNIQUEMENT avec un objet JSON valide (pas de markdown, pas de ```json).
 Structure exacte à respecter :
-{"name":"","title":"","contact":{"email":"","phone":"","linkedin":"","github":"","location":""},"experience":[{"company":"","client":"","title":"","period":"","contexte":"","objectifs":"","methodologie":"","env_technique":"","description":""}],"education":[{"title":"","subtitle":"","period":"","description":""}],"skills":[{"category":"","items":[]}],"languages":[{"language":"","level":""}],"projects":[{"title":"","subtitle":"","period":"","description":""}],"certifications":[{"name":"","year":""}],"interests":[]}
+{"name":"","title":"","contact":{"email":"","phone":"","linkedin":"","github":"","location":""},"experience":[{"company":"","client":"","title":"","period":"","contexte":"","objectifs":"","methodologie":"","env_technique":"","realisations":[]}],"education":[{"title":"","subtitle":"","period":"","description":""}],"skills":[{"category":"","items":[]}],"languages":[{"language":"","level":""}],"projects":[{"title":"","subtitle":"","period":"","description":""}],"certifications":[{"name":"","year":""}],"interests":[]}
 
 Règles critiques :
 - Extrais UNIQUEMENT ce qui est présent dans le CV, n'invente rien. Champs absents = "".
-- Réalisations dans "description" séparées par ' · '.
+- "realisations" : une entrée par réalisation (une puce du CV = une entrée), telle qu'écrite.
 - "skills" : remplis UNIQUEMENT depuis la section dédiée compétences/skills du CV (catégorie + outils listés). Ne recopie PAS les technologies des expériences dans skills.
 - "env_technique" de chaque expérience : liste TOUTES les technologies, frameworks, outils, langages mentionnés dans cette mission spécifique (séparés par des virgules). Ce champ ne doit JAMAIS rester vide si des technologies sont citées dans la mission.
 - Ne duplique PAS le même outil dans plusieurs catégories de skills."""
@@ -974,6 +974,7 @@ def llm_parse_cv(md_content: str, txt_content: str, progression=None) -> dict:
 
 
 def normalize_cv_data(data: dict, html_content: str = "") -> dict:
+    from core.realisations import realisations as _realisations
     normalized = {
         "name": str(data.get("name") or "").strip(),
         "title": str(data.get("title") or "").strip(),
@@ -1056,11 +1057,11 @@ def normalize_cv_data(data: dict, html_content: str = "") -> dict:
             # pas supposé — c'est ce qui borne le risque de cette ligne.
             "location": str(exp.get("location") or exp.get("lieu") or "").strip(),
             "period": periode,
-            "contexte": str(exp.get("contexte") or "").strip(),
+            "contexte": str(exp.get("contexte") or exp.get("context") or "").strip(),
             "objectifs": str(exp.get("objectifs") or "").strip(),
             "methodologie": str(exp.get("methodologie") or "").strip(),
             "env_technique": str(exp.get("env_technique") or "").strip(),
-            "description": str(exp.get("description") or "").strip(),
+            "realisations": _realisations(exp),
         })
 
     # #177 ligne 2 : une fiche sans intitulé prend celui de sa dernière mission.
@@ -1391,7 +1392,7 @@ def _sections_structurees(lignes: list[str]) -> dict:
             # Un « Rôle : » sans intitulé ni contenu ne produit pas d'expérience :
             # les documents OCRisés en génèrent régulièrement.
             if courante["title"].strip() or courante["_lignes"]:
-                courante["description"] = " · ".join(courante.pop("_lignes", []))
+                courante["realisations"] = courante.pop("_lignes", [])
                 experiences.append(courante)
             courante = None
 
@@ -2845,6 +2846,9 @@ def _filtrer_champs_cv(brut: dict) -> dict:
             valeur = updates[champ]
             if not isinstance(valeur, list) or not all(isinstance(x, dict) for x in valeur):
                 del updates[champ]
+    from core.realisations import normaliser_experience
+    for exp in updates.get("experience") or []:
+        normaliser_experience(exp)
     return updates
 
 
@@ -3174,10 +3178,10 @@ def _savoir_faire_adbi(cv: dict, maximum: int = 10) -> list:
     partir des réalisations des missions, en écartant les doublons. Mieux vaut
     une synthèse tirée du parcours qu'une rubrique vide.
     """
+    from core.realisations import realisations as _realisations
     vues, lignes = set(), []
     for exp in (cv.get("experience") or []):
-        for brut in str(exp.get("description") or "").split(" · "):
-            phrase = brut.strip(" ·-–—")
+        for phrase in _realisations(exp):
             cle = phrase.lower()[:60]
             if 12 < len(phrase) < 200 and cle not in vues:
                 vues.add(cle)
@@ -3370,6 +3374,7 @@ def export_word(cv_id):
       • Paragraph "Projets" (once)
       • Per experience: 2-col company|period table + narrative paragraphs
     """
+    from core.realisations import realisations as _realisations
     if not _DOCX_AVAILABLE:
         return jsonify({"error": "python-docx non installé"}), 500
 
@@ -3701,13 +3706,10 @@ def export_word(cv_id):
                     _run(p, exp[field], DARK, size_pt=9.5)
 
             # ── Réalisations (bullet list) ────────────────────────────────
-            if exp.get("description"):
-                bullets = [b.strip() for b in exp["description"].split(" · ") if b.strip()]
-                if bullets:
-                    for b in bullets:
-                        bp = doc.add_paragraph(style="List Bullet")
-                        _run(bp, b, DARK, size_pt=9.5)
-                        bp.paragraph_format.space_after = Pt(2)
+            for b in _realisations(exp):
+                bp = doc.add_paragraph(style="List Bullet")
+                _run(bp, b, DARK, size_pt=9.5)
+                bp.paragraph_format.space_after = Pt(2)
 
             # ── Environnement technique ───────────────────────────────────
             if exp.get("env_technique"):

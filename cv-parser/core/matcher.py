@@ -20,6 +20,7 @@ from difflib import SequenceMatcher
 from functools import lru_cache
 
 from core.cvstore_pg import list_cvs
+from core.realisations import texte_realisations
 
 try:
     from periode_mission import sans_accents
@@ -113,7 +114,7 @@ def _get_all_text(cv: dict) -> str:
             exp.get("subtitle", ""),
             exp.get("contexte", ""),
             exp.get("objectifs", ""),
-            exp.get("description", ""),
+            texte_realisations(exp),
             exp.get("env_technique", ""),
         ]
     return " ".join(p for p in parts if p).lower()
@@ -261,7 +262,7 @@ def _score_missions(need: dict, cv: dict) -> float:
     req_skills = [(normalize_one(s).lower(), _cle(s)) for s in (need.get("required_skills") or [])]
     if req_skills:
         exp_text = " ".join(
-            (exp.get("env_technique") or "") + " " + (exp.get("description") or "")
+            (exp.get("env_technique") or "") + " " + texte_realisations(exp)
             for exp in (cv.get("experience") or [])
         ).lower()
         # Texte libre des missions : l'ancienne forme OU la clé canonique sans
