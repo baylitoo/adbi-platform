@@ -261,6 +261,22 @@ def _preuves(evidence, table):
     return preuves
 
 
+def _vision_d_abord(choix, nb_pages):
+    """Vrai si le modèle choisi lit ce PDF en images : `vision_pages_max` du catalogue respecté et modèle servi en voie agent."""
+    from choix_modele import ErreurTache, charger
+    try:
+        plafond = charger().charger_catalogue()["modeles"].get(choix.modele, {}).get("vision_pages_max")
+    except Exception:
+        return False
+    if not isinstance(plafond, int) or nb_pages > plafond:
+        return False
+    try:
+        choix.pour_agent(nb_pages)
+    except ErreurTache:
+        return False
+    return True
+
+
 def _pdf_voie_texte(path, choix):
     """Vrai si chaque page du PDF porte du texte ET que le modèle choisi est servi en voie texte pour ce texte (limites comprises)."""
     if choix is None:
@@ -271,6 +287,8 @@ def _pdf_voie_texte(path, choix):
     except DocIEError:
         return False
     if not pages or any(not t.strip() for _, t in pages):
+        return False
+    if _vision_d_abord(choix, len(pages)):
         return False
     try:
         choix.pour_texte("\n".join(t for _, t in pages))
