@@ -290,6 +290,8 @@ services:
         # Catalogue des modèles par action (#194) : `COPY --from=modeles` sans
         # condition, lu pour le choix du modèle. Voir cv-parser/Dockerfile.
         modeles: ./document-parsing/models
+        # Schéma de la fiche de poste, lu par la lecture du rapprochement.
+        schemas: ./document-parsing/schemas
     volumes:
       - parser-data:/app/data
       - parser-uploads:/app/uploads
