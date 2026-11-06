@@ -29,8 +29,23 @@ from core.realisations import normaliser_experience
 
 __all__ = [
     "init_db", "load_db", "save_db",
-    "get_cv", "list_cvs", "save_cv", "create_cv", "delete_cv",
+    "get_cv", "list_cvs", "save_cv", "create_cv", "delete_cv", "abonner",
 ]
+
+_abonnes: list = []
+
+
+def abonner(rappel) -> None:
+    """Enregistre `rappel(cv_id)`, appelé après chaque écriture validée d'une fiche."""
+    _abonnes.append(rappel)
+
+
+def _signaler(cv_id: str) -> None:
+    for rappel in _abonnes:
+        try:
+            rappel(cv_id)
+        except Exception as exc:
+            print(f"[DB] abonné d'écriture en échec ({type(exc).__name__})")
 
 
 def init_db() -> None:
@@ -105,6 +120,7 @@ def save_cv(cv_id: str, record: dict) -> None:
             """,
             (cv_id, name, email, Jsonb(record), now, now),
         )
+    _signaler(cv_id)
 
 
 def create_cv(cv_id: str, record: dict) -> bool:
@@ -132,7 +148,10 @@ def create_cv(cv_id: str, record: dict) -> bool:
             """,
             (cv_id, name, email, Jsonb(record), now, now),
         )
-        return cur.rowcount > 0
+        cree = cur.rowcount > 0
+    if cree:
+        _signaler(cv_id)
+    return cree
 
 
 def delete_cv(cv_id: str) -> bool:
@@ -166,3 +185,5 @@ def save_db(db: dict) -> None:
                 """,
                 (cv_id, name, email, Jsonb(record), now, now),
             )
+    for cv_id in ids:
+        _signaler(cv_id)
