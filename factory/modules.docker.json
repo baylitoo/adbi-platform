@@ -63,6 +63,19 @@
       "port": 5000,
       "delai": 90,
       "url": "https://parser.outils.adbi.fr/"
+    },
+    {
+      "id": "factures",
+      "nom": "ADBI Factures fournisseurs",
+      "accroche": "Factures fournisseurs contrôlées",
+      "detail": "Dépôt des factures fournisseurs, extraction automatique, contrôles (doublon, totaux, SIREN, IBAN, alerte au changement d'IBAN), validation, échéances et export du journal des achats.",
+      "tags": ["Comptabilité", "Achats"],
+      "icone": "calcul",
+      "type": "service",
+      "conteneur": true,
+      "hote": "factures",
+      "port": 4500,
+      "url": "https://factures.example.invalid/"
     }
   ]
 }

@@ -1,0 +1,18 @@
+{
+  "name": "adbi-factures",
+  "version": "1.0.0",
+  "description": "Factures fournisseurs ADBI - dépôt, extraction DocIE, contrôles, validation, échéances et journal des achats.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "verifier": "node --check server.js && node --check lib/db.pg.js && node --check lib/extraction.js && node --check lib/controles.js && node --check lib/journal.js && node --check public/app.js"
+  },
+  "author": "ADBI",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "express": "^4.19.2",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.13.1"
+  }
+}

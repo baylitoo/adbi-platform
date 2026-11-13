@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="fr" data-theme="clair">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ADBI — Factures fournisseurs</title>
+<script src="/adbi-theme.js"></script>
+<link rel="stylesheet" href="/adbi-theme.css" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<header class="entete">
+  <div class="marque"><span class="marque-titre">Factures fournisseurs</span><span class="marque-sous">ADBI</span></div>
+  <nav class="onglets" aria-label="Vues">
+    <button type="button" class="onglet actif" data-vue="factures">Factures</button>
+    <button type="button" class="onglet" data-vue="echeances">Échéances</button>
+    <button type="button" class="onglet" data-vue="journal">Journal des achats</button>
+  </nav>
+  <span id="moi" class="moi"></span>
+</header>
+
+<main class="contenu">
+  <p id="message" class="bandeau" role="status" hidden></p>
+
+  <section id="vue-factures" class="vue">
+    <label class="depot" id="depot">
+      <input type="file" id="fichiers" accept="application/pdf,image/png,image/jpeg" multiple />
+      <strong>Déposer des factures</strong>
+      <span>PDF (texte ou scanné), PNG ou JPEG — glissez-déposez ou cliquez.</span>
+    </label>
+    <div class="carte">
+      <div class="carte-tete">
+        <h2>Factures</h2>
+        <select id="filtre-statut" aria-label="Filtrer par statut">
+          <option value="">Tous les statuts</option>
+          <option value="a_valider">À valider</option>
+          <option value="validee">Validées</option>
+          <option value="payee">Payées</option>
+        </select>
+      </div>
+      <div class="defilement">
+        <table class="tableau">
+          <thead><tr><th>N°</th><th>Fournisseur</th><th>Facture</th><th>Date</th><th>Échéance</th><th class="nombre">TTC</th><th>Statut</th><th>Contrôles</th></tr></thead>
+          <tbody id="liste"></tbody>
+        </table>
+      </div>
+      <p id="liste-vide" class="vide" hidden>Aucune facture pour l'instant.</p>
+    </div>
+  </section>
+
+  <section id="vue-detail" class="vue" hidden>
+    <div class="barre">
+      <button type="button" class="bouton secondaire" id="retour">← Retour à la liste</button>
+      <h2 id="detail-titre"></h2>
+      <span id="detail-statut" class="statut"></span>
+    </div>
+    <div id="detail-extraction" class="bandeau" hidden></div>
+    <div class="grille-detail">
+      <div class="carte apercu-carte">
+        <iframe id="apercu-pdf" class="apercu" title="Aperçu de la facture" hidden></iframe>
+        <img id="apercu-image" class="apercu" alt="Aperçu de la facture" hidden />
+      </div>
+      <div class="colonne">
+        <div class="carte">
+          <h3>Contrôles</h3>
+          <ul id="controles" class="controles"></ul>
+          <div id="confirmation-iban" class="confirmation" hidden>
+            <label class="case"><input type="checkbox" id="case-iban" /> J'ai vérifié ce changement d'IBAN auprès du fournisseur par un canal connu.</label>
+            <button type="button" class="bouton danger" id="confirmer-iban" disabled>Confirmer le changement d'IBAN</button>
+          </div>
+        </div>
+        <form id="formulaire" class="carte">
+          <h3>Données de la facture</h3>
+          <div class="champs">
+            <label>Fournisseur<input name="fournisseur" /></label>
+            <label>SIREN<input name="siren" inputmode="numeric" /></label>
+            <label>SIRET<input name="siret" inputmode="numeric" /></label>
+            <label>TVA intracommunautaire<input name="tva_intracom" /></label>
+            <label>Numéro de facture<input name="numero" /></label>
+            <label>Date de facture<input name="date_facture" type="date" /></label>
+            <label>Date d'échéance<input name="date_echeance" type="date" /></label>
+            <label>Devise<input name="devise" /></label>
+            <label>IBAN<input name="iban" /></label>
+            <label>BIC<input name="bic" /></label>
+          </div>
+          <h4>Lignes</h4>
+          <div class="defilement">
+            <table class="tableau lignes">
+              <thead><tr><th>Désignation</th><th class="nombre">Qté</th><th class="nombre">PU HT</th><th class="nombre">TVA %</th><th class="nombre">Total HT</th><th></th></tr></thead>
+              <tbody id="lignes"></tbody>
+            </table>
+          </div>
+          <button type="button" class="bouton secondaire petit" id="ajouter-ligne">+ Ajouter une ligne</button>
+          <div class="champs totaux">
+            <label>Total HT<input name="total_ht" inputmode="decimal" /></label>
+            <label>Total TVA<input name="total_tva" inputmode="decimal" /></label>
+            <label>Total TTC<input name="total_ttc" inputmode="decimal" /></label>
+          </div>
+          <div class="actions">
+            <button type="submit" class="bouton secondaire" id="enregistrer">Enregistrer les corrections</button>
+            <button type="button" class="bouton secondaire" id="relancer">Relancer l'extraction</button>
+            <button type="button" class="bouton secondaire" id="reverifier">Revérifier la société</button>
+            <button type="button" class="bouton" id="valider">Valider</button>
+            <button type="button" class="bouton" id="payer" hidden>Marquer payée</button>
+          </div>
+        </form>
+        <div class="carte">
+          <h3>Historique</h3>
+          <ul id="historique" class="historique"></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="vue-echeances" class="vue" hidden>
+    <div class="carte">
+      <h2>En retard</h2>
+      <div class="defilement"><table class="tableau"><thead><tr><th>Fournisseur</th><th>Facture</th><th>Échéance</th><th class="nombre">TTC</th><th>Statut</th></tr></thead><tbody id="en-retard"></tbody></table></div>
+      <p id="en-retard-vide" class="vide" hidden>Aucune facture en retard.</p>
+    </div>
+    <div class="carte">
+      <h2>À payer sous 7 jours</h2>
+      <div class="defilement"><table class="tableau"><thead><tr><th>Fournisseur</th><th>Facture</th><th>Échéance</th><th class="nombre">TTC</th><th>Statut</th></tr></thead><tbody id="sous-7"></tbody></table></div>
+      <p id="sous-7-vide" class="vide" hidden>Aucune échéance dans les 7 prochains jours.</p>
+    </div>
+  </section>
+
+  <section id="vue-journal" class="vue" hidden>
+    <form id="form-journal" class="carte">
+      <h2>Export du journal des achats (ACH)</h2>
+      <p class="aide">Factures validées ou payées, une écriture par facture : charge et TVA déductible (44566) au débit, fournisseur (401 + SIREN) au crédit. CSV séparé par des points-virgules, décimales à virgule.</p>
+      <div class="champs">
+        <label>Du<input type="date" name="du" /></label>
+        <label>Au<input type="date" name="au" /></label>
+        <label>Compte de charge<input name="compte" id="compte-charge" pattern="6[0-9]{2,7}" /></label>
+      </div>
+      <div class="actions"><button type="submit" class="bouton">Télécharger le CSV</button></div>
+    </form>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
