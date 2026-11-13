@@ -1,0 +1,120 @@
+{
+  "document_type": "adbi_facture",
+  "fields": [
+    {
+      "name": "fournisseur",
+      "type": "string",
+      "description": "Raison sociale du fournisseur qui emet la facture, en en-tete ou en pied de page",
+      "fields": []
+    },
+    {
+      "name": "siren",
+      "type": "string",
+      "description": "Numero SIREN du fournisseur a 9 chiffres, chiffres seuls",
+      "fields": []
+    },
+    {
+      "name": "siret",
+      "type": "string",
+      "description": "Numero SIRET du fournisseur a 14 chiffres, chiffres seuls",
+      "fields": []
+    },
+    {
+      "name": "tva_intracom",
+      "type": "string",
+      "description": "Numero de TVA intracommunautaire du fournisseur, tel qu'imprime",
+      "fields": []
+    },
+    {
+      "name": "numero",
+      "type": "string",
+      "description": "Numero de la facture tel qu'imprime",
+      "fields": []
+    },
+    {
+      "name": "date_facture",
+      "type": "date",
+      "description": "Date d'emission de la facture",
+      "fields": []
+    },
+    {
+      "name": "date_echeance",
+      "type": "date",
+      "description": "Date d'echeance ou date limite de paiement imprimee",
+      "fields": []
+    },
+    {
+      "name": "lignes",
+      "type": "list",
+      "description": "Lignes du tableau de detail de la facture, une entree par ligne imprimee",
+      "fields": [
+        {
+          "name": "designation",
+          "type": "string",
+          "description": "Libelle de la ligne tel qu'imprime",
+          "fields": []
+        },
+        {
+          "name": "quantite",
+          "type": "number",
+          "description": "Quantite imprimee sur la ligne",
+          "fields": []
+        },
+        {
+          "name": "pu_ht",
+          "type": "number",
+          "description": "Prix unitaire hors taxes imprime sur la ligne",
+          "fields": []
+        },
+        {
+          "name": "taux_tva",
+          "type": "number",
+          "description": "Taux de TVA de la ligne en pourcentage, tel qu'imprime",
+          "fields": []
+        },
+        {
+          "name": "total_ht",
+          "type": "number",
+          "description": "Montant hors taxes imprime sur la ligne",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "total_ht",
+      "type": "number",
+      "description": "Montant total hors taxes imprime dans le bloc des totaux",
+      "fields": []
+    },
+    {
+      "name": "total_tva",
+      "type": "number",
+      "description": "Montant total de TVA imprime dans le bloc des totaux",
+      "fields": []
+    },
+    {
+      "name": "total_ttc",
+      "type": "number",
+      "description": "Montant toutes taxes comprises imprime dans le bloc des totaux",
+      "fields": []
+    },
+    {
+      "name": "devise",
+      "type": "string",
+      "description": "Devise des montants imprimee sur la facture, par exemple EUR",
+      "fields": []
+    },
+    {
+      "name": "iban",
+      "type": "string",
+      "description": "IBAN du fournisseur imprime dans les coordonnees bancaires",
+      "fields": []
+    },
+    {
+      "name": "bic",
+      "type": "string",
+      "description": "Code BIC (SWIFT) imprime dans les coordonnees bancaires",
+      "fields": []
+    }
+  ]
+}

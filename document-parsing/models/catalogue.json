@@ -242,6 +242,21 @@
           "alternative": null
         }
       }
+    },
+    "facture": {
+      "libelle": "Facture fournisseur",
+      "usage": "extraction",
+      "schema": "adbi_facture",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "nuextract3", "experimental": true, "condition": "PDF avec couche texte, schéma facture.schema.json envoyé dans la requête.", "prerequis": "Provisoire : totaux recalculés et comparés aux lignes côté ADBI, jamais repris sans contrôle." },
+          "alternative": { "modele": "lfm25_2_6b", "experimental": true, "condition": "Seulement si le document fait au plus 800 lignes non vides." }
+        },
+        "agent": {
+          "defaut": { "modele": "nuextract3", "experimental": true, "condition": "Scan ou photo, en vision, schéma Studio adbi_facture.", "prerequis": "Provisoire : totaux recalculés et comparés aux lignes côté ADBI, jamais repris sans contrôle." },
+          "alternative": null
+        }
+      }
     }
   }
 }
