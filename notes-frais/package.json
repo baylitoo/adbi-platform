@@ -1,0 +1,17 @@
+{
+  "name": "adbi-notes-frais",
+  "version": "1.0.0",
+  "description": "Notes de frais ADBI - dépôt de justificatifs, lecture DocIE, contrôle, validation et export comptable CSV.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "ADBI",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "express": "^4.19.2",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.13.1"
+  }
+}

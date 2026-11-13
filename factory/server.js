@@ -48,7 +48,8 @@ function chargerModules() {
   const brut = fs.readFileSync(path.join(RACINE, "modules.json"), "utf8").replace(/^﻿/, "");
   try {
     const urls = { "one-pager": "ADBI_ONEPAGER_URL", contrats: "ADBI_CONTRATS_URL",
-      coffre: "ADBI_COFFRE_URL", "cv-parser": "ADBI_PARSER_URL" };
+      coffre: "ADBI_COFFRE_URL", "cv-parser": "ADBI_PARSER_URL",
+      "notes-frais": "ADBI_NOTESFRAIS_URL" };
     return JSON.parse(brut).modules.map(m => {
       const override = process.env[urls[m.id]];
       if (!override) return m;

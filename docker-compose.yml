@@ -54,11 +54,13 @@ services:
       ADBI_LLM_BASE_URL: ${DOCIE_CHAT_BASE_URL:?Set the DocIE OpenAI-compatible base URL ending in /v1}
       ADBI_LLM_API_KEY: ${DOCIE_API_KEY:?Set the DocIE application access key}
       ADBI_LLM_MODELS: ${DOCIE_CHAT_MODEL:-lfm2.5-2.6b}
+      ADBI_NOTESFRAIS_URL: ${ADBI_NOTESFRAIS_URL:?Set the public Notes de frais HTTPS URL}
     depends_on:
       - contrats
       - one-pager
       - coffre
       - cv-parser
+      - notes-frais
     restart: unless-stopped
     deploy:
       resources:
@@ -371,6 +373,46 @@ services:
         limits:
           memory: 2g
 
+  notes-frais:
+    # Contextes additionnels : pont, schéma recu, catalogue, auth et taches-extraction de contrats, sans copie dans notes-frais/.
+    build:
+      context: ./notes-frais
+      additional_contexts:
+        bridge: ./document-parsing/bridge
+        schemas: ./document-parsing/schemas
+        modeles: ./document-parsing/models
+        auth: ./auth
+        contratslib: ./contrats/lib
+    volumes:
+      - notesfrais-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 4400
+      # Base par défaut de l'instance partagée : tables préfixées ndf_, créées au démarrage.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_USER:-adbi}
+      ADBI_AUTH: ${ADBI_AUTH:-}
+      ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
+      DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
+      DOCIE_API_KEY: ${DOCIE_API_KEY:-}
+      DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
+      DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-360}
+      # Photo ou scan : agent DocIE du schéma Studio adbi_recu ; PDF à couche texte : voie texte.
+      DOCIE_AGENT_RECU: ${DOCIE_AGENT_RECU:-adbi_recu}
+      DOCIE_MODEL_PROFILE: ${NOTESFRAIS_DOCIE_MODEL_PROFILE:-}
+      DOCIE_MODELE_LFM25_2_6B: ${DOCIE_MODELE_LFM25_2_6B:-}
+      DOCIE_MODELE_NUEXTRACT3: ${DOCIE_MODELE_NUEXTRACT3:-}
+      DOCIE_AGENT_RECU_NUEXTRACT3: ${DOCIE_AGENT_RECU_NUEXTRACT3:-}
+      # Un seul slot DocIE partagé avec contrats : 1 extraction à la fois par défaut.
+      ADBI_EXTRACTION_MAX_CONCURRENT: ${NOTESFRAIS_EXTRACTION_MAX_CONCURRENT:-}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
 volumes:
   postgres-data:
 
@@ -381,3 +423,4 @@ volumes:
   parser-data:
   parser-uploads:
   parser-output:
+  notesfrais-data:

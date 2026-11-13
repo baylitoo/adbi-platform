@@ -1,0 +1,332 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   CHARTE ADBI — thème sombre commun à toutes les applications de la Factory.
+
+   Ce fichier est la SOURCE : il vit dans `adbi-factory/theme/` et est recopié
+   dans chaque application par `node scripts/sync-theme.js`. Ne le modifiez
+   jamais dans une application : la copie serait écrasée à la synchronisation
+   suivante.
+
+   Il se charge EN DERNIER, après la feuille de style propre à l'application,
+   et se contente de reprendre la main sur les couleurs, la typographie et les
+   rayons. La structure des écrans reste celle de chaque application.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ══ Typographie commune ══════════════════════════════════════════════════
+   Poppins en fichiers locaux (aucun CDN : la plateforme doit fonctionner hors
+   ligne). Les .woff2 vivent à côté de cette feuille, dans `fonts/`, et sont
+   recopiés en même temps qu'elle par scripts/sync-theme.js. */
+
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/poppins-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/poppins-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/poppins-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/poppins-latin-700-normal.woff2") format("woff2");
+}
+
+:root {
+  /* ── Fonds, du plus profond au plus élevé ── */
+  --adbi-bg: #08080b;
+  --adbi-surface: #131319;
+  --adbi-surface-2: #1a1a22;
+  --adbi-surface-3: #22222c;
+  --adbi-border: #26262f;
+  --adbi-border-fort: #34343f;
+
+  /* ── Texte ── */
+  --adbi-text1: #f4f4f7;
+  --adbi-text2: #a6a6b6;
+  --adbi-textm: #6c6c80;
+
+  /* ── Accents : palette adoucie (2026-09) — le magenta vif piquait les
+     yeux ; l'accent passe à un violet doux, l'orange du logo reste. Les
+     NOMS de jetons ne bougent pas : les surcharges continuent de marcher. ── */
+  --adbi-violet: #4f7fd0;
+  --adbi-magenta: #6ea8f0;
+  --adbi-orange: #f26522;
+  --adbi-accent: var(--adbi-magenta);
+  --adbi-degrade: linear-gradient(120deg, #0d3a8c 0%, #1665c1 55%, #2f8de4 100%);
+  --adbi-accent-faible: rgba(110, 168, 240, 0.16);
+  --adbi-accent-bord: rgba(110, 168, 240, 0.36);
+
+  /* ── États. Pas de vert : le succès porte le violet doux ADBI. ── */
+  --adbi-ok: #8fc0f5;
+  --adbi-ok-fond: rgba(110, 168, 240, 0.16);
+  --adbi-ok-bord: rgba(110, 168, 240, 0.36);
+  --adbi-attention: #f2a007;
+  --adbi-attention-fond: rgba(242, 160, 7, 0.13);
+  --adbi-attention-bord: rgba(242, 160, 7, 0.3);
+  --adbi-erreur: #ff5470;
+  --adbi-erreur-fond: rgba(255, 84, 112, 0.12);
+  --adbi-erreur-bord: rgba(255, 84, 112, 0.3);
+
+  /* ── Encres à poser SUR un aplat ──────────────────────────────────────────
+     Indispensables pour que le même composant reste lisible dans les deux
+     thèmes. En sombre les couleurs d'état sont CLAIRES : l'encre posée dessus
+     doit être foncée. En clair c'est l'inverse. N'écrivez jamais `#fff` ni
+     `var(--adbi-bg)` sur une pastille d'état : utilisez ces jetons. */
+  --adbi-sur-etat: #08080b;   /* sur une pastille ok / attention / erreur */
+  --adbi-sur-accent: #ffffff; /* sur le magenta ou le dégradé ADBI */
+  /* L'orange du logo est clair : du blanc dessus ne tient que 3,1:1. Sur un
+     APLAT orange plein, l'encre doit donc être foncée — dans les deux thèmes,
+     puisque l'orange, lui, ne change pas. */
+  --adbi-sur-orange: #2a1206;
+
+  /* ── Rayons et ombres ── */
+  --adbi-r-sm: 9px;
+  --adbi-r-md: 13px;
+  --adbi-r-lg: 18px;
+  --adbi-r-xl: 22px;
+  --adbi-sh: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --adbi-sh-lg: 0 18px 44px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+
+  --adbi-police: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+
+  /* Indique aux formulaires natifs (scrollbars, menus déroulants) d'adopter
+     le thème sombre : sans cela ils restent blancs. */
+  color-scheme: dark;
+}
+
+/* ══ Thème clair ══════════════════════════════════════════════════════════
+   Seules les VALEURS changent : les applications consomment les mêmes jetons,
+   elles suivent donc sans une ligne de code en plus. Le thème s'applique par
+   `<html data-theme="clair">`.
+
+   ATTENTION à la double lecture : dans CETTE feuille, le sombre est le thème
+   « sans attribut ». Mais le thème par DÉFAUT DE LA PLATEFORME est le CLAIR —
+   les pages posent `data-theme="clair"` dans leur HTML, et adbi-theme.js ne
+   retire l'attribut que si l'utilisateur a explicitement choisi le sombre.
+   Inverser les deux blocs obligerait à réécrire les sélecteurs
+   `[data-theme="clair"]` des trois feuilles de surcharge : on ne le fait pas. */
+
+:root[data-theme="clair"] {
+  --adbi-bg: #f4f4f8;
+  --adbi-surface: #ffffff;
+  --adbi-surface-2: #f0f0f5;
+  --adbi-surface-3: #e6e6ee;
+  --adbi-border: #e0e0ea;
+  --adbi-border-fort: #c9c9d8;
+
+  --adbi-text1: #12121a;
+  --adbi-text2: #4d4d63;
+  --adbi-textm: #74748c;
+
+  /* Sur blanc, l'accent doit foncer pour rester lisible (AA) ; le dégradé
+     garde la signature violet → orange, en version adoucie. */
+  --adbi-violet: #0d3a8c;
+  --adbi-magenta: #1665c1;
+  --adbi-accent-faible: rgba(22, 101, 193, 0.09);
+  --adbi-accent-bord: rgba(22, 101, 193, 0.26);
+
+  /* États assombris : sur blanc, les teintes claires du thème sombre
+     tomberaient sous le seuil de lisibilité. */
+  --adbi-ok: #145aa8;
+  --adbi-ok-fond: rgba(22, 101, 193, 0.09);
+  --adbi-ok-bord: rgba(22, 101, 193, 0.26);
+  /* #8f5900 et non #a06400 : posé sur son propre fond ambré, l'ambre plus
+     clair ne tenait que 4,4:1, sous le seuil AA. */
+  --adbi-attention: #8f5900;
+  --adbi-attention-fond: rgba(242, 160, 7, 0.13);
+  --adbi-attention-bord: rgba(242, 160, 7, 0.35);
+  --adbi-erreur: #c8102e;
+  --adbi-erreur-fond: rgba(204, 0, 32, 0.08);
+  --adbi-erreur-bord: rgba(204, 0, 32, 0.24);
+
+  /* Les états sont maintenant foncés : l'encre posée dessus devient claire. */
+  --adbi-sur-etat: #ffffff;
+
+  --adbi-sh: 0 1px 3px rgba(20, 20, 40, 0.09), 0 1px 2px rgba(20, 20, 40, 0.05);
+  --adbi-sh-lg: 0 14px 34px rgba(20, 20, 40, 0.12), 0 2px 6px rgba(20, 20, 40, 0.07);
+
+  color-scheme: light;
+}
+
+/* ══ Socle ════════════════════════════════════════════════════════════════ */
+
+html,
+body {
+  background: var(--adbi-bg) !important;
+  color: var(--adbi-text1);
+  font-family: var(--adbi-police);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* L'attribut hidden doit rester prioritaire sur les display des classes. */
+[hidden] {
+  display: none !important;
+}
+
+/* Le fond de sélection est un voile d'accent très dilué : en clair il est
+   presque blanc, une encre blanche y disparaîtrait. On garde donc la couleur
+   de texte du thème. */
+::selection {
+  background: var(--adbi-accent-faible);
+  color: var(--adbi-text1);
+}
+
+/* Barres de défilement discrètes, cohérentes d'une application à l'autre. */
+* {
+  scrollbar-color: var(--adbi-surface-3) transparent;
+  scrollbar-width: thin;
+}
+*::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--adbi-surface-3);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--adbi-border-fort);
+  background-clip: content-box;
+}
+
+/* ══ Typographie ══════════════════════════════════════════════════════════ */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--adbi-text1);
+  letter-spacing: -0.2px;
+}
+
+p,
+li,
+dd,
+dt,
+span,
+label,
+small {
+  color: inherit;
+}
+
+a {
+  color: var(--adbi-magenta);
+}
+a:hover {
+  color: var(--adbi-orange);
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--adbi-border);
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  color: var(--adbi-text1);
+  background: var(--adbi-surface-2);
+  border-radius: 6px;
+}
+
+/* ══ Champs de formulaire ═════════════════════════════════════════════════ */
+
+input,
+textarea,
+select {
+  background: var(--adbi-surface-2);
+  color: var(--adbi-text1);
+  border: 1px solid var(--adbi-border);
+  border-radius: var(--adbi-r-sm);
+  font-family: inherit;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--adbi-accent);
+  box-shadow: 0 0 0 3px var(--adbi-accent-faible);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--adbi-textm);
+}
+input:disabled,
+textarea:disabled,
+select:disabled {
+  opacity: 0.5;
+}
+/* Neutralise le fond jaune que Chrome applique aux champs auto-remplis. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--adbi-text1);
+  -webkit-box-shadow: 0 0 0 1000px var(--adbi-surface-2) inset;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--adbi-magenta);
+}
+input[type="range"] {
+  accent-color: var(--adbi-magenta);
+}
+
+/* ══ Tableaux ═════════════════════════════════════════════════════════════ */
+
+table {
+  border-color: var(--adbi-border);
+}
+th {
+  color: var(--adbi-text2);
+  border-bottom: 1px solid var(--adbi-border);
+}
+td {
+  border-bottom: 1px solid var(--adbi-border);
+}
+
+/* ══ Impression ═══════════════════════════════════════════════════════════
+   La charte impose un fond sombre A L'ECRAN. Sans cette exception, tout
+   export Imprimer / PDF sortirait une page noire — le one-pager A4 et le CV
+   au format societe sont des documents, ils doivent rester blancs. */
+
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    color: #000;
+  }
+}
+
+/* ══ Utilitaires communs, repris par les surcharges de chaque application ══ */
+
+.adbi-degrade-texte {
+  background: var(--adbi-degrade);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}

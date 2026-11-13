@@ -1,0 +1,72 @@
+{
+  "document_type": "adbi_recu",
+  "fields": [
+    {
+      "name": "commercant",
+      "type": "string",
+      "description": "Nom du commerce ou de l'enseigne, en tete du ticket ou de la facture",
+      "fields": []
+    },
+    {
+      "name": "date",
+      "type": "date",
+      "description": "Date d'achat imprimee sur le ticket ou la facture",
+      "fields": []
+    },
+    {
+      "name": "tva",
+      "type": "list",
+      "description": "Lignes du tableau de TVA, une entree par taux imprime",
+      "fields": [
+        {
+          "name": "taux",
+          "type": "number",
+          "description": "Taux de TVA en pourcentage, par exemple 20 ou 5.5",
+          "fields": []
+        },
+        {
+          "name": "base",
+          "type": "number",
+          "description": "Montant hors taxe imprime pour ce taux",
+          "fields": []
+        },
+        {
+          "name": "montant",
+          "type": "number",
+          "description": "Montant de TVA imprime pour ce taux",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "total_ht",
+      "type": "number",
+      "description": "Total hors taxe imprime sur le document",
+      "fields": []
+    },
+    {
+      "name": "total_ttc",
+      "type": "number",
+      "description": "Total toutes taxes comprises a payer, imprime sur le document",
+      "fields": []
+    },
+    {
+      "name": "devise",
+      "type": "string",
+      "description": "Devise des montants, code ISO a trois lettres comme EUR",
+      "fields": []
+    },
+    {
+      "name": "moyen_paiement",
+      "type": "string",
+      "description": "Moyen de paiement imprime : carte, especes, cheque, virement ou autre",
+      "fields": []
+    },
+    {
+      "name": "categorie",
+      "type": "string",
+      "description": "Categorie de la depense, une valeur parmi : repas, transport, hebergement, carburant, fournitures, autre",
+      "fields": []
+    }
+  ]
+}
