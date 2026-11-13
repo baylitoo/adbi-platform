@@ -34,6 +34,10 @@ TABLE_194 = {
     "rapprochement": ("chat", {"chat": ("lfm25_2_6b", None)}),
     "copilote": ("chat", {"chat": ("lfm25_2_6b", None)}),
     "traduction": ("chat", {"chat": ("lfm25_2_6b", None)}),
+    "carte_vitale": ("extraction", {"texte": ("lfm25_2_6b", None), "agent": ("nuextract3", None)}),
+    "justificatif_domicile": ("extraction", {"texte": ("lfm25_2_6b", None), "agent": ("nuextract3", None)}),
+    "diplome": ("extraction", {"texte": ("lfm25_2_6b", None), "agent": ("nuextract3", None)}),
+    "type_piece": ("extraction", {"texte": ("lfm25_2_6b", None), "agent": ("nuextract3", None)}),
 }
 
 ENV_CONTRAT = {"DOCIE_MODELE_NUEXTRACT3": "store:nuextract3", "DOCIE_MODELE_LFM25_2_6B": "store:lfm2.5-2.6b"}

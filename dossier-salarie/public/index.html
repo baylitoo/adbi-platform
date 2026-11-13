@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="fr" data-theme="clair">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADBI Dossier salarié</title>
+<script src="adbi-theme.js"></script>
+<link rel="stylesheet" href="dossier.css">
+<link rel="stylesheet" href="adbi-theme.css">
+</head>
+<body>
+
+<header class="barre">
+  <div class="marque"><span class="logo adbi-degrade-texte">adbi</span><span class="appname">Dossier salarié</span></div>
+  <div class="barre-fin"><span id="utilisateur"></span></div>
+</header>
+
+<div class="page">
+  <aside class="colonne">
+    <section class="carte">
+      <h2>Nouveau dossier</h2>
+      <form id="form-nouveau" autocomplete="off">
+        <div class="grille">
+          <label class="champ"><span>Nom de naissance *</span><input name="nom" required maxlength="120"></label>
+          <label class="champ"><span>Prénoms</span><input name="prenoms" maxlength="160"></label>
+          <label class="champ"><span>Date d'embauche</span><input name="dateEmbauche" type="date"></label>
+          <label class="champ"><span>Type de contrat</span><select name="typeContrat" id="types-contrat"></select></label>
+        </div>
+        <div class="actions"><button class="btn primaire" type="submit">Créer le dossier</button></div>
+      </form>
+    </section>
+    <section class="carte">
+      <h2>Dossiers</h2>
+      <p class="vide" id="dossiers-vide" hidden>Aucun dossier pour l'instant.</p>
+      <ul class="dossiers" id="dossiers"></ul>
+    </section>
+  </aside>
+
+  <main id="detail">
+    <section class="carte" id="accueil">
+      <h2>Dossier d'entrée d'un nouvel embauché</h2>
+      <p class="aide">Créez un dossier, déposez les pièces (photo, scan ou PDF) : chaque fichier est classé puis lu, et la
+      complétude se met à jour — pièce manquante, expirée ou invalide. La fiche d'entrée reprend les champs de la DPAE.</p>
+    </section>
+
+    <div id="vue-dossier" hidden>
+      <section class="carte non-imprime">
+        <h2 id="titre-dossier"></h2>
+        <form id="form-dossier" autocomplete="off">
+          <div class="grille">
+            <label class="champ"><span>Nom de naissance *</span><input name="nom" required maxlength="120"></label>
+            <label class="champ"><span>Prénoms</span><input name="prenoms" maxlength="160"></label>
+            <label class="champ"><span>Date d'embauche</span><input name="dateEmbauche" type="date"></label>
+            <label class="champ"><span>Type de contrat</span><select name="typeContrat" id="types-contrat-dossier"></select></label>
+          </div>
+          <div class="champ"><span>Pièces attendues</span><div class="cases" id="attendus"></div></div>
+          <div class="actions">
+            <button class="btn" type="submit">Enregistrer</button>
+            <span class="vide" id="cree-par"></span>
+            <button class="btn fantome danger" type="button" id="supprimer-dossier">Supprimer le dossier et ses pièces</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="carte non-imprime">
+        <h2>Complétude <span class="pastille" id="etat-global"></span></h2>
+        <table class="tableau">
+          <thead><tr><th>Pièce attendue</th><th>État</th><th>Constats</th></tr></thead>
+          <tbody id="completude"></tbody>
+        </table>
+      </section>
+
+      <section class="carte non-imprime">
+        <h2>Pièces</h2>
+        <div class="depot" id="depot">
+          <p>Déposez ici une ou plusieurs pièces (PDF, PNG ou JPEG, 19 Mo au plus).</p>
+          <div class="actions">
+            <label class="champ"><span>Type</span><select id="type-depot"></select></label>
+            <button class="btn primaire" type="button" id="parcourir">Choisir des fichiers</button>
+            <input type="file" id="fichiers" accept="application/pdf,image/png,image/jpeg" multiple hidden>
+          </div>
+        </div>
+        <p class="alerte attention" id="sans-extraction" hidden>La lecture automatique est désactivée sur ce serveur : les pièces sont classées puis à saisir à la main.</p>
+        <ul class="pieces" id="pieces"></ul>
+      </section>
+
+      <section class="carte" id="carte-fiche">
+        <h2 class="non-imprime">Fiche d'entrée (DPAE)</h2>
+        <h2 class="imprimable-titre" id="titre-impression"></h2>
+        <form id="form-fiche" autocomplete="off">
+          <div class="grille" id="fiche"></div>
+          <div class="actions non-imprime">
+            <button class="btn" type="submit">Enregistrer les corrections</button>
+            <a class="btn" id="export-csv" href="#">Exporter en CSV</a>
+            <button class="btn" type="button" id="imprimer">Imprimer</button>
+          </div>
+        </form>
+      </section>
+    </div>
+    <p class="alerte erreur non-imprime" id="erreur" hidden></p>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

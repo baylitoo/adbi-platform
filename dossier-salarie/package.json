@@ -1,0 +1,17 @@
+{
+  "name": "adbi-dossier-salarie",
+  "version": "1.0.0",
+  "description": "Dossier salarié ADBI : pièces d'un nouvel embauché, contrôles de complétude et fiche d'entrée (DPAE).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "ADBI",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "express": "^4.19.2",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.13.1"
+  }
+}

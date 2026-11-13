@@ -1,0 +1,29 @@
+{
+  "document_type": "adbi_diplome",
+  "fields": [
+    {
+      "name": "intitule",
+      "type": "string",
+      "description": "Intitule du diplome tel qu'imprime (grade, specialite)",
+      "fields": []
+    },
+    {
+      "name": "titulaire",
+      "type": "string",
+      "description": "Nom et prenom(s) du titulaire du diplome",
+      "fields": []
+    },
+    {
+      "name": "etablissement",
+      "type": "string",
+      "description": "Etablissement ou autorite qui delivre le diplome",
+      "fields": []
+    },
+    {
+      "name": "date_obtention",
+      "type": "date",
+      "description": "Date d'obtention ou de delivrance du diplome",
+      "fields": []
+    }
+  ]
+}

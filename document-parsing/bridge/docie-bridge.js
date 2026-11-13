@@ -129,7 +129,8 @@ const BLOC_CLES = new Set(["id", "text", "page", "bbox", "source", "confidence"]
 const BLOC_SOURCES = new Set(["pdf_text", "pdf_inspector", "tesseract", "paddleocr", "manual", "unknown"]);
 const BBOX_CLES = ["x0", "y0", "x1", "y1"];
 const LIGNE_BLANCHE_PYTHON = /^[\t\n\v\f\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
-const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf", rib: "rib" };
+const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf", rib: "rib",
+  cni: "cni", carte_vitale: "adbi_carte_vitale", justificatif_domicile: "adbi_justificatif_domicile", diplome: "adbi_diplome", type_piece: "adbi_type_piece" };
 // What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
 // This transport posts the document as an `image_url` data URI to
 // /v1/agents/<agent>/chat/completions, where DocIE OCRs it: liteparse renders

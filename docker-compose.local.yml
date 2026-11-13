@@ -81,6 +81,7 @@ services:
       - one-pager
       - coffre
       - cv-parser
+      - dossier-salarie
     restart: unless-stopped
     # Issue #138 : aucun des 5 services n'avait de plafond ressources — voir
     # le commentaire sur `postgres` ci-dessus pour le risque. factory ne fait
@@ -378,5 +379,55 @@ services:
         limits:
           memory: 6g
 
+  dossier-salarie:
+    # Dossier salarie : contrats/lib reutilise tel quel (copie a /contrats/lib), pont DocIE partage. Voir dossier-salarie/Dockerfile.
+    build:
+      context: ./dossier-salarie
+      additional_contexts:
+        contratslib: ./contrats/lib
+        bridge: ./document-parsing/bridge
+        schemas: ./document-parsing/schemas
+        fixtures: ./document-parsing/fixtures
+        modeles: ./document-parsing/models
+        auth: ./auth
+    container_name: adbi-dossier-salarie
+    ports:
+      - "4600:4600"
+    volumes:
+      # Pieces d'identite deposees : volume nomme, jamais dans l'image ni dans les journaux.
+      - dossier-salarie-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 4600
+      # Base partagee (celle creee par POSTGRES_DB), tables prefixees dsal_.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_USER:-adbi}
+      ADBI_AUTH: ${ADBI_AUTH:-}
+      ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
+      # Lecture des pieces par le pont DocIE, desactivee par defaut ; jamais de modele externe pour ces pieces.
+      DOCIE_EXTRACTION_ENABLED: ${DOSSIERSALARIE_DOCIE_EXTRACTION_ENABLED:-false}
+      DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
+      DOCIE_API_KEY: ${DOCIE_API_KEY:-}
+      DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
+      DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-900}
+      DOCIE_MODEL_PROFILE: ${DOCIE_MODEL_PROFILE:-}
+      DOCIE_MODELE_LFM25_2_6B: ${DOCIE_MODELE_LFM25_2_6B:-}
+      DOCIE_AGENT_CNI: ${DOCIE_AGENT_CNI:-}
+      DOCIE_AGENT_RIB: ${DOCIE_AGENT_RIB:-}
+      DOCIE_AGENT_CARTE_VITALE: ${DOCIE_AGENT_CARTE_VITALE:-}
+      DOCIE_AGENT_JUSTIFICATIF_DOMICILE: ${DOCIE_AGENT_JUSTIFICATIF_DOMICILE:-}
+      DOCIE_AGENT_DIPLOME: ${DOCIE_AGENT_DIPLOME:-}
+      DOCIE_AGENT_TYPE_PIECE: ${DOCIE_AGENT_TYPE_PIECE:-}
+      # Un seul slot DocIE partage avec contrats : 1 par defaut.
+      ADBI_EXTRACTION_MAX_CONCURRENT: ${DOSSIERSALARIE_EXTRACTION_MAX_CONCURRENT:-}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
 volumes:
   postgres-data:
+  dossier-salarie-data:

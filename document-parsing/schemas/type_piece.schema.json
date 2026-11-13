@@ -1,0 +1,11 @@
+{
+  "document_type": "adbi_type_piece",
+  "fields": [
+    {
+      "name": "type_piece",
+      "type": "string",
+      "description": "Nature du document, une seule valeur parmi : cni (carte d'identite ou passeport), rib, carte_vitale, justificatif_domicile, diplome, autre",
+      "fields": []
+    }
+  ]
+}
