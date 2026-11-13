@@ -1,13 +1,13 @@
 """core/auth.py — Authentification JWT, stockage PostgreSQL (core/auth_pg.py).
 
 Deux rôles : 'superuser' (accès total) et 'user' (accès standard).
-Tokens : access (1h) + refresh (7j).
+Tokens : access (1h) + refresh (7j), émis seulement après une session Cynov prouvée (api/auth_bp.py, core/cynov_auth.py).
 
 Bascule PostgreSQL (issue #15, PR B) : la logique JWT (encodage/décodage,
 décorateurs Flask) reste ICI, inchangée — seul le stockage (utilisateurs,
 refresh tokens) est délégué à core/auth_pg.py. get_user_by_id,
 get_user_by_email, list_users, create_user, update_user, delete_user,
-verify_password, store_refresh_token, is_refresh_token_valid,
+store_refresh_token, is_refresh_token_valid,
 revoke_refresh_token et revoke_all_user_tokens sont ré-exportées telles
 quelles depuis core/auth_pg : tout le reste du code (api/*.py) continue de
 faire `from core.auth import ...` sans changement.
@@ -25,20 +25,20 @@ from flask import g, jsonify, redirect, request
 from config import (
     JWT_SECRET, JWT_ALGORITHM,
     ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS,
-    DEFAULT_SUPERUSER_EMAIL, DEFAULT_SUPERUSER_PASSWORD,
+    DEFAULT_SUPERUSER_EMAIL,
 )
 
 # ── Stockage (PostgreSQL) — voir core/auth_pg.py ──────────────────────────────
 from core.auth_pg import (
     get_user_by_id, get_user_by_email, list_users,
-    create_user, update_user, delete_user, verify_password,
+    create_user, update_user, delete_user, effacer_mots_de_passe_locaux,
     store_refresh_token, is_refresh_token_valid,
     revoke_refresh_token, revoke_all_user_tokens,
 )
 
 __all__ = [
     "get_user_by_id", "get_user_by_email", "list_users",
-    "create_user", "update_user", "delete_user", "verify_password",
+    "create_user", "update_user", "delete_user",
     "create_access_token", "create_refresh_token",
     "verify_access_token", "verify_refresh_token",
     "revoke_refresh_token", "revoke_all_user_tokens",
@@ -66,7 +66,7 @@ def create_access_token(user: dict) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def create_refresh_token(user: dict) -> str:
+def create_refresh_token(user: dict, identifiant_cynov: str | None = None) -> str:
     now = datetime.now(timezone.utc)
     jti = str(uuid.uuid4())
     exp = now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
@@ -76,6 +76,8 @@ def create_refresh_token(user: dict) -> str:
         "iat":  now,
         "exp":  exp,
         "type": "refresh",
+        # Lie ce jeton à la session Cynov qui l'a prouvé (api/auth_bp.py::refresh).
+        "cynov": identifiant_cynov,
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     store_refresh_token(jti, user["id"], exp)
@@ -105,26 +107,10 @@ def verify_refresh_token(token: str) -> dict | None:
 # ── Initialisation ────────────────────────────────────────────────────────────
 
 def ensure_default_superuser():
-    if not list_users():
-        create_user(
-            email=DEFAULT_SUPERUSER_EMAIL,
-            password=DEFAULT_SUPERUSER_PASSWORD,
-            role="superuser",
-            full_name="Admin ADBI",
-        )
-        # Le mot de passe ne doit JAMAIS apparaître en clair dans les logs
-        # (stdout du conteneur, agrégé par Docker/Coolify et souvent conservé
-        # ou expédié vers un tiers) — voir issue superuser-password-in-logs.
-        # On indique seulement sa provenance : ADBI_SUPERUSER_PASSWORD quand
-        # elle est posée, sinon le défaut de développement documenté dans
-        # config.py (jamais à utiliser tel quel en déploiement exposé).
-        source = (
-            "ADBI_SUPERUSER_PASSWORD"
-            if os.environ.get("ADBI_SUPERUSER_PASSWORD")
-            else "défaut de développement (voir config.py, à changer en prod)"
-        )
-        print(f"[AUTH] ✓ Superuser créé : {DEFAULT_SUPERUSER_EMAIL}  "
-              f"(mot de passe : {source})")
+    effacer_mots_de_passe_locaux()
+    if not get_user_by_email(DEFAULT_SUPERUSER_EMAIL):
+        create_user(email=DEFAULT_SUPERUSER_EMAIL, role="superuser", full_name="Admin ADBI")
+        print(f"[AUTH] ✓ Superuser autorisé : {DEFAULT_SUPERUSER_EMAIL} (connexion par son compte Cynov)")
 
 
 # ── Helpers request ───────────────────────────────────────────────────────────
@@ -196,7 +182,8 @@ def require_auth(f):
         if not user or not user.get("is_active"):
             if _is_api():
                 return jsonify({"error": "Compte désactivé"}), 403
-            return redirect("/login")
+            # Pas de renvoi vers /login : le jeton reste valide, le hub renverrait ici sans fin.
+            return "Compte désactivé ou non autorisé sur ADBI.", 403
         # Le rôle exposé aux routes vient de la base, pas du JWT : sinon un
         # utilisateur rétrogradé depuis 'superuser' garde les branches
         # "superuser voit tout" (ex. needs_bp.get_needs) tant que son ancien

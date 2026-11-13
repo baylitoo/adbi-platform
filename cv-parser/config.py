@@ -55,23 +55,14 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # ── Premier lancement ─────────────────────────────────────────────────────────
-#
-# Identifiants du superuser créé si la table users (PostgreSQL) est vide
-# (voir core/auth.py::ensure_default_superuser). Le mot de passe par défaut n'a de
-# sens qu'en développement local (poste, ADBI_AUTH=off) : le poser explicitement
-# via variable d'environnement avant toute exposition Internet.
-DEFAULT_SUPERUSER_EMAIL    = os.environ.get("ADBI_SUPERUSER_EMAIL") or "admin@adbi.fr"
-DEFAULT_SUPERUSER_PASSWORD = os.environ.get("ADBI_SUPERUSER_PASSWORD") or "Adbi2025!"
+# Identifiant Cynov du superuser, autorisé au démarrage s'il n'a pas encore de compte (core/auth.py::ensure_default_superuser).
+DEFAULT_SUPERUSER_EMAIL = os.environ.get("ADBI_SUPERUSER_EMAIL") or "admin@adbi.fr"
 
-# ── Anti brute-force (POST /api/auth/login) ──────────────────────────────────
-#
-# Jusqu'ici, aucune limite : ni compteur d'échecs, ni délai, ni verrouillage.
-# bcrypt ralentit chaque vérification (~100 ms) mais ça ne freine pas un
-# attaquant qui envoie ses tentatives en parallèle (jusqu'à
-# ADBI_GUNICORN_THREADS=4 à la fois, voir gunicorn.conf.py) — un mot de passe
-# faible, ou le mot de passe par défaut ci-dessus si ADBI_SUPERUSER_PASSWORD
-# n'a jamais été posée, restait devinable en continu, sans jamais déclencher
-# le moindre frein côté serveur. Voir api/auth_bp.py::_trop_de_tentatives.
+# ── Authentification Cynov (Facturation) ─────────────────────────────────────
+# Racine de l'API d'authentification, préfixe d'application et version compris (core/cynov_auth.py).
+CYNOV_AUTH_BASE_URL = os.environ.get("CYNOV_AUTH_BASE_URL", "").strip().rstrip("/")
+
+# ── Anti brute-force (POST /api/auth/login), avant tout appel à Cynov ─────────
 LOGIN_MAX_ECHECS = int(os.environ.get("ADBI_LOGIN_MAX_ECHECS", "10"))
 LOGIN_FENETRE_S  = int(os.environ.get("ADBI_LOGIN_FENETRE_S", "300"))  # 5 min
 

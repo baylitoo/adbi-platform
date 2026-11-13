@@ -64,5 +64,5 @@ Fonctions
    pour le client, anonymisable.
 
 **Administration**
-   Comptes, rôles, invitations (72 h, usage unique), journal d'activité,
+   Comptes Cynov autorisés et leurs rôles, journal d'activité,
    chaîne des modèles de chat.

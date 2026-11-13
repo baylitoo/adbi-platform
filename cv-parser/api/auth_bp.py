@@ -1,4 +1,4 @@
-"""api/auth_bp.py — Routes d'authentification JWT."""
+"""api/auth_bp.py — Routes d'authentification : la session Cynov prouve l'identité, cv-parser émet le jeton ADBI."""
 import threading
 import time
 from datetime import timezone, datetime
@@ -10,11 +10,12 @@ from config import (
     LOGIN_MAX_ECHECS, LOGIN_FENETRE_S,
     COOKIE_DOMAIN,
 )
+from core import cynov_auth
 from core.activity_pg import log_event
 from core.auth import (
     get_user_by_email, get_user_by_id, list_users,
     create_user, update_user, delete_user,
-    verify_password, verify_refresh_token,
+    verify_refresh_token,
     create_access_token, create_refresh_token,
     revoke_refresh_token, revoke_all_user_tokens,
     require_auth, require_superuser, get_current_user,
@@ -173,70 +174,103 @@ def _clear_cookies(resp):
     return resp
 
 
+# Jetons Cynov : httpOnly, sur ce seul hôte et ce seul préfixe, jamais vus par les services Node ni par le navigateur.
+_COOKIES_CYNOV = ("adbi_cynov_refresh", "adbi_cynov_access")
+_CHEMIN_CYNOV = "/api/auth"
+
+
+def _poser_cookies_cynov(resp, paire: dict):
+    secure = _schema_public() == "https"
+    resp.set_cookie("adbi_cynov_refresh", paire["rotation"], httponly=True, samesite="Lax", secure=secure,
+                    max_age=REFRESH_TOKEN_EXPIRE_DAYS * 86400, path=_CHEMIN_CYNOV)
+    resp.set_cookie("adbi_cynov_access", paire["acces"], httponly=True, samesite="Lax", secure=secure,
+                    max_age=paire["duree"], path=_CHEMIN_CYNOV)
+    return resp
+
+
+def _effacer_cookies_cynov(resp):
+    secure = _schema_public() == "https"
+    for nom in _COOKIES_CYNOV:
+        resp.delete_cookie(nom, path=_CHEMIN_CYNOV, httponly=True, samesite="Lax", secure=secure)
+    return resp
+
+
+def _session(user: dict, paire: dict, corps: dict):
+    """Réponse portant la session ADBI ET la paire Cynov qui l'a prouvée (la rotation remplace toujours l'ancienne)."""
+    access = create_access_token(user)
+    refresh = create_refresh_token(user, paire["identifiant"])
+    resp = make_response(jsonify({**corps, "access_token": access, "token_type": "bearer",
+                                  "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60}))
+    return _poser_cookies_cynov(_set_cookies(resp, access, refresh), paire)
+
+
+def _deconnecte(message: str, statut: int = 401):
+    return _effacer_cookies_cynov(_clear_cookies(make_response(jsonify({"error": message}), statut)))
+
+
 # ── Login ─────────────────────────────────────────────────────────────────────
 @auth_bp.post("/login")
 def login():
     body = request.get_json(silent=True) or {}
-    email    = (body.get("email") or "").strip()
+    identifiant = (body.get("login") or body.get("email") or "").strip()
     password = body.get("password") or ""
-    ip       = request.remote_addr or "?"
+    ip = request.remote_addr or "?"
 
-    if not email or not password:
-        return jsonify({"error": "Email et mot de passe requis"}), 400
+    if not identifiant or not password:
+        return jsonify({"error": "Identifiant et mot de passe Cynov requis"}), 400
+    if _trop_de_tentatives(ip, identifiant):
+        return jsonify({"error": "Trop de tentatives — réessayez dans quelques minutes."}), 429
 
-    if _trop_de_tentatives(ip, email):
-        return jsonify({
-            "error": "Trop de tentatives — réessayez dans quelques minutes.",
-        }), 429
+    try:
+        paire = cynov_auth.connecter(identifiant, password)
+    except cynov_auth.CynovRefus as exc:
+        _enregistrer_echec(ip, identifiant)
+        return jsonify({"error": str(exc)}), 401
+    except cynov_auth.CynovIndisponible as exc:
+        return jsonify({"error": str(exc)}), 503
 
-    user = get_user_by_email(email)
-    if not user or not verify_password(password, user.get("password_hash", "")):
-        _enregistrer_echec(ip, email)
-        return jsonify({"error": "Identifiants invalides"}), 401
+    _oublier_echecs(ip, identifiant)
+    user = get_user_by_email(identifiant) or (paire["identifiant"] and get_user_by_email(paire["identifiant"]))
+    if not user:
+        cynov_auth.deconnecter(paire["rotation"], paire["acces"])
+        return jsonify({"error": "Compte Cynov valide, mais pas autorisé sur ADBI : demandez l'accès à un administrateur."}), 403
     if not user.get("is_active", True):
-        return jsonify({"error": "Compte désactivé"}), 403
-
-    _oublier_echecs(ip, email)
-    access  = create_access_token(user)
-    refresh = create_refresh_token(user)
-    public  = {k: v for k, v in user.items() if k != "password_hash"}
+        cynov_auth.deconnecter(paire["rotation"], paire["acces"])
+        return jsonify({"error": "Compte désactivé sur ADBI"}), 403
 
     log_event("login", user["id"], user["email"], {"ip": request.remote_addr})
-
-    resp = make_response(jsonify({
-        "access_token": access,
-        "token_type":   "bearer",
-        "expires_in":   ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        "user":         public,
-    }))
-    return _set_cookies(resp, access, refresh)
+    return _session(user, paire, {"user": {k: v for k, v in user.items() if k != "password_hash"}})
 
 
 # ── Refresh ───────────────────────────────────────────────────────────────────
 @auth_bp.post("/refresh")
 def refresh():
-    token = request.cookies.get("adbi_refresh") or (request.get_json(silent=True) or {}).get("refresh_token")
-    if not token:
-        return jsonify({"error": "Refresh token manquant"}), 401
+    token = request.cookies.get("adbi_refresh")
+    rotation = request.cookies.get("adbi_cynov_refresh")
+    if not token or not rotation:
+        return _deconnecte("Session absente")
 
     payload = verify_refresh_token(token)
     if not payload:
-        return jsonify({"error": "Refresh token invalide ou expiré"}), 401
-
+        return _deconnecte("Session expirée")
     user = get_user_by_id(payload["sub"])
     if not user or not user.get("is_active", True):
-        return jsonify({"error": "Utilisateur introuvable ou désactivé"}), 401
+        return _deconnecte("Utilisateur introuvable ou désactivé")
 
-    # Rotation : révoque l'ancien, crée un nouveau
+    try:
+        paire = cynov_auth.renouveler(rotation)
+    except cynov_auth.CynovRefus:
+        revoke_refresh_token(payload["jti"])
+        return _deconnecte("Session Cynov expirée ou révoquée")
+    except cynov_auth.CynovIndisponible as exc:
+        return jsonify({"error": str(exc)}), 503
+    if not paire["identifiant"] or payload.get("cynov") != paire["identifiant"]:
+        revoke_refresh_token(payload["jti"])
+        cynov_auth.deconnecter(paire["rotation"], paire["acces"])
+        return _deconnecte("Session Cynov d'un autre compte")
+
     revoke_refresh_token(payload["jti"])
-    new_access  = create_access_token(user)
-    new_refresh = create_refresh_token(user)
-
-    resp = make_response(jsonify({
-        "access_token": new_access,
-        "expires_in":   ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-    }))
-    return _set_cookies(resp, new_access, new_refresh)
+    return _session(user, paire, {})
 
 
 # ── Logout ────────────────────────────────────────────────────────────────────
@@ -247,8 +281,31 @@ def logout():
         payload = verify_refresh_token(token)
         if payload:
             revoke_refresh_token(payload["jti"])
-    resp = make_response(jsonify({"ok": True}))
-    return _clear_cookies(resp)
+    rotation = request.cookies.get("adbi_cynov_refresh")
+    if rotation:
+        cynov_auth.deconnecter(rotation, request.cookies.get("adbi_cynov_access"))
+    return _effacer_cookies_cynov(_clear_cookies(make_response(jsonify({"ok": True}))))
+
+
+# ── Changement de mot de passe (parcours de première connexion de Cynov) ──────
+@auth_bp.post("/change-password")
+def change_password():
+    body = request.get_json(silent=True) or {}
+    identifiant = (body.get("login") or "").strip()
+    ancien, nouveau = body.get("old_password") or "", body.get("new_password") or ""
+    ip = request.remote_addr or "?"
+    if not identifiant or not ancien or not nouveau:
+        return jsonify({"error": "Identifiant, mot de passe actuel et nouveau mot de passe requis"}), 400
+    if _trop_de_tentatives(ip, identifiant):
+        return jsonify({"error": "Trop de tentatives — réessayez dans quelques minutes."}), 429
+    try:
+        cynov_auth.changer_mot_de_passe(identifiant, ancien, nouveau)
+    except cynov_auth.CynovRefus as exc:
+        _enregistrer_echec(ip, identifiant)
+        return jsonify({"error": str(exc)}), 400
+    except cynov_auth.CynovIndisponible as exc:
+        return jsonify({"error": str(exc)}), 503
+    return jsonify({"ok": True})
 
 
 # ── Me ────────────────────────────────────────────────────────────────────────
@@ -267,7 +324,6 @@ def register():
     try:
         user = create_user(
             email=body.get("email", ""),
-            password=body.get("password", ""),
             role=body.get("role", "user"),
             full_name=body.get("full_name", ""),
         )

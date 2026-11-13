@@ -1,28 +1,15 @@
 """
-settings_bp.py — Paramétrage, gestion utilisateurs, invitations, activité, profil.
+settings_bp.py — Paramétrage, gestion utilisateurs (comptes Cynov autorisés), activité, profil.
 """
-import secrets
-import traceback
-from datetime import datetime, timezone, timedelta
-
-from flask import Blueprint, request, jsonify, make_response
+from flask import Blueprint, request, jsonify
 
 import llm_cascade
 from core.auth import (
     require_auth, require_superuser, get_current_user,
     list_users, get_user_by_id, update_user, delete_user,
-    create_user, verify_password,
-    create_access_token, create_refresh_token,
+    create_user, AUTH_ACTIVE,
 )
-from api.auth_bp import _set_cookies
 from core.activity_pg import get_events, get_user_stats
-# Alias : évite le conflit avec les routes create_invite()/get_invite_info()
-# définies plus bas dans ce même module.
-from core.auth_pg import (
-    create_invite as pg_create_invite,
-    get_invite as pg_get_invite,
-    mark_invite_used,
-)
 
 settings_bp = Blueprint("settings", __name__)
 
@@ -97,96 +84,24 @@ def delete_user_route(user_id):
     return jsonify({"success": True})
 
 
-# ── Invitations ───────────────────────────────────────────────────────────────
+# ── Comptes autorisés ─────────────────────────────────────────────────────────
 
-@settings_bp.route("/api/settings/invite", methods=["POST"])
+@settings_bp.route("/api/settings/users", methods=["POST"])
 @require_superuser
-def create_invite():
-    data    = request.json or {}
-    email   = (data.get("email") or "").strip().lower()
-    role    = data.get("role", "user")
-    if not email:
-        return jsonify({"error": "Email requis"}), 400
+def authorize_user():
+    """Autorise un identifiant Cynov sur ADBI ; la personne se connecte ensuite avec son mot de passe Cynov."""
+    data = request.json or {}
+    identifiant = (data.get("email") or "").strip().lower()
+    role = data.get("role", "user")
+    if not identifiant:
+        return jsonify({"error": "Identifiant Cynov requis"}), 400
     if role not in ("user", "superuser"):
         return jsonify({"error": "Rôle invalide"}), 400
-
-    # Check if user already exists
-    users = list_users()
-    if any(u["email"] == email for u in users):
-        return jsonify({"error": "Un compte existe déjà pour cet email"}), 409
-
-    current = get_current_user()
-    token   = secrets.token_urlsafe(32)
-    expires = datetime.now(timezone.utc) + timedelta(hours=72)
-
-    # pg_create_invite révoque déjà les invitations en attente pour le même
-    # email (DELETE ... WHERE used = false) avant d'insérer la nouvelle —
-    # voir core/auth_pg.py::create_invite.
-    pg_create_invite(token, email, role, current["email"], expires)
-
-    base_url = request.host_url.rstrip("/")
-    invite_url = f"{base_url}/invite/{token}"
-    return jsonify({"success": True, "invite_url": invite_url, "expires_at": expires.isoformat()})
-
-
-@settings_bp.route("/api/settings/invite/<token>", methods=["GET"])
-def get_invite_info(token):
-    inv = pg_get_invite(token)
-    if not inv:
-        return jsonify({"error": "Invitation invalide ou expirée"}), 404
-    if inv.get("used"):
-        return jsonify({"error": "Cette invitation a déjà été utilisée"}), 410
-    expires = inv.get("expires_at", "")
-    if expires:
-        try:
-            exp_dt = datetime.fromisoformat(expires)
-            if datetime.now(timezone.utc) > exp_dt:
-                return jsonify({"error": "Cette invitation a expiré"}), 410
-        except Exception:
-            pass
-    return jsonify({"email": inv["email"], "role": inv["role"]})
-
-
-@settings_bp.route("/api/settings/accept-invite", methods=["POST"])
-def accept_invite():
-    data     = request.json or {}
-    token    = (data.get("token") or "").strip()
-    name     = (data.get("full_name") or "").strip()
-    password = (data.get("password") or "").strip()
-
-    if not token or not name or not password:
-        return jsonify({"error": "Tous les champs sont requis"}), 400
-    if len(password) < 8:
-        return jsonify({"error": "Mot de passe trop court (8 caractères min.)"}), 400
-
-    inv = pg_get_invite(token)
-    if not inv:
-        return jsonify({"error": "Invitation invalide"}), 404
-    if inv.get("used"):
-        return jsonify({"error": "Invitation déjà utilisée"}), 410
-
-    expires = inv.get("expires_at", "")
-    if expires:
-        try:
-            if datetime.now(timezone.utc) > datetime.fromisoformat(expires):
-                return jsonify({"error": "Invitation expirée"}), 410
-        except Exception:
-            pass
-
-    # Check email not already taken
-    users = list_users()
-    if any(u["email"] == inv["email"] for u in users):
-        return jsonify({"error": "Un compte existe déjà pour cet email"}), 409
-
     try:
-        create_user(email=inv["email"], password=password,
-                    full_name=name, role=inv["role"])
-    except Exception:
-        traceback.print_exc()
-        return jsonify({"error": "Création du compte impossible, réessayez dans quelques instants."}), 500
-
-    mark_invite_used(token)
-    return jsonify({"success": True, "email": inv["email"]})
+        user = create_user(email=identifiant, role=role, full_name=(data.get("full_name") or "").strip())
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+    return jsonify({"success": True, "user": user}), 201
 
 
 # ── Activity ──────────────────────────────────────────────────────────────────
@@ -379,33 +294,8 @@ def update_profile():
             return jsonify({"error": "Le nom ne peut pas être vide"}), 400
         updates["full_name"] = name
 
-    new_pw = None
-    if "password" in data:
-        new_pw = data["password"]
-        old_pw = data.get("old_password", "")
-        u = get_user_by_id(current["sub"])
-        if not verify_password(old_pw, u.get("password_hash", "")):
-            return jsonify({"error": "Mot de passe actuel incorrect"}), 403
-        if len(new_pw) < 8:
-            return jsonify({"error": "Nouveau mot de passe trop court (8 car. min.)"}), 400
-
-    if not updates and new_pw is None:
+    if not updates:
         return jsonify({"error": "Aucune modification"}), 400
 
-    if updates:
-        update_user(current["sub"], updates)
-    if new_pw is not None:
-        update_user(current["sub"], {"password": new_pw})
-        # update_user()/auth_pg révoque déjà tous les refresh tokens de
-        # l'utilisateur dès qu'un mot de passe change (self-service ici, ou
-        # remise à zéro par un superuser via PATCH /api/auth/users/<id>) :
-        # un cookie de session volé avant ce changement ne doit pas continuer
-        # à fonctionner après. On ré-émet donc une paire access/refresh pour
-        # que l'auteur du changement, lui, reste connecté — sans quoi il
-        # perdrait sa propre session au prochain appel.
-        user = get_user_by_id(current["sub"])
-        access = create_access_token(user)
-        refresh = create_refresh_token(user)
-        resp = make_response(jsonify({"success": True}))
-        return _set_cookies(resp, access, refresh)
+    update_user(current["sub"], updates)
     return jsonify({"success": True})

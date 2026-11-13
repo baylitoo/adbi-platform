@@ -132,21 +132,6 @@
     .stat-mini span { font-size: 11px; color: var(--muted); }
     .stat-mini span strong { color: var(--navy); }
 
-    /* ── INVITE SECTION ── */
-    .invite-result {
-      background: var(--blue-l); border: 1.5px solid rgba(26,92,255,.2);
-      border-radius: 9px; padding: 14px 16px; margin-top: 14px; display: none;
-    }
-    .invite-result.show { display: block; }
-    .invite-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
-    .invite-link {
-      font-size: 12px; color: var(--blue); font-weight: 600;
-      word-break: break-all; cursor: pointer;
-      background: #fff; border-radius: 6px; padding: 8px 12px; display: block;
-      border: 1px solid var(--border);
-    }
-    .invite-copy { margin-top: 8px; font-size: 11px; color: var(--muted); }
-
     /* ── ACTIVITY LOG ── */
     .act-event {
       display: flex; align-items: flex-start; gap: 12px;
@@ -268,36 +253,21 @@
     </div>
 
     <div class="card">
-      <div class="card-title">Changer de mot de passe</div>
-      <div class="alert" id="pwAlert"></div>
-      <div class="field">
-        <label>Mot de passe actuel</label>
-        <input type="password" id="oldPw" placeholder="••••••••"/>
-      </div>
-      <div class="row2">
-        <div class="field">
-          <label>Nouveau mot de passe</label>
-          <input type="password" id="newPw" placeholder="Min. 8 caractères"/>
-        </div>
-        <div class="field">
-          <label>Confirmer</label>
-          <input type="password" id="newPw2" placeholder="••••••••"/>
-        </div>
-      </div>
-      <button class="btn-primary" onclick="changePassword()">Changer le mot de passe</button>
+      <div class="card-title">Mot de passe</div>
+      <div class="page-sub">Votre mot de passe est celui de votre compte Cynov : il se change côté Cynov, ou depuis la page de connexion du hub lors d'une première connexion.</div>
     </div>
   </div>
 
   <!-- ── TAB: UTILISATEURS ── -->
   <div class="tab-panel" id="tabUsers">
 
-    <!-- Invite -->
+    <!-- Comptes autorisés -->
     <div class="card">
-      <div class="card-title">Inviter un utilisateur</div>
+      <div class="card-title">Autoriser un compte Cynov</div>
       <div class="row2">
         <div class="field">
-          <label>Adresse e-mail *</label>
-          <input type="email" id="invEmail" placeholder="prenom@domaine.fr"/>
+          <label>Identifiant Cynov *</label>
+          <input type="text" id="invEmail" placeholder="identifiant de connexion Cynov"/>
         </div>
         <div class="field">
           <label>Rôle</label>
@@ -307,12 +277,7 @@
           </select>
         </div>
       </div>
-      <button class="btn-primary" onclick="sendInvite()">Générer le lien d'invitation</button>
-      <div class="invite-result" id="invResult">
-        <div class="invite-label">Lien d'invitation (valable 72h)</div>
-        <a class="invite-link" id="invLink" onclick="copyInvite()" title="Cliquer pour copier"></a>
-        <div class="invite-copy" id="invCopy">Cliquez sur le lien pour le copier</div>
-      </div>
+      <button class="btn-primary" onclick="authorizeUser()">Autoriser</button>
     </div>
 
     <!-- User list -->
@@ -431,7 +396,10 @@ async function checkAuth() {
   } catch { window.location.href = '/login'; }
 }
 
+// La session vit sur le hub : sa page de connexion ferme la session ADBI et Cynov.
 async function logout() {
+  const hub = {{ (hub_url or '') | tojson }};
+  if (hub) { window.top.location.href = new URL('/login?sortie=1', hub).href; return; }
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
   window.location.href = '/login';
 }
@@ -467,25 +435,6 @@ async function saveName() {
   });
   if (r.ok) { showAlert('profAlert', 'Nom mis à jour', 'ok'); showToast('Profil mis à jour'); }
   else { const d = await r.json(); showAlert('profAlert', d.error || 'Erreur', 'err'); }
-}
-
-async function changePassword() {
-  const old = document.getElementById('oldPw').value;
-  const nw  = document.getElementById('newPw').value;
-  const nw2 = document.getElementById('newPw2').value;
-  if (nw !== nw2) { showAlert('pwAlert', 'Les mots de passe ne correspondent pas', 'err'); return; }
-  const r = await fetch('/api/settings/profile', {
-    method: 'PATCH', credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ old_password: old, password: nw }),
-  });
-  const d = await r.json();
-  if (r.ok) {
-    showAlert('pwAlert', 'Mot de passe mis à jour', 'ok');
-    document.getElementById('oldPw').value = '';
-    document.getElementById('newPw').value = '';
-    document.getElementById('newPw2').value = '';
-  } else { showAlert('pwAlert', d.error || 'Erreur', 'err'); }
 }
 
 /* ── Users ── */
@@ -574,34 +523,21 @@ async function deleteUserConfirm(userId, name) {
   if (r.ok) { showToast('Utilisateur supprimé'); loadUsers(); }
 }
 
-/* ── Invitations ── */
-async function sendInvite() {
+/* ── Comptes autorisés ── */
+async function authorizeUser() {
   const email = document.getElementById('invEmail').value.trim();
   const role  = document.getElementById('invRole').value;
-  if (!email) { showToast('Email requis'); return; }
-
-  const r = await fetch('/api/settings/invite', {
+  if (!email) { showToast('Identifiant Cynov requis'); return; }
+  const r = await fetch('/api/settings/users', {
     method: 'POST', credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, role }),
   });
   const d = await r.json();
   if (!r.ok) { showToast(d.error || 'Erreur'); return; }
-
-  const result = document.getElementById('invResult');
-  const link   = document.getElementById('invLink');
-  link.textContent = d.invite_url;
-  link.href = d.invite_url;
-  result.classList.add('show');
-  showToast('Lien d\'invitation généré');
-}
-
-function copyInvite() {
-  const link = document.getElementById('invLink').textContent;
-  navigator.clipboard.writeText(link).then(() => {
-    document.getElementById('invCopy').textContent = '✓ Lien copié dans le presse-papier !';
-    document.getElementById('invCopy').style.color = '#007A65';
-  });
+  document.getElementById('invEmail').value = '';
+  showToast('Compte autorisé : connexion avec son mot de passe Cynov');
+  loadUsers();
 }
 
 /* ── Activity ── */

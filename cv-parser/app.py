@@ -62,12 +62,12 @@ except ImportError:
     _DOCX_AVAILABLE = False
 
 # ── Config centralisée ────────────────────────────────────────────────────────
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from config import (
     UPLOAD_DIR, MAX_LLM_CHARS,
     CV_LIST_MAX, CV_SKILLS_FLAT_MAX,
-    FACTORY_URL, COOKIE_DOMAIN,
+    FACTORY_URL, COOKIE_DOMAIN, CYNOV_AUTH_BASE_URL,
 )
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ from core.activity_pg import log_event as _log
 from core import cvstore_pg
 
 # ── Blueprints ────────────────────────────────────────────────────────────────
-from api.auth_bp      import auth_bp
+from api.auth_bp      import auth_bp, _schema_public
 from api.needs_bp     import needs_bp
 from api.matching_bp  import matching_bp
 from api.settings_bp  import settings_bp
@@ -123,17 +123,22 @@ app.register_blueprint(settings_bp)
 # vide) — sûres à appeler à chaque démarrage de processus, `python app.py`
 # comme Gunicorn.
 init_schema()                 # Crée les tables PostgreSQL si absentes (DATABASE_URL requise)
-ensure_default_superuser()    # Crée admin@adbi.fr si aucun utilisateur
+ensure_default_superuser()    # Autorise ADBI_SUPERUSER_EMAIL si aucun utilisateur
 
 if not AUTH_ACTIVE:
     print("[AUTH] ⚠ Authentification DÉSACTIVÉE (ADBI_AUTH != on) — "
           "à réserver au poste local, jamais à un déploiement exposé.")
+elif not CYNOV_AUTH_BASE_URL:
+    print("[AUTH] ⚠ CYNOV_AUTH_BASE_URL vide : aucune connexion possible (la session ADBI passe par Cynov).")
+if AUTH_ACTIVE and not FACTORY_URL:
+    print("[AUTH] ⚠ ADBI_FACTORY_URL vide : /login ne sait pas vers quel hub renvoyer (la connexion vit sur le hub).")
+if AUTH_ACTIVE and not COOKIE_DOMAIN:
+    print("[AUTH] ⚠ ADBI_COOKIE_DOMAIN vide : la session ouverte sur le hub n'atteint la CVthèque que si elle partage son hôte.")
 
 # ── Context processor Jinja2 ─────────────────────────────────────────────────
 @app.context_processor
 def inject_user():
-    # Lien « ← Hub » : ADBI_FACTORY_URL, sinon l'origine retenue à la connexion (cookie adbi_hub).
-    hub_url = FACTORY_URL if urlsplit(FACTORY_URL).scheme in ("http", "https") else _url_de_confiance(request.cookies.get("adbi_hub"))
+    hub_url = _url_du_hub()
     token = request.cookies.get("adbi_access")
     if token:
         payload = verify_access_token(token)
@@ -1959,28 +1964,26 @@ def _retour_apres_connexion() -> str:
     return _url_de_confiance((request.args.get("next") or "").strip()) or "/"
 
 
-def _avec_hub(reponse, retour):
-    """Retient l'origine du hub qui a envoyé ici, pour le lien « ← Hub » quand ADBI_FACTORY_URL est vide."""
-    voulu = urlsplit(retour)
-    if retour != "/" and voulu.netloc != request.host:
-        reponse.set_cookie("adbi_hub", voulu.scheme + "://" + voulu.netloc, max_age=30 * 24 * 3600,
-                           httponly=True, samesite="Lax", secure=request.is_secure)
-    return reponse
+def _url_du_hub() -> str:
+    """Origine du hub : ADBI_FACTORY_URL, sinon celle retenue par une connexion antérieure (cookie adbi_hub)."""
+    return FACTORY_URL if urlsplit(FACTORY_URL).scheme in ("http", "https") else _url_de_confiance(request.cookies.get("adbi_hub"))
 
 
 @app.route("/login")
 def login_page():
-    # Mode local (ADBI_AUTH non posee) : pas de page de connexion.
+    """La connexion vit sur le hub : cette adresse y renvoie, avec retour ici une fois la session ouverte."""
     if not AUTH_ACTIVE:
         return redirect("/")
     retour = _retour_apres_connexion()
     token = request.cookies.get("adbi_access")
     if token and verify_access_token(token):
-        # Deja connecte : on honore `next` aussi, sinon un utilisateur renvoye
-        # ici par le hub avec une session valide resterait bloque sur /app au
-        # lieu de repartir d'ou il venait.
-        return _avec_hub(redirect(retour), retour)
-    return _avec_hub(make_response(render_template("login.html", retour=retour)), retour)
+        return redirect(retour)
+    hub = _url_du_hub()
+    if not hub:
+        return make_response("Connexion indisponible : ouvrez la CVthèque depuis le hub ADBI (ADBI_FACTORY_URL non posée).", 503)
+    if retour == "/":
+        retour = f"{_schema_public()}://{request.host}/"
+    return redirect(hub.rstrip("/") + "/login?next=" + quote(retour, safe=""))
 
 
 @app.route("/")
@@ -2053,11 +2056,6 @@ def matching_page():
 @require_auth
 def settings_page():
     return render_template("settings.html")
-
-
-@app.route("/invite/<token>")
-def invite_page(token):
-    return render_template("invite.html", token=token)
 
 
 # ── Progression d'analyse en temps réel ──────────────────────────────────────

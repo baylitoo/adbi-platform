@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr" data-theme="clair" data-theme-bouton="non">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADBI — Connexion</title>
+<link rel="icon" href="/logo-adbi.png">
+<script src="/adbi-theme.js"></script>
+<link rel="stylesheet" href="/adbi-theme.css">
+<link rel="stylesheet" href="/factory.css">
+</head>
+<body class="connexion">
+
+<main class="connexion-carte">
+  <img class="logo" src="/logo-adbi.png" alt="ADBI">
+  <h1>Connexion</h1>
+  <p class="connexion-sous-titre">Les outils internes ADBI, avec votre compte Cynov.</p>
+
+  <p class="connexion-erreur" id="erreur" role="alert" hidden></p>
+  <p class="connexion-info" id="info" role="status" hidden></p>
+
+  <form id="formulaire" autocomplete="on">
+    <label for="login">Identifiant Cynov</label>
+    <input type="text" id="login" name="login" autocomplete="username" required autofocus>
+
+    <label for="password" id="libelle-mdp">Mot de passe Cynov</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+    <div id="champ-nouveau" hidden>
+      <label for="nouveau">Nouveau mot de passe</label>
+      <input type="password" id="nouveau" name="nouveau" autocomplete="new-password">
+    </div>
+
+    <button type="submit" class="bouton principal" id="valider">Se connecter</button>
+  </form>
+
+  <p class="connexion-pied">
+    Accès sur autorisation d'un administrateur ADBI.<br>
+    <button type="button" class="connexion-lien" id="bascule-mdp">Première connexion : changer le mot de passe</button>
+  </p>
+</main>
+
+<script id="retour" type="application/json">"__RETOUR__"</script>
+<script src="/login.js"></script>
+</body>
+</html>

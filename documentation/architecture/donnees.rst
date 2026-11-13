@@ -25,7 +25,7 @@ coffre n'utilise pas de base.
      - Besoins clients (prix d'achat et de vente) et scores détaillés par candidat
    * -
      - ``users``, ``refresh_tokens``, ``invites``
-     - Comptes, jetons de rafraîchissement révocables, invitations à usage unique (72 h)
+     - Comptes Cynov autorisés et leur rôle (aucun mot de passe), jetons de rafraîchissement révocables ; ``invites`` n'est plus lue (anciens liens d'invitation)
    * -
      - ``activity``
      - Journal d'activité : connexions, imports, rapprochements

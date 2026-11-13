@@ -17,6 +17,8 @@ const ICONES = {
     '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 13l2 2 4-4"/>',
   coffre:
     '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/>',
+  sortie:
+    '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
   signature:
     '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
   lune:
@@ -42,11 +44,15 @@ function echapper(texte) {
 
 /** Un seul appel a l'API par page : le hub et le rail partagent la reponse. */
 let promesseModules = null;
+let sessionActive = false;
 function chargerModules(force) {
   if (!promesseModules || force) {
     promesseModules = fetch("/api/modules")
       .then((r) => r.json())
-      .then((d) => d.modules);
+      .then((d) => {
+        sessionActive = d.session === true;
+        return d.modules;
+      });
   }
   return promesseModules;
 }
@@ -76,6 +82,18 @@ async function construireRail(idActif) {
 
   const bascule = construireBasculeTheme();
   if (bascule) rail.appendChild(bascule);
+  if (sessionActive) rail.appendChild(construireDeconnexion(!bascule));
+}
+
+/** Bouton de déconnexion, en pied de rail : la page de connexion ferme la session ADBI et Cynov. */
+function construireDeconnexion(enPied) {
+  const lien = document.createElement("a");
+  lien.className = "rail-bouton" + (enPied ? " espace" : "");
+  lien.href = "/login?sortie=1";
+  lien.dataset.titre = "Se déconnecter";
+  lien.setAttribute("aria-label", lien.dataset.titre);
+  lien.innerHTML = icone("sortie");
+  return lien;
 }
 
 /**
