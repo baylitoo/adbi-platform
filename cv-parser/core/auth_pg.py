@@ -1,4 +1,4 @@
-"""core/auth_pg.py — PostgreSQL pour utilisateurs, refresh tokens, invitations.
+"""core/auth_pg.py — PostgreSQL pour utilisateurs (comptes Cynov autorisés, sans mot de passe) et refresh tokens.
 
 Même API (noms/formes) que les fonctions de stockage de core/auth.py
 (data/users.json, data/tokens.json) et des helpers d'invitation de
@@ -18,23 +18,26 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-import bcrypt
-
 from core.pg import get_conn, init_schema
 
 __all__ = [
     "init_db",
     "get_user_by_id", "get_user_by_email", "list_users",
-    "create_user", "update_user", "delete_user", "verify_password",
+    "create_user", "update_user", "delete_user", "effacer_mots_de_passe_locaux",
     "store_refresh_token", "is_refresh_token_valid",
     "revoke_refresh_token", "revoke_all_user_tokens",
-    "create_invite", "get_invite", "mark_invite_used", "list_invites",
 ]
 
 
 def init_db() -> None:
     init_schema()
-    print("[DB] Schema PostgreSQL initialise (users/refresh_tokens/invites).")
+    print("[DB] Schema PostgreSQL initialise (users/refresh_tokens).")
+
+
+def effacer_mots_de_passe_locaux() -> None:
+    """Les mots de passe sont chez Cynov : aucune empreinte locale ne doit survivre (idempotent)."""
+    with get_conn() as con:
+        con.execute("UPDATE users SET password_hash = '' WHERE password_hash <> ''")
 
 
 def _now() -> datetime:
@@ -83,19 +86,17 @@ def list_users() -> list[dict]:
     return [_public(_row_to_user(r)) for r in rows]
 
 
-def create_user(
-    email: str,
-    password: str,
-    role: str = "user",
-    full_name: str = "",
-) -> dict:
+def create_user(email: str, role: str = "user", full_name: str = "") -> dict:
+    """Autorise un compte Cynov sur ADBI : `email` est son identifiant Cynov, le mot de passe reste chez Cynov."""
+    email = (email or "").strip()
+    if not email:
+        raise ValueError("Identifiant Cynov requis")
     if get_user_by_email(email):
         raise ValueError(f"Email déjà utilisé : {email}")
     if role not in ("user", "superuser"):
         raise ValueError("Rôle invalide — valeurs acceptées : user, superuser")
 
     uid = str(uuid.uuid4())
-    pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     now = _now()
     with get_conn() as con:
         con.execute(
@@ -103,7 +104,7 @@ def create_user(
             INSERT INTO users (id, email, password_hash, role, full_name, is_active, created_at)
             VALUES (%s,%s,%s,%s,%s,%s,%s)
             """,
-            (uid, email, pw_hash, role, full_name or email.split("@")[0], True, now),
+            (uid, email, "", role, full_name or email.split("@")[0], True, now),
         )
     return _public(get_user_by_id(uid))
 
@@ -121,30 +122,10 @@ def update_user(user_id: str, updates: dict) -> dict:
         if k in _ALLOWED_UPDATE_FIELDS:
             fields.append(f"{k} = %s")
             vals.append(v)
-    changement_mdp = bool(updates.get("password"))
-    if changement_mdp:
-        fields.append("password_hash = %s")
-        vals.append(bcrypt.hashpw(updates["password"].encode(), bcrypt.gensalt()).decode())
-
     if fields:
         vals.append(user_id)
         with get_conn() as con:
             con.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", vals)
-            # Un mot de passe changé (self-service ou remise à zéro par un
-            # superuser) doit invalider les sessions existantes : sinon un
-            # refresh token déjà entre de mauvaises mains (cookie volé, poste
-            # partagé) continue de fonctionner jusqu'à ses 7 jours
-            # d'expiration, alors même que l'action censée « couper l'accès »
-            # vient d'avoir lieu. Fait sur LA MÊME connexion (donc la même
-            # transaction) que l'UPDATE du mot de passe ci-dessus : get_conn()
-            # ouvre une connexion par appel (voir core/pg.py), donc deux `with
-            # get_conn()` séparés seraient deux transactions indépendantes —
-            # un échec (connexion, panne passagère) entre les deux laisserait
-            # le mot de passe changé mais les anciens refresh tokens toujours
-            # valides. Ici : les deux réussissent ou aucun des deux (rollback
-            # psycopg si `con.execute` lève avant la sortie du `with`).
-            if changement_mdp:
-                _revoquer_tokens_sur(con, user_id)
 
     return _public(get_user_by_id(user_id))
 
@@ -171,13 +152,6 @@ def delete_user(user_id: str) -> None:
     with get_conn() as con:
         _revoquer_tokens_sur(con, user_id)
         con.execute("DELETE FROM users WHERE id = %s", (user_id,))
-
-
-def verify_password(password: str, pw_hash: str) -> bool:
-    try:
-        return bcrypt.checkpw(password.encode(), pw_hash.encode())
-    except Exception:
-        return False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -222,52 +196,3 @@ def revoke_all_user_tokens(user_id: str) -> None:
     suppression du compte), voir _revoquer_tokens_sur."""
     with get_conn() as con:
         _revoquer_tokens_sur(con, user_id)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# INVITATIONS (data/invites.json — voir api/settings_bp.py)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def create_invite(token: str, email: str, role: str, created_by: str, expires_at: datetime) -> dict:
-    with get_conn() as con:
-        # Révoque (supprime) les invitations en attente pour le même email —
-        # même comportement que settings_bp._save_invites côté JSON, qui ne
-        # gardait que les invitations utilisées ou d'un autre email.
-        con.execute(
-            "DELETE FROM invites WHERE LOWER(email) = LOWER(%s) AND used = false",
-            (email,),
-        )
-        con.execute(
-            """
-            INSERT INTO invites (token, email, role, created_by, expires_at, used)
-            VALUES (%s,%s,%s,%s,%s,false)
-            """,
-            (token, email, role, created_by, expires_at),
-        )
-    return get_invite(token)
-
-
-def get_invite(token: str) -> dict | None:
-    with get_conn() as con:
-        row = con.execute("SELECT * FROM invites WHERE token = %s", (token,)).fetchone()
-    if not row:
-        return None
-    d = dict(row)
-    d["expires_at"] = _iso(d.get("expires_at"))
-    return d
-
-
-def mark_invite_used(token: str) -> None:
-    with get_conn() as con:
-        con.execute("UPDATE invites SET used = true WHERE token = %s", (token,))
-
-
-def list_invites() -> list[dict]:
-    with get_conn() as con:
-        rows = con.execute("SELECT * FROM invites ORDER BY expires_at DESC").fetchall()
-    out = []
-    for r in rows:
-        d = dict(r)
-        d["expires_at"] = _iso(d.get("expires_at"))
-        out.append(d)
-    return out

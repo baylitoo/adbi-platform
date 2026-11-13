@@ -347,7 +347,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/adbi_cv_parser
       ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
       ADBI_SUPERUSER_EMAIL: ${ADBI_SUPERUSER_EMAIL:?ADBI_SUPERUSER_EMAIL est requis (voir .env.example) — jamais admin@adbi.fr en déploiement}
-      ADBI_SUPERUSER_PASSWORD: ${ADBI_SUPERUSER_PASSWORD:?ADBI_SUPERUSER_PASSWORD est requis (voir .env.example) — jamais le défaut de développement en déploiement}
+      # Racine de l'API d'authentification Cynov : la connexion ADBI passe par elle (core/cynov_auth.py).
+      CYNOV_AUTH_BASE_URL: ${CYNOV_AUTH_BASE_URL:?CYNOV_AUTH_BASE_URL est requis (voir .env.example)}
       # Portée du cookie de session (#254). cv-parser ÉMET le cookie ; sans
       # cette ligne, `config.py::COOKIE_DOMAIN` reste vide, `_portee_cookie()`
       # rend {} et le cookie est « host-only » — les quatre services Node ne le

@@ -67,7 +67,7 @@ from urllib.parse import urlsplit
 from config import (
     UPLOAD_DIR, MAX_LLM_CHARS,
     CV_LIST_MAX, CV_SKILLS_FLAT_MAX,
-    FACTORY_URL, COOKIE_DOMAIN,
+    FACTORY_URL, COOKIE_DOMAIN, CYNOV_AUTH_BASE_URL,
 )
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -123,11 +123,13 @@ app.register_blueprint(settings_bp)
 # vide) — sûres à appeler à chaque démarrage de processus, `python app.py`
 # comme Gunicorn.
 init_schema()                 # Crée les tables PostgreSQL si absentes (DATABASE_URL requise)
-ensure_default_superuser()    # Crée admin@adbi.fr si aucun utilisateur
+ensure_default_superuser()    # Autorise ADBI_SUPERUSER_EMAIL si aucun utilisateur
 
 if not AUTH_ACTIVE:
     print("[AUTH] ⚠ Authentification DÉSACTIVÉE (ADBI_AUTH != on) — "
           "à réserver au poste local, jamais à un déploiement exposé.")
+elif not CYNOV_AUTH_BASE_URL:
+    print("[AUTH] ⚠ CYNOV_AUTH_BASE_URL vide : aucune connexion possible (la session ADBI passe par Cynov).")
 
 # ── Context processor Jinja2 ─────────────────────────────────────────────────
 @app.context_processor
@@ -2053,11 +2055,6 @@ def matching_page():
 @require_auth
 def settings_page():
     return render_template("settings.html")
-
-
-@app.route("/invite/<token>")
-def invite_page(token):
-    return render_template("invite.html", token=token)
 
 
 # ── Progression d'analyse en temps réel ──────────────────────────────────────
