@@ -230,7 +230,7 @@ def login():
         return jsonify({"error": str(exc)}), 503
 
     _oublier_echecs(ip, identifiant)
-    user = get_user_by_email(identifiant)
+    user = get_user_by_email(identifiant) or (paire["identifiant"] and get_user_by_email(paire["identifiant"]))
     if not user:
         cynov_auth.deconnecter(paire["rotation"], paire["acces"])
         return jsonify({"error": "Compte Cynov valide, mais pas autorisé sur ADBI : demandez l'accès à un administrateur."}), 403
@@ -264,7 +264,7 @@ def refresh():
         return _deconnecte("Session Cynov expirée ou révoquée")
     except cynov_auth.CynovIndisponible as exc:
         return jsonify({"error": str(exc)}), 503
-    if payload.get("cynov") != paire["identifiant"]:
+    if not paire["identifiant"] or payload.get("cynov") != paire["identifiant"]:
         revoke_refresh_token(payload["jti"])
         cynov_auth.deconnecter(paire["rotation"], paire["acces"])
         return _deconnecte("Session Cynov d'un autre compte")

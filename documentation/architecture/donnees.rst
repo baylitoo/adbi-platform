@@ -24,8 +24,8 @@ coffre n'utilise pas de base.
      - ``needs``, ``matching_results``
      - Besoins clients (prix d'achat et de vente) et scores détaillés par candidat
    * -
-     - ``users``, ``refresh_tokens``
-     - Comptes Cynov autorisés et leur rôle (aucun mot de passe), jetons de rafraîchissement révocables
+     - ``users``, ``refresh_tokens``, ``invites``
+     - Comptes Cynov autorisés et leur rôle (aucun mot de passe), jetons de rafraîchissement révocables ; ``invites`` n'est plus lue (anciens liens d'invitation)
    * -
      - ``activity``
      - Journal d'activité : connexions, imports, rapprochements

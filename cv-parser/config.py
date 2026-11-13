@@ -55,7 +55,7 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # ── Premier lancement ─────────────────────────────────────────────────────────
-# Identifiant Cynov du superuser autorisé si la table users est vide (core/auth.py::ensure_default_superuser).
+# Identifiant Cynov du superuser, autorisé au démarrage s'il n'a pas encore de compte (core/auth.py::ensure_default_superuser).
 DEFAULT_SUPERUSER_EMAIL = os.environ.get("ADBI_SUPERUSER_EMAIL") or "admin@adbi.fr"
 
 # ── Authentification Cynov (Facturation) ─────────────────────────────────────

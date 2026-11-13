@@ -108,7 +108,7 @@ def verify_refresh_token(token: str) -> dict | None:
 
 def ensure_default_superuser():
     effacer_mots_de_passe_locaux()
-    if not list_users():
+    if not get_user_by_email(DEFAULT_SUPERUSER_EMAIL):
         create_user(email=DEFAULT_SUPERUSER_EMAIL, role="superuser", full_name="Admin ADBI")
         print(f"[AUTH] ✓ Superuser autorisé : {DEFAULT_SUPERUSER_EMAIL} (connexion par son compte Cynov)")
 
