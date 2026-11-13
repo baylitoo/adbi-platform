@@ -5,7 +5,7 @@ const path = require("path");
 
 const CONTRATS_LIB = path.join(__dirname, "..", "..", "contrats", "lib");
 const { mapCniResult } = require(path.join(CONTRATS_LIB, "cni-mapping"));
-const { mapRibResult } = require(path.join(CONTRATS_LIB, "rib-mapping"));
+const { mapRibResult, IBAN_ABSENT } = require(path.join(CONTRATS_LIB, "rib-mapping"));
 const { normalizeDate } = require(path.join(CONTRATS_LIB, "kbis-mapping"));
 
 const SCHEMAS_DIR = path.join(__dirname, "..", "..", "document-parsing", "schemas");
@@ -82,12 +82,12 @@ function versValeurs(type, reponse) {
     const { analysis, warnings } = mapCniResult(result, { items: [{ id: "cni" }], validation });
     const valeurs = {};
     for (const [cle] of TYPES.cni.champs) valeurs[cle] = chaine(analysis[cle]);
-    return { valeurs, analyse: { constats: analysis.issues || [], avertissements: warnings } };
+    return { valeurs, analyse: { constats: (analysis.issues || []).filter((m) => !/MRZ/.test(m)), avertissements: warnings } };
   }
   if (type === "rib") {
     const { analysis, warnings } = mapRibResult(result, { items: [{ id: "rib" }], validation });
     const valeurs = { titulaire: chaine(analysis.titulaireCompte), iban: chaine(analysis.iban), bic: chaine(analysis.bic), banque: chaine(analysis.nomBanque) };
-    return { valeurs, analyse: { constats: analysis.issues || [], avertissements: warnings } };
+    return { valeurs, analyse: { constats: (analysis.issues || []).filter((m) => m !== IBAN_ABSENT && !/^(IBAN|BIC) /.test(m)), avertissements: warnings } };
   }
   const { valeurs, avertissements } = mapperNouveau(type, result);
   const constats = [];

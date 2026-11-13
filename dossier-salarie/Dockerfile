@@ -1,6 +1,4 @@
-# =====================================================================
-#  ADBI - Dossier salarie  --  Image Docker (modele : contrats/Dockerfile)
-# =====================================================================
+# ADBI - Dossier salarie : image Docker sur le modele de contrats/Dockerfile.
 FROM node:22-bookworm-slim
 
 WORKDIR /app

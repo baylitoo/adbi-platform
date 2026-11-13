@@ -1,5 +1,4 @@
--- Schéma PostgreSQL du dossier salarié, appliqué au démarrage par lib/db.pg.js.
--- Tables préfixées dsal_ : la base est partagée avec d'autres services.
+-- Schéma du dossier salarié (appliqué par lib/db.pg.js), tables préfixées dsal_ car la base est partagée.
 
 CREATE TABLE IF NOT EXISTS dsal_dossiers (
   id             SERIAL PRIMARY KEY,

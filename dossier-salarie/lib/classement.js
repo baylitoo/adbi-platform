@@ -51,10 +51,7 @@ function valeurDocie(brute) {
   return VALEURS_DOCIE.includes(v) && v !== AUTRE ? v : null;
 }
 
-/**
- * Point d'entrée unique, remplaçable : rend { type, methode } ; type null = à classer à la main.
- * `docie(texte|null)` rend la valeur brute du champ type_piece, ou null si la voie n'est pas disponible.
- */
+// Point d'entrée unique et remplaçable du classement.
 async function classer({ texte, nomFichier }, { docie = null } = {}) {
   const local = parTexte(texte);
   if (local) return { type: local, methode: "indices" };
