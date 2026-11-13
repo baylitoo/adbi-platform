@@ -56,6 +56,7 @@ body { margin: 0; font-size: 14.5px; line-height: 1.55; }
 .champ .source { font-size: 11.5px; color: var(--adbi-textm); }
 .cases { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 6px; }
 .cases label { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; }
+.champ .cases input { width: auto; padding: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; align-items: center; }
 
 /* ── Boutons ── */

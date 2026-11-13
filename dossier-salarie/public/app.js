@@ -115,11 +115,12 @@
       const controle = vue.completude.parPiece[p.id] || { statut: "", problemes: [] };
       const type = p.typePiece ? etat.config.types[p.typePiece] : null;
       const enCours = ["en_attente", "extraction"].includes(p.statut);
+      const lu = ["extrait", "a_saisir"].includes(p.statut);
       const etiquette = el("span", { class: "pastille " + (enCours ? "en_cours" : controle.statut), id: "statut-" + p.id },
-        enCours ? el("span", { class: "tourne" }) : null, LIBELLES_STATUT[p.statut] || p.statut);
+        enCours ? el("span", { class: "tourne" }) : null, lu ? LIBELLES_ETAT[controle.statut] : LIBELLES_STATUT[p.statut] || p.statut);
       const tete = el("div", { class: "tete" },
         el("span", { class: "nom" }, type ? type.libelle : "Pièce non classée"),
-        el("span", { class: "meta" }, [p.nomOrigine, dateFr(p.deposeLe),
+        el("span", { class: "meta" }, [p.nomOrigine, dateFr(p.deposeLe), lu ? LIBELLES_STATUT[p.statut] : "",
           p.classement && LIBELLES_CLASSEMENT[p.classement] ? "classée par " + LIBELLES_CLASSEMENT[p.classement] : ""].filter(Boolean).join(" · ")),
         etiquette);
       const constats = [
