@@ -2,8 +2,11 @@ Hub
 ===
 
 Le hub (``factory/``) est le point d'entrée de la plateforme : il présente les
-modules sous forme de tuiles, les affiche dans son cadre et redirige vers la
-connexion tout visiteur sans session.
+modules sous forme de tuiles, les affiche dans son cadre et porte la **seule
+page de connexion** de la plateforme (``/login``, compte Cynov) : tout
+visiteur sans session y est renvoyé, et le rail porte la déconnexion. Les
+routes de session sont relayées à la CVthèque, qui émet la session (voir
+:doc:`../architecture/identite`).
 
 Caractéristiques
 ----------------

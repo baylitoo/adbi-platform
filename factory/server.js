@@ -523,11 +523,11 @@ function servirFichier(rep, chemin) {
   });
 }
 
-// URL publique du hub : sert de `next` a la page de connexion de cv-parser,
-// qui la valide contre sa PROPRE ADBI_FACTORY_URL (#254) avant de l'accepter.
-// Vide : on renvoie quand meme vers la connexion, sans retour automatique.
+// URL publique du hub : origine de confiance pour `next`, et retour des modules vers la connexion.
 const FACTORY_URL = (process.env.ADBI_FACTORY_URL || "").replace(/\/+$/, "");
-const PARSER_URL = (process.env.ADBI_PARSER_URL || "").replace(/\/+$/, "");
+
+// Routes de session relayées telles quelles à cv-parser, seul émetteur de jetons ; rien d'autre sous /api/auth/.
+const ROUTES_SESSION = new Set(["/api/auth/login", "/api/auth/refresh", "/api/auth/logout", "/api/auth/change-password"]);
 
 // Chemins servis SANS session, et pourquoi chacun :
 //   /api/sante      -- sonde du conteneur (factory/Dockerfile). Un 401 y ferait
@@ -536,12 +536,18 @@ const PARSER_URL = (process.env.ADBI_PARSER_URL || "").replace(/\/+$/, "");
 //   /adbi-theme.*   -- la charte, et /fonts/ ses polices. La page de connexion
 //   /fonts/            vers laquelle on redirige doit pouvoir s'afficher ; les
 //                      gater rendrait l'ecran d'erreur illisible.
+//   /login, ses fichiers et ROUTES_SESSION -- la connexion elle-meme.
 // Tout le reste est protege, y compris / et /api/modules.
 function cheminPublic(chemin) {
   return chemin === "/api/sante"
     || chemin === "/adbi-theme.css"
     || chemin === "/adbi-theme.js"
-    || chemin.startsWith("/fonts/");
+    || chemin.startsWith("/fonts/")
+    || chemin === "/login"
+    || chemin === "/login.js"
+    || chemin === "/factory.css"
+    || chemin === "/logo-adbi.png"
+    || ROUTES_SESSION.has(chemin);
 }
 
 // Origine publique vue par le navigateur (en-têtes du proxy, sinon Host), quand ADBI_FACTORY_URL est vide.
@@ -550,6 +556,63 @@ function origineRequete(req) {
   const proto = String(req.headers["x-forwarded-proto"] || "http").split(",")[0].trim().toLowerCase();
   if (!/^[a-z0-9.\-]+(:\d+)?$/i.test(hote) && !/^\[[0-9a-f:]+\](:\d+)?$/i.test(hote)) return "";
   return (proto === "https" ? "https" : "http") + "://" + hote;
+}
+
+/** Destination après connexion : chemin du hub, ou URL dont l'origine est le hub ou un module ; sinon "/". */
+function retourDeConfiance(brut, req) {
+  const voulu = String(brut || "").trim();
+  if (!voulu || /[\\\s<>"'`\u0000-\u001f\u007f]/.test(voulu)) return "/";
+  if (voulu.startsWith("/")) return voulu.startsWith("//") ? "/" : voulu;
+  let cible;
+  try { cible = new URL(voulu); } catch { return "/"; }
+  if (!["http:", "https:"].includes(cible.protocol) || cible.username || cible.password) return "/";
+  const origines = new Set();
+  for (const brute of [FACTORY_URL, origineRequete(req), ...MODULES.map(urlModule)]) {
+    try { if (brute) origines.add(new URL(brute).origin); } catch { /* adresse relative ou illisible : ignorée */ }
+  }
+  return origines.has(cible.origin) ? cible.href : "/";
+}
+
+/** Page de connexion du hub, la destination déjà validée posée en littéral JSON. */
+function servirConnexion(rep, retour) {
+  fs.readFile(path.join(PUBLIC, "login.html"), "utf8", (err, html) => {
+    if (err) return servirFichier(rep, path.join(PUBLIC, "login.html"));
+    const litteral = JSON.stringify(retour).replace(/</g, String.fromCharCode(92) + "u003c");
+    rep.writeHead(200, { "Content-Type": TYPES[".html"], "Cache-Control": "no-store" });
+    rep.end(html.replace('"__RETOUR__"', litteral));
+  });
+}
+
+/** Relaie une route de session à cv-parser par le réseau interne ; les cookies posés le sont sur l'origine du hub. */
+async function relayerSession(req, rep, chemin) {
+  const m = trouverModule("cv-parser");
+  if (!m || !m.port) return repondreJson(rep, 503, { error: "Service de connexion non configuré." });
+  let corps;
+  try {
+    corps = JSON.stringify(await lireCorpsJson(req));
+  } catch (err) {
+    return repondreJson(rep, err.code === 413 ? 413 : 400, { error: err.message });
+  }
+  const entetes = {
+    "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(corps),
+    "X-Forwarded-Proto": String(req.headers["x-forwarded-proto"] || "http"),
+  };
+  if (req.headers.cookie) entetes.Cookie = req.headers.cookie;
+  const amont = http.request(
+    { host: hoteModule(m), port: m.port, method: "POST", path: chemin, headers: entetes, timeout: 30000 },
+    (reponse) => {
+      const sortie = { "Content-Type": reponse.headers["content-type"] || TYPES[".json"], "Cache-Control": "no-store" };
+      if (reponse.headers["set-cookie"]) sortie["Set-Cookie"] = reponse.headers["set-cookie"];
+      rep.writeHead(reponse.statusCode || 502, sortie);
+      reponse.pipe(rep);
+    });
+  amont.on("timeout", () => amont.destroy(new Error("délai dépassé")));
+  amont.on("error", () => {
+    if (!rep.headersSent) return repondreJson(rep, 503, { error: "Service de connexion injoignable, réessayez." });
+    rep.end();
+  });
+  amont.end(corps);
 }
 
 /** Renvoie true si la reponse a ete ecrite (visiteur refuse). */
@@ -563,12 +626,9 @@ function refuserSiNonAuthentifie(req, rep, chemin) {
     // connexion la ou il attend des donnees.
     return repondreJson(rep, 401, { erreur: "Non authentifié" }), true;
   }
-  // Page : on renvoie vers la connexion de cv-parser, seul emetteur
-  // d'identite. `next` lui dit ou revenir -- il le VALIDE de son cote, on ne
-  // lui fait pas confiance sur parole.
+  // Page : vers la connexion du hub, qui revalide `next` avant de s'en servir.
   const origine = FACTORY_URL || origineRequete(req);
-  const retour = origine ? "?next=" + encodeURIComponent(origine + req.url) : "";
-  const cible = PARSER_URL ? PARSER_URL + "/login" + retour : "/";
+  const cible = "/login?next=" + encodeURIComponent(origine + req.url);
   rep.writeHead(302, { Location: cible, "Cache-Control": "no-store" });
   rep.end();
   return true;
@@ -607,7 +667,7 @@ const serveur = http.createServer(async (req, rep) => {
         etat: await etatModule(m),
       });
     }
-    return repondreJson(rep, 200, { modules: liste });
+    return repondreJson(rep, 200, { modules: liste, session: auth.authActive(process.env) });
   }
 
   const action = chemin.match(/^\/api\/modules\/([\w-]+)\/(demarrer|arreter)$/);
@@ -665,7 +725,23 @@ const serveur = http.createServer(async (req, rep) => {
     }
   }
 
+  if (ROUTES_SESSION.has(chemin)) {
+    if (req.method !== "POST") return repondreJson(rep, 405, { error: "Méthode non permise." });
+    return relayerSession(req, rep, chemin);
+  }
+
   if (chemin.startsWith("/api/")) return repondreJson(rep, 404, { erreur: "Ressource introuvable." });
+
+  if (chemin === "/login") {
+    const retour = retourDeConfiance(url.searchParams.get("next"), req);
+    // `sortie` : déconnexion demandée par un module, la page ferme la session avant d'afficher le formulaire.
+    const sortie = url.searchParams.has("sortie");
+    if (!auth.authActive(process.env) || (!sortie && auth.garde(req, process.env).autorise)) {
+      rep.writeHead(302, { Location: retour, "Cache-Control": "no-store" });
+      return rep.end();
+    }
+    return servirConnexion(rep, retour);
+  }
 
   // La charte commune vit dans theme/ (source unique, recopiee dans les
   // applications par scripts/sync-theme.js). La Factory la sert directement

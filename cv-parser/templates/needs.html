@@ -493,7 +493,10 @@ async function checkAuth() {
     document.getElementById('userRole').textContent = u.role === 'superuser' ? 'Super admin' : 'Utilisateur';
   } catch { window.location.href = '/login'; }
 }
+// La session vit sur le hub : sa page de connexion ferme la session ADBI et Cynov.
 async function logout() {
+  const hub = {{ (hub_url or '') | tojson }};
+  if (hub) { window.top.location.href = new URL('/login?sortie=1', hub).href; return; }
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
   window.location.href = '/login';
 }

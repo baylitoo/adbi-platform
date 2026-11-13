@@ -12,15 +12,13 @@ Ce que ce fichier mesure :
      la déconnexion laisserait le jeton vivant sur tous les services) ;
   3. `next` : liste blanche stricte sur l'ORIGINE d'ADBI_FACTORY_URL. Une page
      de connexion qui redirige vers une URL arbitraire est une redirection
-     ouverte à l'endroit le pire possible ;
-  4. le gabarit n'interpole pas la valeur brute dans son bloc <script>.
+     ouverte à l'endroit le pire possible.
 
 `api/auth_bp.py` s'importe sans PostgreSQL (connexion paresseuse dans
 core/pg.py). `app.py`, lui, ouvre la base à l'import : `_retour_apres_connexion`
 est donc extrait par `ast`, comme dans test_champs_conserves.py.
 """
 import ast
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -177,45 +175,6 @@ class RetourApresConnexionTests(unittest.TestCase):
     def test_chemin_relatif_refuse(self):
         """Seule l'origine du hub est acceptée : un chemin nu retombe sur "/"."""
         self.assertEqual(self._resultat("/app"), "/")
-
-
-class GabaritConnexionTests(unittest.TestCase):
-    """Le gabarit ne doit jamais interpoler `retour` brut dans <script>."""
-
-    def _rendu(self, retour):
-        from jinja2 import Environment, FileSystemLoader, select_autoescape
-        env = Environment(loader=FileSystemLoader(str(RACINE / "templates")),
-                          autoescape=select_autoescape(["html"]))
-        env.globals["url_for"] = lambda point, **kw: "/static/" + kw.get("filename", "")
-        return env.get_template("login.html").render(retour=retour)
-
-    def test_la_destination_est_un_litteral_json(self):
-        html = self._rendu("https://outils.adbi.fr")
-        self.assertIn('window.location.href = "https://outils.adbi.fr"', html)
-
-    def test_sans_retour_la_racine(self):
-        html = self._rendu(None)
-        self.assertIn('window.location.href = "/"', html)
-
-    def test_aucune_interpolation_brute(self):
-        """Une valeur hostile ressort ÉCHAPPÉE, pas exécutable.
-
-        Première version de ce test : `assertNotIn('";alert(1);//"', html)`.
-        Elle rougissait sur un rendu pourtant CORRECT
-        (`window.location.href = "\\";alert(1);//";`) parce que le motif
-        cherché est un sous-ensemble de la chaîne ÉCHAPPÉE — le test mesurait
-        la présence de caractères, pas l'échappement.
-
-        La bonne mesure est l'égalité avec le littéral JSON attendu : si
-        `tojson` a échappé, le rendu est exactement `json.dumps(valeur)` et
-        aucun guillemet ne peut clore la chaîne plus tôt.
-        """
-        charge = '";alert(1);//'
-        html = self._rendu(charge)
-        self.assertIn("window.location.href = " + json.dumps(charge), html)
-        # Et la forme qui aurait permis l'évasion n'apparaît pas : un
-        # guillemet fermant NON précédé d'une barre oblique inverse.
-        self.assertNotIn('href = "";alert(1)', html)
 
 
 if __name__ == "__main__":

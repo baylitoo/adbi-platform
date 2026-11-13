@@ -182,7 +182,8 @@ def require_auth(f):
         if not user or not user.get("is_active"):
             if _is_api():
                 return jsonify({"error": "Compte désactivé"}), 403
-            return redirect("/login")
+            # Pas de renvoi vers /login : le jeton reste valide, le hub renverrait ici sans fin.
+            return "Compte désactivé ou non autorisé sur ADBI.", 403
         # Le rôle exposé aux routes vient de la base, pas du JWT : sinon un
         # utilisateur rétrogradé depuis 'superuser' garde les branches
         # "superuser voit tout" (ex. needs_bp.get_needs) tant que son ancien

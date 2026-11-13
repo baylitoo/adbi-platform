@@ -254,7 +254,7 @@
 
     <div class="card">
       <div class="card-title">Mot de passe</div>
-      <div class="page-sub">Votre mot de passe est celui de votre compte Cynov : il se change côté Cynov, ou depuis la page de connexion lors d'une première connexion.</div>
+      <div class="page-sub">Votre mot de passe est celui de votre compte Cynov : il se change côté Cynov, ou depuis la page de connexion du hub lors d'une première connexion.</div>
     </div>
   </div>
 
@@ -396,7 +396,10 @@ async function checkAuth() {
   } catch { window.location.href = '/login'; }
 }
 
+// La session vit sur le hub : sa page de connexion ferme la session ADBI et Cynov.
 async function logout() {
+  const hub = {{ (hub_url or '') | tojson }};
+  if (hub) { window.top.location.href = new URL('/login?sortie=1', hub).href; return; }
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
   window.location.href = '/login';
 }

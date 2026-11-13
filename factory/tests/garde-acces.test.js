@@ -239,8 +239,8 @@ test("la branche api/page suit le chemin", () => {
   assert.equal(auth.garde(requete("/module.html?m=contrats"), ENV_FERME).api, false);
 });
 
-test("une page refusee redirige vers la connexion de cv-parser, avec next", () => {
-  assert.match(SERVEUR, /PARSER_URL \+ "\/login" \+ retour/, "cible de redirection absente");
+test("une page refusee redirige vers la connexion du hub, avec next", () => {
+  assert.match(SERVEUR, /"\/login\?next=" \+ encodeURIComponent/, "cible de redirection absente");
   assert.match(SERVEUR, /encodeURIComponent\(origine \+ req\.url\)/, "`next` non encode");
   assert.match(SERVEUR, /rep\.writeHead\(302/, "pas de redirection 302");
 });

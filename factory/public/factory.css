@@ -843,3 +843,105 @@ body.module .contenu {
 .mascotte.visible{opacity:1;transform:none}
 .mascotte canvas{display:block;width:100%!important;height:100%!important}
 @media (max-width:900px){.mascotte{display:none}}
+
+/* Connexion (page /login du hub) : carte centrée, jetons de la charte uniquement. */
+body.connexion {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.connexion-carte {
+  width: 100%;
+  max-width: 400px;
+  padding: 36px 32px 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-lg);
+}
+.connexion-carte .logo {
+  width: 96px;
+  height: auto;
+  margin-bottom: 20px;
+}
+.connexion-carte h1 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  color: var(--text1);
+}
+.connexion-sous-titre {
+  margin: 0 0 22px;
+  font-size: 13px;
+  color: var(--textm);
+}
+.connexion-carte form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.connexion-carte label {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+}
+.connexion-carte input {
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text1);
+  background: var(--surface);
+  border: 1px solid var(--border-fort);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+}
+.connexion-carte input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-faible);
+}
+.connexion-carte .bouton {
+  justify-content: center;
+  margin-top: 18px;
+  padding: 11px 13px;
+  font-size: 14px;
+}
+.connexion-carte .bouton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.connexion-erreur,
+.connexion-info {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  font-size: 13px;
+  border-radius: var(--r-sm);
+}
+.connexion-erreur {
+  color: var(--adbi-erreur);
+  background: var(--adbi-erreur-fond);
+  border: 1px solid var(--adbi-erreur-bord);
+}
+.connexion-info {
+  color: var(--text2);
+  background: var(--accent-faible);
+  border: 1px solid var(--accent-bord);
+}
+.connexion-pied {
+  margin: 22px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--textm);
+}
+.connexion-lien {
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
