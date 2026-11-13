@@ -42,6 +42,7 @@ services:
       ADBI_CONTRATS_URL: ${ADBI_CONTRATS_URL:?Set the public Contrats HTTPS URL}
       ADBI_COFFRE_URL: ${ADBI_COFFRE_URL:?Set the public Coffre HTTPS URL}
       ADBI_PARSER_URL: ${ADBI_PARSER_URL:?Set the public Parser HTTPS URL}
+      ADBI_FACTURES_URL: ${ADBI_FACTURES_URL:?Set the public Factures HTTPS URL}
       # Controle d'acces du hub (#245). ADBI_AUTH absent/off -> passage libre
       # sous l'identite locale, comportement actuel inchange. Pose a "on", le
       # hub exige une session emise par cv-parser et VERIFIEE ici avec le meme
@@ -59,6 +60,7 @@ services:
       - one-pager
       - coffre
       - cv-parser
+      - factures
     restart: unless-stopped
     deploy:
       resources:
@@ -371,6 +373,46 @@ services:
         limits:
           memory: 2g
 
+  factures:
+    # Factures fournisseurs : réutilise contrats/lib (contratslib) et le pont DocIE, voir factures/Dockerfile.
+    build:
+      context: ./factures
+      additional_contexts:
+        bridge: ./document-parsing/bridge
+        schemas: ./document-parsing/schemas
+        modeles: ./document-parsing/models
+        fixtures: ./document-parsing/fixtures
+        auth: ./auth
+        contratslib: ./contrats/lib
+    volumes:
+      - factures-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 4500
+      # Base partagée par défaut (toujours créée par l'image postgres) : tables préfixées fac_.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_USER:-adbi}
+      ADBI_AUTH: ${ADBI_AUTH:-}
+      ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
+      DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
+      DOCIE_API_KEY: ${DOCIE_API_KEY:-}
+      DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
+      DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-360}
+      DOCIE_MODEL_PROFILE: ${FACTURES_DOCIE_MODEL_PROFILE:-}
+      DOCIE_AGENT_FACTURE: ${DOCIE_AGENT_FACTURE:-}
+      DOCIE_AGENT_FACTURE_NUEXTRACT3: ${DOCIE_AGENT_FACTURE_NUEXTRACT3:-}
+      DOCIE_MODELE_NUEXTRACT3: ${DOCIE_MODELE_NUEXTRACT3:-}
+      DOCIE_MODELE_LFM25_2_6B: ${DOCIE_MODELE_LFM25_2_6B:-}
+      ADBI_EXTRACTION_MAX_CONCURRENT: ${FACTURES_EXTRACTION_MAX_CONCURRENT:-}
+      FACTURES_COMPTE_CHARGE: ${FACTURES_COMPTE_CHARGE:-607}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
 volumes:
   postgres-data:
 
@@ -381,3 +423,4 @@ volumes:
   parser-data:
   parser-uploads:
   parser-output:
+  factures-data:

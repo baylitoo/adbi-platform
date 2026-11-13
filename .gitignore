@@ -24,6 +24,8 @@ contrats/data/templates-perso.json
 coffre/data/
 # OnePager : base de CV
 one-pager/data/
+# Factures : fichiers déposés
+factures/data/
 # Parser : base, uploads, sorties, comptes, réglages LLM
 cv-parser/data/
 cv-parser/uploads/
