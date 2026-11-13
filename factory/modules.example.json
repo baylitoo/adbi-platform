@@ -66,6 +66,20 @@
       "statiques": "static",
       "delai": 90,
       "url": "https://parser.outils.adbi.fr/"
+    },
+    {
+      "id": "notes-frais",
+      "nom": "ADBI Notes de frais",
+      "accroche": "Justificatifs → export comptable",
+      "detail": "Dépôt de tickets et factures (photo ou PDF), lecture automatique, contrôles (doublons, TVA, totaux, dates), validation et export CSV pour la comptabilité.",
+      "tags": ["Comptabilité", "RH"],
+      "icone": "calcul",
+      "type": "service",
+      "port": 4400,
+      "dossier": "/opt/adbi/notes-frais",
+      "entree": "server.js",
+      "statiques": "public",
+      "url": "https://notesfrais.exemple.test/"
     }
   ]
 }

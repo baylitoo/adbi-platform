@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="fr" data-theme="clair">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADBI Notes de frais</title>
+<script src="adbi-theme.js"></script>
+<link rel="stylesheet" href="notes-frais.css">
+<link rel="stylesheet" href="adbi-theme.css">
+</head>
+<body>
+
+<header class="barre">
+  <div class="marque"><span class="logo adbi-degrade-texte">adbi</span><span class="appname">Notes de frais</span></div>
+  <div class="barre-fin"><span id="moi" class="moi"></span></div>
+</header>
+
+<main>
+  <section class="depot" id="depot">
+    <svg viewBox="0 0 24 24" width="42" height="42" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
+    <h1>Déposer des justificatifs</h1>
+    <p>Photos de tickets (JPEG, PNG) ou factures PDF. Chaque justificatif est lu automatiquement, puis vous relisez et validez la ligne.</p>
+    <div class="depot-boutons">
+      <label class="btn primaire" for="fichiers">Choisir des fichiers</label>
+      <input id="fichiers" type="file" accept="image/jpeg,image/png,application/pdf,.heic" multiple hidden>
+    </div>
+    <p class="note">15 Mo maximum par fichier. Photos iPhone : réglez l'appareil photo sur « Le plus compatible » (JPEG).</p>
+  </section>
+
+  <ul class="envois" id="envois" hidden></ul>
+
+  <section class="carte">
+    <div class="outils">
+      <label class="champ">Mois
+        <select id="filtre-mois"></select>
+      </label>
+      <label class="champ" id="bloc-utilisateur" hidden>Collaborateur
+        <select id="filtre-utilisateur"></select>
+      </label>
+      <span class="resume" id="resume"></span>
+      <a class="btn" id="export" href="api/export.csv" download>Exporter les notes validées (CSV)</a>
+    </div>
+    <p class="vide" id="vide" hidden>Aucune note pour cette période.</p>
+    <div id="groupes"></div>
+  </section>
+</main>
+
+<template id="modele-groupe">
+  <section class="groupe">
+    <header class="groupe-entete">
+      <h2 class="groupe-nom"></h2>
+      <span class="groupe-email"></span>
+      <span class="groupe-total"></span>
+    </header>
+    <div class="defile">
+      <table class="notes">
+        <thead>
+          <tr>
+            <th>Justificatif</th><th>Date</th><th>Commerçant</th><th>Catégorie</th><th>Paiement</th>
+            <th>TVA (taux · base · montant)</th><th class="num">Total HT</th><th class="num">Total TTC</th><th>Devise</th>
+            <th>Contrôles</th><th>Statut</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</template>
+
+<template id="modele-ligne">
+  <tr class="note">
+    <td><a class="justificatif" target="_blank" rel="noopener"></a></td>
+    <td><input type="date" data-champ="date"></td>
+    <td><input type="text" data-champ="commercant" maxlength="200"></td>
+    <td><select data-champ="categorie"></select></td>
+    <td><input type="text" data-champ="moyen_paiement" maxlength="60" list="moyens"></td>
+    <td class="tva"><div class="tva-lignes"></div><button type="button" class="lien ajouter-tva">+ taux</button></td>
+    <td class="num"><input type="text" inputmode="decimal" data-champ="total_ht"></td>
+    <td class="num"><input type="text" inputmode="decimal" data-champ="total_ttc"></td>
+    <td><input type="text" data-champ="devise" maxlength="3" class="court"></td>
+    <td class="controles"></td>
+    <td class="statut"></td>
+    <td class="actions">
+      <button type="button" class="btn petit enregistrer">Enregistrer</button>
+      <button type="button" class="btn petit primaire valider">Valider</button>
+      <button type="button" class="btn petit fantome relancer">Relire</button>
+      <button type="button" class="btn petit fantome supprimer" title="Supprimer la note">Supprimer</button>
+    </td>
+  </tr>
+</template>
+
+<template id="modele-tva">
+  <div class="tva-ligne">
+    <input type="text" inputmode="decimal" data-tva="taux" placeholder="%" class="court">
+    <input type="text" inputmode="decimal" data-tva="base" placeholder="base">
+    <input type="text" inputmode="decimal" data-tva="montant" placeholder="TVA">
+    <button type="button" class="lien retirer-tva" title="Retirer ce taux">×</button>
+  </div>
+</template>
+
+<datalist id="moyens">
+  <option value="Carte"></option><option value="Espèces"></option><option value="Chèque"></option><option value="Virement"></option>
+</datalist>
+
+<script src="notes-frais.js"></script>
+</body>
+</html>

@@ -63,6 +63,19 @@
       "port": 5000,
       "delai": 90,
       "url": "http://localhost:5000/"
+    },
+    {
+      "id": "notes-frais",
+      "nom": "ADBI Notes de frais",
+      "accroche": "Justificatifs → export comptable",
+      "detail": "Dépôt de tickets et factures (photo ou PDF), lecture automatique, contrôles (doublons, TVA, totaux, dates), validation et export CSV pour la comptabilité.",
+      "tags": ["Comptabilité", "RH"],
+      "icone": "calcul",
+      "type": "service",
+      "conteneur": true,
+      "hote": "notes-frais",
+      "port": 4400,
+      "url": "http://localhost:4400/"
     }
   ]
 }

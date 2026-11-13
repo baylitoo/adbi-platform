@@ -242,6 +242,22 @@
           "alternative": null
         }
       }
+    },
+    "recu": {
+      "libelle": "Reçu de note de frais",
+      "usage": "extraction",
+      "schema": "adbi_recu",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b", "experimental": true, "condition": "PDF avec couche texte.", "prerequis": "Choix provisoire : aucun banc d'essai sur des reçus." },
+          "alternative": { "modele": "nuextract3", "experimental": true }
+        },
+        "agent": {
+          "defaut": { "modele": "nuextract3", "experimental": true, "condition": "Photo ou scan, en vision.", "prerequis": "Choix provisoire : aucun banc d'essai sur des reçus ; totaux à contrôler (HT + TVA = TTC)." },
+          "alternative": null,
+          "sans_alternative": "Photo : pas d'alternative mesurée."
+        }
+      }
     }
   }
 }

@@ -1,0 +1,7 @@
+# Ne pas copier ces elements dans l image Docker
+node_modules
+npm-debug.log
+data
+.env
+.git
+.gitignore
