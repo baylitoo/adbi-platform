@@ -1,0 +1,23 @@
+{
+  "document_type": "adbi_carte_vitale",
+  "fields": [
+    {
+      "name": "nir",
+      "type": "string",
+      "description": "Numero de securite sociale (NIR) imprime sous le nom : 13 caracteres puis la cle de 2 chiffres",
+      "fields": []
+    },
+    {
+      "name": "nom",
+      "type": "string",
+      "description": "Nom de famille du titulaire tel qu'imprime sur la carte",
+      "fields": []
+    },
+    {
+      "name": "prenoms",
+      "type": "string",
+      "description": "Prenom(s) du titulaire tels qu'imprimes sur la carte",
+      "fields": []
+    }
+  ]
+}

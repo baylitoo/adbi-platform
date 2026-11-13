@@ -66,6 +66,20 @@
       "statiques": "static",
       "delai": 90,
       "url": "https://parser.outils.adbi.fr/"
+    },
+    {
+      "id": "dossier-salarie",
+      "nom": "ADBI Dossier salarié",
+      "accroche": "Pièces d'un nouvel embauché",
+      "detail": "Dossier d'entrée d'un nouvel embauché : dépôt des pièces (identité, RIB, carte Vitale, justificatif de domicile, diplômes), lecture automatique, contrôles de complétude et fiche d'entrée DPAE exportable.",
+      "tags": ["RH", "Embauche"],
+      "icone": "parser",
+      "type": "service",
+      "port": 4600,
+      "dossier": "/opt/adbi/dossier-salarie",
+      "entree": "server.js",
+      "statiques": "public",
+      "url": "https://dossier-salarie.example.invalid/"
     }
   ]
 }

@@ -1,0 +1,29 @@
+{
+  "document_type": "adbi_justificatif_domicile",
+  "fields": [
+    {
+      "name": "emetteur",
+      "type": "string",
+      "description": "Organisme qui a emis le document (fournisseur d'energie, operateur, bailleur, impots), en en-tete",
+      "fields": []
+    },
+    {
+      "name": "titulaire",
+      "type": "string",
+      "description": "Nom de la personne a qui le document est adresse",
+      "fields": []
+    },
+    {
+      "name": "adresse",
+      "type": "string",
+      "description": "Adresse postale complete du titulaire : numero, voie, code postal, ville",
+      "fields": []
+    },
+    {
+      "name": "date_document",
+      "type": "date",
+      "description": "Date d'emission du document (date de facture, d'avis ou de quittance)",
+      "fields": []
+    }
+  ]
+}

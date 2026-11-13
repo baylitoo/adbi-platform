@@ -39,3 +39,5 @@ factory/modules.json
 # ── Divers ──────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+# Dossier salarié : pièces d'identité déposées
+dossier-salarie/data/

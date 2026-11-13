@@ -242,6 +242,66 @@
           "alternative": null
         }
       }
+    },
+    "carte_vitale": {
+      "libelle": "Carte Vitale",
+      "usage": "extraction",
+      "schema": "adbi_carte_vitale",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "PDF avec couche texte. Provisoire : aucun banc d'essai sur cette pièce." },
+          "alternative": null
+        },
+        "agent": {
+          "defaut": { "modele": "nuextract3", "condition": "Photo ou scan, en vision. Provisoire : aucun banc d'essai sur cette pièce." },
+          "alternative": null
+        }
+      }
+    },
+    "justificatif_domicile": {
+      "libelle": "Justificatif de domicile",
+      "usage": "extraction",
+      "schema": "adbi_justificatif_domicile",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "PDF avec couche texte. Provisoire : aucun banc d'essai sur cette pièce." },
+          "alternative": null
+        },
+        "agent": {
+          "defaut": { "modele": "nuextract3", "condition": "Photo ou scan, en vision. Provisoire : aucun banc d'essai sur cette pièce." },
+          "alternative": null
+        }
+      }
+    },
+    "diplome": {
+      "libelle": "Diplôme",
+      "usage": "extraction",
+      "schema": "adbi_diplome",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "PDF avec couche texte. Provisoire : aucun banc d'essai sur cette pièce." },
+          "alternative": null
+        },
+        "agent": {
+          "defaut": { "modele": "nuextract3", "condition": "Photo ou scan, en vision. Provisoire : aucun banc d'essai sur cette pièce." },
+          "alternative": null
+        }
+      }
+    },
+    "type_piece": {
+      "libelle": "Type de pièce (classement)",
+      "usage": "extraction",
+      "schema": "adbi_type_piece",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "PDF avec couche texte. Provisoire : aucun banc d'essai sur cette pièce." },
+          "alternative": null
+        },
+        "agent": {
+          "defaut": { "modele": "nuextract3", "condition": "Photo ou scan, en vision. Provisoire : aucun banc d'essai sur cette pièce." },
+          "alternative": null
+        }
+      }
     }
   }
 }
