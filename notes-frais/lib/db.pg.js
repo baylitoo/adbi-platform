@@ -143,7 +143,7 @@ async function modifierNote(id, champs, valider) {
   const { rows } = await (await init()).query(
     `UPDATE ndf_notes SET date_depense = $2, commercant = $3, total_ht = $4, tva = $5, total_ttc = $6, devise = $7,
        moyen_paiement = $8, categorie = $9, modifie_le = now(),
-       statut = CASE WHEN $10::boolean THEN 'validee' WHEN statut = 'validee' THEN 'a_valider' ELSE statut END,
+       statut = CASE WHEN $10::boolean THEN 'validee' ELSE 'a_valider' END, erreur = NULL,
        valide_le = CASE WHEN $10::boolean THEN now() ELSE NULL END
      WHERE id = $1 AND statut <> 'extraction' RETURNING ${COLONNES}`,
     [id, champs.date || null, champs.commercant, champs.total_ht, JSON.stringify(champs.tva), champs.total_ttc,
