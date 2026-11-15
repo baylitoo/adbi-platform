@@ -1,0 +1,16 @@
+{
+  "name": "adbi-sourcing",
+  "version": "1.0.0",
+  "description": "ADBI Sourcing - collecte de posts et d'offres, classement, extraction DocIE et rapprochement avec la CVthèque.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "ADBI",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.13.1"
+  }
+}

@@ -242,6 +242,28 @@
           "alternative": null
         }
       }
+    },
+    "classement_post": {
+      "libelle": "Sourcing — classement d'un élément",
+      "usage": "extraction",
+      "schema": "adbi_classement_post",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "Texte court (200 à 3 000 caractères), un seul champ `type` validé côté ADBI." },
+          "alternative": { "modele": "lfm25_350m", "experimental": true }
+        }
+      }
+    },
+    "opportunite": {
+      "libelle": "Sourcing — extraction d'une opportunité",
+      "usage": "extraction",
+      "schema": "adbi_opportunite",
+      "voies": {
+        "texte": {
+          "defaut": { "modele": "lfm25_2_6b", "condition": "ocr_blocks une ligne par bloc envoyés par ADBI ; evidence_ids = numéros de ligne." },
+          "alternative": { "modele": "nuextract3", "experimental": true, "prerequis": "Un post peut nommer des personnes : aucune voie externe proposée." }
+        }
+      }
     }
   }
 }

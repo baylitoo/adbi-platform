@@ -66,6 +66,19 @@
       "statiques": "static",
       "delai": 90,
       "url": "https://parser.outils.adbi.fr/"
+    },
+    {
+      "id": "sourcing",
+      "nom": "ADBI Sourcing",
+      "accroche": "Posts et offres → opportunités",
+      "detail": "Collecte de posts LinkedIn et d'offres d'emploi, classement, extraction des informations utiles et proposition de consultants de la CVthèque.",
+      "tags": ["Sourcing", "Opportunités"],
+      "icone": "sourcing",
+      "type": "service",
+      "dossier": "/opt/adbi/sourcing",
+      "entree": "server.js",
+      "statiques": "public",
+      "port": 4700
     }
   ]
 }

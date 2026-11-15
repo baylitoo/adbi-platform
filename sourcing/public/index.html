@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="fr" data-theme="clair">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADBI Sourcing</title>
+<script src="adbi-theme.js"></script>
+<link rel="stylesheet" href="sourcing.css">
+<link rel="stylesheet" href="adbi-theme.css">
+</head>
+<body>
+
+<header class="barre">
+  <div class="marque"><span class="logo adbi-degrade-texte">adbi</span><span class="appname">Sourcing</span></div>
+  <nav class="onglets" aria-label="Sections">
+    <a class="onglet" href="#opportunites" data-vue="liste">Opportunités</a>
+    <a class="onglet" href="#coller" data-vue="coller">Coller un élément</a>
+  </nav>
+  <div class="barre-fin"><span id="moi" class="moi"></span></div>
+</header>
+
+<main>
+  <section id="vue-coller" class="carte" hidden>
+    <h1>Coller un élément</h1>
+    <p class="aide">Un post LinkedIn, une offre d'emploi ou un court texte : collez son lien et son texte. Il est classé, les informations utiles sont extraites et des consultants de la CVthèque sont proposés.</p>
+    <form id="form-coller" class="formulaire" novalidate>
+      <label class="champ">Lien source
+        <input type="url" id="url-source" name="url_source" placeholder="https://…" maxlength="2048" autocomplete="off">
+      </label>
+      <label class="champ">Texte
+        <textarea id="texte" name="texte" rows="12" required></textarea>
+      </label>
+      <div class="ligne-actions">
+        <span id="compteur" class="compteur"></span>
+        <button type="submit" class="btn primaire" id="envoyer">Analyser</button>
+      </div>
+      <p id="message-coller" class="message" role="status" hidden></p>
+    </form>
+  </section>
+
+  <section id="vue-liste" hidden>
+    <div class="carte outils">
+      <label class="champ">Type
+        <select id="filtre-type"><option value="">Tous</option></select>
+      </label>
+      <label class="champ">Statut
+        <select id="filtre-statut"><option value="">Tous</option></select>
+      </label>
+      <label class="champ">Source
+        <select id="filtre-origine"><option value="">Toutes</option></select>
+      </label>
+      <span class="resume" id="resume"></span>
+    </div>
+    <p class="vide" id="vide" hidden>Aucun élément pour ces filtres. <a href="#coller">Coller un élément</a></p>
+    <ul class="cartes" id="cartes"></ul>
+  </section>
+
+  <section id="vue-detail" hidden>
+    <a class="retour" href="#opportunites">← Opportunités</a>
+    <div class="carte entete-detail">
+      <div class="entete-ligne">
+        <span id="d-type" class="badge"></span>
+        <span id="d-statut" class="badge"></span>
+        <h1 id="d-titre"></h1>
+      </div>
+      <p id="d-meta" class="meta"></p>
+      <p id="d-suivi" class="suivi" role="status" hidden></p>
+      <p id="d-erreur" class="message erreur" hidden></p>
+      <div class="ligne-actions">
+        <a id="d-source" class="btn" target="_blank" rel="noopener noreferrer" hidden>Ouvrir la source</a>
+        <button type="button" class="btn" id="b-reclasser">Re-classer</button>
+        <button type="button" class="btn" id="b-bruit">Marquer comme bruit</button>
+        <button type="button" class="btn primaire" id="b-valider">Valider</button>
+      </div>
+      <p id="d-message" class="message" role="status" hidden></p>
+    </div>
+
+    <div class="grille-detail">
+      <section class="carte">
+        <h2>Texte d'origine</h2>
+        <p class="aide">Les lignes surlignées sont celles où DocIE a trouvé une valeur ; survolez un champ pour voir les siennes.</p>
+        <div id="d-texte" class="texte-source"></div>
+      </section>
+
+      <div class="colonne">
+        <section class="carte">
+          <h2>Classement</h2>
+          <div id="d-classement" class="classement"></div>
+        </section>
+
+        <section class="carte" id="bloc-champs">
+          <h2>Champs extraits</h2>
+          <p class="vide" id="champs-vide" hidden>Aucune extraction : l'élément est classé comme bruit ou n'a pas encore été traité.</p>
+          <form id="form-champs" class="formulaire" novalidate>
+            <div id="champs"></div>
+            <div class="ligne-actions">
+              <button type="submit" class="btn" id="b-enregistrer">Enregistrer les champs</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="carte">
+          <div class="entete-ligne">
+            <h2>Consultants proposés</h2>
+            <button type="button" class="btn petit" id="b-rapprocher">Relancer le rapprochement</button>
+          </div>
+          <p id="d-rapprochement" class="aide"></p>
+          <ol id="d-profils" class="profils"></ol>
+        </section>
+      </div>
+    </div>
+  </section>
+</main>
+
+<template id="modele-carte">
+  <li class="carte element">
+    <div class="entete-ligne">
+      <span class="badge b-type"></span>
+      <span class="badge b-statut"></span>
+      <a class="titre"></a>
+    </div>
+    <p class="meta"></p>
+    <ol class="profils courts"></ol>
+    <div class="pied">
+      <a class="lien-source" target="_blank" rel="noopener noreferrer">Ouvrir la source</a>
+    </div>
+  </li>
+</template>
+
+<script src="sourcing.js"></script>
+</body>
+</html>

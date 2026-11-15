@@ -54,11 +54,13 @@ services:
       ADBI_LLM_BASE_URL: ${DOCIE_CHAT_BASE_URL:?Set the DocIE OpenAI-compatible base URL ending in /v1}
       ADBI_LLM_API_KEY: ${DOCIE_API_KEY:?Set the DocIE application access key}
       ADBI_LLM_MODELS: ${DOCIE_CHAT_MODEL:-lfm2.5-2.6b}
+      ADBI_SOURCING_URL: ${ADBI_SOURCING_URL:-}
     depends_on:
       - contrats
       - one-pager
       - coffre
       - cv-parser
+      - sourcing
     restart: unless-stopped
     deploy:
       resources:
@@ -370,6 +372,51 @@ services:
       resources:
         limits:
           memory: 2g
+
+  sourcing:
+    # Contextes additionnels : pont, catalogue, auth et contrats/lib (file de tâches), copiés sans modifier contrats/.
+    build:
+      context: ./sourcing
+      additional_contexts:
+        bridge: ./document-parsing/bridge
+        modeles: ./document-parsing/models
+        auth: ./auth
+        contratslib: ./contrats/lib
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 4700
+      # Base par défaut de l'instance partagée : tables préfixées src_, créées au démarrage.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-adbi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_USER:-adbi}
+      ADBI_AUTH: ${ADBI_AUTH:-}
+      ADBI_JWT_SECRET: ${ADBI_JWT_SECRET:?ADBI_JWT_SECRET est requis (voir .env.example)}
+      ADBI_FACTORY_URL: ${ADBI_FACTORY_URL:-}
+      DOCIE_BASE_URL: ${DOCIE_BASE_URL:-}
+      DOCIE_API_KEY: ${DOCIE_API_KEY:-}
+      DOCIE_ALLOW_HTTP: ${DOCIE_ALLOW_HTTP:-}
+      DOCIE_TIMEOUT_SECONDS: ${DOCIE_TIMEOUT_SECONDS:-360}
+      DOCIE_MODEL_PROFILE: ${SOURCING_DOCIE_MODEL_PROFILE:-}
+      DOCIE_MODELE_LFM25_2_6B: ${DOCIE_MODELE_LFM25_2_6B:-}
+      DOCIE_MODELE_NUEXTRACT3: ${DOCIE_MODELE_NUEXTRACT3:-}
+      DOCIE_MODELE_LFM25_350M: ${DOCIE_MODELE_LFM25_350M:-}
+      # Un traitement à la fois par défaut : classement puis extraction partagent le slot DocIE.
+      ADBI_EXTRACTION_MAX_CONCURRENT: ${SOURCING_EXTRACTION_MAX_CONCURRENT:-}
+      # generatif (défaut), decision ou double ; decision et double exigent la route DocIE /v1/systemone (PR DocIE #660).
+      SOURCING_CLASSEMENT: ${SOURCING_CLASSEMENT:-generatif}
+      SOURCING_DECISION_DEPLOYMENT: ${SOURCING_DECISION_DEPLOYMENT:-}
+      SOURCING_DECISION_CRITERES: ${SOURCING_DECISION_CRITERES:-}
+      SOURCING_DECISION_SEUIL: ${SOURCING_DECISION_SEUIL:-}
+      SOURCING_DECISION_ECART: ${SOURCING_DECISION_ECART:-}
+      # cvtheque (défaut) ; crm est un emplacement réservé, pas encore écrit.
+      SOURCING_RAPPROCHEUR: ${SOURCING_RAPPROCHEUR:-cvtheque}
+      # Appel serveur à serveur vers cv-parser, avec l'adbi_access de l'utilisateur relayé en Bearer.
+      SOURCING_CVTHEQUE_URL: ${SOURCING_CVTHEQUE_URL:-http://cv-parser:5000}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
 volumes:
   postgres-data:
