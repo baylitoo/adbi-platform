@@ -209,6 +209,9 @@
       carte.querySelector(".meta").textContent = [metaElement(e), texteSuivi(e)].filter(Boolean).join(" · ");
       const n = remplirProfils(carte.querySelector(".profils"), e.rapprochement, 3);
       carte.querySelector(".profils").hidden = !n;
+      const etat = carte.querySelector(".etat-rapprochement");
+      etat.textContent = e.type === "bruit" || !e.champs ? "" : texteRapprochement(e.rapprochement);
+      etat.hidden = !etat.textContent;
       const source = carte.querySelector(".lien-source");
       if (e.url_source) source.href = e.url_source; else source.hidden = true;
       ul.append(carte);
