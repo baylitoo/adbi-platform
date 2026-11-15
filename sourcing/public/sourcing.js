@@ -25,6 +25,7 @@
   let minuteur = null;
   let courant = null;
   let avis = null;
+  let reclasserArme = false;
 
   const $ = (id) => document.getElementById(id);
   const libelleType = (t) => (t ? (config.libelles_types[t] || t) : "Type inconnu");
@@ -207,7 +208,7 @@
       titre.textContent = titreElement(e);
       titre.href = "#element/" + e.id;
       carte.querySelector(".meta").textContent = [metaElement(e), texteSuivi(e)].filter(Boolean).join(" · ");
-      const n = remplirProfils(carte.querySelector(".profils"), e.rapprochement, 3);
+      const n = e.type === "bruit" ? 0 : remplirProfils(carte.querySelector(".profils"), e.rapprochement, 3);
       carte.querySelector(".profils").hidden = !n;
       const etat = carte.querySelector(".etat-rapprochement");
       etat.textContent = e.type === "bruit" || !e.champs ? "" : texteRapprochement(e.rapprochement);
@@ -324,13 +325,14 @@
       saisie.name = cle;
       bloc.append(label, saisie);
       const lignes = (e.preuves || {})[cle] || [];
-      const ancrage = (e.confiances || {})[cle];
+      const vide = cle === "competences" ? !(champs.competences || []).length : !champs[cle] || champs[cle] === "inconnu";
+      const ancrage = vide ? undefined : (e.confiances || {})[cle];
       const info = document.createElement("span");
       info.className = "ancrage" + (typeof ancrage === "number" && ancrage < SEUIL_ANCRAGE ? " faible" : "");
       const morceaux = [];
       if (lignes.length) morceaux.push("ligne" + (lignes.length > 1 ? "s " : " ") + lignes.map((l) => l + 1).join(", "));
       if (typeof ancrage === "number") morceaux.push("ancrage dans le texte " + ancrage.toFixed(2));
-      info.textContent = morceaux.join(" · ") || "aucune preuve dans le texte";
+      info.textContent = vide ? "non trouvé dans le texte" : morceaux.join(" · ") || "aucune preuve dans le texte";
       bloc.append(info);
       const montrer = () => surligner(lignes);
       bloc.addEventListener("mouseenter", montrer);
@@ -358,6 +360,10 @@
     $("b-valider").disabled = occupe || e.statut === "valide" || !e.type;
     $("b-bruit").disabled = occupe || e.statut === "ecarte";
     $("b-rapprocher").disabled = occupe || !e.champs || e.type === "bruit";
+    $("d-choix-type").value = e.type || "";
+    $("d-choix-type").disabled = occupe;
+    $("b-reclasser").textContent = "Re-classer";
+    reclasserArme = false;
     rendreTexte(e);
     rendreClassement(e);
     rendreChamps(e);
@@ -412,11 +418,37 @@
       return;
     }
     remplirFiltres();
+    const choix = $("d-choix-type");
+    const vide = document.createElement("option");
+    vide.value = "";
+    vide.textContent = "Type inconnu";
+    vide.disabled = true;
+    choix.append(vide);
+    for (const t of config.types) {
+      const o = document.createElement("option");
+      o.value = t;
+      o.textContent = libelleType(t);
+      choix.append(o);
+    }
+    choix.addEventListener("change", async () => {
+      if (!courant || !choix.value) return;
+      try {
+        const r = await api("api/elements/" + courant.id, { method: "PATCH", body: JSON.stringify({ type: choix.value }) });
+        rendreDetail(r.element);
+        message($("d-message"), "Type corrigé. Re-classez pour relancer l'extraction si besoin.", "ok");
+      } catch (e) {
+        message($("d-message"), e.message, "erreur");
+      }
+    });
     for (const id of ["filtre-type", "filtre-statut", "filtre-origine"]) $(id).addEventListener("change", () => { arreterAttente(); chargerListe(); });
     $("texte").addEventListener("input", majCompteur);
     $("form-coller").addEventListener("submit", envoyer);
     $("b-reclasser").addEventListener("click", () => {
-      if (courant && courant.champs && !window.confirm("Re-classer relance tout le traitement et remplace les champs corrigés. Continuer ?")) return;
+      if (courant && courant.champs && !reclasserArme) {
+        reclasserArme = true;
+        $("b-reclasser").textContent = "Confirmer : les champs corrigés seront remplacés";
+        return;
+      }
       action("/reclasser", {}, "Élément remis en file.");
     });
     $("b-bruit").addEventListener("click", () => action("/bruit", {}, "Élément marqué comme bruit."));
