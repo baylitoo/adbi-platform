@@ -12,9 +12,9 @@ const MODES = Object.freeze(["generatif", "decision", "double"]);
 const QUESTION = "type_element";
 const INSTRUCTIONS = "Classe ce texte publié sur LinkedIn du point de vue d'une société de conseil qui place des consultants.";
 const CRITERES_DECRITS = Object.freeze({
-  offre_emploi: "Offre de poste publiée par un recruteur ou une entreprise (CDI, CDD, freelance).",
-  post_opportunite: "Besoin, projet, appel d'offres ou mission d'une entreprise pour lequel une société de conseil peut placer un consultant.",
-  bruit: "Tout le reste : actualité, opinion, promotion, événement, et un candidat qui cherche lui-même un poste.",
+  offre_emploi: "une offre d'emploi, de stage ou de mission publiée par un recruteur",
+  post_opportunite: "une entreprise ou une personne exprime un besoin de prestataire, de consultant ou de freelance, ou publie un appel d'offres",
+  bruit: "tout le reste : actualité, célébration, conseil, événement, ou un candidat qui cherche lui-même un poste",
 });
 
 function normaliserType(brut) {
