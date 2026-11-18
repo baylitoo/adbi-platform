@@ -17,6 +17,7 @@
     type_inconnu: "type non reconnu", confiance_faible: "confiance du modèle faible",
     probabilites_proches: "deux types presque à égalité", methodes_en_desaccord: "les deux méthodes divergent",
   };
+  const LIBELLES_EMPLOYEURS = { client_final: "Client final", esn_conseil: "ESN / conseil", recrutement: "Cabinet de recrutement", inconnu: "Employeur inconnu" };
   const OCCUPES = ["en_attente", "en_cours"];
   const SEUIL_ANCRAGE = 0.5;
   const ATTENTE_MS = 2500;
@@ -26,6 +27,10 @@
   let courant = null;
   let avis = null;
   let reclasserArme = false;
+  let offres = [];
+  let profils = [];
+  let profilEdite = null;
+  let suppressionArmee = null;
 
   const $ = (id) => document.getElementById(id);
   const libelleType = (t) => (t ? (config.libelles_types[t] || t) : "Type inconnu");
@@ -51,6 +56,12 @@
   function badgeType(el, type) {
     el.textContent = libelleType(type);
     el.className = "badge type-" + (type || "inconnu");
+  }
+
+  function badgeEmployeur(el, e) {
+    const v = e.source_meta && e.source_meta.employeur;
+    el.textContent = v && v !== "inconnu" ? LIBELLES_EMPLOYEURS[v] || v : "";
+    el.className = "badge employeur-" + (v || "inconnu");
   }
 
   function badgeStatut(el, statut) {
@@ -120,7 +131,7 @@
   // ---------- Routage ----------
 
   function afficher(vue) {
-    for (const v of ["coller", "linkedin", "liste", "detail"]) $("vue-" + v).hidden = v !== vue;
+    for (const v of ["coller", "linkedin", "profils", "liste", "detail"]) $("vue-" + v).hidden = v !== vue;
     for (const o of document.querySelectorAll(".onglet")) o.classList.toggle("actif", o.dataset.vue === vue);
   }
 
@@ -136,6 +147,7 @@
     if (m) { afficher("detail"); chargerDetail(Number(m[1])); return; }
     if (h === "#coller") { afficher("coller"); $("texte").focus(); return; }
     if (h === "#linkedin" && config.linkedin_public) { afficher("linkedin"); $("li-mots-cles").focus(); return; }
+    if (h === "#profils") { afficher("profils"); chargerProfils(); return; }
     afficher("liste");
     chargerListe();
   }
@@ -177,19 +189,71 @@
     const bouton = $("li-chercher");
     bouton.disabled = true;
     message($("li-message"), "");
-    $("li-resume").textContent = "Recherche…";
     try {
       const params = new URLSearchParams({ mots_cles: $("li-mots-cles").value.trim(), lieu: $("li-lieu").value.trim() });
-      const { offres } = await api("api/linkedin/offres?" + params);
-      const ul = $("li-offres");
-      ul.replaceChildren();
-      for (const o of offres) ul.append(carteOffre(o));
-      $("li-resume").textContent = offres.length + " offre(s)";
+      if ($("li-jours").value) params.set("jours", $("li-jours").value);
+      if ($("li-distance").value) params.set("distance", $("li-distance").value);
+      const r = await api("api/linkedin/offres?" + params);
+      offres = r.offres.map((o, rang) => ({ ...o, rang }));
+      if (r.max_atteint) message($("li-message"), "LinkedIn ne montre que " + config.linkedin.max_offres + " offres par recherche sans compte : affinez par période, distance ou mots-clés pour voir les autres.");
+      rendreOffres();
     } catch (e) {
-      $("li-resume").textContent = "";
       message($("li-message"), e.message, "erreur");
     } finally {
       bouton.disabled = false;
+    }
+  }
+
+  function offresAffichees() {
+    let liste = offres.filter((o) => !($("li-masquer-deja").checked && o.element_id));
+    const tri = $("li-tri").value;
+    if (tri === "pertinence") liste = [...liste].sort((a, b) => ((b.pertinence && b.pertinence.score) || 0) - ((a.pertinence && a.pertinence.score) || 0) || a.rang - b.rang);
+    if (tri === "date") liste = [...liste].sort((a, b) => String(b.publie_le || "").localeCompare(String(a.publie_le || "")) || a.rang - b.rang);
+    return liste;
+  }
+
+  function majSelection() {
+    const n = document.querySelectorAll("#li-offres .choisir:checked").length;
+    $("li-analyser").disabled = n === 0;
+    $("li-analyser").textContent = n ? "Analyser la sélection (" + n + ")" : "Analyser la sélection";
+  }
+
+  function rendreOffres() {
+    const liste = offresAffichees();
+    const ul = $("li-offres");
+    ul.replaceChildren();
+    for (const o of liste) ul.append(carteOffre(o));
+    $("li-barre").hidden = offres.length === 0;
+    const deja = offres.filter((o) => o.element_id).length;
+    $("li-resume").textContent = offres.length + " offre(s)" + (deja ? ", dont " + deja + " déjà analysée(s)" : "") + (liste.length !== offres.length ? " — " + liste.length + " affichée(s)" : "");
+    majSelection();
+  }
+
+  function lienFiche(etat, id, texte) {
+    const lien = document.createElement("a");
+    lien.href = "#element/" + id;
+    lien.textContent = texte;
+    etat.replaceChildren(lien);
+  }
+
+  async function analyserOffre(o, carte) {
+    const etat = carte.querySelector(".etat");
+    const bouton = carte.querySelector(".analyser");
+    bouton.disabled = true;
+    etat.textContent = "Lecture de l'offre…";
+    try {
+      const r = await api("api/linkedin/offres/" + encodeURIComponent(o.id) + "/importer", { method: "POST", body: "{}" });
+      o.element_id = r.element.id;
+      carte.querySelector(".choisir").checked = false;
+      carte.querySelector(".choisir").disabled = true;
+      lienFiche(etat, r.element.id, r.doublon ? "Déjà analysée : ouvrir la fiche" : "Ouvrir la fiche" + (r.tronque ? " (texte coupé)" : ""));
+      return true;
+    } catch (e) {
+      etat.textContent = e.message;
+      bouton.disabled = false;
+      return !/suspendue/.test(e.message);
+    } finally {
+      majSelection();
     }
   }
 
@@ -200,23 +264,184 @@
     titre.href = o.url;
     const date = o.publie_le ? new Date(o.publie_le).toLocaleDateString("fr-FR", { dateStyle: "medium" }) : "";
     carte.querySelector(".meta").textContent = [o.entreprise, o.localisation, date].filter(Boolean).join(" · ");
-    const etat = carte.querySelector(".etat");
-    const bouton = carte.querySelector(".analyser");
-    bouton.addEventListener("click", async () => {
-      bouton.disabled = true;
-      etat.textContent = "Lecture de l'offre…";
-      try {
-        const r = await api("api/linkedin/offres/" + encodeURIComponent(o.id) + "/importer", { method: "POST", body: "{}" });
-        const lien = document.createElement("a");
-        lien.href = "#element/" + r.element.id;
-        lien.textContent = r.doublon ? "Déjà analysée : ouvrir la fiche" : "Ouvrir la fiche" + (r.tronque ? " (texte coupé)" : "");
-        etat.replaceChildren(lien);
-      } catch (e) {
-        etat.textContent = e.message;
-        bouton.disabled = false;
-      }
-    });
+    const p = o.pertinence;
+    carte.querySelector(".pertinence").textContent = p ? "Profil le plus proche : " + p.nom + " (" + p.score + " % de l'intitulé : " + p.mots.join(", ") + ")" : "";
+    const choisir = carte.querySelector(".choisir");
+    choisir.addEventListener("change", majSelection);
+    carte.querySelector(".analyser").addEventListener("click", () => analyserOffre(o, carte));
+    if (o.element_id) {
+      choisir.disabled = true;
+      carte.querySelector(".analyser").disabled = true;
+      lienFiche(carte.querySelector(".etat"), o.element_id, "Déjà analysée : ouvrir la fiche");
+    }
+    carte.dataset.id = o.id;
     return carte;
+  }
+
+  // Une offre après l'autre : le serveur espace déjà les requêtes, et un refus de LinkedIn arrête le lot.
+  async function analyserSelection() {
+    const cartes = [...document.querySelectorAll("#li-offres li")].filter((c) => c.querySelector(".choisir:checked"));
+    $("li-analyser").disabled = true;
+    $("li-chercher").disabled = true;
+    let faites = 0;
+    for (const carte of cartes) {
+      const o = offres.find((x) => x.id === carte.dataset.id);
+      message($("li-message"), "Analyse " + (faites + 1) + " / " + cartes.length + " : lecture des offres une à une, quelques secondes chacune…");
+      if (!(await analyserOffre(o, carte))) { message($("li-message"), "LinkedIn a refusé une requête : lot arrêté après " + faites + " offre(s).", "erreur"); break; }
+      faites++;
+    }
+    if (faites === cartes.length) message($("li-message"), faites + " offre(s) envoyée(s) à l'analyse : suivez-les dans Opportunités.", "ok");
+    $("li-chercher").disabled = false;
+    majSelection();
+  }
+
+  // ---------- Profils ----------
+
+  function ligneProfil(profil, { score = null, raisons = [], boutons = [] } = {}) {
+    const li = $("modele-profil").content.firstElementChild.cloneNode(true);
+    li.querySelector(".nom").textContent = profil.nom;
+    li.querySelector(".score").textContent = typeof score === "number" ? score + " / 100" : "";
+    li.querySelector(".meta").textContent = [profil.intitule, profil.seniorite, profil.localisation, profil.disponibilite && "dispo " + profil.disponibilite, profil.tjm && profil.tjm + " €/j"].filter(Boolean).join(" · ");
+    const ul = li.querySelector(".raisons");
+    for (const r of raisons) {
+      const item = document.createElement("li");
+      item.textContent = r;
+      ul.append(item);
+    }
+    const actions = li.querySelector(".actions");
+    for (const [texte, rappel, classe] of boutons) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn petit" + (classe ? " " + classe : "");
+      b.textContent = texte;
+      b.addEventListener("click", () => rappel(b));
+      actions.append(b);
+    }
+    return li;
+  }
+
+  async function chargerProfils() {
+    try {
+      profils = (await api("api/profils")).profils;
+    } catch (e) {
+      message($("pf-message"), e.message, "erreur");
+      return;
+    }
+    const ul = $("pf-liste");
+    ul.replaceChildren();
+    for (const p of profils) {
+      const li = ligneProfil(p, {
+        raisons: p.competences.length ? [p.competences.join(", ")] : [],
+        boutons: [["Modifier", () => editerProfil(p)], ["Supprimer", (b) => supprimerProfil(p, b)]],
+      });
+      ul.append(li);
+    }
+    $("pf-vide").hidden = profils.length > 0;
+    $("pf-resume").textContent = profils.length + " profil(s)";
+  }
+
+  function editerProfil(p) {
+    profilEdite = p;
+    const f = $("form-profil");
+    for (const cle of ["nom", "intitule", "seniorite", "localisation", "disponibilite", "cvtheque_id", "notes"]) f.elements[cle].value = p[cle] || "";
+    f.elements.competences.value = (p.competences || []).join("\n");
+    f.elements.tjm.value = p.tjm === null || p.tjm === undefined ? "" : String(p.tjm);
+    $("pf-titre-form").textContent = "Modifier « " + p.nom + " »";
+    $("pf-enregistrer").textContent = "Enregistrer";
+    $("pf-annuler").hidden = false;
+    message($("pf-message"), "");
+    f.elements.nom.focus();
+  }
+
+  function finEdition() {
+    profilEdite = null;
+    $("form-profil").reset();
+    $("pf-titre-form").textContent = "Nouveau profil";
+    $("pf-enregistrer").textContent = "Ajouter le profil";
+    $("pf-annuler").hidden = true;
+  }
+
+  async function enregistrerProfil(ev) {
+    ev.preventDefault();
+    const f = $("form-profil");
+    const corps = {};
+    for (const cle of ["nom", "intitule", "seniorite", "localisation", "disponibilite", "cvtheque_id", "notes", "tjm"]) corps[cle] = f.elements[cle].value.trim();
+    corps.competences = f.elements.competences.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+    try {
+      if (profilEdite) await api("api/profils/" + profilEdite.id, { method: "PUT", body: JSON.stringify(corps) });
+      else await api("api/profils", { method: "POST", body: JSON.stringify(corps) });
+      message($("pf-message"), profilEdite ? "Profil enregistré." : "Profil ajouté.", "ok");
+      finEdition();
+      chargerProfils();
+    } catch (e) {
+      message($("pf-message"), e.message, "erreur");
+    }
+  }
+
+  // Deux clics : le premier arme la suppression, le second la confirme.
+  async function supprimerProfil(p, bouton) {
+    if (suppressionArmee !== p.id) {
+      suppressionArmee = p.id;
+      bouton.textContent = "Confirmer la suppression";
+      return;
+    }
+    suppressionArmee = null;
+    try {
+      await api("api/profils/" + p.id, { method: "DELETE" });
+      if (profilEdite && profilEdite.id === p.id) finEdition();
+      chargerProfils();
+    } catch (e) {
+      message($("pf-message"), e.message, "erreur");
+    }
+  }
+
+  async function chargerProfilsOffre(e) {
+    const aide = $("d-pf-aide");
+    let r;
+    try {
+      r = await api("api/elements/" + e.id + "/profils");
+    } catch (err) {
+      message($("d-pf-message"), err.message, "erreur");
+      return;
+    }
+    if (!courant || courant.id !== e.id) return;
+    aide.replaceChildren();
+    if (r.referentiel_vide) {
+      aide.append("Le référentiel est vide : ");
+      const lien = document.createElement("a");
+      lien.href = "#profils";
+      lien.textContent = "ajoutez des profils";
+      aide.append(lien, ".");
+    } else {
+      aide.textContent = "Score sur 100 : compétences 60, intitulé 25, séniorité 10, zone 5. Une indication pour trier, pas une décision.";
+    }
+    const associes = $("d-pf-associes");
+    associes.replaceChildren();
+    for (const a of r.associes) {
+      associes.append(ligneProfil(a.profil, { score: a.score, raisons: a.raisons, boutons: [["Retirer", () => affecterProfil(e, a.profil.id, "DELETE")]] }));
+    }
+    $("d-pf-associes-vide").hidden = r.associes.length > 0;
+    const sugg = $("d-pf-suggestions");
+    sugg.replaceChildren();
+    for (const s2 of r.suggestions) {
+      sugg.append(ligneProfil(s2.profil, { score: s2.score, raisons: s2.raisons, boutons: [["Associer", () => affecterProfil(e, s2.profil.id, "PUT"), "primaire"]] }));
+    }
+    if (!r.suggestions.length && !r.referentiel_vide) {
+      const li = document.createElement("li");
+      li.className = "vide";
+      li.textContent = e.type === "bruit" ? "Pas de suggestion pour un élément classé comme bruit." : "Aucun autre profil ne recoupe cette offre.";
+      sugg.append(li);
+    }
+  }
+
+  async function affecterProfil(e, profilId, methode) {
+    message($("d-pf-message"), "");
+    try {
+      await api("api/elements/" + e.id + "/profils/" + profilId, { method: methode });
+      chargerProfilsOffre(e);
+    } catch (err) {
+      message($("d-pf-message"), err.message, "erreur");
+    }
   }
 
   // ---------- Liste ----------
@@ -233,11 +458,16 @@
     ajouter($("filtre-type"), config.types, libelleType);
     ajouter($("filtre-statut"), config.statuts, (s) => LIBELLES_STATUTS[s] || s);
     ajouter($("filtre-origine"), config.origines, (o) => LIBELLES_ORIGINES[o] || o);
+    ajouter($("filtre-employeur"), config.employeurs, (o) => LIBELLES_EMPLOYEURS[o] || o);
+    ajouter($("filtre-contrat"), config.types_contrat, (o) => LIBELLES_CONTRATS[o] || o);
+    ajouter($("li-jours"), config.linkedin.periodes_jours, (j) => (j === 1 ? "24 heures" : j < 7 ? j + " jours" : j === 30 ? "1 mois" : j / 7 + " semaine" + (j > 7 ? "s" : "")));
+    ajouter($("li-distance"), config.linkedin.distances_miles, (m) => Math.round(m * 1.609) + " km");
+    ajouter($("d-choix-employeur"), config.employeurs, (o) => LIBELLES_EMPLOYEURS[o] || o);
   }
 
   async function chargerListe() {
     const params = new URLSearchParams();
-    for (const [cle, id] of [["type", "filtre-type"], ["statut", "filtre-statut"], ["origine", "filtre-origine"]]) {
+    for (const [cle, id] of [["type", "filtre-type"], ["statut", "filtre-statut"], ["origine", "filtre-origine"], ["employeur", "filtre-employeur"], ["contrat", "filtre-contrat"]]) {
       if ($(id).value) params.set(cle, $(id).value);
     }
     let elements;
@@ -254,10 +484,11 @@
       const carte = modele.content.firstElementChild.cloneNode(true);
       badgeType(carte.querySelector(".b-type"), e.type);
       badgeStatut(carte.querySelector(".b-statut"), e.statut);
+      badgeEmployeur(carte.querySelector(".b-employeur"), e);
       const titre = carte.querySelector(".titre");
       titre.textContent = titreElement(e);
       titre.href = "#element/" + e.id;
-      carte.querySelector(".meta").textContent = [metaElement(e), texteSuivi(e)].filter(Boolean).join(" · ");
+      carte.querySelector(".meta").textContent = [metaElement(e), e.profils_affectes ? e.profils_affectes + " profil(s) associé(s)" : "", texteSuivi(e)].filter(Boolean).join(" · ");
       const n = e.type === "bruit" ? 0 : remplirProfils(carte.querySelector(".profils"), e.rapprochement, 3);
       carte.querySelector(".profils").hidden = !n;
       const etat = carte.querySelector(".etat-rapprochement");
@@ -396,6 +627,10 @@
     courant = e;
     badgeType($("d-type"), e.type);
     badgeStatut($("d-statut"), e.statut);
+    badgeEmployeur($("d-employeur"), e);
+    $("d-bloc-employeur").hidden = !e.source_meta;
+    $("d-choix-employeur").value = (e.source_meta && e.source_meta.employeur) || "inconnu";
+    $("d-choix-employeur").disabled = OCCUPES.includes(e.statut) || Boolean(e.suivi);
     $("d-titre").textContent = titreElement(e);
     $("d-meta").textContent = metaElement(e);
     const suivi = texteSuivi(e);
@@ -419,6 +654,7 @@
     rendreChamps(e);
     $("d-rapprochement").textContent = texteRapprochement(e.rapprochement);
     remplirProfils($("d-profils"), e.rapprochement, 10);
+    if (!occupe) chargerProfilsOffre(e);
     if (occupe) minuteur = setTimeout(() => chargerDetail(e.id, true), ATTENTE_MS);
   }
 
@@ -490,11 +726,32 @@
         message($("d-message"), e.message, "erreur");
       }
     });
-    for (const id of ["filtre-type", "filtre-statut", "filtre-origine"]) $(id).addEventListener("change", () => { arreterAttente(); chargerListe(); });
+    for (const id of ["filtre-type", "filtre-statut", "filtre-origine", "filtre-employeur", "filtre-contrat"]) $(id).addEventListener("change", () => { arreterAttente(); chargerListe(); });
     $("texte").addEventListener("input", majCompteur);
     $("form-coller").addEventListener("submit", envoyer);
     $("onglet-linkedin").hidden = !config.linkedin_public;
     $("form-linkedin").addEventListener("submit", chercherLinkedin);
+    $("li-tri").addEventListener("change", rendreOffres);
+    $("li-masquer-deja").addEventListener("change", rendreOffres);
+    $("li-tout").addEventListener("click", () => {
+      const cases = [...document.querySelectorAll("#li-offres .choisir:not(:disabled)")];
+      const tout = cases.some((c) => !c.checked);
+      for (const c of cases) c.checked = tout;
+      majSelection();
+    });
+    $("li-analyser").addEventListener("click", analyserSelection);
+    $("form-profil").addEventListener("submit", enregistrerProfil);
+    $("pf-annuler").addEventListener("click", () => { finEdition(); message($("pf-message"), ""); });
+    $("d-choix-employeur").addEventListener("change", async () => {
+      if (!courant) return;
+      try {
+        const r = await api("api/elements/" + courant.id, { method: "PATCH", body: JSON.stringify({ employeur: $("d-choix-employeur").value }) });
+        rendreDetail(r.element);
+        message($("d-message"), "Nature de l'employeur corrigée.", "ok");
+      } catch (e) {
+        message($("d-message"), e.message, "erreur");
+      }
+    });
     $("b-reclasser").addEventListener("click", () => {
       if (courant && courant.champs && !reclasserArme) {
         reclasserArme = true;

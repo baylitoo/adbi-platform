@@ -6,7 +6,9 @@ const AGENT = "adbi-sourcing/1.0";
 const DELAI_MS = 15000;
 const INTERVALLE_MS = 3000;
 const PAUSE_BLOCAGE_MS = 15 * 60 * 1000;
-const MAX_OFFRES = 25;
+const MAX_OFFRES = 60;
+const PERIODES_JOURS = Object.freeze([1, 3, 7, 14, 21, 30]);
+const DISTANCES_MILES = Object.freeze([5, 10, 25, 50, 100]);
 const ID_OFFRE = /^\d{6,20}$/;
 
 class ErreurSource extends Error {
@@ -110,13 +112,20 @@ function creerSourceLinkedin({ fetchImpl = globalThis.fetch, horloge = Date.now,
     return suite;
   }
 
-  async function rechercher({ motsCles, lieu }) {
+  // La page publique rend 60 offres au plus et renvoie vers la connexion au-delà : pas de pagination.
+  async function rechercher({ motsCles, lieu, jours = null, distance = null }) {
     const p = new URLSearchParams({ keywords: motsCles });
     if (lieu) p.set("location", lieu);
+    if (jours) p.set("f_TPR", "r" + jours * 86400);
+    if (distance && lieu) p.set("distance", String(distance));
     const html = await enFile(() => lire(`${BASE}/jobs/search?${p}`));
-    const offres = lireCartes(html);
+    let offres = lireCartes(html);
     if (!offres.length && !/jobs-search__results-list|no-results/i.test(html)) {
       throw new ErreurSource("format", "Page de résultats LinkedIn méconnaissable : la source a peut-être changé de format.");
+    }
+    if (jours) {
+      const depuis = new Date(horloge() - jours * 86400000).toISOString().slice(0, 10);
+      offres = offres.filter((o) => !o.publie_le || o.publie_le >= depuis);
     }
     return offres;
   }
@@ -127,21 +136,32 @@ function creerSourceLinkedin({ fetchImpl = globalThis.fetch, horloge = Date.now,
     const description = texteEnLignes(classe(html, "show-more-less-html__markup"));
     if (!description) throw new ErreurSource("format", "Description de l'offre absente : la page LinkedIn a peut-être changé de format.");
     const criteres = [];
+    const secteurs = [];
     for (const m of html.matchAll(/<li[^>]*class="[^"]*description__job-criteria-item[^"]*"[^>]*>([\s\S]*?)<\/li>/gi)) {
       const nom = texteBrut(classe(m[1], "description__job-criteria-subheader"));
       const valeur = texteBrut(classe(m[1], "description__job-criteria-text"));
       if (nom && valeur) criteres.push(`${nom} : ${valeur}`);
+      if (/secteur|industr/i.test(nom) && valeur) secteurs.push(valeur);
     }
     return {
       id: String(id), url: urlOffre(id),
       intitule: texteBrut(classe(html, "top-card-layout__title")),
       entreprise: texteBrut(classe(html, "topcard__org-name-link")),
       localisation: texteBrut((html.match(/<span class="topcard__flavor topcard__flavor--bullet">([\s\S]*?)<\/span>/i) || [])[1]),
-      criteres, description,
+      criteres, secteurs: secteurs.join(", "), employeur: employeurDepuisSecteurs(secteurs.join(", ")), description,
     };
   }
 
   return { rechercher, detail };
+}
+
+// Nature de l'employeur d'après le secteur LinkedIn : un client final est un prospect, une ESN un concurrent ou un partenaire.
+function employeurDepuisSecteurs(secteurs) {
+  const t = String(secteurs || "").toLowerCase();
+  if (!t) return "inconnu";
+  if (/recrutement|ressources humaines|staffing|recruit|int[ée]rim|placement/.test(t)) return "recrutement";
+  if (/conseil|consulting|services informatiques|it services|technologies et services de l.information|esn|ssii/.test(t)) return "esn_conseil";
+  return "client_final";
 }
 
 // Texte de l'élément : en-tête puis description, coupé à une fin de ligne quand il dépasse la limite du module.
@@ -156,4 +176,7 @@ function texteDeLOffre(o, max) {
 
 const sourceActive = (env = process.env) => ["1", "true", "oui"].includes(String(env.SOURCING_LINKEDIN_PUBLIC || "").trim().toLowerCase());
 
-module.exports = { creerSourceLinkedin, texteDeLOffre, sourceActive, urlOffre, ErreurSource, lireCartes, MAX_OFFRES };
+module.exports = {
+  creerSourceLinkedin, texteDeLOffre, sourceActive, urlOffre, employeurDepuisSecteurs, ErreurSource, lireCartes,
+  MAX_OFFRES, PERIODES_JOURS, DISTANCES_MILES,
+};

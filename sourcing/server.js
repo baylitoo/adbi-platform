@@ -8,6 +8,7 @@ const { rapprocheurDepuisEnv } = require("./lib/rapprocheur");
 const { normaliserChamps, TYPES_CONTRAT } = require("./lib/extraction");
 const { creerTraitement } = require("./lib/traitement");
 const linkedin = require("./lib/linkedin-public");
+const referentiel = require("./lib/referentiel");
 // Bibliothèques partagées : ../auth et ../contrats/lib en checkout, /auth et /contrats/lib dans l'image.
 const auth = require("../auth/auth-adbi");
 const taches = require("../contrats/lib/taches-extraction");
@@ -21,6 +22,7 @@ const TEXTE_MAX = 3000;
 const ORIGINES = Object.freeze(["collage", "navigateur", "email", "api", "linkedin_public"]);
 const STATUTS = Object.freeze(["en_attente", "en_cours", "a_verifier", "a_valider", "valide", "ecarte", "echec"]);
 const OCCUPES = Object.freeze(["en_attente", "en_cours"]);
+const EMPLOYEURS = Object.freeze(["client_final", "esn_conseil", "recrutement", "inconnu"]);
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL manquante — voir .env.example.");
@@ -167,7 +169,8 @@ app.get("/api/config", (req, res) => {
   res.json({
     types: TYPES, libelles_types: LIBELLES_TYPES, statuts: STATUTS, origines: ORIGINES, types_contrat: TYPES_CONTRAT,
     texte: { min: TEXTE_MIN, max: TEXTE_MAX }, classement: CONFIG_CLASSEMENT.mode, rapprocheur: rapprocheur.nom,
-    linkedin_public: LINKEDIN_ACTIF,
+    linkedin_public: LINKEDIN_ACTIF, employeurs: EMPLOYEURS,
+    linkedin: { periodes_jours: linkedin.PERIODES_JOURS, distances_miles: linkedin.DISTANCES_MILES, max_offres: linkedin.MAX_OFFRES },
   });
 });
 
@@ -204,8 +207,10 @@ app.get("/api/elements", async (req, res) => {
     const filtre = (v, liste) => (typeof v === "string" && liste.includes(v) ? v : null);
     const elements = await db.lister(proprietaire(req), {
       type: filtre(q.type, TYPES), statut: filtre(q.statut, STATUTS), origine: filtre(q.origine, ORIGINES),
+      employeur: filtre(q.employeur, EMPLOYEURS), contrat: filtre(q.contrat, TYPES_CONTRAT),
     });
-    res.json({ elements: elements.map(vueElement) });
+    const affectes = await db.nombreAffectations(proprietaire(req));
+    res.json({ elements: elements.map((e) => ({ ...vueElement(e), profils_affectes: affectes.get(e.id) || 0 })) });
   } catch (e) {
     auth.repondreErreur(res, e);
   }
@@ -234,6 +239,10 @@ app.patch("/api/elements/:id", async (req, res) => {
     if (b.type !== undefined) {
       if (!TYPES.includes(b.type)) return res.status(400).json({ error: "Type inconnu." });
       valeurs.type = b.type;
+    }
+    if (b.employeur !== undefined) {
+      if (!EMPLOYEURS.includes(b.employeur)) return res.status(400).json({ error: "Nature d'employeur inconnue." });
+      valeurs.source_meta = { ...(e.source_meta || {}), employeur: b.employeur, employeur_corrige: true };
     }
     if (!Object.keys(valeurs).length) return res.status(400).json({ error: "Rien à modifier." });
     const maj = await db.modifier(proprietaire(req), e.id, valeurs, { saufStatuts: OCCUPES });
@@ -307,8 +316,18 @@ app.get("/api/linkedin/offres", async (req, res) => {
   const motsCles = texteCourt(req.query.mots_cles, 100);
   const lieu = texteCourt(req.query.lieu, 100);
   if (motsCles.length < 2) return res.status(400).json({ error: "Mots-clés obligatoires (2 caractères au moins)." });
+  const jours = req.query.jours ? Number(req.query.jours) : null;
+  if (jours !== null && !linkedin.PERIODES_JOURS.includes(jours)) return res.status(400).json({ error: "Période inconnue." });
+  const distance = req.query.distance ? Number(req.query.distance) : null;
+  if (distance !== null && !linkedin.DISTANCES_MILES.includes(distance)) return res.status(400).json({ error: "Distance inconnue." });
   try {
-    res.json({ offres: await sourceLinkedin.rechercher({ motsCles, lieu }) });
+    const offres = await sourceLinkedin.rechercher({ motsCles, lieu, jours, distance });
+    const sub = proprietaire(req);
+    const [deja, profils] = await Promise.all([db.idsParSources(sub, offres.map((o) => o.url)), db.listerProfils(sub)]);
+    res.json({
+      offres: offres.map((o) => ({ ...o, element_id: deja.get(o.url) || null, pertinence: referentiel.pertinenceTitre(o.intitule, profils) })),
+      max_atteint: offres.length >= linkedin.MAX_OFFRES,
+    });
   } catch (e) {
     erreurLinkedin(res, e);
   }
@@ -322,12 +341,102 @@ app.post("/api/linkedin/offres/:id/importer", async (req, res) => {
     const offre = await sourceLinkedin.detail(req.params.id);
     const { texte, tronque } = linkedin.texteDeLOffre(offre, TEXTE_MAX);
     if ([...texte].length < TEXTE_MIN) return res.status(422).json({ error: `Offre trop courte pour être analysée (moins de ${TEXTE_MIN} caractères).` });
-    const r = await creerEtTraiter(req, { texte, url_source: offre.url, origine: "linkedin_public", capture_le: new Date().toISOString(), auteur: offre.entreprise.slice(0, 200) });
+    const r = await creerEtTraiter(req, {
+      texte, url_source: offre.url, origine: "linkedin_public", capture_le: new Date().toISOString(), auteur: offre.entreprise.slice(0, 200),
+      source_meta: { employeur: offre.employeur, secteurs: offre.secteurs, criteres: offre.criteres },
+    });
     res.status(r.doublon ? 200 : 202).json({ ...r, tronque });
   } catch (e) {
     erreurLinkedin(res, e);
   }
 });
+
+// ---------- Référentiel de profils ----------
+
+function erreurProfil(res, e) {
+  if (e instanceof referentiel.ErreurProfil) return res.status(400).json({ error: e.message });
+  return auth.repondreErreur(res, e);
+}
+
+function lireIdParam(res, brut) {
+  const id = Number.parseInt(brut, 10);
+  if (!Number.isInteger(id) || id < 1 || String(id) !== brut) { res.status(400).json({ error: "Identifiant invalide." }); return null; }
+  return id;
+}
+
+app.get("/api/profils", async (req, res) => {
+  try {
+    res.json({ profils: await db.listerProfils(proprietaire(req)) });
+  } catch (e) {
+    erreurProfil(res, e);
+  }
+});
+
+app.post("/api/profils", async (req, res) => {
+  try {
+    res.status(201).json({ profil: await db.creerProfil(proprietaire(req), referentiel.validerProfil(req.body)) });
+  } catch (e) {
+    erreurProfil(res, e);
+  }
+});
+
+app.put("/api/profils/:id", async (req, res) => {
+  const id = lireIdParam(res, req.params.id);
+  if (id === null) return;
+  try {
+    const p = await db.modifierProfil(proprietaire(req), id, referentiel.validerProfil(req.body));
+    if (!p) return res.status(404).json({ error: "Profil introuvable." });
+    res.json({ profil: p });
+  } catch (e) {
+    erreurProfil(res, e);
+  }
+});
+
+app.delete("/api/profils/:id", async (req, res) => {
+  const id = lireIdParam(res, req.params.id);
+  if (id === null) return;
+  try {
+    if (!(await db.supprimerProfil(proprietaire(req), id))) return res.status(404).json({ error: "Profil introuvable." });
+    res.status(204).end();
+  } catch (e) {
+    erreurProfil(res, e);
+  }
+});
+
+// Profils d'une offre : ceux qu'on lui a associés et les meilleurs du référentiel, avec leurs raisons.
+app.get("/api/elements/:id/profils", async (req, res) => {
+  try {
+    const e = await elementAutorise(req, res);
+    if (!e) return;
+    const sub = proprietaire(req);
+    const [associes, profils] = await Promise.all([db.profilsAffectes(sub, e.id), db.listerProfils(sub)]);
+    const ids = new Set(associes.map((p) => p.id));
+    res.json({
+      associes: associes.map((p) => ({ profil: p, ...referentiel.scorer(e, p) })),
+      suggestions: e.type === "bruit" ? [] : referentiel.classer(e, profils.filter((p) => !ids.has(p.id))),
+      referentiel_vide: profils.length === 0,
+    });
+  } catch (err) {
+    auth.repondreErreur(res, err);
+  }
+});
+
+async function affectation(req, res, action) {
+  try {
+    const e = await elementAutorise(req, res);
+    if (!e) return;
+    const pid = lireIdParam(res, req.params.pid);
+    if (pid === null) return;
+    if (!(await db.obtenirProfil(proprietaire(req), pid))) return res.status(404).json({ error: "Profil introuvable." });
+    await action(proprietaire(req), e.id, pid);
+    res.status(204).end();
+  } catch (err) {
+    auth.repondreErreur(res, err);
+  }
+}
+
+app.put("/api/elements/:id/profils/:pid", (req, res) => affectation(req, res, db.affecter));
+app.delete("/api/elements/:id/profils/:pid", (req, res) => affectation(req, res, db.desaffecter));
 
 app.use("/api", (req, res) => res.status(404).json({ error: "Route inconnue." }));
 

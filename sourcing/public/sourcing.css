@@ -140,3 +140,18 @@ h2 { font-size: 15px; margin: 0 0 8px; }
 .choix-type { margin-top: 10px; max-width: 260px; }
 .classement .note { color: var(--adbi-textm); font-size: 12px; }
 .classement .raison { color: var(--adbi-attention); }
+
+.case { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--adbi-text2); }
+.sous-titre { font-size: 13px; margin: 12px 0 6px; color: var(--adbi-text2); }
+.liste-profils { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.profil-ligne { padding: 8px 10px; border: 1px solid var(--adbi-border); border-radius: var(--adbi-r-sm); display: grid; gap: 4px; }
+.profil-ligne .nom { font-weight: 600; }
+.profil-ligne .score { font-size: 12.5px; color: var(--adbi-accent); font-weight: 600; }
+.profil-ligne .score:empty { display: none; }
+.profil-ligne .actions { margin-left: auto; display: flex; gap: 6px; }
+.profil-ligne .raisons { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--adbi-text2); }
+.profil-ligne .raisons:empty { display: none; }
+.element .pertinence { color: var(--adbi-accent); }
+.element .pertinence:empty { display: none; }
+.badge.employeur-client_final { color: var(--adbi-ok); background: var(--adbi-ok-fond); border-color: var(--adbi-ok-bord); }
+.badge.employeur-esn_conseil, .badge.employeur-recrutement { color: var(--adbi-attention); background: var(--adbi-attention-fond); border-color: var(--adbi-attention-bord); }

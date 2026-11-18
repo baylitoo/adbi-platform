@@ -65,14 +65,31 @@ compte de recruteur n'est exposé. Elle reste contraire aux conditions
 d'utilisation de LinkedIn, dont le ``robots.txt`` interdit tout accès
 automatisé ; l'activer est une décision de l'exploitant.
 
-- ``GET /api/linkedin/offres?mots_cles=&lieu=`` rend au plus 25 offres
-  (intitulé, entreprise, lieu, date, lien) ; rien n'est enregistré.
+- ``GET /api/linkedin/offres?mots_cles=&lieu=&jours=&distance=`` rend au plus
+  60 offres (intitulé, entreprise, lieu, date, lien) ; rien n'est enregistré.
+  ``jours`` (1, 3, 7, 14, 21 ou 30) est transmis à LinkedIn puis vérifié sur la
+  date de chaque carte ; ``distance`` est en miles, comme LinkedIn (5 à 100).
+  Chaque offre porte ``element_id`` si elle a déjà été analysée et
+  ``pertinence``, le profil du référentiel dont l'intitulé et les compétences
+  couvrent le mieux les mots de son intitulé.
+- La page publique ne dépasse pas 60 offres : au-delà, LinkedIn renvoie vers sa
+  connexion. ``max_atteint`` le signale ; on affine alors par période, distance
+  ou mots-clés. Le type de contrat n'est pas un filtre public : il est connu à
+  l'analyse (critère « Type d'emploi » et champ extrait) et filtre la liste
+  « Opportunités ».
 - ``POST /api/linkedin/offres/<id>/importer`` lit la page de l'offre et la
   dépose comme un élément d'origine ``linkedin_public``, lien de l'offre en
   source et entreprise en auteur : classement, extraction et rapprochement
   suivent comme pour un collage. Une description plus longue que la limite de
   3 000 caractères est coupée à une fin de ligne, et la réponse le signale
-  (``tronque``).
+  (``tronque``). L'interface analyse une sélection d'offres une à une et
+  arrête le lot au premier refus de LinkedIn.
+- Les critères de la page (niveau, type d'emploi, secteurs) sont gardés dans
+  ``source_meta``, avec la nature de l'employeur déduite du secteur :
+  ``client_final`` (un prospect), ``esn_conseil`` (concurrent ou partenaire),
+  ``recrutement`` ou ``inconnu``. La règle est un simple filtre de mots sur le
+  secteur LinkedIn : la fiche permet de la corriger, et la correction est
+  marquée (``employeur_corrige``).
 
 Garde-fous : le service s'annonce sous son propre nom (``adbi-sourcing/1.0``),
 envoie ses requêtes une à une, à 3 secondes d'intervalle tous utilisateurs
@@ -143,10 +160,40 @@ Une seule interface, ``rapprocher(opportunite, session)``, rend
   téléphone des consultants ne sont conservés.
 - ``crm`` : emplacement réservé, pas encore écrit ; il refuse tout rapprochement.
 
+Référentiel de profils
+----------------------
+
+L'onglet « Profils » tient le référentiel des profils à placer : nom (seul
+champ obligatoire), intitulé, compétences, séniorité, localisation,
+disponibilité, TJM, notes et référence CVthèque (``cvtheque_id``, qui prépare
+le lien avec la CVthèque). Comme les éléments, les profils appartiennent à
+l'utilisateur qui les saisit.
+
+Chaque fiche d'offre propose les cinq profils les plus proches avec un score
+sur 100 et ses raisons : compétences 60 (part des compétences demandées que le
+profil couvre, plus ses compétences citées dans le texte), intitulé 25,
+séniorité 10, zone 5. Le calcul est déterministe et ne passe par aucun modèle :
+c'est un tri, pas une décision. Un profil peut être associé à une offre ou en
+être retiré ; supprimer un profil supprime ses associations.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Route
+     - Rôle
+   * - ``GET/POST /api/profils``, ``PUT/DELETE /api/profils/<id>``
+     - Référentiel
+   * - ``GET /api/elements/<id>/profils``
+     - Profils associés et suggestions, avec scores et raisons
+   * - ``PUT/DELETE /api/elements/<id>/profils/<pid>``
+     - Associer ou retirer un profil
+
 Revue
 -----
 
-La liste « Opportunités » filtre par type, statut et source ; chaque carte
+La liste « Opportunités » filtre par type, statut, source, nature de
+l'employeur et type de contrat extrait ; chaque carte
 montre le type, l'entreprise, l'intitulé, les trois premiers consultants et le
 lien vers la source. La fiche d'un élément montre le texte d'origine et ses
 lignes de preuve, les champs extraits (modifiables), le classement et les

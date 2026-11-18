@@ -7,7 +7,7 @@ const { Pool } = require("pg");
 
 const SCHEMA_PATH = path.join(__dirname, "schema.sql");
 const TIMEOUT_VERIF_MS = 3000;
-const JSONB = new Set(["classement", "extraction", "champs", "preuves", "confiances", "rapprochement", "erreur"]);
+const JSONB = new Set(["classement", "extraction", "champs", "preuves", "confiances", "rapprochement", "erreur", "source_meta"]);
 const MODIFIABLES = new Set(["statut", "type", "tache", ...JSONB]);
 
 let pool = null;
@@ -63,14 +63,14 @@ async function verifierConnexion() {
 }
 
 const COLONNES = `id, texte, url_source, origine, capture_le, auteur, statut, type, classement, extraction, champs,
-  preuves, confiances, rapprochement, erreur, tache, cree_le, modifie_le`;
+  preuves, confiances, rapprochement, erreur, tache, source_meta, cree_le, modifie_le`;
 
 async function creer(e) {
   const p = await init();
   const r = await p.query(
-    `INSERT INTO src_elements (proprietaire, texte, empreinte, url_source, origine, capture_le, auteur)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (proprietaire, empreinte) DO NOTHING RETURNING ${COLONNES}`,
-    [e.proprietaire, e.texte, e.empreinte, e.url_source, e.origine, e.capture_le, e.auteur]
+    `INSERT INTO src_elements (proprietaire, texte, empreinte, url_source, origine, capture_le, auteur, source_meta)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (proprietaire, empreinte) DO NOTHING RETURNING ${COLONNES}`,
+    [e.proprietaire, e.texte, e.empreinte, e.url_source, e.origine, e.capture_le, e.auteur, e.source_meta ? JSON.stringify(e.source_meta) : null]
   );
   if (r.rows[0]) return { element: r.rows[0], doublon: false };
   const existant = await p.query(`SELECT ${COLONNES} FROM src_elements WHERE proprietaire = $1 AND empreinte = $2`, [e.proprietaire, e.empreinte]);
@@ -87,10 +87,17 @@ async function obtenirParSource(proprietaire, url) {
   return r.rows[0] || null;
 }
 
-async function lister(proprietaire, { type = null, statut = null, origine = null } = {}) {
+async function idsParSources(proprietaire, urls) {
+  if (!urls.length) return new Map();
+  const r = await (await init()).query("SELECT url_source, min(id) AS id FROM src_elements WHERE proprietaire = $1 AND url_source = ANY($2) GROUP BY url_source", [proprietaire, urls]);
+  return new Map(r.rows.map((l) => [l.url_source, l.id]));
+}
+
+async function lister(proprietaire, { type = null, statut = null, origine = null, employeur = null, contrat = null } = {}) {
   const conditions = ["proprietaire = $1"];
   const valeurs = [proprietaire];
-  for (const [colonne, valeur] of [["type", type], ["statut", statut], ["origine", origine]]) {
+  const filtres = [["type", type], ["statut", statut], ["origine", origine], ["source_meta->>'employeur'", employeur], ["champs->>'type_contrat'", contrat]];
+  for (const [colonne, valeur] of filtres) {
     if (valeur) { valeurs.push(valeur); conditions.push(`${colonne} = $${valeurs.length}`); }
   }
   const r = await (await init()).query(
@@ -116,4 +123,63 @@ async function modifier(proprietaire, id, valeurs, { saufStatuts = null } = {}) 
   return r.rows[0] || null;
 }
 
-module.exports = { init, verifierConnexion, creer, obtenir, obtenirParSource, lister, modifier };
+const COLONNES_PROFIL = "id, nom, intitule, competences, seniorite, localisation, disponibilite, tjm, notes, cvtheque_id, cree_le, modifie_le";
+const CHAMPS_PROFIL = ["nom", "intitule", "competences", "seniorite", "localisation", "disponibilite", "tjm", "notes", "cvtheque_id"];
+const valeurProfil = (cle, v) => (cle === "competences" ? JSON.stringify(v) : v);
+
+async function listerProfils(proprietaire) {
+  const r = await (await init()).query(`SELECT ${COLONNES_PROFIL} FROM src_profils WHERE proprietaire = $1 ORDER BY lower(nom), id LIMIT 2000`, [proprietaire]);
+  return r.rows;
+}
+
+async function obtenirProfil(proprietaire, id) {
+  const r = await (await init()).query(`SELECT ${COLONNES_PROFIL} FROM src_profils WHERE proprietaire = $1 AND id = $2`, [proprietaire, id]);
+  return r.rows[0] || null;
+}
+
+async function creerProfil(proprietaire, p) {
+  const params = [proprietaire, ...CHAMPS_PROFIL.map((c) => valeurProfil(c, p[c]))];
+  const r = await (await init()).query(
+    `INSERT INTO src_profils (proprietaire, ${CHAMPS_PROFIL.join(", ")}) VALUES (${params.map((_, i) => "$" + (i + 1)).join(", ")}) RETURNING ${COLONNES_PROFIL}`, params
+  );
+  return r.rows[0];
+}
+
+async function modifierProfil(proprietaire, id, p) {
+  const params = [proprietaire, id, ...CHAMPS_PROFIL.map((c) => valeurProfil(c, p[c]))];
+  const r = await (await init()).query(
+    `UPDATE src_profils SET ${CHAMPS_PROFIL.map((c, i) => `${c} = $${i + 3}`).join(", ")}, modifie_le = now() WHERE proprietaire = $1 AND id = $2 RETURNING ${COLONNES_PROFIL}`, params
+  );
+  return r.rows[0] || null;
+}
+
+async function supprimerProfil(proprietaire, id) {
+  const r = await (await init()).query("DELETE FROM src_profils WHERE proprietaire = $1 AND id = $2", [proprietaire, id]);
+  return r.rowCount > 0;
+}
+
+async function profilsAffectes(proprietaire, elementId) {
+  const r = await (await init()).query(
+    `SELECT ${COLONNES_PROFIL.split(", ").map((c) => "p." + c).join(", ")}, a.cree_le AS affecte_le FROM src_affectations a JOIN src_profils p ON p.id = a.profil_id
+     WHERE a.proprietaire = $1 AND a.element_id = $2 AND p.proprietaire = $1 ORDER BY a.cree_le`, [proprietaire, elementId]
+  );
+  return r.rows;
+}
+
+async function affecter(proprietaire, elementId, profilId) {
+  await (await init()).query("INSERT INTO src_affectations (proprietaire, element_id, profil_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", [proprietaire, elementId, profilId]);
+}
+
+async function desaffecter(proprietaire, elementId, profilId) {
+  await (await init()).query("DELETE FROM src_affectations WHERE proprietaire = $1 AND element_id = $2 AND profil_id = $3", [proprietaire, elementId, profilId]);
+}
+
+async function nombreAffectations(proprietaire) {
+  const r = await (await init()).query("SELECT element_id, count(*)::int AS n FROM src_affectations WHERE proprietaire = $1 GROUP BY element_id", [proprietaire]);
+  return new Map(r.rows.map((l) => [l.element_id, l.n]));
+}
+
+module.exports = {
+  init, verifierConnexion, creer, obtenir, obtenirParSource, idsParSources, lister, modifier,
+  listerProfils, obtenirProfil, creerProfil, modifierProfil, supprimerProfil, profilsAffectes, affecter, desaffecter, nombreAffectations,
+};

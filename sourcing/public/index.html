@@ -16,6 +16,7 @@
     <a class="onglet" href="#opportunites" data-vue="liste">Opportunités</a>
     <a class="onglet" href="#coller" data-vue="coller">Coller un élément</a>
     <a class="onglet" href="#linkedin" data-vue="linkedin" id="onglet-linkedin" hidden>Offres LinkedIn</a>
+    <a class="onglet" href="#profils" data-vue="profils">Profils</a>
   </nav>
   <div class="barre-fin"><span id="moi" class="moi"></span></div>
 </header>
@@ -50,12 +51,81 @@
         <label class="champ">Lieu
           <input type="search" id="li-lieu" maxlength="100" autocomplete="off">
         </label>
+        <label class="champ">Distance
+          <select id="li-distance"><option value="">Par défaut</option></select>
+        </label>
+        <label class="champ">Publiée depuis
+          <select id="li-jours"><option value="">Toutes dates</option></select>
+        </label>
         <button type="submit" class="btn primaire" id="li-chercher">Rechercher</button>
-        <span class="resume" id="li-resume"></span>
       </form>
       <p id="li-message" class="message" role="status" hidden></p>
     </div>
+    <div class="carte outils" id="li-barre" hidden>
+      <label class="champ">Trier par
+        <select id="li-tri">
+          <option value="linkedin">Ordre LinkedIn</option>
+          <option value="pertinence">Pertinence pour le référentiel</option>
+          <option value="date">Plus récentes</option>
+        </select>
+      </label>
+      <label class="case"><input type="checkbox" id="li-masquer-deja"> Masquer les offres déjà analysées</label>
+      <span class="resume" id="li-resume"></span>
+      <button type="button" class="btn" id="li-tout">Tout sélectionner</button>
+      <button type="button" class="btn primaire" id="li-analyser" disabled>Analyser la sélection</button>
+    </div>
     <ul class="cartes" id="li-offres"></ul>
+  </section>
+
+  <section id="vue-profils" hidden>
+    <div class="grille-detail">
+      <section class="carte">
+        <h1 id="pf-titre-form">Nouveau profil</h1>
+        <p class="aide">Le référentiel des profils que vous voulez placer. Chaque offre analysée vous propose les plus proches, avec leurs raisons ; le lien avec la CVthèque viendra par la référence CVthèque.</p>
+        <form id="form-profil" class="formulaire" novalidate>
+          <label class="champ">Nom
+            <input type="text" name="nom" maxlength="200" required autocomplete="off">
+          </label>
+          <label class="champ">Intitulé
+            <input type="text" name="intitule" maxlength="200" placeholder="Ingénieur DevOps" autocomplete="off">
+          </label>
+          <label class="champ">Compétences (une par ligne)
+            <textarea name="competences" rows="6"></textarea>
+          </label>
+          <label class="champ">Séniorité
+            <input type="text" name="seniorite" maxlength="60" placeholder="junior, confirmé, senior…" autocomplete="off">
+          </label>
+          <label class="champ">Localisation
+            <input type="text" name="localisation" maxlength="200" autocomplete="off">
+          </label>
+          <label class="champ">Disponibilité
+            <input type="text" name="disponibilite" maxlength="60" placeholder="immédiate, 2026-12-01…" autocomplete="off">
+          </label>
+          <label class="champ">TJM (€)
+            <input type="number" name="tjm" min="0" max="100000" step="1">
+          </label>
+          <label class="champ">Référence CVthèque
+            <input type="text" name="cvtheque_id" maxlength="100" autocomplete="off">
+          </label>
+          <label class="champ">Notes
+            <textarea name="notes" rows="3" maxlength="2000"></textarea>
+          </label>
+          <div class="ligne-actions">
+            <button type="button" class="btn" id="pf-annuler" hidden>Annuler</button>
+            <button type="submit" class="btn primaire" id="pf-enregistrer">Ajouter le profil</button>
+          </div>
+          <p id="pf-message" class="message" role="status" hidden></p>
+        </form>
+      </section>
+      <section class="carte">
+        <div class="entete-ligne">
+          <h2>Référentiel</h2>
+          <span class="resume" id="pf-resume"></span>
+        </div>
+        <p class="vide" id="pf-vide" hidden>Aucun profil pour l'instant.</p>
+        <ul class="liste-profils" id="pf-liste"></ul>
+      </section>
+    </div>
   </section>
 
   <section id="vue-liste" hidden>
@@ -69,6 +139,12 @@
       <label class="champ">Source
         <select id="filtre-origine"><option value="">Toutes</option></select>
       </label>
+      <label class="champ">Employeur
+        <select id="filtre-employeur"><option value="">Tous</option></select>
+      </label>
+      <label class="champ">Contrat
+        <select id="filtre-contrat"><option value="">Tous</option></select>
+      </label>
       <span class="resume" id="resume"></span>
     </div>
     <p class="vide" id="vide" hidden>Aucun élément pour ces filtres. <a href="#coller">Coller un élément</a></p>
@@ -81,6 +157,7 @@
       <div class="entete-ligne">
         <span id="d-type" class="badge"></span>
         <span id="d-statut" class="badge"></span>
+        <span id="d-employeur" class="badge"></span>
         <h1 id="d-titre"></h1>
       </div>
       <p id="d-meta" class="meta"></p>
@@ -109,6 +186,9 @@
           <label class="champ choix-type">Type retenu
             <select id="d-choix-type"></select>
           </label>
+          <label class="champ choix-type" id="d-bloc-employeur" hidden>Employeur
+            <select id="d-choix-employeur"></select>
+          </label>
         </section>
 
         <section class="carte" id="bloc-champs">
@@ -120,6 +200,17 @@
               <button type="submit" class="btn" id="b-enregistrer">Enregistrer les champs</button>
             </div>
           </form>
+        </section>
+
+        <section class="carte">
+          <h2>Profils du référentiel</h2>
+          <p id="d-pf-aide" class="aide"></p>
+          <h3 class="sous-titre">Associés à cette offre</h3>
+          <p class="vide" id="d-pf-associes-vide">Aucun profil associé.</p>
+          <ul class="liste-profils" id="d-pf-associes"></ul>
+          <h3 class="sous-titre">Suggestions</h3>
+          <ul class="liste-profils" id="d-pf-suggestions"></ul>
+          <p id="d-pf-message" class="message" role="status" hidden></p>
         </section>
 
         <section class="carte">
@@ -140,6 +231,7 @@
     <div class="entete-ligne">
       <span class="badge b-type"></span>
       <span class="badge b-statut"></span>
+      <span class="badge b-employeur"></span>
       <a class="titre"></a>
     </div>
     <p class="meta"></p>
@@ -153,12 +245,28 @@
 
 <template id="modele-offre">
   <li class="carte element">
-    <a class="titre" target="_blank" rel="noopener noreferrer"></a>
+    <div class="entete-ligne">
+      <input type="checkbox" class="choisir" aria-label="Choisir cette offre">
+      <a class="titre" target="_blank" rel="noopener noreferrer"></a>
+    </div>
     <p class="meta"></p>
+    <p class="meta pertinence"></p>
     <div class="pied ligne-actions">
       <span class="meta etat"></span>
       <button type="button" class="btn petit primaire analyser">Analyser</button>
     </div>
+  </li>
+</template>
+
+<template id="modele-profil">
+  <li class="profil-ligne">
+    <div class="entete-ligne">
+      <span class="nom"></span>
+      <span class="score"></span>
+      <span class="actions"></span>
+    </div>
+    <p class="meta"></p>
+    <ul class="raisons"></ul>
   </li>
 </template>
 
