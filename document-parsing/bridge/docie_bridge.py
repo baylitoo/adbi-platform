@@ -130,7 +130,8 @@ DOCIE_BLOCS_TEXTE_MAX = 800
 # allowlist alone. Neither is added on a reading of someone else's
 # configuration -- that is exactly how `image/webp` got here (#180).
 MIME_TYPES = {"application/pdf", "image/png", "image/jpeg"}
-SCHEMAS = {"resume": "adbi_resume", "contract": "contract", "kbis": "kbis", "urssaf": "urssaf", "rib": "rib"}
+SCHEMAS = {"resume": "adbi_resume", "contract": "contract", "kbis": "kbis", "urssaf": "urssaf", "rib": "rib",
+           "classement_post": "adbi_classement_post", "opportunite": "adbi_opportunite"}
 # Blocs fournis par l'appelant (voie texte). Quand `ocr_blocks` voyage, DocIE ne
 # découpe plus rien : `extract/service.py:357` fait
 # `blocks = ocr_blocks if ocr_blocks is not None else text_to_blocks(text or "")`.
@@ -1335,3 +1336,44 @@ def extract_text(text, *, kind="resume", dynamic_schema=None, ocr_blocks=None, m
     result["metadata"]["blocs_fournis"] = blocs_fournis
     result["metadata"]["elapsed_ms"] = elapsed
     return result
+
+
+DECISION_QUESTIONS_MAX = 16
+DECISION_ETAT_CARACTERES_MAX = 100000
+
+
+def decide(state, questions, *, deployment, env=None, session=None):
+    """POST /v1/systemone (modèles de décision, PR DocIE #660) : {question: {type, choice, probabilities, confidence}} ; 404/501 gardent leur statut."""
+    env = os.environ if env is None else env
+    base, key, timeout = connection(env)
+    if not isinstance(state, str) or not state.strip():
+        fail("input", "Decision state must not be empty.")
+    if len(state) > DECISION_ETAT_CARACTERES_MAX:
+        fail("input", "Decision state is too long.")
+    if not isinstance(questions, dict) or not questions or len(questions) > DECISION_QUESTIONS_MAX:
+        fail("input", "Decision questions must be a non-empty object.")
+    for nom, q in questions.items():
+        if not nom or not isinstance(q, dict) or q.get("type") != "choice" or not isinstance(q.get("criteria"), dict) or len(q["criteria"]) < 2:
+            fail("input", "Each decision question must be a choice with at least two criteria.")
+        if not all(c is None or isinstance(c, str) for c in q["criteria"].values()):
+            fail("input", "Decision criteria must be null or a description.")
+    payload = {"model": per_call_model_profile(deployment), "state": state, "questions": questions}
+    body, elapsed = post_json(base + "/v1/systemone", {"Authorization": "Bearer " + key}, payload, key, timeout, session)
+    reponses = body.get("answers") if isinstance(body, dict) else None
+    if not isinstance(reponses, dict):
+        fail("response", "Invalid DocIE decision response.")
+    answers = {}
+    for nom, q in questions.items():
+        a = reponses.get(nom)
+        classes = list(q["criteria"])
+        if not isinstance(a, dict) or a.get("choice") not in classes or not isinstance(a.get("probabilities"), dict) or not number(a.get("confidence")):
+            fail("response", "Invalid DocIE decision answer.")
+        probabilities = {}
+        for c in classes:
+            p = a["probabilities"].get(c)
+            if not number(p) or not 0 <= p <= 1:
+                fail("response", "Invalid DocIE decision probabilities.")
+            probabilities[c] = p
+        answers[nom] = {"type": "choice", "choice": a["choice"], "probabilities": probabilities, "confidence": a["confidence"]}
+    return {"model": body.get("model") if isinstance(body.get("model"), str) else None, "answers": answers,
+            "usage": body.get("usage"), "elapsed_ms": elapsed}

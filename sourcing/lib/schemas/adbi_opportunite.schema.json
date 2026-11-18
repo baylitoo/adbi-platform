@@ -1,0 +1,72 @@
+{
+  "document_type": "adbi_opportunite",
+  "fields": [
+    {
+      "name": "entreprise",
+      "type": "string",
+      "description": "Entreprise qui recrute ou porte le besoin, telle qu'écrite",
+      "fields": []
+    },
+    {
+      "name": "client_final",
+      "type": "string",
+      "description": "Quand l'entreprise qui publie est un intermédiaire (ESN, cabinet de conseil ou de recrutement, plateforme) : le client pour qui le poste ou la mission est ouvert, son nom ou sa description tels qu'écrits (par exemple « un acteur majeur de la robotique ») ; vide si l'entreprise recrute pour elle-même",
+      "fields": []
+    },
+    {
+      "name": "intitule",
+      "type": "string",
+      "description": "Intitulé du poste ou de la mission, tel qu'écrit",
+      "fields": []
+    },
+    {
+      "name": "competences",
+      "type": "list",
+      "description": "Compétences, technologies ou outils demandés, une par entrée, recopiées telles qu'écrites",
+      "fields": [
+        {
+          "name": "item",
+          "type": "string",
+          "description": null,
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "localisation",
+      "type": "string",
+      "description": "Ville, région ou mode de travail (télétravail, hybride) indiqué",
+      "fields": []
+    },
+    {
+      "name": "type_contrat",
+      "type": "string",
+      "description": "Une seule valeur parmi : cdi, cdd, freelance, mission, appel_offres, inconnu",
+      "fields": []
+    },
+    {
+      "name": "seniorite",
+      "type": "string",
+      "description": "Niveau ou années d'expérience demandés, tels qu'écrits",
+      "fields": []
+    },
+    {
+      "name": "date_debut",
+      "type": "date",
+      "description": "Date de démarrage indiquée",
+      "fields": []
+    },
+    {
+      "name": "contact_mentionne",
+      "type": "string",
+      "description": "Personne ou adresse à contacter citée dans le texte",
+      "fields": []
+    },
+    {
+      "name": "devise",
+      "type": "string",
+      "description": "Devise du budget ou du TJM cité, vide si aucun budget ni TJM n'est cité",
+      "fields": []
+    }
+  ]
+}

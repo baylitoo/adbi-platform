@@ -129,7 +129,8 @@ const BLOC_CLES = new Set(["id", "text", "page", "bbox", "source", "confidence"]
 const BLOC_SOURCES = new Set(["pdf_text", "pdf_inspector", "tesseract", "paddleocr", "manual", "unknown"]);
 const BBOX_CLES = ["x0", "y0", "x1", "y1"];
 const LIGNE_BLANCHE_PYTHON = /^[\t\n\v\f\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
-const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf", rib: "rib" };
+const SCHEMAS = { resume: "adbi_resume", contract: "contract", kbis: "kbis", urssaf: "urssaf", rib: "rib",
+  classement_post: "adbi_classement_post", opportunite: "adbi_opportunite" };
 // What the AGENT CHAT path accepts, which is not DocIE's upload allowlist.
 // This transport posts the document as an `image_url` data URI to
 // /v1/agents/<agent>/chat/completions, where DocIE OCRs it: liteparse renders
@@ -1186,9 +1187,47 @@ async function rerank(query, documents, { modele, topN = null, env = process.env
   return sortie;
 }
 
+const DECISION_QUESTIONS_MAX = 16;
+const DECISION_ETAT_CARACTERES_MAX = 100000;
+
+// POST /v1/systemone (modèles de décision, PR DocIE #660) : { question: {type, choice, probabilities, confidence} } ; 404/501 gardent leur statut.
+async function decide(state, questions, { deployment, env = process.env, fetchImpl = fetch } = {}) {
+  const { base, key, timeout } = connection(env);
+  if (typeof state !== "string" || !state.trim()) fail("input", "Decision state must not be empty.");
+  if (pointsDeCode(state) > DECISION_ETAT_CARACTERES_MAX) fail("input", "Decision state is too long.");
+  if (!object(questions) || !Object.keys(questions).length || Object.keys(questions).length > DECISION_QUESTIONS_MAX) {
+    fail("input", "Decision questions must be a non-empty object.");
+  }
+  for (const [nom, q] of Object.entries(questions)) {
+    if (!nom || !object(q) || q.type !== "choice" || !object(q.criteria) || Object.keys(q.criteria).length < 2) {
+      fail("input", "Each decision question must be a choice with at least two criteria.");
+    }
+    if (!Object.values(q.criteria).every((c) => c === null || typeof c === "string")) fail("input", "Decision criteria must be null or a description.");
+  }
+  const payload = { model: perCallModelProfile(deployment), state, questions };
+  const { body, elapsed } = await postJson(base + "/v1/systemone", { Authorization: "Bearer " + key }, payload, key, timeout, fetchImpl);
+  const reponses = object(body) ? body.answers : null;
+  if (!object(reponses)) fail("response", "Invalid DocIE decision response.");
+  const answers = {};
+  for (const [nom, q] of Object.entries(questions)) {
+    const a = reponses[nom];
+    const classes = Object.keys(q.criteria);
+    if (!object(a) || !classes.includes(a.choice) || !object(a.probabilities) || !number(a.confidence)) {
+      fail("response", "Invalid DocIE decision answer.");
+    }
+    const probabilities = {};
+    for (const c of classes) {
+      if (!number(a.probabilities[c]) || a.probabilities[c] < 0 || a.probabilities[c] > 1) fail("response", "Invalid DocIE decision probabilities.");
+      probabilities[c] = a.probabilities[c];
+    }
+    answers[nom] = { type: "choice", choice: a.choice, probabilities, confidence: a.confidence };
+  }
+  return { model: typeof body.model === "string" ? body.model : null, answers, usage: body.usage ?? null, elapsed_ms: elapsed };
+}
+
 module.exports = { extractDocument, extractText, parseResponse, parseTextResponse, configuration, filePayload, listStore, projeterStore,
   storeUtilisable, storeUtilisableConnu, listAgents, projeterAgent, agentsUtilisables, agentsUtilisablesConnus, nomStore,
   MESSAGES_ERREUR, messageErreur, fieldEvidence, rerank, rerankerPret, RERANK_DOCUMENTS_MAX, rediger, embed, embedderPret, EMBED_TEXTES_MAX,
   compterBlocsTexte, DOCIE_BLOCS_TEXTE_MAX, validerBlocsOcr, DOCIE_BLOCS_OCR_MAX, DOCIE_BLOC_CARACTERES_MAX,
   DOCIE_TEXTE_CARACTERES_MAX, BLOC_CLES, BLOC_SOURCES, reconnaitreAvertissement, resultatPartiel, RAISONS_PARTIEL,
-  MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError };
+  MAX_DOCUMENT_BYTES, MAX_TEXT_BYTES, DocIEBridgeError, decide, DECISION_QUESTIONS_MAX };

@@ -1,0 +1,11 @@
+{
+  "document_type": "adbi_classement_post",
+  "fields": [
+    {
+      "name": "type",
+      "type": "string",
+      "description": "Une seule valeur parmi : offre_emploi (offre de poste publiée par un recruteur ou une entreprise), post_opportunite (besoin, projet ou mission d'une entreprise pour lequel une société de conseil peut placer un consultant), bruit (tout le reste, y compris un candidat qui cherche lui-même un poste)",
+      "fields": []
+    }
+  ]
+}

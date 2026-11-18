@@ -57,6 +57,7 @@ Par où commencer
    modules/contrats
    modules/one-pager
    modules/coffre
+   modules/sourcing
 
 .. toctree::
    :caption: Exploitation

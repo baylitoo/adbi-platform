@@ -63,6 +63,19 @@
       "port": 5000,
       "delai": 90,
       "url": "http://localhost:5000/"
+    },
+    {
+      "id": "sourcing",
+      "nom": "ADBI Sourcing",
+      "accroche": "Posts et offres → opportunités",
+      "detail": "Collecte de posts LinkedIn et d'offres d'emploi, classement, extraction des informations utiles et proposition de consultants de la CVthèque.",
+      "tags": ["Sourcing", "Opportunités"],
+      "icone": "sourcing",
+      "type": "service",
+      "conteneur": true,
+      "hote": "sourcing",
+      "port": 4700,
+      "url": "http://localhost:4700/"
     }
   ]
 }

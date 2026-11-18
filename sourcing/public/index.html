@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="fr" data-theme="clair">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADBI Sourcing</title>
+<script src="adbi-theme.js"></script>
+<link rel="stylesheet" href="sourcing.css">
+<link rel="stylesheet" href="adbi-theme.css">
+</head>
+<body>
+
+<header class="barre">
+  <div class="marque"><span class="logo adbi-degrade-texte">adbi</span><span class="appname">Sourcing</span></div>
+  <nav class="onglets" aria-label="Sections">
+    <a class="onglet" href="#opportunites" data-vue="liste">Opportunités</a>
+    <a class="onglet" href="#coller" data-vue="coller">Coller un élément</a>
+    <a class="onglet" href="#linkedin" data-vue="linkedin" id="onglet-linkedin" hidden>Offres LinkedIn</a>
+    <a class="onglet" href="#profils" data-vue="profils">Profils</a>
+  </nav>
+  <div class="barre-fin"><span id="moi" class="moi"></span></div>
+</header>
+
+<main>
+  <section id="vue-coller" class="carte" hidden>
+    <h1>Coller un élément</h1>
+    <p class="aide">Un post LinkedIn, une offre d'emploi ou un court texte : collez son lien et son texte. Il est classé, les informations utiles sont extraites et des consultants de la CVthèque sont proposés.</p>
+    <form id="form-coller" class="formulaire" novalidate>
+      <label class="champ">Lien source
+        <input type="url" id="url-source" name="url_source" placeholder="https://…" maxlength="2048" autocomplete="off">
+      </label>
+      <label class="champ">Texte
+        <textarea id="texte" name="texte" rows="12" required></textarea>
+      </label>
+      <div class="ligne-actions">
+        <span id="compteur" class="compteur"></span>
+        <button type="submit" class="btn primaire" id="envoyer">Analyser</button>
+      </div>
+      <p id="message-coller" class="message" role="status" hidden></p>
+    </form>
+  </section>
+
+  <section id="vue-linkedin" hidden>
+    <div class="carte">
+      <h1>Offres LinkedIn</h1>
+      <p class="aide">Recherche sur les pages publiques des offres LinkedIn, sans compte. Rien n'est enregistré avant que vous choisissiez une offre : « Analyser » la classe, l'extrait et propose des consultants. Au moindre refus de LinkedIn, la recherche est suspendue 15 minutes.</p>
+      <form id="form-linkedin" class="outils" novalidate>
+        <label class="champ">Mots-clés
+          <input type="search" id="li-mots-cles" maxlength="100" required autocomplete="off">
+        </label>
+        <label class="champ">Lieu
+          <input type="search" id="li-lieu" maxlength="100" autocomplete="off">
+        </label>
+        <label class="champ">Distance
+          <select id="li-distance"><option value="">Par défaut</option></select>
+        </label>
+        <label class="champ">Publiée depuis
+          <select id="li-jours"><option value="">Toutes dates</option></select>
+        </label>
+        <button type="submit" class="btn primaire" id="li-chercher">Rechercher</button>
+      </form>
+      <p id="li-message" class="message" role="status" hidden></p>
+    </div>
+    <div class="carte outils" id="li-barre" hidden>
+      <label class="champ">Trier par
+        <select id="li-tri">
+          <option value="linkedin">Ordre LinkedIn</option>
+          <option value="pertinence">Pertinence pour le référentiel</option>
+          <option value="date">Plus récentes</option>
+        </select>
+      </label>
+      <label class="case"><input type="checkbox" id="li-masquer-deja"> Masquer les offres déjà analysées</label>
+      <span class="resume" id="li-resume"></span>
+      <button type="button" class="btn" id="li-tout">Tout sélectionner</button>
+      <button type="button" class="btn primaire" id="li-analyser" disabled>Analyser la sélection</button>
+    </div>
+    <ul class="cartes" id="li-offres"></ul>
+  </section>
+
+  <section id="vue-profils" hidden>
+    <div class="grille-detail">
+      <section class="carte">
+        <h1 id="pf-titre-form">Nouveau profil</h1>
+        <p class="aide">Le référentiel des profils à placer, partagé par toute l'équipe : chacun le voit et le modifie. Chaque offre analysée propose les plus proches, avec leurs raisons ; le lien avec la CVthèque viendra par la référence CVthèque.</p>
+        <form id="form-profil" class="formulaire" novalidate>
+          <label class="champ">Nom
+            <input type="text" name="nom" maxlength="200" required autocomplete="off">
+          </label>
+          <label class="champ">Intitulé
+            <input type="text" name="intitule" maxlength="200" placeholder="Ingénieur DevOps" autocomplete="off">
+          </label>
+          <label class="champ">Compétences (une par ligne)
+            <textarea name="competences" rows="6"></textarea>
+          </label>
+          <label class="champ">Séniorité
+            <input type="text" name="seniorite" maxlength="60" placeholder="junior, confirmé, senior…" autocomplete="off">
+          </label>
+          <label class="champ">Localisation
+            <input type="text" name="localisation" maxlength="200" autocomplete="off">
+          </label>
+          <label class="champ">Disponibilité
+            <input type="text" name="disponibilite" maxlength="60" placeholder="immédiate, 2026-12-01…" autocomplete="off">
+          </label>
+          <label class="champ">TJM (€)
+            <input type="number" name="tjm" min="0" max="100000" step="1">
+          </label>
+          <label class="champ">Référence CVthèque
+            <input type="text" name="cvtheque_id" maxlength="100" autocomplete="off">
+          </label>
+          <label class="champ">Notes
+            <textarea name="notes" rows="3" maxlength="2000"></textarea>
+          </label>
+          <div class="ligne-actions">
+            <button type="button" class="btn" id="pf-annuler" hidden>Annuler</button>
+            <button type="submit" class="btn primaire" id="pf-enregistrer">Ajouter le profil</button>
+          </div>
+          <p id="pf-message" class="message" role="status" hidden></p>
+        </form>
+      </section>
+      <section class="carte">
+        <div class="entete-ligne">
+          <h2>Référentiel</h2>
+          <span class="resume" id="pf-resume"></span>
+        </div>
+        <p class="vide" id="pf-vide" hidden>Aucun profil pour l'instant.</p>
+        <ul class="liste-profils" id="pf-liste"></ul>
+      </section>
+    </div>
+  </section>
+
+  <section id="vue-liste" hidden>
+    <div class="carte outils">
+      <label class="champ">Type
+        <select id="filtre-type"><option value="">Tous</option></select>
+      </label>
+      <label class="champ">Statut
+        <select id="filtre-statut"><option value="">Tous</option></select>
+      </label>
+      <label class="champ">Source
+        <select id="filtre-origine"><option value="">Toutes</option></select>
+      </label>
+      <label class="champ">Employeur
+        <select id="filtre-employeur"><option value="">Tous</option></select>
+      </label>
+      <label class="champ">Contrat
+        <select id="filtre-contrat"><option value="">Tous</option></select>
+      </label>
+      <label class="case"><input type="checkbox" id="filtre-multi"> Missions publiées par plusieurs entreprises</label>
+      <span class="resume" id="resume"></span>
+    </div>
+    <p class="vide" id="vide" hidden>Aucun élément pour ces filtres. <a href="#coller">Coller un élément</a></p>
+    <ul class="cartes" id="cartes"></ul>
+  </section>
+
+  <section id="vue-detail" hidden>
+    <a class="retour" href="#opportunites">← Opportunités</a>
+    <div class="carte entete-detail">
+      <div class="entete-ligne">
+        <span id="d-type" class="badge"></span>
+        <span id="d-statut" class="badge"></span>
+        <span id="d-employeur" class="badge"></span>
+        <h1 id="d-titre"></h1>
+      </div>
+      <p id="d-meta" class="meta"></p>
+      <p id="d-similaires" class="meta similaires" hidden></p>
+      <p id="d-suivi" class="suivi" role="status" hidden></p>
+      <p id="d-erreur" class="message erreur" hidden></p>
+      <div class="ligne-actions">
+        <a id="d-source" class="btn" target="_blank" rel="noopener noreferrer" hidden>Ouvrir la source</a>
+        <button type="button" class="btn" id="b-reclasser">Re-classer</button>
+        <button type="button" class="btn" id="b-bruit">Marquer comme bruit</button>
+        <button type="button" class="btn primaire" id="b-valider">Valider</button>
+      </div>
+      <p id="d-message" class="message" role="status" hidden></p>
+    </div>
+
+    <div class="grille-detail">
+      <section class="carte">
+        <h2>Texte d'origine</h2>
+        <p class="aide">Les lignes surlignées sont celles où DocIE a trouvé une valeur ; survolez un champ pour voir les siennes.</p>
+        <div id="d-texte" class="texte-source"></div>
+      </section>
+
+      <div class="colonne">
+        <section class="carte">
+          <h2>Classement</h2>
+          <div id="d-classement" class="classement"></div>
+          <label class="champ choix-type">Type retenu
+            <select id="d-choix-type"></select>
+          </label>
+          <label class="champ choix-type" id="d-bloc-employeur" hidden>Employeur
+            <select id="d-choix-employeur"></select>
+          </label>
+        </section>
+
+        <section class="carte" id="bloc-champs">
+          <h2>Champs extraits</h2>
+          <p class="vide" id="champs-vide" hidden>Aucune extraction : l'élément est classé comme bruit ou n'a pas encore été traité.</p>
+          <form id="form-champs" class="formulaire" novalidate>
+            <div id="champs"></div>
+            <div class="ligne-actions">
+              <button type="submit" class="btn" id="b-enregistrer">Enregistrer les champs</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="carte">
+          <h2>Profils du référentiel</h2>
+          <p id="d-pf-aide" class="aide"></p>
+          <h3 class="sous-titre">Associés à cette offre</h3>
+          <p class="vide" id="d-pf-associes-vide">Aucun profil associé.</p>
+          <ul class="liste-profils" id="d-pf-associes"></ul>
+          <h3 class="sous-titre">Suggestions</h3>
+          <ul class="liste-profils" id="d-pf-suggestions"></ul>
+          <p id="d-pf-message" class="message" role="status" hidden></p>
+        </section>
+
+        <section class="carte">
+          <div class="entete-ligne">
+            <h2>Consultants proposés</h2>
+            <button type="button" class="btn petit" id="b-rapprocher">Relancer le rapprochement</button>
+          </div>
+          <p id="d-rapprochement" class="aide"></p>
+          <ol id="d-profils" class="profils"></ol>
+        </section>
+      </div>
+    </div>
+  </section>
+</main>
+
+<template id="modele-carte">
+  <li class="carte element">
+    <div class="entete-ligne">
+      <span class="badge b-type"></span>
+      <span class="badge b-statut"></span>
+      <span class="badge b-employeur"></span>
+      <a class="titre"></a>
+    </div>
+    <p class="meta"></p>
+    <ol class="profils courts"></ol>
+    <p class="meta similaires"></p>
+    <p class="meta etat-rapprochement"></p>
+    <div class="pied">
+      <a class="lien-source" target="_blank" rel="noopener noreferrer">Ouvrir la source</a>
+    </div>
+  </li>
+</template>
+
+<template id="modele-offre">
+  <li class="carte element">
+    <div class="entete-ligne">
+      <input type="checkbox" class="choisir" aria-label="Choisir cette offre">
+      <a class="titre" target="_blank" rel="noopener noreferrer"></a>
+    </div>
+    <p class="meta"></p>
+    <p class="meta pertinence"></p>
+    <div class="pied ligne-actions">
+      <span class="meta etat"></span>
+      <button type="button" class="btn petit primaire analyser">Analyser</button>
+    </div>
+  </li>
+</template>
+
+<template id="modele-profil">
+  <li class="profil-ligne">
+    <div class="entete-ligne">
+      <span class="nom"></span>
+      <span class="score"></span>
+      <span class="actions"></span>
+    </div>
+    <p class="meta"></p>
+    <ul class="raisons"></ul>
+  </li>
+</template>
+
+<script src="sourcing.js"></script>
+</body>
+</html>
