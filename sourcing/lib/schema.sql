@@ -28,10 +28,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS src_idx_elements_doublon ON src_elements (prop
 
 ALTER TABLE src_elements ADD COLUMN IF NOT EXISTS source_meta JSONB;
 
--- Référentiel de profils par utilisateur, rapproché des offres ; cvtheque_id prépare le lien avec la CVthèque.
+-- Référentiel de profils partagé par toute l'instance (une société), rapproché des offres ; cvtheque_id prépare le lien avec la CVthèque.
 CREATE TABLE IF NOT EXISTS src_profils (
   id              SERIAL PRIMARY KEY,
-  proprietaire    TEXT NOT NULL,
+  cree_par        TEXT NOT NULL DEFAULT '',
+  modifie_par     TEXT NOT NULL DEFAULT '',
   nom             TEXT NOT NULL,
   intitule        TEXT NOT NULL DEFAULT '',
   competences     JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -45,7 +46,7 @@ CREATE TABLE IF NOT EXISTS src_profils (
   modifie_le      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS src_idx_profils_proprietaire ON src_profils (proprietaire, nom);
+CREATE INDEX IF NOT EXISTS src_idx_profils_nom ON src_profils (lower(nom));
 
 CREATE TABLE IF NOT EXISTS src_affectations (
   proprietaire    TEXT NOT NULL,

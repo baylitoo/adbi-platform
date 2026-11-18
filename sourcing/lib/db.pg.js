@@ -123,45 +123,46 @@ async function modifier(proprietaire, id, valeurs, { saufStatuts = null } = {}) 
   return r.rows[0] || null;
 }
 
-const COLONNES_PROFIL = "id, nom, intitule, competences, seniorite, localisation, disponibilite, tjm, notes, cvtheque_id, cree_le, modifie_le";
+const COLONNES_PROFIL = "id, nom, intitule, competences, seniorite, localisation, disponibilite, tjm, notes, cvtheque_id, cree_par, modifie_par, cree_le, modifie_le";
 const CHAMPS_PROFIL = ["nom", "intitule", "competences", "seniorite", "localisation", "disponibilite", "tjm", "notes", "cvtheque_id"];
 const valeurProfil = (cle, v) => (cle === "competences" ? JSON.stringify(v) : v);
 
-async function listerProfils(proprietaire) {
-  const r = await (await init()).query(`SELECT ${COLONNES_PROFIL} FROM src_profils WHERE proprietaire = $1 ORDER BY lower(nom), id LIMIT 2000`, [proprietaire]);
+// Le référentiel est commun à toute l'instance : aucun filtre par utilisateur, l'auteur est seulement consigné.
+async function listerProfils() {
+  const r = await (await init()).query(`SELECT ${COLONNES_PROFIL} FROM src_profils ORDER BY lower(nom), id LIMIT 2000`);
   return r.rows;
 }
 
-async function obtenirProfil(proprietaire, id) {
-  const r = await (await init()).query(`SELECT ${COLONNES_PROFIL} FROM src_profils WHERE proprietaire = $1 AND id = $2`, [proprietaire, id]);
+async function obtenirProfil(id) {
+  const r = await (await init()).query(`SELECT ${COLONNES_PROFIL} FROM src_profils WHERE id = $1`, [id]);
   return r.rows[0] || null;
 }
 
-async function creerProfil(proprietaire, p) {
-  const params = [proprietaire, ...CHAMPS_PROFIL.map((c) => valeurProfil(c, p[c]))];
+async function creerProfil(auteur, p) {
+  const params = [auteur, auteur, ...CHAMPS_PROFIL.map((c) => valeurProfil(c, p[c]))];
   const r = await (await init()).query(
-    `INSERT INTO src_profils (proprietaire, ${CHAMPS_PROFIL.join(", ")}) VALUES (${params.map((_, i) => "$" + (i + 1)).join(", ")}) RETURNING ${COLONNES_PROFIL}`, params
+    `INSERT INTO src_profils (cree_par, modifie_par, ${CHAMPS_PROFIL.join(", ")}) VALUES (${params.map((_, i) => "$" + (i + 1)).join(", ")}) RETURNING ${COLONNES_PROFIL}`, params
   );
   return r.rows[0];
 }
 
-async function modifierProfil(proprietaire, id, p) {
-  const params = [proprietaire, id, ...CHAMPS_PROFIL.map((c) => valeurProfil(c, p[c]))];
+async function modifierProfil(auteur, id, p) {
+  const params = [auteur, id, ...CHAMPS_PROFIL.map((c) => valeurProfil(c, p[c]))];
   const r = await (await init()).query(
-    `UPDATE src_profils SET ${CHAMPS_PROFIL.map((c, i) => `${c} = $${i + 3}`).join(", ")}, modifie_le = now() WHERE proprietaire = $1 AND id = $2 RETURNING ${COLONNES_PROFIL}`, params
+    `UPDATE src_profils SET ${CHAMPS_PROFIL.map((c, i) => `${c} = $${i + 3}`).join(", ")}, modifie_par = $1, modifie_le = now() WHERE id = $2 RETURNING ${COLONNES_PROFIL}`, params
   );
   return r.rows[0] || null;
 }
 
-async function supprimerProfil(proprietaire, id) {
-  const r = await (await init()).query("DELETE FROM src_profils WHERE proprietaire = $1 AND id = $2", [proprietaire, id]);
+async function supprimerProfil(id) {
+  const r = await (await init()).query("DELETE FROM src_profils WHERE id = $1", [id]);
   return r.rowCount > 0;
 }
 
 async function profilsAffectes(proprietaire, elementId) {
   const r = await (await init()).query(
     `SELECT ${COLONNES_PROFIL.split(", ").map((c) => "p." + c).join(", ")}, a.cree_le AS affecte_le FROM src_affectations a JOIN src_profils p ON p.id = a.profil_id
-     WHERE a.proprietaire = $1 AND a.element_id = $2 AND p.proprietaire = $1 ORDER BY a.cree_le`, [proprietaire, elementId]
+     WHERE a.proprietaire = $1 AND a.element_id = $2 ORDER BY a.cree_le`, [proprietaire, elementId]
   );
   return r.rows;
 }

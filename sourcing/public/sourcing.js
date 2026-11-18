@@ -330,8 +330,9 @@
     const ul = $("pf-liste");
     ul.replaceChildren();
     for (const p of profils) {
+      const auteurs = p.modifie_par && p.modifie_par !== p.cree_par ? "ajouté par " + p.cree_par + ", modifié par " + p.modifie_par : p.cree_par ? "ajouté par " + p.cree_par : "";
       const li = ligneProfil(p, {
-        raisons: p.competences.length ? [p.competences.join(", ")] : [],
+        raisons: [p.competences.join(", "), auteurs].filter(Boolean),
         boutons: [["Modifier", () => editerProfil(p)], ["Supprimer", (b) => supprimerProfil(p, b)]],
       });
       ul.append(li);

@@ -323,7 +323,7 @@ app.get("/api/linkedin/offres", async (req, res) => {
   try {
     const offres = await sourceLinkedin.rechercher({ motsCles, lieu, jours, distance });
     const sub = proprietaire(req);
-    const [deja, profils] = await Promise.all([db.idsParSources(sub, offres.map((o) => o.url)), db.listerProfils(sub)]);
+    const [deja, profils] = await Promise.all([db.idsParSources(sub, offres.map((o) => o.url)), db.listerProfils()]);
     res.json({
       offres: offres.map((o) => ({ ...o, element_id: deja.get(o.url) || null, pertinence: referentiel.pertinenceTitre(o.intitule, profils) })),
       max_atteint: offres.length >= linkedin.MAX_OFFRES,
@@ -358,6 +358,9 @@ function erreurProfil(res, e) {
   return auth.repondreErreur(res, e);
 }
 
+// Nom lisible de l'auteur d'une fiche du référentiel partagé.
+const auteur = (req) => String(req.utilisateur.full_name || req.utilisateur.email || req.utilisateur.sub).slice(0, 200);
+
 function lireIdParam(res, brut) {
   const id = Number.parseInt(brut, 10);
   if (!Number.isInteger(id) || id < 1 || String(id) !== brut) { res.status(400).json({ error: "Identifiant invalide." }); return null; }
@@ -366,7 +369,7 @@ function lireIdParam(res, brut) {
 
 app.get("/api/profils", async (req, res) => {
   try {
-    res.json({ profils: await db.listerProfils(proprietaire(req)) });
+    res.json({ profils: await db.listerProfils() });
   } catch (e) {
     erreurProfil(res, e);
   }
@@ -374,7 +377,7 @@ app.get("/api/profils", async (req, res) => {
 
 app.post("/api/profils", async (req, res) => {
   try {
-    res.status(201).json({ profil: await db.creerProfil(proprietaire(req), referentiel.validerProfil(req.body)) });
+    res.status(201).json({ profil: await db.creerProfil(auteur(req), referentiel.validerProfil(req.body)) });
   } catch (e) {
     erreurProfil(res, e);
   }
@@ -384,7 +387,7 @@ app.put("/api/profils/:id", async (req, res) => {
   const id = lireIdParam(res, req.params.id);
   if (id === null) return;
   try {
-    const p = await db.modifierProfil(proprietaire(req), id, referentiel.validerProfil(req.body));
+    const p = await db.modifierProfil(auteur(req), id, referentiel.validerProfil(req.body));
     if (!p) return res.status(404).json({ error: "Profil introuvable." });
     res.json({ profil: p });
   } catch (e) {
@@ -396,7 +399,7 @@ app.delete("/api/profils/:id", async (req, res) => {
   const id = lireIdParam(res, req.params.id);
   if (id === null) return;
   try {
-    if (!(await db.supprimerProfil(proprietaire(req), id))) return res.status(404).json({ error: "Profil introuvable." });
+    if (!(await db.supprimerProfil(id))) return res.status(404).json({ error: "Profil introuvable." });
     res.status(204).end();
   } catch (e) {
     erreurProfil(res, e);
@@ -409,7 +412,7 @@ app.get("/api/elements/:id/profils", async (req, res) => {
     const e = await elementAutorise(req, res);
     if (!e) return;
     const sub = proprietaire(req);
-    const [associes, profils] = await Promise.all([db.profilsAffectes(sub, e.id), db.listerProfils(sub)]);
+    const [associes, profils] = await Promise.all([db.profilsAffectes(sub, e.id), db.listerProfils()]);
     const ids = new Set(associes.map((p) => p.id));
     res.json({
       associes: associes.map((p) => ({ profil: p, ...referentiel.scorer(e, p) })),
@@ -427,7 +430,7 @@ async function affectation(req, res, action) {
     if (!e) return;
     const pid = lireIdParam(res, req.params.pid);
     if (pid === null) return;
-    if (!(await db.obtenirProfil(proprietaire(req), pid))) return res.status(404).json({ error: "Profil introuvable." });
+    if (!(await db.obtenirProfil(pid))) return res.status(404).json({ error: "Profil introuvable." });
     await action(proprietaire(req), e.id, pid);
     res.status(204).end();
   } catch (err) {

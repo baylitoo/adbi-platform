@@ -166,8 +166,11 @@ Référentiel de profils
 L'onglet « Profils » tient le référentiel des profils à placer : nom (seul
 champ obligatoire), intitulé, compétences, séniorité, localisation,
 disponibilité, TJM, notes et référence CVthèque (``cvtheque_id``, qui prépare
-le lien avec la CVthèque). Comme les éléments, les profils appartiennent à
-l'utilisateur qui les saisit.
+le lien avec la CVthèque). Le référentiel est partagé par toute l'instance,
+c'est-à-dire par la société qui l'exploite : chacun le voit et le modifie, et
+la fiche garde le nom de qui l'a ajoutée et de qui l'a modifiée en dernier.
+Les offres restent propres à chaque utilisateur, et les associations entre un
+profil et une offre aussi.
 
 Chaque fiche d'offre propose les cinq profils les plus proches avec un score
 sur 100 et ses raisons : compétences 60 (part des compétences demandées que le
