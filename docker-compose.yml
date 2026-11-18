@@ -412,6 +412,8 @@ services:
       SOURCING_RAPPROCHEUR: ${SOURCING_RAPPROCHEUR:-cvtheque}
       # Appel serveur à serveur vers cv-parser, avec l'adbi_access de l'utilisateur relayé en Bearer.
       SOURCING_CVTHEQUE_URL: ${SOURCING_CVTHEQUE_URL:-http://cv-parser:5000}
+      # Recherche LinkedIn publique, sans compte ; désactivée par défaut.
+      SOURCING_LINKEDIN_PUBLIC: ${SOURCING_LINKEDIN_PUBLIC:-}
     restart: unless-stopped
     deploy:
       resources:

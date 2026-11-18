@@ -15,6 +15,7 @@
   <nav class="onglets" aria-label="Sections">
     <a class="onglet" href="#opportunites" data-vue="liste">Opportunités</a>
     <a class="onglet" href="#coller" data-vue="coller">Coller un élément</a>
+    <a class="onglet" href="#linkedin" data-vue="linkedin" id="onglet-linkedin" hidden>Offres LinkedIn</a>
   </nav>
   <div class="barre-fin"><span id="moi" class="moi"></span></div>
 </header>
@@ -36,6 +37,25 @@
       </div>
       <p id="message-coller" class="message" role="status" hidden></p>
     </form>
+  </section>
+
+  <section id="vue-linkedin" hidden>
+    <div class="carte">
+      <h1>Offres LinkedIn</h1>
+      <p class="aide">Recherche sur les pages publiques des offres LinkedIn, sans compte. Rien n'est enregistré avant que vous choisissiez une offre : « Analyser » la classe, l'extrait et propose des consultants. Au moindre refus de LinkedIn, la recherche est suspendue 15 minutes.</p>
+      <form id="form-linkedin" class="outils" novalidate>
+        <label class="champ">Mots-clés
+          <input type="search" id="li-mots-cles" maxlength="100" required autocomplete="off">
+        </label>
+        <label class="champ">Lieu
+          <input type="search" id="li-lieu" maxlength="100" autocomplete="off">
+        </label>
+        <button type="submit" class="btn primaire" id="li-chercher">Rechercher</button>
+        <span class="resume" id="li-resume"></span>
+      </form>
+      <p id="li-message" class="message" role="status" hidden></p>
+    </div>
+    <ul class="cartes" id="li-offres"></ul>
   </section>
 
   <section id="vue-liste" hidden>
@@ -127,6 +147,17 @@
     <p class="meta etat-rapprochement"></p>
     <div class="pied">
       <a class="lien-source" target="_blank" rel="noopener noreferrer">Ouvrir la source</a>
+    </div>
+  </li>
+</template>
+
+<template id="modele-offre">
+  <li class="carte element">
+    <a class="titre" target="_blank" rel="noopener noreferrer"></a>
+    <p class="meta"></p>
+    <div class="pied ligne-actions">
+      <span class="meta etat"></span>
+      <button type="button" class="btn petit primaire analyser">Analyser</button>
     </div>
   </li>
 </template>

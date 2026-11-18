@@ -82,6 +82,11 @@ async function obtenir(proprietaire, id) {
   return r.rows[0] || null;
 }
 
+async function obtenirParSource(proprietaire, url) {
+  const r = await (await init()).query(`SELECT ${COLONNES} FROM src_elements WHERE proprietaire = $1 AND url_source = $2 ORDER BY id LIMIT 1`, [proprietaire, url]);
+  return r.rows[0] || null;
+}
+
 async function lister(proprietaire, { type = null, statut = null, origine = null } = {}) {
   const conditions = ["proprietaire = $1"];
   const valeurs = [proprietaire];
@@ -111,4 +116,4 @@ async function modifier(proprietaire, id, valeurs, { saufStatuts = null } = {}) 
   return r.rows[0] || null;
 }
 
-module.exports = { init, verifierConnexion, creer, obtenir, lister, modifier };
+module.exports = { init, verifierConnexion, creer, obtenir, obtenirParSource, lister, modifier };

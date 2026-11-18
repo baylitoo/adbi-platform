@@ -6,7 +6,7 @@
     en_attente: "En file", en_cours: "En cours", a_verifier: "À vérifier", a_valider: "À valider",
     valide: "Validé", ecarte: "Écarté", echec: "Échec",
   };
-  const LIBELLES_ORIGINES = { collage: "Collage", navigateur: "Bouton navigateur", email: "E-mail", api: "API" };
+  const LIBELLES_ORIGINES = { collage: "Collage", navigateur: "Bouton navigateur", email: "E-mail", api: "API", linkedin_public: "LinkedIn (public)" };
   const LIBELLES_CHAMPS = {
     entreprise: "Entreprise", intitule: "Intitulé", competences: "Compétences (une par ligne)", localisation: "Localisation",
     type_contrat: "Type de contrat", seniorite: "Séniorité", date_debut: "Date de début (AAAA-MM-JJ)",
@@ -120,7 +120,7 @@
   // ---------- Routage ----------
 
   function afficher(vue) {
-    for (const v of ["coller", "liste", "detail"]) $("vue-" + v).hidden = v !== vue;
+    for (const v of ["coller", "linkedin", "liste", "detail"]) $("vue-" + v).hidden = v !== vue;
     for (const o of document.querySelectorAll(".onglet")) o.classList.toggle("actif", o.dataset.vue === vue);
   }
 
@@ -135,6 +135,7 @@
     const m = h.match(/^#element\/(\d+)$/);
     if (m) { afficher("detail"); chargerDetail(Number(m[1])); return; }
     if (h === "#coller") { afficher("coller"); $("texte").focus(); return; }
+    if (h === "#linkedin" && config.linkedin_public) { afficher("linkedin"); $("li-mots-cles").focus(); return; }
     afficher("liste");
     chargerListe();
   }
@@ -167,6 +168,55 @@
     } finally {
       bouton.disabled = false;
     }
+  }
+
+  // ---------- Offres LinkedIn ----------
+
+  async function chercherLinkedin(ev) {
+    ev.preventDefault();
+    const bouton = $("li-chercher");
+    bouton.disabled = true;
+    message($("li-message"), "");
+    $("li-resume").textContent = "Recherche…";
+    try {
+      const params = new URLSearchParams({ mots_cles: $("li-mots-cles").value.trim(), lieu: $("li-lieu").value.trim() });
+      const { offres } = await api("api/linkedin/offres?" + params);
+      const ul = $("li-offres");
+      ul.replaceChildren();
+      for (const o of offres) ul.append(carteOffre(o));
+      $("li-resume").textContent = offres.length + " offre(s)";
+    } catch (e) {
+      $("li-resume").textContent = "";
+      message($("li-message"), e.message, "erreur");
+    } finally {
+      bouton.disabled = false;
+    }
+  }
+
+  function carteOffre(o) {
+    const carte = $("modele-offre").content.firstElementChild.cloneNode(true);
+    const titre = carte.querySelector(".titre");
+    titre.textContent = o.intitule || "Offre " + o.id;
+    titre.href = o.url;
+    const date = o.publie_le ? new Date(o.publie_le).toLocaleDateString("fr-FR", { dateStyle: "medium" }) : "";
+    carte.querySelector(".meta").textContent = [o.entreprise, o.localisation, date].filter(Boolean).join(" · ");
+    const etat = carte.querySelector(".etat");
+    const bouton = carte.querySelector(".analyser");
+    bouton.addEventListener("click", async () => {
+      bouton.disabled = true;
+      etat.textContent = "Lecture de l'offre…";
+      try {
+        const r = await api("api/linkedin/offres/" + encodeURIComponent(o.id) + "/importer", { method: "POST", body: "{}" });
+        const lien = document.createElement("a");
+        lien.href = "#element/" + r.element.id;
+        lien.textContent = r.doublon ? "Déjà analysée : ouvrir la fiche" : "Ouvrir la fiche" + (r.tronque ? " (texte coupé)" : "");
+        etat.replaceChildren(lien);
+      } catch (e) {
+        etat.textContent = e.message;
+        bouton.disabled = false;
+      }
+    });
+    return carte;
   }
 
   // ---------- Liste ----------
@@ -443,6 +493,8 @@
     for (const id of ["filtre-type", "filtre-statut", "filtre-origine"]) $(id).addEventListener("change", () => { arreterAttente(); chargerListe(); });
     $("texte").addEventListener("input", majCompteur);
     $("form-coller").addEventListener("submit", envoyer);
+    $("onglet-linkedin").hidden = !config.linkedin_public;
+    $("form-linkedin").addEventListener("submit", chercherLinkedin);
     $("b-reclasser").addEventListener("click", () => {
       if (courant && courant.champs && !reclasserArme) {
         reclasserArme = true;

@@ -7,6 +7,7 @@ const { creerClasseur, configurationDepuisEnv, TYPES, LIBELLES_TYPES } = require
 const { rapprocheurDepuisEnv } = require("./lib/rapprocheur");
 const { normaliserChamps, TYPES_CONTRAT } = require("./lib/extraction");
 const { creerTraitement } = require("./lib/traitement");
+const linkedin = require("./lib/linkedin-public");
 // Bibliothèques partagées : ../auth et ../contrats/lib en checkout, /auth et /contrats/lib dans l'image.
 const auth = require("../auth/auth-adbi");
 const taches = require("../contrats/lib/taches-extraction");
@@ -17,7 +18,7 @@ const FACTORY_URL = process.env.ADBI_FACTORY_URL || "";
 const ID_MODULE = "sourcing";
 const TEXTE_MIN = 200;
 const TEXTE_MAX = 3000;
-const ORIGINES = Object.freeze(["collage", "navigateur", "email", "api"]);
+const ORIGINES = Object.freeze(["collage", "navigateur", "email", "api", "linkedin_public"]);
 const STATUTS = Object.freeze(["en_attente", "en_cours", "a_verifier", "a_valider", "valide", "ecarte", "echec"]);
 const OCCUPES = Object.freeze(["en_attente", "en_cours"]);
 
@@ -39,6 +40,9 @@ console.log(`[sourcing] classement : ${CONFIG_CLASSEMENT.mode} ; rapprochement :
 const gestionnaire = taches.creerGestionnaire({ maxSimultanees: MAX_SIMULTANEES });
 const classeur = creerClasseur(CONFIG_CLASSEMENT);
 const traitement = creerTraitement({ db, classeur, rapprocheur });
+const LINKEDIN_ACTIF = linkedin.sourceActive();
+const sourceLinkedin = LINKEDIN_ACTIF ? linkedin.creerSourceLinkedin() : null;
+if (LINKEDIN_ACTIF) console.warn("[sourcing] recherche LinkedIn publique ACTIVE (SOURCING_LINKEDIN_PUBLIC) : contraire aux conditions de LinkedIn, coupée 15 min au moindre refus.");
 
 process.on("uncaughtException", (e) => console.error("[erreur non gérée]", e && e.message ? e.message : e));
 process.on("unhandledRejection", (e) => console.error("[promesse rejetée]", e && e.message ? e.message : e));
@@ -163,8 +167,17 @@ app.get("/api/config", (req, res) => {
   res.json({
     types: TYPES, libelles_types: LIBELLES_TYPES, statuts: STATUTS, origines: ORIGINES, types_contrat: TYPES_CONTRAT,
     texte: { min: TEXTE_MIN, max: TEXTE_MAX }, classement: CONFIG_CLASSEMENT.mode, rapprocheur: rapprocheur.nom,
+    linkedin_public: LINKEDIN_ACTIF,
   });
 });
+
+async function creerEtTraiter(req, valeurs) {
+  const { element, doublon } = await db.creer({ proprietaire: proprietaire(req), empreinte: empreinte(valeurs.texte), ...valeurs });
+  if (doublon) return { element: vueElement(element), doublon: true };
+  const maj = await mettreEnFile(req, element, traitement.complet, {})
+    || await db.modifier(proprietaire(req), element.id, { statut: "echec", erreur: { code: "file_pleine", message: "Trop de traitements en attente : relancez le classement dans un instant." } });
+  return { element: vueElement(maj), doublon: false };
+}
 
 app.post("/api/elements", async (req, res) => {
   try {
@@ -178,14 +191,8 @@ app.post("/api/elements", async (req, res) => {
     const d = dateEnEntree(b.capture_le);
     if (d.erreur) return res.status(400).json({ error: d.erreur });
     if (b.auteur !== undefined && b.auteur !== null && typeof b.auteur !== "string") return res.status(400).json({ error: "Auteur invalide." });
-    const { element, doublon } = await db.creer({
-      proprietaire: proprietaire(req), texte: t.texte, empreinte: empreinte(t.texte), url_source: u.url,
-      origine, capture_le: d.date, auteur: String(b.auteur || "").trim().slice(0, 200),
-    });
-    if (doublon) return res.status(200).json({ element: vueElement(element), doublon: true });
-    const maj = await mettreEnFile(req, element, traitement.complet, {})
-      || await db.modifier(proprietaire(req), element.id, { statut: "echec", erreur: { code: "file_pleine", message: "Trop de traitements en attente : relancez le classement dans un instant." } });
-    res.status(202).json({ element: vueElement(maj), doublon: false });
+    const r = await creerEtTraiter(req, { texte: t.texte, url_source: u.url, origine, capture_le: d.date, auteur: String(b.auteur || "").trim().slice(0, 200) });
+    res.status(r.doublon ? 200 : 202).json(r);
   } catch (e) {
     auth.repondreErreur(res, e);
   }
@@ -282,6 +289,44 @@ app.post("/api/elements/:id/valider", async (req, res) => {
   if (!e) return;
   if (!e.type) return res.status(409).json({ error: "Type inconnu : choisissez un type avant de valider." });
   return revue(req, res, { statut: "valide" });
+});
+
+// Recherche LinkedIn publique : rien n'est stocké avant que l'utilisateur choisisse une offre.
+function erreurLinkedin(res, e) {
+  if (e instanceof linkedin.ErreurSource) return res.status(e.code === "introuvable" ? 404 : 503).json({ error: e.message, code: e.code });
+  return auth.repondreErreur(res, e);
+}
+
+function texteCourt(brut, max) {
+  return typeof brut === "string" ? brut.replace(/[\u0000-\u001f]/g, " ").trim().slice(0, max) : "";
+}
+
+app.use("/api/linkedin", (req, res, next) => (LINKEDIN_ACTIF ? next() : res.status(404).json({ error: "Recherche LinkedIn désactivée (SOURCING_LINKEDIN_PUBLIC)." })));
+
+app.get("/api/linkedin/offres", async (req, res) => {
+  const motsCles = texteCourt(req.query.mots_cles, 100);
+  const lieu = texteCourt(req.query.lieu, 100);
+  if (motsCles.length < 2) return res.status(400).json({ error: "Mots-clés obligatoires (2 caractères au moins)." });
+  try {
+    res.json({ offres: await sourceLinkedin.rechercher({ motsCles, lieu }) });
+  } catch (e) {
+    erreurLinkedin(res, e);
+  }
+});
+
+app.post("/api/linkedin/offres/:id/importer", async (req, res) => {
+  if (!/^\d{6,20}$/.test(req.params.id)) return res.status(400).json({ error: "Identifiant d'offre invalide." });
+  try {
+    const deja = await db.obtenirParSource(proprietaire(req), linkedin.urlOffre(req.params.id));
+    if (deja) return res.status(200).json({ element: vueElement(deja), doublon: true, tronque: false });
+    const offre = await sourceLinkedin.detail(req.params.id);
+    const { texte, tronque } = linkedin.texteDeLOffre(offre, TEXTE_MAX);
+    if ([...texte].length < TEXTE_MIN) return res.status(422).json({ error: `Offre trop courte pour être analysée (moins de ${TEXTE_MIN} caractères).` });
+    const r = await creerEtTraiter(req, { texte, url_source: offre.url, origine: "linkedin_public", capture_le: new Date().toISOString(), auteur: offre.entreprise.slice(0, 200) });
+    res.status(r.doublon ? 200 : 202).json({ ...r, tronque });
+  } catch (e) {
+    erreurLinkedin(res, e);
+  }
 });
 
 app.use("/api", (req, res) => res.status(404).json({ error: "Route inconnue." }));
