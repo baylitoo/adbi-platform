@@ -145,6 +145,7 @@
       <label class="champ">Contrat
         <select id="filtre-contrat"><option value="">Tous</option></select>
       </label>
+      <label class="case"><input type="checkbox" id="filtre-multi"> Missions publiées par plusieurs entreprises</label>
       <span class="resume" id="resume"></span>
     </div>
     <p class="vide" id="vide" hidden>Aucun élément pour ces filtres. <a href="#coller">Coller un élément</a></p>
@@ -161,6 +162,7 @@
         <h1 id="d-titre"></h1>
       </div>
       <p id="d-meta" class="meta"></p>
+      <p id="d-similaires" class="meta similaires" hidden></p>
       <p id="d-suivi" class="suivi" role="status" hidden></p>
       <p id="d-erreur" class="message erreur" hidden></p>
       <div class="ligne-actions">
@@ -236,6 +238,7 @@
     </div>
     <p class="meta"></p>
     <ol class="profils courts"></ol>
+    <p class="meta similaires"></p>
     <p class="meta etat-rapprochement"></p>
     <div class="pied">
       <a class="lien-source" target="_blank" rel="noopener noreferrer">Ouvrir la source</a>

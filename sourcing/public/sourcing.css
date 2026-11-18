@@ -153,5 +153,7 @@ h2 { font-size: 15px; margin: 0 0 8px; }
 .profil-ligne .raisons:empty { display: none; }
 .element .pertinence { color: var(--adbi-accent); }
 .element .pertinence:empty { display: none; }
+.similaires { color: var(--adbi-attention); }
+.similaires:empty { display: none; }
 .badge.employeur-client_final { color: var(--adbi-ok); background: var(--adbi-ok-fond); border-color: var(--adbi-ok-bord); }
 .badge.employeur-esn_conseil, .badge.employeur-recrutement { color: var(--adbi-attention); background: var(--adbi-attention-fond); border-color: var(--adbi-attention-bord); }

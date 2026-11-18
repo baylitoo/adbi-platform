@@ -85,6 +85,7 @@ function normaliserChamps(r) {
   const res = r && typeof r === "object" ? r : {};
   return {
     entreprise: texte(res.entreprise).slice(0, 300),
+    client_final: texte(res.client_final).slice(0, 300),
     intitule: texte(res.intitule).slice(0, 300),
     competences: normaliserCompetences(res.competences),
     localisation: texte(res.localisation).slice(0, 300),

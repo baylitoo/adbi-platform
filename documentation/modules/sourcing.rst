@@ -134,11 +134,28 @@ Extraction
 ----------
 
 Seulement si le type n'est pas ``bruit``. Schéma ``adbi_opportunite`` :
-entreprise, intitulé, compétences, localisation, type de contrat, séniorité,
-date de début, contact mentionné et devise (seulement si un budget ou un TJM
-est cité). Le type de contrat est contrôlé côté ADBI (``cdi``, ``cdd``,
-``freelance``, ``mission``, ``appel_offres``, ``inconnu``) et la date ramenée
-au format ISO.
+entreprise, client final, intitulé, compétences, localisation, type de contrat,
+séniorité, date de début, contact mentionné et devise (seulement si un budget
+ou un TJM est cité). Le type de contrat est contrôlé côté ADBI (``cdi``,
+``cdd``, ``freelance``, ``mission``, ``appel_offres``, ``inconnu``) et la date
+ramenée au format ISO.
+
+Le client final n'est rempli que si l'entreprise qui publie est un
+intermédiaire (ESN, cabinet, plateforme) : c'est le client pour qui la mission
+est ouverte, nommé ou décrit tel qu'écrit (« un acteur majeur de la
+robotique »). C'est lui qu'on prospecte ; il est transmis à la CVthèque comme
+client du besoin à la place de l'entreprise qui publie.
+
+Même mission chez plusieurs entreprises
+---------------------------------------
+
+Une mission publiée par plusieurs entreprises différentes dans une fenêtre de
+30 jours signale souvent un client qui consulte plusieurs fournisseurs. La
+liste et la fiche indiquent « Même mission publiée aussi par … », et un filtre
+ne montre que ces missions. Le rapprochement est déterministe : similarité
+de l'intitulé, puis des compétences et de la zone, au-dessus d'un seuil fixe ;
+deux offres de la même entreprise ne sont jamais regroupées. Une offre
+LinkedIn pas encore extraite est comparée par l'intitulé de sa page.
 
 Le texte part en blocs d'une ligne : chaque preuve (``evidence_ids``) renvoyée
 par DocIE désigne une ligne du texte d'origine, surlignée dans la fiche. La

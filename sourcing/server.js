@@ -9,6 +9,7 @@ const { normaliserChamps, TYPES_CONTRAT } = require("./lib/extraction");
 const { creerTraitement } = require("./lib/traitement");
 const linkedin = require("./lib/linkedin-public");
 const referentiel = require("./lib/referentiel");
+const { regrouper } = require("./lib/regroupement");
 // Bibliothèques partagées : ../auth et ../contrats/lib en checkout, /auth et /contrats/lib dans l'image.
 const auth = require("../auth/auth-adbi");
 const taches = require("../contrats/lib/taches-extraction");
@@ -201,6 +202,8 @@ app.post("/api/elements", async (req, res) => {
   }
 });
 
+const filtreActif = (q) => ["type", "statut", "origine", "employeur", "contrat"].some((k) => q[k]);
+
 app.get("/api/elements", async (req, res) => {
   try {
     const q = req.query;
@@ -209,8 +212,10 @@ app.get("/api/elements", async (req, res) => {
       type: filtre(q.type, TYPES), statut: filtre(q.statut, STATUTS), origine: filtre(q.origine, ORIGINES),
       employeur: filtre(q.employeur, EMPLOYEURS), contrat: filtre(q.contrat, TYPES_CONTRAT),
     });
-    const affectes = await db.nombreAffectations(proprietaire(req));
-    res.json({ elements: elements.map((e) => ({ ...vueElement(e), profils_affectes: affectes.get(e.id) || 0 })) });
+    const sub = proprietaire(req);
+    const [affectes, tous] = await Promise.all([db.nombreAffectations(sub), filtreActif(q) ? db.lister(sub) : elements]);
+    const groupes = regrouper(tous);
+    res.json({ elements: elements.map((e) => ({ ...vueElement(e), profils_affectes: affectes.get(e.id) || 0, similaires: groupes.get(e.id) || [] })) });
   } catch (e) {
     auth.repondreErreur(res, e);
   }
@@ -219,7 +224,9 @@ app.get("/api/elements", async (req, res) => {
 app.get("/api/elements/:id", async (req, res) => {
   try {
     const e = await elementAutorise(req, res);
-    if (e) res.json({ element: vueElement(e) });
+    if (!e) return;
+    const groupes = regrouper(await db.lister(proprietaire(req)));
+    res.json({ element: { ...vueElement(e), similaires: groupes.get(e.id) || [] } });
   } catch (e) {
     auth.repondreErreur(res, e);
   }

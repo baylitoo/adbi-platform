@@ -28,7 +28,7 @@ function besoinDepuisOpportunite(o, texteSource) {
     title: court(c.intitule) || (court(c.entreprise) ? "Opportunité " + court(c.entreprise) : "Opportunité sourcing").slice(0, COURT_MAX),
     required_skills: competences,
     context: String(texteSource || "").slice(0, TEXTE_MAX),
-    client: court(c.entreprise),
+    client: court(c.client_final) || court(c.entreprise),
     location: court(c.localisation),
     seniority: court(c.seniorite),
     contract_type: c.type_contrat && c.type_contrat !== "inconnu" ? court(c.type_contrat) : "",

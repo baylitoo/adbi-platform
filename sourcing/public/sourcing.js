@@ -8,7 +8,7 @@
   };
   const LIBELLES_ORIGINES = { collage: "Collage", navigateur: "Bouton navigateur", email: "E-mail", api: "API", linkedin_public: "LinkedIn (public)" };
   const LIBELLES_CHAMPS = {
-    entreprise: "Entreprise", intitule: "Intitulé", competences: "Compétences (une par ligne)", localisation: "Localisation",
+    entreprise: "Entreprise", client_final: "Client final (si intermédiaire)", intitule: "Intitulé", competences: "Compétences (une par ligne)", localisation: "Localisation",
     type_contrat: "Type de contrat", seniorite: "Séniorité", date_debut: "Date de début (AAAA-MM-JJ)",
     contact_mentionne: "Contact mentionné", devise: "Devise (budget ou TJM)",
   };
@@ -76,9 +76,26 @@
     return e.texte.slice(0, 90).replace(/\s+/g, " ") + (e.texte.length > 90 ? "…" : "");
   }
 
+  function remplirSimilaires(el, e) {
+    el.replaceChildren();
+    const s = e.similaires || [];
+    if (!s.length) return;
+    el.append("Même mission publiée aussi par ");
+    s.slice(0, 5).forEach((x, i) => {
+      if (i) el.append(", ");
+      const a = document.createElement("a");
+      a.href = "#element/" + x.id;
+      a.textContent = x.entreprise;
+      a.title = x.intitule;
+      el.append(a);
+    });
+    el.append(s.length > 5 ? " et " + (s.length - 5) + " autre(s) : client probablement en consultation." : " : client probablement en consultation.");
+  }
+
   function metaElement(e) {
     const morceaux = [LIBELLES_ORIGINES[e.origine] || e.origine];
     if (e.auteur) morceaux.push(e.auteur);
+    if (e.champs && e.champs.client_final) morceaux.push("pour " + e.champs.client_final);
     morceaux.push(new Date(e.capture_le || e.cree_le).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" }));
     if (e.champs && e.champs.localisation) morceaux.push(e.champs.localisation);
     return morceaux.join(" · ");
@@ -478,6 +495,7 @@
       $("resume").textContent = e.message;
       return;
     }
+    if ($("filtre-multi").checked) elements = elements.filter((e) => e.similaires && e.similaires.length);
     const ul = $("cartes");
     ul.replaceChildren();
     const modele = $("modele-carte");
@@ -495,6 +513,7 @@
       const etat = carte.querySelector(".etat-rapprochement");
       etat.textContent = e.type === "bruit" || !e.champs ? "" : texteRapprochement(e.rapprochement);
       etat.hidden = !etat.textContent;
+      remplirSimilaires(carte.querySelector(".similaires"), e);
       const source = carte.querySelector(".lien-source");
       if (e.url_source) source.href = e.url_source; else source.hidden = true;
       ul.append(carte);
@@ -634,6 +653,8 @@
     $("d-choix-employeur").disabled = OCCUPES.includes(e.statut) || Boolean(e.suivi);
     $("d-titre").textContent = titreElement(e);
     $("d-meta").textContent = metaElement(e);
+    remplirSimilaires($("d-similaires"), e);
+    $("d-similaires").hidden = !(e.similaires && e.similaires.length);
     const suivi = texteSuivi(e);
     $("d-suivi").textContent = suivi;
     $("d-suivi").hidden = !suivi;
@@ -727,7 +748,7 @@
         message($("d-message"), e.message, "erreur");
       }
     });
-    for (const id of ["filtre-type", "filtre-statut", "filtre-origine", "filtre-employeur", "filtre-contrat"]) $(id).addEventListener("change", () => { arreterAttente(); chargerListe(); });
+    for (const id of ["filtre-type", "filtre-statut", "filtre-origine", "filtre-employeur", "filtre-contrat", "filtre-multi"]) $(id).addEventListener("change", () => { arreterAttente(); chargerListe(); });
     $("texte").addEventListener("input", majCompteur);
     $("form-coller").addEventListener("submit", envoyer);
     $("onglet-linkedin").hidden = !config.linkedin_public;

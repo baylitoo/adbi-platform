@@ -8,6 +8,12 @@
       "fields": []
     },
     {
+      "name": "client_final",
+      "type": "string",
+      "description": "Quand l'entreprise qui publie est un intermédiaire (ESN, cabinet de conseil ou de recrutement, plateforme) : le client pour qui le poste ou la mission est ouvert, son nom ou sa description tels qu'écrits (par exemple « un acteur majeur de la robotique ») ; vide si l'entreprise recrute pour elle-même",
+      "fields": []
+    },
+    {
       "name": "intitule",
       "type": "string",
       "description": "Intitulé du poste ou de la mission, tel qu'écrit",
